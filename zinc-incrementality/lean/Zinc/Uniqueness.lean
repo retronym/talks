@@ -115,7 +115,7 @@ theorem zinc_out_outside (S : Finset CUnit) (src : CUnit → Src) (P : Policy CU
 
 /-- **T3 (acyclic).** The incremental result is the clean build. -/
 theorem zinc_eq_clean_of_wf (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
-    (P : Policy CUnit Out K) (hP : P.Sound) (hPS : P.InS S)
+    (P : Policy CUnit Out K) (hP : P.Sound S) (hPS : P.InS S)
     (r : CUnit → CUnit → Prop) (hwf : WellFounded r)
     (hdep : ∀ u ∈ S, ∀ e, ∀ q ∈ (C.unit (src u)).trace e, r q.1 u)
     (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K) (D : Finset CUnit)
@@ -130,7 +130,7 @@ theorem zinc_eq_clean_of_wf (ob : C.Obligations) (S : Finset CUnit) (src : CUnit
 
 /-- **T3 (explicit interfaces).** -/
 theorem zinc_eq_clean_of_explicit (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
-    (P : Policy CUnit Out K) (hP : P.Sound) (hPS : P.InS S)
+    (P : Policy CUnit Out K) (hP : P.Sound S) (hPS : P.InS S)
     (ifaceSrc : Src → Iface)
     (hex : ∀ (sr : Src) (e : Env (CUnit := CUnit) (Q := Q) (A := A)), C.iface ((C.unit sr).run e) = ifaceSrc sr)
     (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K) (D : Finset CUnit)

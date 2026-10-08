@@ -88,7 +88,7 @@ theorem round_preserves (ob : C.Obligations) (S : Finset CUnit) (src : CUnit →
 /-- **T3a.** If the loop stops, the final state is a per-unit fixed point for the sources it was
 run with: no unit is dirty. -/
 theorem zinc_sound (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
-    (P : Policy CUnit Out K) (hP : P.Sound) :
+    (P : Policy CUnit Out K) (hP : P.Sound S) :
     ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K) (D : Finset CUnit),
       D ⊆ R → C.Inv S src s D →
       ∀ s', C.zinc S src P fuel n R s = some s' → C.Inv S src s' ∅ := by
@@ -105,6 +105,23 @@ theorem zinc_sound (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
       have : C.invalidated S R s (C.round src R s) \ R = ∅ := Finset.sdiff_eq_empty_iff_subset.2 hsub
       rw [this] at hstep
       exact hstep
-    · exact ih _ _ _ _ (hP _ _ _ _) hstep s' h
+    · exact ih _ _ _ _ (hP _ _ _ _ (Finset.filter_subset _ _)) hstep s' h
+
+end Zinc.Compiler
+
+namespace Zinc.Compiler
+
+variable {CUnit Src Out Iface K Hash Q : Type} {A : Q → Type}
+variable (C : Compiler CUnit Src Out Iface K Hash Q A)
+/-- The starting point of an incremental build: the previous build was a fixed point for the old
+sources, and `D` contains every unit whose source changed. -/
+theorem inv_of_changed (S : Finset CUnit) (src₀ src : CUnit → Src) (s : State CUnit Out K)
+    (D : Finset CUnit) (hD : ∀ u, src₀ u ≠ src u → u ∈ D) (h : C.Inv S src₀ s ∅) :
+    C.Inv S src s D := by
+  intro u hu huD
+  have : src₀ u = src u := by
+    by_contra hne; exact huD (hD u hne)
+  have h' := h u hu (Finset.notMem_empty u)
+  simpa [UpToDate, this] using h'
 
 end Zinc.Compiler

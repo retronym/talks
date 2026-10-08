@@ -107,8 +107,8 @@ abbrev Policy (CUnit Out K : Type) := ℕ → Finset CUnit → State CUnit Out K
 
 /-- The one obligation on a policy that soundness needs: never drop an invalidated unit outside
 the round just compiled. -/
-def Policy.Sound (P : Policy CUnit Out K) : Prop :=
-  ∀ n R s I, I \ R ⊆ P n R s I
+def Policy.Sound (S : Finset CUnit) (P : Policy CUnit Out K) : Prop :=
+  ∀ n R s I, I ⊆ S → I \ R ⊆ P n R s I
 
 /-- Zinc's loop, fuelled. Stops when every invalidated unit was in the round just compiled
 (`IncrementalCommon.invalidateAfterInternalCompilation`: `newInvalidations.isEmpty`). -/
