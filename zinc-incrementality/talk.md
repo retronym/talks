@@ -242,9 +242,9 @@ flowchart BT
 
 - **Sound:** $\mathrm{res}_C(n)$ is a function of $C$'s own decls named $n$, its parents with their type arguments $\bar{T}_i$, and the parents' resolutions of $n$. With $h$ treated as injective, $h'_C(n) = h'_{C'}(n) \implies \mathrm{res}_C(n) = \mathrm{res}_{C'}(n)$.
 - **Not complete:** inputs can change while $\mathrm{res}_C(n)$ doesn't, e.g. a parent's $n$ that $C$ overrides, or a type-argument change irrelevant to $n$. That gives a little more overcompilation, the *same direction* as every other Zinc approximation.
-- **Cheap:** $O(\lvert\mathrm{decls}\rvert + \lvert\mathrm{parents}\rvert)$ per class, memoised per parent. No `asSeenFrom` of every inherited member, and no $\sum \lvert\mathrm{members}\rvert$ state.
-- **Fewer recompiles, same rounds:** with Zinc's hierarchy walk, materialised hashes already invalidate $C$'s clients in the same round as $C$ (§9). What Merkle composition saves is recompiling the hierarchy itself (§10).
-- Zinc already uses this pattern for traits: `extraHash` "folds in the parents' later". So Merkle composition is an extension of existing practice, not a new idea.
+- **Cheap:** $O(\lvert\mathrm{decls}\rvert + \lvert\mathrm{parents}\rvert)$ per class, memoised per parent. No `asSeenFrom` of every inherited member, and no $\sum \lvert\mathrm{members}\rvert$ state. (The PoC composes less than this: within a subproject not at all, because Zinc's existing walk suffices; across subprojects over each class's stored linearization, at lookup; §10.)
+- **Fewer recompiles, and in practice fewer rounds:** with Zinc's hierarchy walk, materialised hashes already invalidate $C$'s clients in the same round as $C$ (§9). What Merkle composition saves is recompiling the hierarchy itself (§10). Rounds drop as well, because recompiled descendants no longer report API changes of their own that need another round: on Spark's catalyst, adding a member to `TreeNode` takes 2 rounds in the PoC instead of 3 (§10).
+- Zinc already uses this pattern for traits: `extraHash` "folds in the parents' later". So Merkle composition is an extension of existing practice, not a new idea. The PoC found that channel over-reaching: a trait also folds in its *class* parents' `extraHash`, which for a class is its whole API hash, so a public member added to `Expression` read as a private change in every trait extending it. On catalyst that cost about 700 recompiles; the PoC folds in trait parents only.
 - Merkle hashing does for member resolution what name hashing does for symbol resolution. Both are sound, hash-based over-approximations that are cheaper than doing the resolution.
 
 ### 6. The hidden premise: separate compilation ≡ joint compilation
@@ -397,7 +397,7 @@ flowchart BT
 
 <!-- break -->
 
-- **Size:** state grows with $\sum_c \lvert\mathrm{members}(c)\rvert$, not $\sum_c \lvert\mathrm{decls}(c)\rvert$. Deep or wide hierarchies make this large: collections, cake pattern, big framework traits, anything extending `java.util.AbstractList`. Analysis size, hashing and extraction time all scale with it.
+- **Size:** state grows with $\sum_c \lvert\mathrm{members}(c)\rvert$, not $\sum_c \lvert\mathrm{decls}(c)\rvert$. Deep or wide hierarchies make this large: collections, cake pattern, big framework traits, anything extending `java.util.AbstractList`. Analysis size, hashing and extraction time all scale with it. Measured with the PoC (§10): on Spark 4.0.1's `sql/catalyst`, not storing members inherited from classes in the same build cuts the stored name hashes from 212,389 to 90,711 and the analysis on disk from 1.88 MB to 1.43 MB.
   - `inherited` is `lazy` in the schema for this reason; laziness was removed and then reverted ([371b374d](https://github.com/scala/scala/commit/371b374db34ade9ef3af927e9b95094995202cf0) / [b9bd9ecb](https://github.com/scala/scala/commit/b9bd9ecb53fbb7209d0bddc033c8dc8cefdca6ec)).
 - **Extraction cost on every run:** `members` plus `asSeenFrom` for each compiled class, including members from library parents that can only change when the library jar changes.
 - **Overcompilation amplifier:** any nondeterminism in rendering an inherited member (unstable owners, refinement type params: [sbt/zinc#1782](https://github.com/sbt/zinc/pull/1782), [scala/bug#6596](https://github.com/scala/bug/issues/6596)) is multiplied across every subclass.
@@ -410,8 +410,24 @@ flowchart BT
   - It is a sound over-approximation of today's materialised resolution.
   - Open questions: self-types and refinements as parents; library parents (treat their hash as a constant keyed by the jar stamp); whether per-name composition is precise enough for `asSeenFrom`-heavy code (type-argument changes now move every inherited name).
 - **Decls-only + hierarchy-aware invalidation:** record each `memberRef` against the *declaring* owner and the *receiver* type. When `A.m` changes, walk subclasses at invalidation time. Zinc already does this walk (§9); what changes is that the client records the classes its lookup *visited*, misses included, instead of relying on the receiver's materialised hash. This moves `asSeenFrom` and linearization concerns from extraction into the recorded keys.
-- **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module. The PoC below splits the other way: ancestors in the same subproject are decls-only, while library and upstream-subproject ancestors stay materialised, so invalidation from outside the subproject is unchanged.
-- **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge): stop materialising members inherited from the same subproject, recompile a descendant only when one of six rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants; the full scripted suite passes.
+- **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module. The PoC below splits the other way: ancestors in the same subproject or in another analysed subproject are decls-only, and only members of plain library classes stay materialised. A change in an upstream subproject filters this subproject's descendants by the same rules as a local one.
+- **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge): stop materialising members inherited from analysed subprojects, recompile a descendant only when one of six rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants. The full scripted suite passed before the last two fixes, which the benchmark below found; those have only been checked against targeted tests.
+
+<!-- break -->
+
+**The PoC on a real hierarchy.** `IncBench` (in the PoC) applies edits to a build and records rounds, classes recompiled, wall time and stored size; A is Zinc 1.x, B the PoC. Spark 4.0.1's `sql/catalyst`, 2,527 classes in one module, pipelining off, one repetition:
+
+| edit | A: recompiled, rounds, wall | B: recompiled, rounds, wall |
+|---|---|---|
+| `TreeNode`: body only | 10, 1, 0.96 s | 10, 1, 0.72 s |
+| `TreeNode`: add an unused member | 1,371, 3, 13.8 s | 420, 2, 4.7 s |
+| `Expression`: add an unused member | 1,200, 3, 10.4 s | 388, 2, 3.2 s |
+| clean build, warm | 2,527, 1, 10.7 s | 2,527, 1, 11.2 s |
+
+- Today, adding a member nobody uses to `TreeNode` costs more than a clean build of the module.
+- On a generated worst case (511 classes in a binary tree over 4 modules), the same edit to the root recompiles 1 class instead of 511 (0.6 s against 22 s).
+- The real corpus found three overcompilations the scripted suite had not: header comparison by `equals` on types with lazy parts, a static-forwarder rule that fired for every case class's companion, and the trait `extraHash` over-reach (§5). Each made most of catalyst recompile.
+- Not yet measured: the cross-subproject path on real code, and a differential check that each incremental result equals a clean build.
 
 <!-- break -->
 
@@ -432,7 +448,7 @@ flowchart BT
 **Discussion questions:**
 
 - Which scripted tests break under decls-only? The PoC answers this for Scala 2: within a subproject, none, given the six descendant rules of §10a; with no descendant recompiles at all, the five rule tests that discriminate fail. Across subprojects, `macros/macro-type-change-3` fails without Merkle composition. The model says none for soundness.
-- What fraction of a real analysis file is `inherited`? (TODO: measure on scala/scala and on a large app before the talk.)
+- What fraction of a real analysis file is `inherited`? On Spark's catalyst, members inherited from classes in the same module account for 57% of the stored name hashes (121,678 of 212,389) and a quarter of the analysis on disk. scala/scala is still to measure.
 - Scala 3 has TASTy: could $\pi$ be derived from TASTy-level signatures plus a structural parent hash, making it shareable with IDEs and other build tools?
 
 #### 10a. Worked example: materialised members vs Merkle hashing
@@ -525,9 +541,9 @@ flowchart LR
 - **overrides**: a member `D` declares that overrides an ancestor's member must still conform to it (and may need a bridge);
 - **conflicts**: members of the same name inherited from two parents must be reconciled (Edit 3);
 - **abstract members**: a concrete `D` must implement every abstract member it inherits, so the rule counts names deferred in *any* ancestor of `D`, not only in the edited class. Deleting `B`'s implementation of `A`'s abstract `m` leaves `class C extends B` unimplemented (`merkle-abstract-ancestor`). The narrower rule leaves 672 of 142,500 single-class edits unclean in the Lean model's exhaustive check (`FlatRules.lean`), and the widened one none;
-- **the ancestor's header**: parents, type parameters, self type, `final`/`sealed`. The cross-subproject Merkle composition (§10) reads each class's *stored* linearization, which is only sound if every transitive descendant of a class whose parents changed is recompiled (`flat_sound`, `Flat.lean`). No scripted test fails without this rule yet;
+- **the ancestor's header**: parents, type parameters, self type, `final`/`sealed`. The cross-subproject Merkle composition (§10) reads each class's *stored* linearization, which is only sound if every transitive descendant of a class whose parents changed is recompiled (`flat_sound`, `Flat.lean`). No scripted test fails without this rule, because a header change already invalidates every `memberRef` client of every descendant, and each descendant is a `memberRef` client of its direct parent through its extends clause; the rule is defence in depth for a descendant not recorded that way;
 - **trait mixin forwarders**: if $P$ is a trait, `D`'s bytecode has a forwarder for each concrete member of $P$;
-- **static forwarders**: if `D` is a top-level object with no companion class, its mirror class has a static forwarder for every member, inherited ones included.
+- **static forwarders**: if `D` is a top-level object that itself extends $P$, its mirror class (or its companion class) has a static forwarder for every member, inherited ones included. A case class's companion object does not extend the case class's parents; a first version of the rule missed that and fired for every case class in catalyst.
 
 *Uses* need no rule: a descendant is a `memberRef` client of its parent (the constructor call, inherited member selections), so ordinary name-filtered invalidation already reaches it.
 
@@ -1220,7 +1236,7 @@ Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligat
 - **Precision as a theorem.** Minimality relative to $\pi$: no unit outside $\mathrm{inv}(\Delta)$ has a covered key with a changed hash. With it, the rungs of §12 become comparable: prove rung $k+1$ invalidates a subset of rung $k$ given the extra coverage (recorded misses), and measure the gap on the §12 question of `size`/`apply` collisions.
 - **Class vs companion (#1796).** A key type with a namespace component; the precision theorem then quantifies what separating the hashes buys.
 - **Precision of the three hierarchy designs as a theorem.** The computed table suggests materialised ⊆ Merkle-chain and materialised ⊆ decls on `asSeenFrom` edits, and equality when member types mention no type parameter. State it over all programs of the toy, and add the "resolved-member" Merkle hash as a fourth design to show it matches materialised precision with local storage.
-- **Descendants' own checks** (done: `Flat.lean`, `FlatRules.lean`). Override, conflict and abstract-member checks are queries from a descendant to its ancestors; recorded as keys, T2″ covers the name-filtered inheritance edge, and dropping any key kind undercompiles some scenario. As an invalidation *policy* over all single-class edits of a small program space, the rule set is clean only if `abstract` fires for names deferred in any ancestor of the descendant, not only in the changed class. Remaining: count, on a real analysis, how many of today's hierarchy recompiles are refresh-only.
+- **Descendants' own checks** (done: `Flat.lean`, `FlatRules.lean`). Override, conflict and abstract-member checks are queries from a descendant to its ancestors; recorded as keys, T2″ covers the name-filtered inheritance edge, and dropping any key kind undercompiles some scenario. As an invalidation *policy* over all single-class edits of a small program space, the rule set is clean only if `abstract` fires for names deferred in any ancestor of the descendant, not only in the changed class. On catalyst, adding an unused member to `TreeNode` recompiles 1,371 classes today and 420 with the rules, so about 950 of today's recompiles are refresh-only (assuming the PoC's result is sound, which a differential check would confirm).
 - **Inheritance edges as a measure.** In the materialised design every subclass recompiles on every ancestor edit. Count, on a real analysis, how many of those recompiles change the subclass's own output; the rest is the price of freshness, and the decls or Merkle designs would skip it.
 - **Macros and inline.** Add `inlineBody(m)` and `macroObserve(sym)` queries. Then: Scala 3 `inline` needs the *body* in $\pi$, not the signature; the macro-downstream policy is the coarsest sound answer when observation is not recorded, and recording `Quotes` reflection ([sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)) is the precise one. The cross-project case (behaviour does not flow through the API) is a stated non-coverage.
 - **Added and deleted units, and the source level.** $S$ is fixed today. Adding units, deletion, `dependents(deleted)` in $R_0$, the source→class mapping and `recompileAllFraction` at the source level are all absent.
@@ -1253,7 +1269,7 @@ Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligat
 2. **Differential tests** (incremental ≡ clean) in compiler CI, with a `v1/v2/client` harness next to the feature tests.
 3. **One shared scripted corpus** and a **written callback protocol** across the three bridges.
 4. **Determinism as a first-class requirement**, including **joint ≡ separate, byte for byte** (Scala and Java dependencies alike), checked over the whole pos test suite. It helps in three places: overcompilation, reproducible builds, cache hits.
-5. **Revisit π's shape** (members vs decls, Merkle parent hashes, a TASTy-derived summary), and measure before deciding. A Merkle PoC passes the scripted suite ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); what's missing is a benchmark of incremental edit scenarios on a real hierarchy.
+5. **Revisit π's shape** (members vs decls, Merkle parent hashes, a TASTy-derived summary), and measure before deciding. A Merkle PoC ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)) passes the scripted suite and, on Spark's catalyst, cuts an ancestor edit from 1,371 recompiled classes to 420 (13.8 s to 4.7 s, §10). What's missing is a differential incremental ≡ clean check on real code, and the cross-subproject path on a real build.
 
 <!-- break -->
 
@@ -1294,6 +1310,7 @@ Lukas Rytz and Jason Zaugg, roughly June–October 2026. Many of these already a
 - A compound type in a member signature was recorded as inheritance ([#1798](https://github.com/sbt/zinc/issues/1798) → [#1803](https://github.com/sbt/zinc/pull/1803)).
 - A private change in a trait recompiled classes that don't inherit it, from object/trait conflation ([#1795](https://github.com/sbt/zinc/issues/1795) → [#1807](https://github.com/sbt/zinc/pull/1807), `AnalysisCallback4`); the class/companion name-hash merge is still open ([#1796](https://github.com/sbt/zinc/issues/1796)). See §12.
 - Trait `extraHash` over-invalidations ([#1787](https://github.com/sbt/zinc/pull/1787)); refinement-owned type params ([#1782](https://github.com/sbt/zinc/pull/1782)).
+- A public member added to a class reads as a private change in every trait extending it: a trait's `extraHash` folds in its class parents' `extraHash`, which for a class is its whole API hash. Found by the Merkle PoC's benchmark on Spark's catalyst, where it recompiled every descendant of the traits extending `Expression`; the code predates the PoC, and its cost on 1.x alone is not yet measured.
 - Pipelining: any change recompiled everything depending on a Java class ([#1819](https://github.com/sbt/zinc/issues/1819) → [#1821](https://github.com/sbt/zinc/pull/1821)); a trait with a parent recompiled all heirs under Scala 3 ([#1820](https://github.com/sbt/zinc/issues/1820)).
 - Intermittent overcompilation from `Symbol.copy` ignoring its compilation unit ([scala/scala3#25520](https://github.com/scala/scala3/issues/25520) → [#27162](https://github.com/scala/scala3/pull/27162)).
 - Under `-release`, JDK classes were reported to Zinc as project classes ([scala/scala3#27117](https://github.com/scala/scala3/issues/27117)); the empty package was included in names of Java classes ([#27136](https://github.com/scala/scala3/pull/27136)).
