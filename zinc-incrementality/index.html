@@ -1183,6 +1183,7 @@ flowchart TB
 <!-- break -->
 
 - **Weakness:** scripted checks *how much* was recompiled, not *that the result equals a clean build*.
+- **Behaviour-level checks miss bytecode differences.** In the Merkle PoC, a missing mixin forwarder is usually invisible at runtime: the JVM resolves the trait's default method instead. It shows only when the trait overrides a *class* member, because class methods win JVM resolution, so the PoC's first trait test passed with the rule disabled and it took a second, `merkle-trait-override`, to discriminate. Comparing incremental and clean output bytes would have caught it directly.
 - **Where bugs come from:** field reports from large builds, and lately LLM-driven exploration. Many of the autumn 2026 batch were found by LLM agents writing probing scripted tests (Notes N1). Field reports are hard to turn into tests because the user's pre-change state is gone (Notes N2).
 - **Proposals:**
   - After every scripted step, also clean-build and compare outputs (differential testing).
