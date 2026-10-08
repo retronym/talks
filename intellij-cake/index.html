@@ -604,8 +604,8 @@ The exponential is gone. The everyday cost is a few percent of highlighting; ~70
 
 ### 25. Benchmarking discipline (learned the hard way)
 
-- A laptop shared with other agents drifts ±10% run to run, and load averages of 8–20 are normal. Alternate base and tip; report the load; prefer counters and profiles to wall-clock.
-- **Know what's switched on.** A retime made the tip look 30% slower than base. Two causes: the invariant checks default to `fail`/`record` in unit-test mode (the harness is a test), and a local LLM started mid-run. With the checks off and the machine quieter, the tip is ~10% faster cold.
+- Alternate base and tip within a session, and prefer counters and profiles to wall-clock.
+- **Know what's switched on.** A retime made the tip look 30% slower than base: the invariant checks default to `fail`/`record` in unit-test mode, and the harness is a test. With the checks off, the tip is ~10% faster cold.
 - **Know what the base is.** An early "1233 errors on base" turned out to be `idea263.x` *plus* upstream fixes; plain base is 569.
 - Not like for like either way: once an expression has a false error, the base does less work on what depends on it.
 
@@ -621,7 +621,7 @@ flowchart TB
   O --> A["Agent: search, cut down, fix, re-measure"]
   A --> S["Score moves"]
   S --> G{"Is the score<br/>being gamed?"}
-  G -- "yes: leniency, compensation,<br/>stale build, wrong base" --> H
+  G -- "yes: leniency, compensation,<br/>overshoot, wrong base" --> H
   G -- "no" --> A
 ```
 
@@ -654,7 +654,6 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 - **Compensation** (§15): two wrongs cancel on the corpus.
 - **Overshoot** (§21): the error goes away; a different scalac answer breaks.
 - **Narrow oracle**: a 597-test subset passed while six real regressions slipped through.
-- **Stale build**: a seeded worktree ran an old plugin for an hour and produced plausible, bogus probe results (incremental `packageArtifact` missed new class files).
 - **Wrong baseline**: "1233 errors on base" was not plain base.
 - **Observer effect** (§20) and **instrumented benchmark** (§25).
 
@@ -671,7 +670,7 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 **Needs:**
 
-- isolation: one git worktree and one IntelliJ test sandbox per agent; batch sbt rather than a server per session; two heavy test runs at a time, not three (three made the machine swap);
+- isolation: one git worktree and one IntelliJ test sandbox per agent;
 - durable memory outside the context window: PR comments for design notes and investigation records, tags for every pre-rewrite history, notes the next session reads first;
 - a human who stops it: "STOP" when it heads the wrong way, and "Agree?" when it should argue back.
 
@@ -726,7 +725,7 @@ Same pattern as the Zinc work this autumn: agents found under/over-compilation c
 
 - Confirm the time span of the work and the split of human questions vs agent initiative in §27 with concrete examples from the session transcripts.
 - One slide of real agent transcript: a question, the agent's census, the decision.
-- Re-time on a quiet machine with more rounds; replace the §24 `Typers.scala` row.
+- Re-time with more rounds; replace the §24 `Typers.scala` row.
 - Decide whether §13's scalac-side `TypeMap` model (a local scala/scala branch) should be published.
 </script>
 
