@@ -574,25 +574,23 @@ Three conditions follow, and a chain that meets them is right by construction:
 - **A6, the anchorless walk.** 7199 of 7245 were members with no PSI class: synthetics like `==` (in scalac, members of `Any`, whose types mention no this-type) and refinement members (where a second rewrite made `clone.NameType` an alias of itself). A missing class now means "no rewrite"; three callers were anchored properly; the anchorless mode is deleted.
 - **I4, a redundant guard.** With every link anchored the model says no guard is needed; the census said the guard was only ever refusing correct rewrites. Deleted: same corpus errors, nothing grows, `Typers.scala` no slower.
 
-### 23. A check that changed typing; self-rooted links
+### 23. A1: links that rewrite their own target
 
-**A check must not change what it measures.** The first A1 applied each link to its own target as soon as it was built. That evaluated types earlier and changed the order in which types are computed and cached, and `JavaClearable.scala` flipped: `JavaClearableCollection[T]` stopped conforming to `JavaClearable[T]`. A1 now runs lazily, at a link's first use, recording only one stack frame at construction. Identical results with it on or off, no measurable cost (the eager version cost ~8%).
+**A1 is checked lazily**, at a link's first use, unlike the other rules. Checking it when the link is built evaluates types earlier than the plugin otherwise would, and that was shown to change typing results (a conformance in `JavaClearable.scala` flipped).
 
-<!-- break -->
-
-**Self-rooted links.** A1 first demanded `idempotent_of_fixed`: a link maps its own target to itself. The corpus produced correct links that don't:
+| | rule | |
+|---|---|---|
+| version 1 | the link maps its own target to itself (`idempotent_of_fixed`) | simple, but rejects some correct links |
+| version 2 | as version 1, or the target is rooted in the class being rewritten and the link occurs at most once in its chain (`once_is_scalac`, `selfRooted_twice_diverges`) | no false positives over the tests and the corpus; still proved in the model |
 
 ```scala
 class UnitScanner { lazy val parensAnalyzer = new ParensAnalyzer(...) }
 class ParensAnalyzer extends UnitScanner
-// inside UnitScanner: parensAnalyzer.balance(token)
-//   link: UnitScanner.this -> UnitScanner.this.parensAnalyzer.type
+// inside UnitScanner, parensAnalyzer.balance(token) uses the link
+//   UnitScanner.this -> UnitScanner.this.parensAnalyzer.type
 ```
 
-- The `UnitScanner.this` in the member's type is the receiver; the one inside the target is the *enclosing* scanner, a different instance with the same name.
-- One pass replaces the first and leaves the second: scalac's result. A second copy of the same link cannot tell them apart and gives `UnitScanner.this.parensAnalyzer.parensAnalyzer.T`.
-- The model now proves both halves: **`once_is_scalac`** and **`selfRooted_twice_diverges`**. A1 checks "at most once per chain" for self-rooted links. Over the corpus: 146,731 links checked, 3 distinct self-rooted, none duplicated.
-- **The corpus supplied the counterexample, the model proved the corrected condition, and A1 now checks it.**
+Applied once, this link gives scalac's result. Applied twice, it gives `UnitScanner.this.parensAnalyzer.parensAnalyzer.T`.
 
 ### 24. The remaining errors
 
@@ -706,7 +704,7 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 - **Compensation** (§18): two wrongs cancel on the corpus.
 - **Narrow oracle**: a 597-test subset passed while six real regressions slipped through.
 - **Wrong baseline**: "1233 errors on base" was not plain base.
-- **Observer effect** (§23) and **instrumented benchmark** (§28).
+- **A check that changed typing** (§23) and **an instrumented benchmark** (§28).
 
 **This is Goodhart's law: the agent optimises the measure it is given. The defence is to pair every measure with an independent oracle of a different kind.**
 
