@@ -411,6 +411,7 @@ flowchart BT
   - Open questions: self-types and refinements as parents; library parents (treat their hash as a constant keyed by the jar stamp); whether per-name composition is precise enough for `asSeenFrom`-heavy code (type-argument changes now move every inherited name).
 - **Decls-only + hierarchy-aware invalidation:** record each `memberRef` against the *declaring* owner and the *receiver* type. When `A.m` changes, walk subclasses at invalidation time. Zinc already does this walk (§9); what changes is that the client records the classes its lookup *visited*, misses included, instead of relying on the receiver's materialised hash. This moves `asSeenFrom` and linearization concerns from extraction into the recorded keys.
 - **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module.
+- **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge): stop materialising members inherited from the same subproject, recompile a descendant only when one of five rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants; the full scripted suite passes.
 
 <!-- break -->
 
@@ -483,6 +484,8 @@ $h_M(m) = h(\text{miss})$ records that `M` has no `m`, so a later `M.m` changes 
 - $h_A(m)$ changes, so $h_B(m)$ and $h_C(m)$ change when Zinc *recomputes* them from the stored ingredients. No compilation is needed for that.
 - `X` uses `m` on `B`, `Y` uses `m` on `C`: both are invalidated.
 - Result: **`X Y` recompiled, 2 rounds.** `Z` stays in both designs, since $h(g)$ didn't move.
+
+The PoC ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)) reproduces this in Zinc: its scripted test `merkle-member-type` recompiles `X Y`, where today's Zinc recompiles `B C X Y`.
 
 ```mermaid
 flowchart LR
@@ -1240,7 +1243,7 @@ Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligat
 2. **Differential tests** (incremental ≡ clean) in compiler CI, with a `v1/v2/client` harness next to the feature tests.
 3. **One shared scripted corpus** and a **written callback protocol** across the three bridges.
 4. **Determinism as a first-class requirement**, including **joint ≡ separate, byte for byte** (Scala and Java dependencies alike), checked over the whole pos test suite. It helps in three places: overcompilation, reproducible builds, cache hits.
-5. **Revisit π's shape** (members vs decls, Merkle parent hashes, a TASTy-derived summary), and measure before deciding.
+5. **Revisit π's shape** (members vs decls, Merkle parent hashes, a TASTy-derived summary), and measure before deciding. A Merkle PoC passes the scripted suite ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); what's missing is a benchmark of incremental edit scenarios on a real hierarchy.
 
 <!-- break -->
 
