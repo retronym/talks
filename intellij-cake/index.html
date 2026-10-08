@@ -760,6 +760,26 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 ## Appendix
 
+### Addendum: splitting #5 into smaller PRs
+
+#5 goes upstream as one PR for review as a whole. These are the parts that could be split off, by commit.
+
+```mermaid
+flowchart LR
+  U["1. Upstream fixes"] --> C["4. Core: memberType,<br/>base types, anchoring, checks"]
+  T["2. TCK harness + corpus"] --> C
+  I["3. Independent fixes"]
+  C --> K["5. Type caches"]
+```
+
+| PR | commits | depends on |
+|---|---|---|
+| **1. Upstream fixes**, one PR each | exports anchored at the export path (`3305330882`); a class type does not conform to its own `this.type` (`226ca072f7`); `Null` not eligible for implicit conversion (`d88764da5b`); lub keeps the prefix (`c21b57a634`); SCL-22266 export-in-extension recursion (`334b617cb4`) | nothing; the first four are already on `this-type-conformance-soundness` |
+| **2. TCK harness and corpus** | `[tck]` commits: PSI engine, vendored corpus, rendering, strict two-way deferral registry, equivalence dimension, 2.13 library | nothing; the registry records today's differences and shrinks as later PRs land |
+| **3. Independent fixes** | block type avoidance (`54e2259e44`, `2e49ff92d0`); SAM eta-expansion (`6e9e5d6f1e`); `var` over a getter/setter pair (`903e53ca1f`); alias overriding an alias (`b3d1e57b10`); re-abstracted members in `superSignatures` (`bcd37e3afc`); `Null` against a lower-bounded abstract type (`f92489cc76`); protected constructor in `new C() with X` (`80dce75c78`) | nothing in principle; not yet checked one by one on `idea263.x` |
+| **4. Core** | `memberType` through `ScProjectionType.actual`; merged base types; anchoring, owner-chain matching and canonicalization; the lub refinement and alias-to-singleton fixes; `SubstitutorInvariants` and what it found (A2, A6, I4, A1) | 1 for the lub prefix; 2 for its tests to mean anything |
+| **5. Type caches** | `e9273a50b6`, `25ef237c36`, `47618e9e37` | 4 (`canonicalizeTarget` and the anchored walk) |
+
 ### Demo candidates (pick 2)
 
 - `Typers.scala` on `idea263.x` vs the branch, side by side, scrolling the gutter.
