@@ -64,9 +64,9 @@ $$E(A) = E(\mathrm{underlying}(A))$$
 
 ### 3. The algorithm: a fixed point over a dependency graph
 
-$$R_0 = \mathit{changed} \cup \mathrm{dependents}(\mathit{deleted}) \qquad R_{n+1} = \mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n \qquad \text{stop at } \emptyset$$
+$$R_0 = \mathit{changed} \cup \mathrm{dependents}(\mathit{deleted}) \qquad R_{n+1} = \mathrm{inv}(\Delta\mathrm{API}_n) \qquad \text{stop when } \mathrm{inv}(\Delta\mathrm{API}_n) \subseteq R_n$$
 
-Only the *current* round is subtracted, so a class compiled in round 1 can be recompiled in round 3 (§4).
+The round just compiled is subtracted only in the *stop test*. Nothing is monotone: a class compiled in round 1 can be recompiled in round 3, and a class in $R_n$ whose dependency in $R_n$ changed API is recompiled again in $R_{n+1}$ even though it already saw the new API (§4).
 
 ```mermaid
 flowchart TB
@@ -85,7 +85,7 @@ flowchart TB
 
 - `UseScope` (`Default`, `Implicit`, `PatMatTarget`) exists because "used name" alone is not enough. This is the first hint that some observables aren't names (§15–16).
 - Granularity: source-level (sbt ≤ 0.13) → class-level (Zinc 1.0). Finer nodes give smaller $R$ but more state, and more ways to be wrong.
-- Escape hatch: past `transitiveStep` cycles, invalidate everything. The fallback is part of the semantics.
+- Escape hatch: past `transitiveStep` cycles, invalidate the transitive dependents *and keep the round just compiled*. From then on $R_n$ only grows, which is what makes termination provable (§22). The fallback is part of the semantics.
 - Key point for this audience: $\pi$ and $U$ are computed *inside the compiler*, by the bridge phases `ExtractAPI` and `ExtractDependencies`. Zinc only does set algebra on them, so **incremental soundness is mostly a compiler property.**
 
 ```mermaid
@@ -128,9 +128,14 @@ flowchart TB
 
 **Precisely** (`IncrementalCommon.invalidateAfterInternalCompilation`):
 
-$$R_{n+1} = \big(\mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n\big) \ \cup\ \mathrm{macroDownstream}(R_n) \ \cup\ \mathrm{collisions}$$
+With $X_n = \mathrm{macroDownstream}(R_n) \cup \mathrm{collisions}$:
 
-- Only $R_n$ is subtracted. A class compiled in round 1 is recompiled again in round 3 if one of its dependencies' APIs changes in round 2, which happens with cycles in the class graph.
+$$\text{stop iff } \big(\mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n\big) \cup X_n = \emptyset$$
+
+$$R_{n+1} = \begin{cases} \mathrm{inv}(\Delta\mathrm{API}_n) \cup X_n & n < \mathtt{transitiveStep} \\ \mathrm{closure}(\mathrm{inv}(\Delta\mathrm{API}_n)) \cup X_n \cup R_n & n \ge \mathtt{transitiveStep} \end{cases}$$
+
+- $R_n$ is subtracted in the stop test only; `nextInvalidations` is the unsubtracted set. A class compiled in round 1 is recompiled again in round 3 if one of its dependencies' APIs changes in round 2, which happens with cycles in the class graph. A class in $R_n$ that depends on another class in $R_n$ whose API changed is recompiled in round $n+1$ although it was compiled jointly with the new API: overcompilation by construction. (TODO: confirm in the invalidation log of a two-class cycle.)
+- Without an assumption on the class graph the plain regime need not terminate: two mutually recursive classes whose inferred APIs keep changing ping-pong forever in the model (§22). `transitiveStep` is a termination guarantee, not just an optimisation.
 - **Typical round counts:** a body-only change takes 1 round (early cutoff); a signature change takes 2.
 - **Inferred types ripple:** a change to the inferred result type of a public `def` changes the API of every unedited class whose own public signature is inferred from it, adding a round per level. Explicit result types on public members are an *incremental-compilation* best practice, not just a style rule.
 
@@ -140,7 +145,7 @@ $$R_{n+1} = \big(\mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n\big) \ \cup\ \
 
 | Heuristic | Default | What it does |
 |---|---|---|
-| `transitiveStep` | 3 | from round 3 on, stop name-filtering: invalidate the *transitive closure* of the round's invalidations, plus the classes just recompiled ("brute-force transitive invalidation") |
+| `transitiveStep` | 3 | from round 3 on, stop name-filtering: invalidate the *transitive closure* of the round's invalidations, plus the classes just recompiled ("brute-force transitive invalidation"). $R_n$ is then monotone, so at most $\lvert S\rvert$ further rounds |
 | `recompileAllFraction` | 0.5 | if more than half of the sources are invalidated, compile everything in one round |
 | macro downstream | always | every round, invalidate macro-bearing classes transitively downstream of anything recompiled (behaviour, not just API, flows into expansions) |
 | unconditional invalidation | always | implicit members, files declaring macros or annotations: all `memberRef` clients (§3) |
@@ -867,11 +872,11 @@ flowchart LR
 
 ---
 
-## Part VII — Can we prove it? Towards a mechanised model (Lean)
+## Part VII — Can we prove it? A mechanised model (Lean)
 
 ### 22. Formalising incremental compilation
 
-**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful deliverable anyway: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for.
+**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful deliverable anyway: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: `lean/` in this directory, Lean 4 + Mathlib, ~1100 lines, no `sorry`. Theorem names below refer to it.
 
 ```mermaid
 flowchart TB
@@ -885,70 +890,89 @@ flowchart TB
 
 <!-- break -->
 
-**The model of the compiler we need:**
+**The model of the compiler:**
 
-1. **Compilation units with an explicit environment.** $\mathit{compile} : \mathit{Unit} \to \mathit{Env} \to \mathit{Out}$, where $\mathit{Env}$ is the *interface* view of everything else, derived from outputs: $\mathrm{iface} : \mathit{Out} \to \mathit{Env}$. This makes separate compilation a definable notion.
-2. **Compositionality axiom (§6).** Mutually recursive units compile as one SCC; Zinc already compiles each invalidated set together. Every §6 bug is a violation of this axiom, so stating it is half the value:
-
-$$\mathit{compile}_{\mathrm{joint}}(S)\big|_R = \mathit{compile}_{\mathrm{sep}}\Big(R,\ \mathrm{iface}\big(\mathit{compile}_{\mathrm{joint}}(S \setminus R)\big)\Big)$$
-
-3. **Purity.** The output is a function of the unit and the environment *answers* only: no `Symbol.id`, iteration order or other global state (§16(e)). Scala 2's mutable global symbol table is precisely a back-channel the model forbids. Stale-symbol crashes are what that back-channel looks like in practice.
-
-<!-- break -->
-
-4. **A query interface (the key modelling choice).** The compiler touches $\mathit{Env}$ only through typed queries:
-   - `lookup(scope, name)`;
-   - `members(C)` / `decls(C)` / `parents(C)`;
-   - `erasure(T)`;
-   - `implicitCandidates(type, scope)`;
-   - `sealedChildren(C)`;
-   - `inlineBody(m)`;
-   - `macroObserve(sym)`.
-
-   Model compilation as a monadic task with dynamic dependencies, where queries can depend on previous answers. This is the *Build Systems à la Carte* framing (Mokhov, Mitchell, Peyton Jones, ICFP 2018), applied *inside* the compiler:
+1. **Compilation units with an explicit environment.** The per-unit compiler is a *query tree*: it either returns, or asks a typed query and continues with a function of the answer. Running it against an oracle $e : \mathit{Query} \to \mathit{Answer}$ gives the output; the *trace* is the list of queries asked. This is the free monad of *Build Systems à la Carte* (Mokhov, Mitchell, Peyton Jones, ICFP 2018), applied *inside* the compiler:
 
 $$F_d : (\mathit{Query} \to \mathit{Answer}) \to \mathit{Out}$$
 
-5. **Recorded keys.** The bridge records an abstraction of the query trace, $U(d) \subseteq \mathit{Key}$, and the API summary $\pi : \mathit{Class} \to \mathit{Key} \to \mathit{Hash}$.
+2. **Purity** needs no axiom: the output is a function of the source and the answers, by the type of $F_d$. Scala 2's mutable global symbol table, `Symbol.id` in sort keys and iteration order (§16(e)) are exactly the back-channels this type forbids.
+3. **Every query and key is addressed to a unit:** $\mathit{Query} = \mathit{Class} \times Q$, $\mathit{Key} = \mathit{Class} \times K$. A multi-scope lookup is a sequence of per-scope queries, which is also how Zinc records it (one `memberRef` edge per class). A *negative* lookup is an ordinary query whose answer is `none`.
+4. **Joint compilation** is a black box $\mathit{group}(G, \mathit{src}, e)$ with the **compositionality axiom (§6)** in its usable form: the joint result is a fixed point of the per-unit tasks, with group-mates answered from their fresh interfaces:
+
+$$\forall d \in G.\ \mathit{group}(G, \mathit{src}, e)(d) = F_d\big(e[G \mapsto \mathrm{iface} \circ \mathit{group}(G, \mathit{src}, e)]\big)$$
+
+5. **Recorded keys.** The bridge records $U(d) = \mathit{keys}(\mathrm{trace}(F_d))$ and the API hash $\pi : \mathit{Iface} \to K \to \mathit{Hash}$. The loop is Zinc's: compile $R_n$ jointly, re-record $U$ for $R_n$, diff hashes, compute $\mathrm{inv}(\Delta)$, stop iff $\mathrm{inv}(\Delta) \subseteq R_n$; the next round is chosen by a pluggable *policy*.
+
+<!-- break -->
+
+**The bridge obligations** (`Compiler.Obligations`), which is what a feature author must discharge:
+
+- **Compositionality** (`comp`): item 4 above. Every §6 bug is a violation.
+- **Coverage** (`coverage`): every traced query, including misses (§15a) and closure queries such as `underlying(A)` (§15b), is covered by a recorded key:
+
+$$\forall q \in \mathrm{trace}(F_d).\ \exists k \in U(d).\ q \sqsubseteq k$$
+
+- **Abstraction** (`abstraction`): equal hashes on a key give equal answers to every query it covers. Collision-freedom is carried as a hypothesis:
+
+$$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = \mathrm{ans}_q(c')$$
+
+- **Policy soundness** (`Policy.Sound`), the only thing the heuristics must satisfy: never drop an invalidated unit outside the round just compiled, $\mathrm{inv}(\Delta_n) \setminus R_n \subseteq R_{n+1}$. `transitiveStep`, `recompileAllFraction` and macro-downstream all *enlarge* the set, so they are covered without being modelled individually.
 
 <!-- break -->
 
 **Theorems:**
 
-- **T1 (trace soundness, essentially free):** proof by induction on the task's query sequence. This is the "verifying traces" result.
-
-$$\big(\forall q \in \mathrm{trace}(F_d, e).\ e(q) = e'(q)\big) \implies F_d\, e = F_d\, e'$$
-
-- **T2 (Zinc soundness)** follows from two obligations on the bridge.
-  - **Coverage:** every query $d$ issues is covered by some recorded key. This includes *negative* queries (implicit search keyed on the scope, not the name; §15a) and *closure* queries (`erasure(A)` keyed on `(A, repr)`; §15b):
-
-$$\forall q \in \mathrm{trace}(F_d).\ \exists k \in U(d).\ q \sqsubseteq k$$
-
-  - **Abstraction:** equal hashes imply equal answers. Hashes are treated as injective, or collision-freedom is carried as a hypothesis:
-
-$$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = \mathrm{ans}_q(c')$$
+- **T1, trace soundness** (`Task.run_eq_of_trace`): oracles that agree on the trace give the same output. Induction on the query tree; essentially free.
+- **T2, round invariant** (`round_preserves`): a unit is *up to date* if its output is its own compilation against the current interfaces and its keys cover that trace. A round compiling $R \supseteq$ dirty leaves exactly $\mathrm{inv}(\Delta) \setminus R$ dirty. The proof is where coverage and abstraction are used: a key with an unchanged hash gives unchanged answers, and T1 does the rest.
+- **T3a, fixed point at termination** (`zinc_sound`): for any sound policy, if the loop stops, no unit is dirty. The final state is a per-unit fixed point of separate compilation.
+- **T3b, uniqueness** (`fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`), **T3** (`zinc_eq_clean_of_*`): the fixed point is the clean build, *given* a hypothesis the first draft of this section did not have (next card).
+- **T4, termination** (`zinc_some_of_*`): the fuelled loop returns within $k + \lvert S\rvert + 1$ rounds for a policy monotone from round $k$ (`transitiveStep`), within 2 rounds with explicit interfaces (§4's "a signature change takes 2"), and within $\mathrm{height} + 2$ rounds for the plain policy on an acyclic graph.
 
 <!-- break -->
 
-- **T3 (fixed point):** at termination, every unrecompiled unit's trace answers are unchanged, so by T1 + T2 + compositionality the result equals the clean build. *Termination* needs care: Zinc's loop is not monotone (classes can recompile in later rounds, §4). It is bounded by the heuristics (`transitiveStep`, `recompileAllFraction`), so the model must include them, or prove a measure for the closure regime.
-- **Overcompilation as a theorem about precision:** a minimality statement relative to $\pi$ (no unit outside $R$ has a changed covered key) is the formal version of "no spurious invalidations". §5's table lists where Zinc deliberately gives this up.
+**Two things the proof taught us.** Both were found by trying to write the proof, which is the argument for doing it.
+
+1. **The loop is not what §3 said.** The subtraction of $R_n$ is only in the stop test; the next round is the full $\mathrm{inv}(\Delta_n)$, and from `transitiveStep` on it includes $R_n$, so it is *monotone* and termination needs no assumption about the class graph. The plain regime does: a mutually recursive pair whose inferred APIs keep changing ping-pongs forever in the model. `transitiveStep` is a termination guarantee.
+2. **"At termination the result equals the clean build" is false without a further hypothesis.** Termination gives a per-unit fixed point; the clean build is another one; separate compilation can have several (`A.x: typeof(B.y)`, `B.y: typeof(A.x)` admits any type, joint compilation reports a cyclic reference). That is the [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) "include mutual dependencies in initial invalidation" story, and its revert. Two sufficient conditions, each a Scala best practice: **acyclic** unit dependencies, or **source-determined interfaces** (explicit result types on public members, which also bounds the loop at two rounds).
+
+<!-- break -->
+
+**The toy instance (`Toy.lean`, `Examples.lean`):** classes with typed members, an `implicit` flag and an optional `underlying` type; bodies made of `select c.m` (emits a JVM descriptor, so it needs erasure, a *dynamic* chain of `underlying` queries) and `implicitly[T]` over imports (candidates per class, then a shadowing check that is itself a lookup). Two extractors:
+
+| | name-only keys (today's rung 1) | repaired keys (`self`, `implicitScope`) |
+|---|---|---|
+| §15b value class `Int → Double` | `C` keeps `B.foo()I`: **undercompilation**, `not_obligations_nameOnly` exhibits the uncovered `underlying` query | `(A, self)` changed, `C` recompiled, equals clean |
+| §15a new `implicit val y` in `A` | `C` still resolves to `B.x` ([sbt/zinc#945](https://github.com/sbt/zinc/issues/945) family) | `(A, implicitScope)` changed, equals clean |
+| §15a shadowing `val x` in `A` | **caught**: the failed `lookup(A, x)` of the shadowing check is a recorded miss | caught |
+
+Each row is an `example` checked by evaluation, so it doubles as a scripted test. The shadowing row is the "name hashing happens to model it" remark of §15a, now a theorem. `repaired_sound` and `repaired_terminates` are the abstract T3 and T4 instantiated: `Obligations` is *proved* for the toy compiler, with $\pi$ a perfect hash.
+
+<!-- break -->
 
 **What the model makes crisp:**
 
-- **Members vs decls (§7–10)** becomes a question about *which query keys the compiler issues*: `members(C)` keyed on `C`, or `decls(P)` for each ancestor plus `parents(C)`. Both are sound if $U$ records the matching keys; they differ only in precision and cost.
+- **Members vs decls (§7–10)** is a question about *which query keys the compiler issues*: `members(C)` keyed on `C`, or `decls(P)` per ancestor plus `parents(C)`. Both are sound if $U$ records the matching keys; they differ only in precision and cost.
 - **Name kinds (§12)** are the *key type* of the trace abstraction. Each rung of the ladder trades precision against a stronger coverage obligation (record misses).
-- **Bridge-side hashing (§11)** is the natural reading: the compiler supplies $\pi(c)(k)$ directly as a hash of the answer to the queries $k$ covers.
+- **Bridge-side hashing (§11)** is the natural reading: the compiler supplies $\pi(c)(k)$ directly as a hash of the answers to the queries $k$ covers.
 - **Macros (§15c):** `macroObserve` queries must be recorded; "invalidate all clients" is the coarsest sound key, $\top$.
 - **Joint ≡ separate (§6)** is the compositionality axiom. Determinism is purity.
+- **The heuristics** are not special cases: any policy that only *adds* units is sound, and only termination depends on which one.
 
 <!-- break -->
 
-**A Lean 4 plan:**
+**Future work: questions the model could answer with modest refinement.**
 
-1. An abstract model (Mathlib `Finset`, a free-monad or `StateT` encoding of tasks, well-founded recursion for T3): a few hundred lines.
-2. Instantiate it on a toy object language with classes, inheritance, type-directed implicit lookup and an erasure function with value classes.
-3. State the §15 examples as Lean `example`s. *Counterexamples* show that name-only keys are unsound for value classes and for implicit addition; repaired keys yield proofs. Each counterexample doubles as a scripted test.
-4. Optional: connect to reality by checking the bridge's *recorded* keys against a query log instrumented in the real compiler. That is differential testing (§19) with the formal model as the oracle.
+- **Mutual recursion without the acyclic hypothesis.** Model #1284's SCC-closed initial invalidation: if every round is closed under mutual dependency, the group result is the joint fixed point and T3 should follow without acyclicity. That would say whether reverting #1284 traded soundness or only precision, and in which programs.
+- **Precision as a theorem.** Minimality relative to $\pi$: no unit outside $\mathrm{inv}(\Delta)$ has a covered key with a changed hash. With it, the rungs of §12 become comparable: prove rung $k+1$ invalidates a subset of rung $k$ given the extra coverage (recorded misses), and measure the gap on the §12 question of `size`/`apply` collisions.
+- **Class vs companion (#1796).** A key type with a namespace component; the precision theorem then quantifies what separating the hashes buys.
+- **Members vs decls (§7–10)** as two query vocabularies over the same toy language, with the sizes of $U$ and the invalidation sets compared on the same edits.
+- **Macros and inline.** Add `inlineBody(m)` and `macroObserve(sym)` queries. Then: Scala 3 `inline` needs the *body* in $\pi$, not the signature; the macro-downstream policy is the coarsest sound answer when observation is not recorded, and recording `Quotes` reflection ([sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)) is the precise one. The cross-project case (behaviour does not flow through the API) is a stated non-coverage.
+- **Added and deleted units, and the source level.** $S$ is fixed today. Adding units, deletion, `dependents(deleted)` in $R_0$, the source→class mapping and `recompileAllFraction` at the source level are all absent.
+- **Libraries and pipelining.** External units with stamps instead of hashes; pipelining as a *weakened* compositionality obligation, where the early-output interface comes from a partial compile and must agree with the final one.
+- **Inheritance edges.** `inheritance` and `localInheritance` bypass the name filter; in the model they are keys with $\mathrm{covers} = \top$. Which queries actually need that, and is a `parents`/`decls` key enough?
+- **A non-termination witness.** Construct the ping-pong pair as a Lean `example` for the plain policy, so the claim that `transitiveStep` is necessary is checked, not argued.
+- **Connecting to reality.** Instrument the real compiler to log queries, and check the bridge's recorded keys against the log with `coverage` as the oracle. That is differential testing (§19) at the level of obligations rather than outputs, and it would find uncovered observables *before* someone writes the scripted test.
 
 **Prior art to cite (verify the references before the talk):**
 
@@ -961,6 +985,7 @@ $$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = 
 **Honest limits:**
 
 - The model proves the *algorithm* sound given the obligations. It says nothing about whether scalac/dotc meet them; that remains a testing problem.
+- `transitiveStep` is modelled as one step of dependents rather than the full closure; the bound only needs $\mathrm{inv} \cup R_n \subseteq R_{n+1}$.
 - The value is in turning tribal knowledge ("implicits invalidate unconditionally", "value classes fold their underlying type into ancestors") into named hypotheses that a feature author must discharge (§17).
 
 ---
@@ -980,7 +1005,7 @@ $$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = 
 6. **Record failed lookups** in both compilers, so qualified used-name keys (§12) and precise implicit/extension invalidation become possible.
 7. **Move hashing into the bridges** (opaque hashes over the callback), with a narrow discovery callback for test frameworks.
 8. **Ship a one-command bug report and a CI canary** (clean-vs-incremental on a sample of builds) that emit ready-to-run scripted tests (Notes N2).
-9. **Write the bridge obligations down as theorem hypotheses** (coverage and abstraction, §22), and try a small Lean model to see which ones we can actually state.
+9. **Adopt the bridge obligations as the spec** (compositionality, coverage, abstraction, §22): the Lean model states them; the compiler teams own discharging them.
 
 ### 24. Questions to leave the room with
 
