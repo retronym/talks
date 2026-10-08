@@ -179,7 +179,7 @@ flowchart LR
 ```
 
 - Two differences from scalac matter. **Results recirculate:** a rewritten type flows back into resolution, which mints new chains from it, and `baseType` is a live recomputation that re-enters the walk. **Spelling:** IntelliJ names a self-type member after its *declaring* trait (`SymbolTable.this.Type` inside `trait Definitions { self: SymbolTable => }`), scalac after the trait the reference is in (`Definitions.this.Type`).
-- **The rewrite itself is simple. The false errors came from chains built wrong and then applied: a link with the wrong anchor, a link where there should be none, a chain stored where it is later applied to unrelated types.** That sentence took Phase 1 to learn.
+- The lesson of Phase 1, stated up front: **the rewrite itself is simple. The false errors came from chains built wrong and then applied: a link with the wrong anchor, a link where there should be none, a chain stored where it is later applied to unrelated types.**
 
 ---
 
