@@ -847,6 +847,7 @@ Macros.hasAnyField[A]         // false → must become true
 - The client names only `A` as a type argument. The macro read `A.members`.
 - Fixed by recording type arguments of macro calls as `DependencyByMacroExpansion` ([sbt/zinc#1316](https://github.com/sbt/zinc/pull/1316); Scala 3 port [scala/scala3#23900](https://github.com/scala/scala3/pull/23900)).
 - That new edge kind was then silently dropped by the new analysis format until [#1432](https://github.com/sbt/zinc/pull/1432).
+- The edge names only the type argument, yet the macro also sees `A`'s *inherited* members. While every descendant recompiled on an ancestor edit, that was masked. In the Merkle PoC, which recompiles fewer descendants, the invalidator must follow macro-expansion edges from every descendant of the changed class, as it already did for `memberRef` edges, not only from the changed class itself. The case was found by moving an ancestor from an upstream subproject into the client's own (`merkle-move-ancestor-downstream-macro`, fixed in [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)).
 
 ```mermaid
 flowchart LR
