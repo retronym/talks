@@ -24,7 +24,7 @@ variable [DecidableEq CUnit] [DecidableEq K] [DecidableEq Hash]
 /-! ## Monotone policies -/
 
 def Policy.MonotoneFrom (S : Finset CUnit) (k : ℕ) (P : Policy CUnit Out K) : Prop :=
-  ∀ n R s I, k ≤ n → R ⊆ S → I ⊆ S → R ⊆ P n R s I ∧ I ⊆ P n R s I
+  ∀ n R s s' I, k ≤ n → R ⊆ S → I ⊆ S → R ⊆ P n R s s' I ∧ I ⊆ P n R s s' I
 
 theorem zinc_some_of_monotone (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K)
     (hPS : P.InS S) (k : ℕ) (hM : P.MonotoneFrom S k) :
@@ -39,14 +39,14 @@ theorem zinc_some_of_monotone (S : Finset CUnit) (src : CUnit → Src) (P : Poli
     split
     · rfl
     · rename_i hsub
-      obtain ⟨hR', hI'⟩ := hM n R (C.round src R s) (C.invalidated S R s (C.round src R s)) hk hR (Finset.filter_subset _ _)
-      have hssub : R ⊂ P n R (C.round src R s) (C.invalidated S R s (C.round src R s)) := by
+      obtain ⟨hR', hI'⟩ := hM n R s (C.round src R s) (C.invalidated S R s (C.round src R s)) hk hR (Finset.filter_subset _ _)
+      have hssub : R ⊂ P n R s (C.round src R s) (C.invalidated S R s (C.round src R s)) := by
         refine Finset.ssubset_iff_subset_ne.2 ⟨hR', ?_⟩
         intro heq
         exact hsub (hI'.trans (le_of_eq heq.symm))
       have hcard := Finset.card_lt_card hssub
-      have hR'S : P n R (C.round src R s) (C.invalidated S R s (C.round src R s)) ⊆ S :=
-        hPS _ _ _ _ (Finset.filter_subset _ _)
+      have hR'S : P n R s (C.round src R s) (C.invalidated S R s (C.round src R s)) ⊆ S :=
+        hPS _ _ _ _ _ (Finset.filter_subset _ _)
       have hcardS := Finset.card_le_card hR'S
       exact ih (n + 1) _ _ (by omega) hR'S (by omega)
 
@@ -67,7 +67,7 @@ theorem zinc_some_of_monotoneFrom (S : Finset CUnit) (src : CUnit → Src) (P : 
     · simp only [zinc]
       split
       · rfl
-      · exact ih (n + 1) _ _ (hPS _ _ _ _ (Finset.filter_subset _ _)) (by omega)
+      · exact ih (n + 1) _ _ (hPS _ _ _ _ _ (Finset.filter_subset _ _)) (by omega)
 
 /-- Zinc's brute-force regime: the transitive dependents of the invalidations, plus the round just
 compiled. `deps s c` are the units of `S` holding a key of `c`. -/
@@ -78,26 +78,26 @@ def dependents (S : Finset CUnit) (s : State CUnit Out K) (X : Finset CUnit) : F
 is approximated by one step of `dependents` here; soundness and termination only need
 `I ∪ R ⊆ next`, which any closure satisfies. -/
 def Policy.transitiveStep (S : Finset CUnit) (k : ℕ) : Policy CUnit Out K :=
-  fun n R s I => if k ≤ n then (I ∪ dependents S s I ∪ R).filter (· ∈ S) else I.filter (· ∈ S)
+  fun n R _ s I => if k ≤ n then (I ∪ dependents S s I ∪ R).filter (· ∈ S) else I.filter (· ∈ S)
 
 omit [DecidableEq K] in
 theorem transitiveStep_sound (S : Finset CUnit) (k : ℕ) :
     (Policy.transitiveStep (Out := Out) (K := K) S k).Sound S := by
-  intro n R s I hI p hp
+  intro n R _ s I hI p hp
   have hpI : p ∈ I := (Finset.mem_sdiff.1 hp).1
   simp only [Policy.transitiveStep]
   split <;> simp [hpI, hI hpI]
 
 omit [DecidableEq K] in
 theorem transitiveStep_inS (S : Finset CUnit) (k : ℕ) : (Policy.transitiveStep (Out := Out) (K := K) S k).InS S := by
-  intro n R s I _ p hp
+  intro n R _ s I _ p hp
   simp only [Policy.transitiveStep] at hp
   split at hp <;> exact (Finset.mem_filter.1 hp).2
 
 omit [DecidableEq K] in
 theorem transitiveStep_monotone (S : Finset CUnit) (k : ℕ) :
     (Policy.transitiveStep (Out := Out) (K := K) S k).MonotoneFrom S k := by
-  intro n R s I hk hR hI
+  intro n R _ s I hk hR hI
   simp only [Policy.transitiveStep, hk, ite_true]
   constructor
   · intro p hp; simp [hp, hR hp]
@@ -143,8 +143,8 @@ theorem zinc_some_of_explicit (ob : C.Obligations) (S : Finset CUnit) (src : CUn
       · have : s₁.out u = s.out u := C.round_out_outside src R s u huR
         rw [this]
         exact C.iface_of_upToDate src ifaceSrc hex s u (hInv u hu fun h => huR (hD h))
-    set R₁ := P n R s₁ (C.invalidated S R s s₁)
-    have hR₁ : R₁ ⊆ S := hPS _ _ _ _ (Finset.filter_subset _ _)
+    set R₁ := P n R s s₁ (C.invalidated S R s s₁)
+    have hR₁ : R₁ ⊆ S := hPS _ _ _ _ _ (Finset.filter_subset _ _)
     -- round 1 changes no hash, so nothing is invalidated
     have hnone : C.invalidated S R₁ s₁ (C.round src R₁ s₁) = ∅ := by
       apply Finset.filter_eq_empty_iff.2
@@ -158,17 +158,17 @@ theorem zinc_some_of_explicit (ob : C.Obligations) (S : Finset CUnit) (src : CUn
 /-! ## Acyclic dependencies, plain policy: height + 2 rounds -/
 
 /-- Zinc's default policy: the next round is exactly `inv(ΔAPI)`. -/
-def Policy.plain : Policy CUnit Out K := fun _ _ _ I => I
+def Policy.plain : Policy CUnit Out K := fun _ _ _ _ I => I
 
 omit [DecidableEq K] in
 theorem plain_sound (S : Finset CUnit) :
     (Policy.plain (CUnit := CUnit) (Out := Out) (K := K)).Sound S :=
-  fun _ _ _ _ _ => Finset.sdiff_subset
+  fun _ _ _ _ _ _ => Finset.sdiff_subset
 
 omit [DecidableEq CUnit] [DecidableEq K] in
 theorem plain_inS (S : Finset CUnit) :
     (Policy.plain (CUnit := CUnit) (Out := Out) (K := K)).InS S :=
-  fun _ _ _ _ h => h
+  fun _ _ _ _ _ h => h
 
 /-- The extractor only records keys owned by units it actually queried (no `⊤`-style
 over-approximation across units). Needed for the round bound, not for soundness. -/

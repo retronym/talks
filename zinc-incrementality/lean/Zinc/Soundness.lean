@@ -105,7 +105,7 @@ theorem zinc_sound (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
       have : C.invalidated S R s (C.round src R s) \ R = ∅ := Finset.sdiff_eq_empty_iff_subset.2 hsub
       rw [this] at hstep
       exact hstep
-    · exact ih _ _ _ _ (hP _ _ _ _ (Finset.filter_subset _ _)) hstep s' h
+    · exact ih _ _ _ _ (hP _ _ _ _ _ (Finset.filter_subset _ _)) hstep s' h
 
 end Zinc.Compiler
 

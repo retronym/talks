@@ -101,14 +101,15 @@ def invalidated [DecidableEq K] [DecidableEq Hash] (S : Finset CUnit) (R : Finse
     (s s' : State CUnit Out K) : Finset CUnit :=
   S.filter fun d => ∃ p ∈ s'.U d, C.changed R s s' p
 
-/-- A policy chooses the next round from the round number, the round just compiled, the new
-state and `inv(ΔAPI)`. Zinc's heuristics are policies. -/
-abbrev Policy (CUnit Out K : Type) := ℕ → Finset CUnit → State CUnit Out K → Finset CUnit → Finset CUnit
+/-- A policy chooses the next round from the round number, the round just compiled, the old and
+new states and `inv(ΔAPI)`. Zinc's heuristics are policies, including its hierarchy walk. -/
+abbrev Policy (CUnit Out K : Type) :=
+  ℕ → Finset CUnit → State CUnit Out K → State CUnit Out K → Finset CUnit → Finset CUnit
 
 /-- The one obligation on a policy that soundness needs: never drop an invalidated unit outside
 the round just compiled. -/
 def Policy.Sound (S : Finset CUnit) (P : Policy CUnit Out K) : Prop :=
-  ∀ n R s I, I ⊆ S → I \ R ⊆ P n R s I
+  ∀ n R s s' I, I ⊆ S → I \ R ⊆ P n R s s' I
 
 /-- Zinc's loop, fuelled. Stops when every invalidated unit was in the round just compiled
 (`IncrementalCommon.invalidateAfterInternalCompilation`: `newInvalidations.isEmpty`). -/
@@ -118,7 +119,7 @@ def zinc [DecidableEq K] [DecidableEq Hash] (S : Finset CUnit) (src : CUnit → 
   | fuel + 1, n, R, s =>
     let s' := C.round src R s
     let I := C.invalidated S R s s'
-    if I ⊆ R then some s' else zinc S src P fuel (n + 1) (P n R s' I) s'
+    if I ⊆ R then some s' else zinc S src P fuel (n + 1) (P n R s s' I) s'
 
 /-- A clean build: everything compiled jointly against an external oracle. -/
 def clean (S : Finset CUnit) (src : CUnit → Src) (ext : Env (CUnit := CUnit) (Q := Q) (A := A)) :
