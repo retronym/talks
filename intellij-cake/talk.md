@@ -11,8 +11,8 @@
 1. The symptom: 7201 false errors in scala/scala's own compiler sources, and why fixing them one report at a time never converged.
 2. The theory: five scalac operations, what the SLS says about them, and how IntelliJ's design (declaration-keyed types, lazily applied substitutor chains) diverges.
 3. The oracles: a differential TCK against `nsc.Global`, the real corpus, a commit-by-commit scan.
-4. Phase 1, hill-climbing on symptoms: what it fixed, and how it misled.
-5. Phase 2, from symptoms to construction: a Lean model of `asSeenFrom` vs the chain, turned into runtime checks that name the line that built a bad chain.
+4. Hill-climbing on symptoms: what it fixed, and how it misled.
+5. From symptoms to construction: a Lean model of `asSeenFrom` vs the chain, turned into runtime checks that name the line that built a bad chain.
 6. Performance: a cost model first, then measurement.
 7. The method: posing the right questions and letting an agent climb.
 8. Results and asks.
@@ -217,7 +217,7 @@ corpus/NN-name/
 
 ---
 
-## Part IV — Phase 1: hill-climbing on symptoms
+## Part IV — Hill-climbing on symptoms
 
 ### 12. The loop
 
@@ -233,7 +233,7 @@ flowchart TB
 
 - An agent is very good at this loop: the score is mechanical, the repros are small, the space is large and regular.
 - The **broad** test set matters: `typeConformance.*`, `typeInference.*`, `annotator.*`, `codeInsight.intention.types.*`, `lang.resolve.*`, `typeSystemTck.*`, about 30 min. A narrower 597-test "oracle" from an earlier handoff missed **six real regressions**.
-- What Phase 1 delivered: the override-aware `memberType` (§6), merged base types, block type avoidance, the lub prefix, five independent upstream bugs (exports anchoring, a class type conforming to its own `this.type`, `Null` eligible for implicit conversion, the lub prefix, an SCL-22266 cache-poisoning recursion), and owner-chain matching.
+- What this phase delivered: the override-aware `memberType` (§6), merged base types, block type avoidance, the lub prefix, five independent upstream bugs (exports anchoring, a class type conforming to its own `this.type`, `Null` eligible for implicit conversion, the lub prefix, an SCL-22266 cache-poisoning recursion), and owner-chain matching.
 
 ### 13. Termination: making the rewrite stop growing
 
@@ -262,7 +262,7 @@ flowchart TB
 | **no self-embedding**: the *result* is rooted in the rewritten this-type or an inheritor | blocked | blocked | admitted |
 
 - Then the cross-symbol growth reappeared on a skeleton of the real `Infer`/`Analyzer`/`Global` cake (TCK 26): the walk's fallback rewrote `Infer.this` under a link anchored at `Typer`, whose owner chain never reaches `Infer`. **Owner-chain matching** gates the fallback the way `matchesPrefixAndClass` demands `clazz == candidate`.
-- Phase 2 later showed the no-self-embedding rule itself was unnecessary and deleted it (§19). It is still the right rule *for a system that might mis-anchor*.
+- The next phase showed the no-self-embedding rule itself was unnecessary and deleted it (§19). It is still the right rule *for a system that might mis-anchor*.
 
 ### 14. Lenient equivalences
 
@@ -280,11 +280,11 @@ $$\mathtt{Types.this} =:= \mathtt{SymbolTable.this} \quad \text{(self types tie 
 - A member found through a self type was anchored at the wrong class. A separate "self-type allowance" in the rewrite compensated for it. Together they gave the right answers on the corpus.
 - Each fix chasing a symptom is biased toward compensation: it is checked against the error it removes, and a compensating change removes it just as well.
 - It surfaced as 60 errors in `Importers.scala` (`Importers.this` rewritten to `from`). Fixing either half alone moved errors to other files (`Typers.scala`, `JavaMirrors.scala`); only replacing both with anchoring at the self type's class cleared them.
-- **Phase 1 could show the plugin gets the right answers on this code. It could not show it gets them for the right reasons, and it could not say when it had found every cause.** So it kept escape hatches: the no-self-embedding guard, and `TypeRecursionGuard`'s depth bound.
+- **This phase could show the plugin gets the right answers on this code. It could not show it gets them for the right reasons, and it could not say when it had found every cause.** So it kept escape hatches: the no-self-embedding guard, and `TypeRecursionGuard`'s depth bound.
 
 ---
 
-## Part V — Phase 2: from symptoms to construction
+## Part V — From symptoms to construction
 
 ### 16. Catching bad chains where they are built
 
@@ -296,10 +296,10 @@ $$\mathtt{Types.this} =:= \mathtt{SymbolTable.this} \quad \text{(self types tie 
 
 ```mermaid
 flowchart LR
-  subgraph P1["Phase 1"]
+  subgraph P1["Fixing symptoms"]
     E["false error"] --> REP["repro"] --> FIX["fix near the symptom"]
   end
-  subgraph P2["Phase 2"]
+  subgraph P2["Checking construction"]
     TH["theorem's hypothesis"] --> CHK["runtime check at construction"] --> SITE["list of call sites violating it"]
   end
   P1 -- "what's a wrong chain?" --> P2
@@ -351,7 +351,7 @@ Three conditions follow, and a chain that meets them is right by construction:
 2. a chain stored in resolver state holds only type-argument bindings;
 3. given 1 and 2, one pass is enough.
 
-**The conditions say when the set of root causes is complete, which Phase 1 could not.** It covers this-type rewriting only; base types, lub and block avoidance still rest on the TCK.
+**The conditions say when the set of root causes is complete, which fixing symptoms could not.** It covers this-type rewriting only; base types, lub and block avoidance still rest on the TCK.
 
 ### 19. Theorems as runtime checks
 
@@ -489,7 +489,7 @@ flowchart TB
 | What does scalac say? | the differential TCK; goldens instead of opinions |
 | Does it hold on the real thing? | the corpus harness; "probe the real cake, don't guess synthetic ones" |
 | Which *operation* diverges? | the five-operation map; fixes at the operation, copies deleted |
-| Is it right for the right reasons? | Phase 2 |
+| Is it right for the right reasons? | the model and the construction checks (Part V) |
 | What exactly is a wrongly built chain? | the Lean model and its three conditions |
 | Can we catch it where it's minted? | `SubstitutorInvariants`, a count per call site |
 | When the guard fires, is it ever right? | the I4 census; the guard deleted |
