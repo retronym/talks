@@ -524,7 +524,7 @@ The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/
 
 ### 9. What it costs (what makes it non-local)
 
-- **API(C) depends on C's whole ancestor closure.** Editing `A` changes the API hash and name hashes of *every* descendant, so every descendant must be recompiled before its hash is trustworthy again, whether or not its own output depends on the edit. The descendants' clients are *not* delayed by a round: the invalidator already walks the hierarchy (`invalidateByInheritance`, then `memberRef` clients of every inheritor, filtered by `A`'s changed names), so they join the same round. What the walk cannot avoid is recompiling the hierarchy itself; in the model (§22) the decls and Merkle designs recompile only the clients.
+- **API(C) depends on C's whole ancestor closure.** Editing `A` changes the API hash and name hashes of *every* descendant, so every descendant must be recompiled before its hash is trustworthy again, whether or not its own output depends on the edit. The descendants' clients are *not* delayed by a round: the invalidator already walks the hierarchy (`invalidateByInheritance`, then `memberRef` clients of every inheritor, filtered by `A`'s changed names), so they join the same round. What the walk cannot avoid is recompiling the hierarchy itself; in the model (§22) the decls and Merkle designs recompile only the clients, and in the PoC (§10) only the clients plus the descendants whose own compilation reads the change (§10a).
 
 ```mermaid
 flowchart BT
@@ -566,8 +566,8 @@ flowchart BT
 | design | what the client records | where the walk happens | hash | rounds on an inherited-member edit | recompiles the hierarchy? |
 |---|---|---|---|---|---|
 | materialised (today) | `(C, m)`; Zinc also records `(A, m)`, a `memberRef` on the owner of the selected member | in `C`'s own compilation, stored in `C`'s interface | local, but `C`'s interface is stale until `C` recompiles | 3 plain, 2 with the walk | yes |
-| decls + walk | `(X, m)` for every `X` visited, plus `(C, parents)` | in the client's compilation | local | 2 | only descendants whose own type check depends on the change (§10a) |
-| Merkle | `(C, m)` | in the hash function, memoised | non-local: the *verifying trace* of the walk | 2 | only descendants whose own type check depends on the change (§10a) |
+| decls + walk | `(X, m)` for every `X` visited, plus `(C, parents)` | in the client's compilation | local | 2 | only descendants whose own compilation reads the change (§10a) |
+| Merkle | `(C, m)` | in the hash function, memoised | non-local: the *verifying trace* of the walk | 2 | only descendants whose own compilation reads the change (§10a) |
 
 - **Zinc is already partly decls + walk.** A client of `B.m`, with `m` inherited from `A`, already has a `memberRef` on `A` under the name `m`, and the invalidator already walks the `memberRef` clients of every inheritor, filtered by the ancestor's changed names (§9). Within a subproject that is enough: the PoC needed no composed hashes there, only to stop materialising inherited members and to stop recompiling every descendant.
 - **Where Merkle composition is required: across subprojects.** A downstream subproject sees only the stored API, and the upstream analysis it looks up carries no relations, so there is nothing to walk. The PoC composes each upstream class's name hashes over its stored linearization (`structure.parents`) at lookup time. Without that, `macros/macro-type-change-3` undercompiles: a macro that reflects over `baseClasses` selects no member, so no `memberRef` names the ancestor. Ancestors contribute their class-side hash, not the merged class-and-object `apiHash`, because companion-object members are not inherited (Java statics are, §12); this is another face of [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (§12).
@@ -577,7 +577,7 @@ flowchart BT
 
 **Discussion questions:**
 
-- Which scripted tests break under decls-only? (The model says: none for soundness; the per-name precision differs on `asSeenFrom` edits.)
+- Which scripted tests break under decls-only? The PoC answers this for Scala 2: within a subproject, none, given the five descendant rules of §10a; with no descendant recompiles at all, the five rule tests fail. Across subprojects, `macros/macro-type-change-3` fails without Merkle composition. The model says none for soundness.
 - What fraction of a real analysis file is `inherited`? (TODO: measure on scala/scala and on a large app before the talk.)
 - Scala 3 has TASTy: could $\pi$ be derived from TASTy-level signatures plus a structural parent hash, making it shareable with IDEs and other build tools?
 
@@ -662,7 +662,7 @@ flowchart LR
 **Edit 3: linearization.** The mixin `M` gains a member `m`.
 
 - *In the model:* $h_M(m)$ changes from "miss" to a declaration, so $h_C(m)$ changes and Merkle recompiles only **`Y`**; materialised recompiles **`C Y`**.
-- *In Scala, `C` must recompile in both designs.* With `trait M { def m: String = "" }`, `C` inherits conflicting members `m` from `A` and `M` and no longer compiles. With a legal edit, `trait M extends A[Int] { override def m: Int = 1 }`, `C` changes linearization and gains a mixin forwarder for `M.m` (the `extraHash` channel, §9). Either way the edit reaches `C`'s own type check, so Merkle saves nothing here.
+- *In Scala, `C` must recompile in both designs.* With `trait M { def m: String = "" }`, `C` inherits conflicting members `m` from `A` and `M` and no longer compiles. With a legal edit, `trait M extends A[Int] { override def m: Int = 1 }`, `C` changes linearization and gains a mixin forwarder for `M.m` (the `extraHash` channel, §9). Either way the edit reaches `C`'s own compilation, so Merkle saves nothing here.
 
 <!-- break -->
 
@@ -690,7 +690,7 @@ and abstract members of $P$ in $N$ count against every concrete $D$. The rules a
 |---|---|---|
 | state per class | every member, own and inherited, as seen from the class | own declarations plus parent references |
 | total state | $\sum_c \lvert\mathrm{members}(c)\rvert$ | $\sum_c \lvert\mathrm{decls}(c)\rvert$ plus memoised hashes |
-| ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own type check depends on the change |
+| ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own compilation reads the change |
 | `asSeenFrom` edit | in the model, only the names whose rendering changed; in Zinc, also every client that mentions the class | every name inherited through that parent |
 | linearization edit | recompile the class (needed anyway: conflict check, mixin forwarder) | the recorded miss changes the hash; the class still recompiles for its own reasons |
 | freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
@@ -1354,7 +1354,7 @@ The Merkle hash that makes the per-query model work is the *verifying trace* of 
 | `B extends A[Int] → A[String]`, `A.m : T` | `X Y Z`, 2 | `C X Y`, 3 | `C X Y`, 2 | `X Y Z`, 2 | |
 | mixin `M` gains `m` | `Y`, 2 | `C Y`, 3 | `C Y`, 2 | `Y`, 2 | |
 
-Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own type check depends on the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays; real Zinc recompiles `Z` through the name hash of `B` itself, §10a), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
+Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own compilation reads the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays; real Zinc recompiles `Z` through the name hash of `B` itself, §10a), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
 
 <!-- break -->
 
