@@ -547,6 +547,8 @@ A name hash covers *all* definitions with that name in `c`, so adding one change
 
 ### 13. History
 
+Three lanes moved at different speeds: what Zinc computes, where the bridge lives, and how its state is stored. The table gives the dates; the next card picks out the four turning points the rest of the talk builds on.
+
 | Year | Algorithm | Bridge | Persisted state |
 |---|---|---|---|
 | 2009 | API extraction, member-level `Structure` (Harrah) | compiled from source per Scala version | text format |
@@ -558,18 +560,17 @@ A name hash covers *all* definitions with that name in `c`, so adding one change
 | 2024 | macro / inline invalidation fixes | | consistent format; hashes replace timestamps |
 | 2026 | Zinc 2.x; companion / inheritance precision | `AnalysisCallback4` | interning fixes |
 
+#### 13a. Four turning points
+
+**1. From a compiler flag to a build-tool library (2008–2013).** scalac's own `-make` mode didn't hold up ("Incremental compilation is broken", [scala/bug#354](https://github.com/scala/bug/issues/354); Java/Scala dependencies, [scala/bug#2889](https://github.com/scala/bug/issues/2889)). Mark Harrah's sbt 0.7–0.10 moved the logic out of the compiler: an API-extraction phase, source-level invalidation, the member-level `Structure` that §7–10 question (2009), and a bridge compiled from source for each Scala version. A standalone Typesafe `zinc` (nailgun) then served Maven, Gradle and Pants.
+
+**2. Precision, one refinement of π and U at a time (2013–2016).** Name hashing by Grzegorz Kossakowski ([`memberRef`/`inheritance`](https://github.com/sbt/zinc/commit/33635302cd73adbaf8c21476828bdae092610bc7), [algorithm](https://github.com/sbt/zinc/commit/e6c04434055657b679cbb50c2a1e6997a657b0f6)) split the API by name (§3). Class-based tracking ([sbt/zinc#86](https://github.com/sbt/zinc/pull/86)) shrank the graph's nodes from files to classes. It also produced the first feature-specific special case: sealed hierarchies needed [their own handling](https://github.com/scala/scala/commit/14a5784fad6537a42cf67ae355122d3462cac1e3) (§16(b)).
+
 <!-- break -->
 
-- **2008–10:** scalac `-make`; "Incremental compilation is broken" ([scala/bug#354](https://github.com/scala/bug/issues/354)); Java/Scala deps ([scala/bug#2889](https://github.com/scala/bug/issues/2889)).
-- **sbt 0.7–0.10 (Mark Harrah):** API extraction phase, source-level invalidation, member-level `Structure` (2009), and the bridge compiled from source per Scala version.
-- **Standalone Typesafe `zinc`** (nailgun) serves Maven/Gradle/Pants; Pants contributes the interned analysis format (2013).
-- **2013:** name hashing (Grzegorz Kossakowski): [`memberRef`/`inheritance`](https://github.com/sbt/zinc/commit/33635302cd73adbaf8c21476828bdae092610bc7), [algorithm](https://github.com/sbt/zinc/commit/e6c04434055657b679cbb50c2a1e6997a657b0f6). Later made the default (version: see TODOs).
-- **2016:** class-based dependency tracking ([sbt/zinc#86](https://github.com/sbt/zinc/pull/86)); sealed hierarchies need [special handling](https://github.com/scala/scala/commit/14a5784fad6537a42cf67ae355122d3462cac1e3).
-- **2017, Zinc 1.0** (Lightbend + Scala Center): Java API for build tools, protobuf analysis, relocatable/cached analysis ([#216](https://github.com/sbt/zinc/pull/216), [#218](https://github.com/sbt/zinc/issues/218)).
-- **2019–20:** `VirtualFile` ([#712](https://github.com/sbt/zinc/pull/712)); build pipelining ([scalac `-Ypickle-java`](https://github.com/scala/scala/commit/b066d7e6402820879a970d6a88635018b8512dfe), [early output/analysis](https://github.com/scala/scala/commit/7b88ad4e5f2baba971a3461a45a19a090da319f1)); Dotty owns its bridge, `CompilerInterface2` ([scala/scala3#10607](https://github.com/scala/scala3/pull/10607)).
-- **2023:** Scala 2 bridge moves in-tree in 2.13.12 ([scala/scala#10472](https://github.com/scala/scala/pull/10472)).
-- **2024:** Consistent analysis format ([#1326](https://github.com/sbt/zinc/pull/1326)); hashes replace timestamps ([#1430](https://github.com/sbt/zinc/pull/1430)); Scala 3 pipelining ([scala/scala3#18880](https://github.com/scala/scala3/pull/18880)).
-- **2025–26:** Zinc 2.x / sbt 2; a wave of Scala 3 macro, pattern-match and determinism fixes (§15–16, Notes N1).
+**3. Zinc as a product for other build tools (2017–2020).** Zinc 1.0 (Lightbend + Scala Center) gave build tools a Java API, protobuf analysis and relocatable, cacheable state ([#216](https://github.com/sbt/zinc/pull/216), [#218](https://github.com/sbt/zinc/issues/218)). `VirtualFile` ([#712](https://github.com/sbt/zinc/pull/712)) and build pipelining ([scalac `-Ypickle-java`](https://github.com/scala/scala/commit/b066d7e6402820879a970d6a88635018b8512dfe), [early output/analysis](https://github.com/scala/scala/commit/7b88ad4e5f2baba971a3461a45a19a090da319f1)) followed. That is the road to Part VI, where hermetic builds skip Zinc altogether.
+
+**4. Ownership moves to the compilers (2020–2026).** Dotty shipped its own bridge from the start (`CompilerInterface2`, [scala/scala3#10607](https://github.com/scala/scala3/pull/10607)), and the Scala 2 bridge moved in-tree in 2.13.12 ([scala/scala#10472](https://github.com/scala/scala/pull/10472)). The consequences are Part V's drift risks. In parallel, state became deterministic (consistent format, [#1326](https://github.com/sbt/zinc/pull/1326); hashes instead of timestamps, [#1430](https://github.com/sbt/zinc/pull/1430); Scala 3 pipelining, [scala/scala3#18880](https://github.com/scala/scala3/pull/18880)). The 2025–26 wave of macro, pattern-match and determinism fixes (§15–16, Notes N1) is the latest chapter.
 
 ### 14. Prior art: everyone converged on the same three ideas
 
