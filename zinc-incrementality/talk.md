@@ -415,19 +415,23 @@ flowchart BT
 
 <!-- break -->
 
-**The PoC on a real hierarchy.** `IncBench` (in the PoC) applies edits to a build and records rounds, classes recompiled, wall time and stored size; A is Zinc 1.x, B the PoC. Spark 4.0.1's `sql/catalyst`, 2,527 classes in one module, pipelining off, one repetition:
+**The PoC on a real hierarchy.** `IncBench` (in the PoC) applies edits to a build and records rounds, classes recompiled, wall time and stored size; A is sbt/zinc's `develop`, B the PoC. Spark 4.0.1's `sql/catalyst`, 2,527 classes in one module, pipelining off, one repetition:
 
 | edit | A: recompiled, rounds, wall | B: recompiled, rounds, wall |
 |---|---|---|
 | `TreeNode`: body only | 10, 1, 0.96 s | 10, 1, 0.72 s |
 | `TreeNode`: add an unused member | 1,371, 3, 13.8 s | 420, 2, 4.7 s |
 | `Expression`: add an unused member | 1,200, 3, 10.4 s | 388, 2, 3.2 s |
+| `TreeNode`: add a parent (`java.io.Serializable`) | 2,304, 4, 29.0 s | 1,987, 3, 22.7 s |
+| `Expression`: add a parent | 1,897, 3, 18.1 s | 1,897, 2, 10.4 s |
 | clean build, warm | 2,527, 1, 10.7 s | 2,527, 1, 11.2 s |
 
 - Today, adding a member nobody uses to `TreeNode` costs more than a clean build of the module.
 - On a generated worst case (511 classes in a binary tree over 4 modules), the same edit to the root recompiles 1 class instead of 511 (0.6 s against 22 s).
 - The real corpus found three overcompilations the scripted suite had not: header comparison by `equals` on types with lazy parts, a static-forwarder rule that fired for every case class's companion, and the trait `extraHash` over-reach (§5). Each made most of catalyst recompile.
-- Not yet measured: the cross-subproject path on real code, and a differential check that each incremental result equals a clean build.
+- Header edits stay expensive in both: adding a parent moves the class-name hash, and every client that names the class recompiles.
+- A review of the design then found two holes no test covered. sbt's annotated-test discovery reads *inherited* methods' annotations, so a JUnit `@Test` in a base class would have been silently lost. And a library ancestor has no stored API, so a member it declares abstract that another ancestor overrides was invisible to the descendant rules: `class D extends P with Product`, where `P` stops implementing `canEqual`, broke `D` with no rule firing. Both are fixed with tests.
+- A differential harness ([retronym/zinc#25](https://github.com/retronym/zinc/pull/25)) compares each incremental build's classfiles with a clean build's on generated programs, including the Lean model's program space. Not yet measured: the cross-subproject path on real code, and that differential check on a real corpus.
 
 <!-- break -->
 
@@ -1299,7 +1303,7 @@ Lukas Rytz and Jason Zaugg, roughly June–October 2026. Many of these already a
 - Scala 3 pattern match after case class/extractor change → `NoSuchMethodError`, in every Scala 3 version ([scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [#26262](https://github.com/scala/scala3/pull/26262)). Came with `IncrementalCompileSimulator`.
 - Pipelining: a run can end before early TASTy is written, dropping Zinc callbacks ([scala/scala3#27139](https://github.com/scala/scala3/issues/27139)); `dependencyPhaseCompleted` was called before dependencies were sent ([#27125](https://github.com/scala/scala3/issues/27125)); Zinc now waits and announces "no early output" ([sbt/zinc#1822](https://github.com/sbt/zinc/pull/1822), [#1823](https://github.com/sbt/zinc/pull/1823), [#1817](https://github.com/sbt/zinc/pull/1817)).
 - With `-Xjava-tasty`, dependencies of Java sources weren't sent to Zinc ([scala/scala3#27133](https://github.com/scala/scala3/issues/27133)).
-- Making a parent class `final` doesn't recompile its subclasses: `HashAPI.hashAPI` never hashes a top-level class's own modifiers, access or annotations, so the incremental build passes and a clean build fails. Found by the baseline tests of the Merkle PoC (`merkle-header`, [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); a fix for 1.x is in progress.
+- Making a parent class `final` doesn't recompile its subclasses: `HashAPI.hashAPI` never hashes a top-level class's own modifiers, access or annotations, so the incremental build passes and a clean build fails. Found by the baseline tests of the Merkle PoC (`merkle-header`, [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); a fix for `develop` is in progress.
 
 <!-- break -->
 
@@ -1310,7 +1314,7 @@ Lukas Rytz and Jason Zaugg, roughly June–October 2026. Many of these already a
 - A compound type in a member signature was recorded as inheritance ([#1798](https://github.com/sbt/zinc/issues/1798) → [#1803](https://github.com/sbt/zinc/pull/1803)).
 - A private change in a trait recompiled classes that don't inherit it, from object/trait conflation ([#1795](https://github.com/sbt/zinc/issues/1795) → [#1807](https://github.com/sbt/zinc/pull/1807), `AnalysisCallback4`); the class/companion name-hash merge is still open ([#1796](https://github.com/sbt/zinc/issues/1796)). See §12.
 - Trait `extraHash` over-invalidations ([#1787](https://github.com/sbt/zinc/pull/1787)); refinement-owned type params ([#1782](https://github.com/sbt/zinc/pull/1782)).
-- A public member added to a class reads as a private change in every trait extending it: a trait's `extraHash` folds in its class parents' `extraHash`, which for a class is its whole API hash. Found by the Merkle PoC's benchmark on Spark's catalyst, where it recompiled every descendant of the traits extending `Expression`; the code predates the PoC, and its cost on 1.x alone is not yet measured.
+- A public member added to a class reads as a private change in every trait extending it: a trait's `extraHash` folds in its class parents' `extraHash`, which for a class is its whole API hash. Found by the Merkle PoC's benchmark on Spark's catalyst, where it recompiled every descendant of the traits extending `Expression`; the code predates the PoC, and its cost on `develop` alone is not yet measured.
 - Pipelining: any change recompiled everything depending on a Java class ([#1819](https://github.com/sbt/zinc/issues/1819) → [#1821](https://github.com/sbt/zinc/pull/1821)); a trait with a parent recompiled all heirs under Scala 3 ([#1820](https://github.com/sbt/zinc/issues/1820)).
 - Intermittent overcompilation from `Symbol.copy` ignoring its compilation unit ([scala/scala3#25520](https://github.com/scala/scala3/issues/25520) → [#27162](https://github.com/scala/scala3/pull/27162)).
 - Under `-release`, JDK classes were reported to Zinc as project classes ([scala/scala3#27117](https://github.com/scala/scala3/issues/27117)); the empty package was included in names of Java classes ([#27136](https://github.com/scala/scala3/pull/27136)).
