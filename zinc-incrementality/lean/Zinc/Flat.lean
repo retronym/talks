@@ -33,8 +33,17 @@ A class's compilation also runs a refchecks prelude against its ancestors (PoC d
 * abstract members of a concrete class: which ancestors declare `n` and whether deferred
   (`(p, dfr n)`) (`abstract`).
 
-So the rule table of decision 3 is the key abstraction of the descendant's refchecks trace, and
-T2″ covers the filtered inheritance edge.
+and a codegen epilogue, since a class's bytecode also derives from ancestors its source never names:
+
+* mixin forwarders: a class (or object) asks each trait it mixes in for its declarations
+  (`(t, decls)`), and the ancestors ahead of the trait whether they declare the name
+  (`(q, has n)`) (`trait`);
+* static forwarders: an object asks every ancestor for its declarations, for its mirror
+  class (`(q, decls)`) (`mirror`);
+* `final` parents and which ancestors are traits are part of the header (`(p, parents)`).
+
+So the rule table of decision 3 is the key abstraction of the descendant's refchecks and codegen
+trace, and T2″ covers the filtered inheritance edge.
 
 `Fl_obligations` proves the full key set meets `NCompiler.Obligations`, so decision 1 is sound
 (T2″, T3a″) with `Δ` over `R` and the classes whose stored linearization meets `R`. The scenarios
@@ -54,11 +63,19 @@ structure Mem where
   deferred : Bool := false
   deriving DecidableEq, Repr
 
+/-- What a definition is. Traits get no forwarders; a class or object gets mixin forwarders for
+the traits it mixes in, and a top-level object (no companion) gets a mirror class of static
+forwarders. -/
+inductive CKind | cls | trt | obj
+  deriving DecidableEq, Repr
+
 structure Decl where
   parents : List (Cls × Ty) := []
   decls : List (Name × Mem) := []
   /-- An abstract class or trait need not implement its deferred members. -/
   abstract : Bool := false
+  kind : CKind := .cls
+  final : Bool := false
   deriving DecidableEq, Repr
 
 /-- Proper ancestors, most derived first, with type arguments as seen from the class. -/
@@ -81,6 +98,8 @@ inductive Err
   | override (n : Name)
   | conflict (n : Name)
   | abstract (n : Name)
+  /-- A parent is `final`. -/
+  | final (p : Cls)
   deriving DecidableEq, Repr
 
 structure Out where
@@ -88,6 +107,11 @@ structure Out where
   errs : List Err
   /-- The resolved type of each selection. -/
   descs : List (Option Ty)
+  /-- Mixin forwarders: a concrete trait member that the class's linearization resolves to, for
+  a trait it mixes in (one not already in its superclass's linearization), as seen from it. -/
+  fwds : List (Name × Ty) := []
+  /-- Static forwarders of an object's mirror class: every member, resolved, as seen from it. -/
+  statics : List (Name × Ty) := []
   deriving DecidableEq, Repr
 
 def own (i : Iface) (n : Name) : Option Mem := i.decl.decls.lookup n
@@ -115,6 +139,14 @@ inductive Q
   | cfl (n : Name)
   /-- Refchecks, abstract members: is the addressed ancestor's `n` deferred, if declared? -/
   | dfr (n : Name)
+  /-- The rest of the header: kind and finality (final parents, which ancestors are traits). -/
+  | hdr
+  /-- Mixin forwarders: the declarations of a trait the class mixes in. -/
+  | fwd
+  /-- Mixin forwarders: does an ancestor ahead of the trait declare `n` (and so win)? -/
+  | fhas (n : Name)
+  /-- Static forwarders: the declarations of an ancestor of an object. -/
+  | mirror
   deriving DecidableEq, Repr
 
 inductive AnsV
@@ -123,6 +155,8 @@ inductive AnsV
   | mem (m : Option Mem)
   | b (x : Bool)
   | ob (x : Option Bool)
+  | hd (k : CKind) (f : Bool)
+  | ds (l : List (Name × Mem))
   deriving DecidableEq, Repr
 
 def answer (I : Cls → Iface) : Cls × Q → AnsV
@@ -132,6 +166,10 @@ def answer (I : Cls → Iface) : Cls × Q → AnsV
   | (c, .cfl n) => .mem (own (I c) n)
   | (c, .has n) => .b (own (I c) n).isSome
   | (c, .dfr n) => .ob ((own (I c) n).map (·.deferred))
+  | (c, .hdr) => .hd (I c).decl.kind (I c).decl.final
+  | (c, .fwd) => .ds (I c).decl.decls
+  | (c, .fhas n) => .b (own (I c) n).isSome
+  | (c, .mirror) => .ds (I c).decl.decls
 
 abbrev T := Task (Cls × Q) (fun _ => AnsV)
 
@@ -220,7 +258,11 @@ def checkConflicts (d : Decl) (pls : List Lin) (L : Lin) : T (List Err) := do
       if bad then errs := errs ++ [Err.conflict n]
   pure errs
 
-/-- A concrete class must not be left with only deferred members of a name. -/
+/-- A concrete class must not be left with only deferred members of a name. A deferred
+declaration in `q` overrides a concrete one in an ancestor of `q` (scalac: in
+`abstract class A extends M { def m: Int }`, `A.m` hides `M.m`), while a concrete member through
+another path implements it. So `n` is implemented iff some concrete declaration is not an
+ancestor of a deferred one. -/
 def checkAbstract (d : Decl) (L : Lin) : T (List Err) := do
   if d.abstract then return []
   let mut errs := []
@@ -228,27 +270,97 @@ def checkAbstract (d : Decl) (L : Lin) : T (List Err) := do
     match d.decls.lookup n with
     | some mm => if mm.deferred then errs := errs ++ [Err.abstract n]
     | none =>
-      let mut fl : List Bool := []
+      let mut conc : List Cls := []
+      let mut dfrd : List Cls := []
       for (q, _) in L do
         match ← askQ q (.dfr n) with
-        | .ob (some b) => fl := fl ++ [b]
+        | .ob (some true) => dfrd := dfrd ++ [q]
+        | .ob (some false) => conc := conc ++ [q]
         | _ => pure ()
-      if !fl.isEmpty && fl.all id then errs := errs ++ [Err.abstract n]
+      if !dfrd.isEmpty then
+        let mut hidden : List Cls := []
+        for q in dfrd do
+          let lq ← ancestors depth q
+          hidden := hidden ++ lq.map (·.1)
+        if conc.all hidden.contains then errs := errs ++ [Err.abstract n]
   pure errs
+
+/-! ## Code generation
+
+A class's bytecode also derives from its ancestors without naming them in its source: mixin
+forwarders (scalac's `mixin` phase) and an object's mirror class (`genBCode`). Each is a query
+to the ancestor, recorded like a client's. -/
+
+/-- The kind and finality of each class of the linearization. -/
+def headers : Lin → T (List (Cls × CKind × Bool))
+  | [] => pure []
+  | (c, _) :: rest => do
+    let h ← askQ c .hdr
+    let hs ← headers rest
+    pure (match h with | .hd k f => (c, k, f) :: hs | _ => hs)
+
+def isTrait (hs : List (Cls × CKind × Bool)) (c : Cls) : Bool := hs.any fun e => e.1 == c && e.2.1 == .trt
+
+/-- A parent may not be `final`. -/
+def checkFinal (d : Decl) (hs : List (Cls × CKind × Bool)) : List Err :=
+  d.parents.filterMap fun (p, _) => if hs.any (fun e => e.1 == p && e.2.2) then some (Err.final p) else none
+
+/-- The first ancestor that declares `n`. -/
+def firstDecl (n : Name) : Lin → T (Option Cls)
+  | [] => pure none
+  | (q, _) :: rest => do
+    if (← askQ q (.fhas n)) == .b true then pure (some q) else firstDecl n rest
+
+/-- The traits mixed in here: those not in the superclass's linearization. The superclass is
+the first parent, unless that is a trait. -/
+def mixins (d : Decl) (pls : List Lin) (L : Lin) (hs : List (Cls × CKind × Bool)) : Lin :=
+  let sup : List Cls := match d.parents, pls with
+    | (p, _) :: _, l :: _ => if isTrait hs p then [] else l.map (·.1)
+    | _, _ => []
+  L.filter fun e => isTrait hs e.1 && !sup.contains e.1
+
+def mixinFwds (d : Decl) (pls : List Lin) (L : Lin) (hs : List (Cls × CKind × Bool)) :
+    T (List (Name × Ty)) := do
+  if d.kind == .trt then return []
+  let mut fs := []
+  for (t, a) in mixins d pls L hs do
+    match ← askQ t .fwd with
+    | .ds ds =>
+      for (n, mm) in ds do
+        if !mm.deferred && (d.decls.lookup n).isNone then
+          if (← firstDecl n L) == some t then fs := fs ++ [(n, Ty.subst a mm.ty)]
+    | _ => pure ()
+  pure fs
+
+def staticFwds (d : Decl) (L : Lin) : T (List (Name × Ty)) := do
+  if d.kind != .obj then return []
+  let mut seen : List (Cls × Ty × List (Name × Mem)) := []
+  for (q, a) in L do
+    match ← askQ q .mirror with
+    | .ds ds => seen := seen ++ [(q, a, ds)]
+    | _ => pure ()
+  pure <| names.filterMap fun n =>
+    match d.decls.lookup n with
+    | some mm => some (n, mm.ty)
+    | none => (seen.findSome? fun (_, a, ds) => (ds.lookup n).map fun mm => (n, Ty.subst a mm.ty))
 
 def unitF (s : Src) : T Out := do
   let pls ← parentLins (ancestors depth) s.decl.parents
   let L := merge pls
+  let hs ← headers L
   let e₁ ← checkOverrides s.decl.decls L
   let e₂ ← checkConflicts s.decl pls L
   let e₃ ← checkAbstract s.decl L
   let ts ← selects s.body
-  pure ⟨⟨s.decl, L⟩, e₁ ++ e₂ ++ e₃, ts⟩
+  let fs ← mixinFwds s.decl pls L hs
+  let ss ← staticFwds s.decl L
+  pure ⟨⟨s.decl, L⟩, checkFinal s.decl hs ++ e₁ ++ e₂ ++ e₃, ts, fs, ss⟩
 
 /-! ## Keys and hashes -/
 
 inductive K
   | name (n : Name)
+  /-- The header: parents, kind, finality. -/
   | parents
   /-- The ancestor's own member `n`: Zinc's decls-only name hash. -/
   | own (n : Name)
@@ -256,11 +368,14 @@ inductive K
   | has (n : Name)
   /-- Whether the ancestor declares `n`, and if so whether deferred. -/
   | dfr (n : Name)
+  /-- The ancestor's declarations: a trait's for forwarders, any ancestor's for a mirror. -/
+  | decls
   deriving DecidableEq, Repr
 
 inductive H
   | flat (l : List (Cls × Ty × Mem))
-  | ps (l : List (Cls × Ty))
+  | ps (k : CKind) (f : Bool) (l : List (Cls × Ty))
+  | ds (l : List (Name × Mem))
   | own (m : Option Mem)
   | has (b : Bool)
   | dfr (o : Option Bool)
@@ -268,7 +383,8 @@ inductive H
 
 def π (I : Cls → Iface) (c : Cls) : K → H
   | .name n => .flat (flatOf I c n)
-  | .parents => .ps (I c).decl.parents
+  | .parents => .ps (I c).decl.kind (I c).decl.final (I c).decl.parents
+  | .decls => .ds (I c).decl.decls
   | .own n => .own (own (I c) n)
   | .has n => .has (own (I c) n).isSome
   | .dfr n => .dfr ((own (I c) n).map (·.deferred))
@@ -281,9 +397,13 @@ def keyOf : Q → K
   | .cfl n => .own n
   | .has n => .has n
   | .dfr n => .dfr n
+  | .hdr => .parents
+  | .fwd => .decls
+  | .fhas n => .has n
+  | .mirror => .decls
 
 /-- Which rule of the PoC's table a recorded key stands for. -/
-inductive Kind | client | uses | header | overrides | conflicts | abstract
+inductive Kind | client | uses | header | overrides | conflicts | abstract | «trait» | mirror
   deriving DecidableEq, Repr
 
 def kindOf (d : Cls) : Cls × Q → Kind
@@ -293,6 +413,10 @@ def kindOf (d : Cls) : Cls × Q → Kind
   | (_, .has _) => .conflicts
   | (_, .cfl _) => .conflicts
   | (_, .dfr _) => .abstract
+  | (_, .hdr) => .header
+  | (_, .fwd) => .trait
+  | (_, .fhas _) => .trait
+  | (_, .mirror) => .mirror
 
 /-- The extractor, recording the keys of the enabled kinds only. -/
 def keys (E : Kind → Bool) (d : Cls) (tr : List (Cls × Q)) : Finset (Cls × K) :=
@@ -442,6 +566,18 @@ theorem Fl_obligations : (Fl full).Obligations where
     | dfr n =>
       simp only [keyOf, π, H.dfr.injEq] at h
       simp [Fl, answer, h]
+    | hdr =>
+      simp only [keyOf, π, H.ps.injEq] at h
+      simp [Fl, answer, h]
+    | fwd =>
+      simp only [keyOf, π, H.ds.injEq] at h
+      simp [Fl, answer, h]
+    | fhas n =>
+      simp only [keyOf, π, H.has.injEq] at h
+      simp [Fl, answer, h]
+    | mirror =>
+      simp only [keyOf, π, H.ds.injEq] at h
+      simp [Fl, answer, h]
   locality := by
     intro I I' c h k
     have hc : I c = I' c := h c (Finset.mem_insert_self _ _)
@@ -451,6 +587,7 @@ theorem Fl_obligations : (Fl full).Obligations where
     | own n => simp only [Fl, π, hc]
     | has n => simp only [Fl, π, hc]
     | dfr n => simp only [Fl, π, hc]
+    | decls => simp only [Fl, π, hc]
 
 /-- **Decision 1 is sound**: with every key kind recorded, any sound policy, and `Δ` over the
 classes whose stored linearization meets the recompiled set, a terminating run leaves no class
@@ -515,7 +652,9 @@ def runF (E : Kind → Bool) (dom : Dom) (src : Cls → Src) (P : Policy Cls Out
     else runF E dom src P fuel (n + 1) (acc ∪ R) I s'
 
 def headerChanged (s s' : St) (p : Cls) : Bool :=
-  (s.out p).iface.decl.parents != (s'.out p).iface.decl.parents
+  let d := (s.out p).iface.decl
+  let d' := (s'.out p).iface.decl
+  d.parents != d'.parents || d.kind != d'.kind || d.final != d'.final
 
 /-- The header rule as a policy: when a recompiled class's parents changed, recompile its
 descendants, transitively or only the direct children. -/
@@ -523,7 +662,7 @@ def headerPolicy (transitive : Bool) : Policy Cls Out K := fun _ R s s' I =>
   let Hd := R.filter (headerChanged s s' · = true)
   I ∪ if transitive then descendants s' Hd else children s' Hd
 
-def dummy : St := { out := fun _ => ⟨⟨{}, []⟩, [], []⟩, U := fun _ => ∅ }
+def dummy : St := { out := fun _ => ⟨⟨{}, []⟩, [], [], [], []⟩, U := fun _ => ∅ }
 
 def init (E : Kind → Bool) (src : Cls → Src) : St := memo ((Fl E).round src Finset.univ dummy)
 
@@ -557,11 +696,11 @@ def intD : Mem := { ty := .int, deferred := true }
 def base : Cls → Src
   | A => { decl := { decls := [(m, int), (g, int)], abstract := true } }
   | B => { decl := { parents := [(A, .int)] } }
-  | M => { decl := { abstract := true } }
+  | M => { decl := { abstract := true, kind := .trt } }
   | C => { decl := { parents := [(B, .int), (M, .int)] } }
-  | X => { decl := {}, body := [(B, m)] }
-  | Y => { decl := {}, body := [(C, m)] }
-  | Z => { decl := {}, body := [(B, g)] }
+  | X => { decl := { kind := .obj }, body := [(B, m)] }
+  | Y => { decl := { kind := .obj }, body := [(C, m)] }
+  | Z => { decl := { kind := .obj }, body := [(B, g)] }
 
 /-- Edit 1: `A.m: Int → String`. -/
 def edit1 : Cls → Src
@@ -580,19 +719,19 @@ def edit2 : Cls → Src
 
 /-- Edit 3: the mixin `M` gains `m`. -/
 def edit3 : Cls → Src
-  | M => { decl := { decls := [(m, str)], abstract := true } }
+  | M => { decl := { decls := [(m, str)], abstract := true, kind := .trt } }
   | c => base c
 
 /-- Edit 4 base: a header change two levels up. `M[T] { g: T }`, `A extends M[Int]`,
 `B extends A[Int]`, `C extends B`; clients `X (B.g)`, `Y (C.g)`, `Z (B.m)`. -/
 def base4 : Cls → Src
-  | M => { decl := { decls := [(g, par)], abstract := true } }
+  | M => { decl := { decls := [(g, par)], abstract := true, kind := .trt } }
   | A => { decl := { parents := [(M, .int)], decls := [(m, int)], abstract := true } }
   | B => { decl := { parents := [(A, .int)] } }
   | C => { decl := { parents := [(B, .int)] } }
-  | X => { decl := {}, body := [(B, g)] }
-  | Y => { decl := {}, body := [(C, g)] }
-  | Z => { decl := {}, body := [(B, m)] }
+  | X => { decl := { kind := .obj }, body := [(B, g)] }
+  | Y => { decl := { kind := .obj }, body := [(C, g)] }
+  | Z => { decl := { kind := .obj }, body := [(B, m)] }
 
 /-- Edit 4: `A extends M[Int]` → `M[String]`. `B`'s and `C`'s stored linearizations now say
 `M[Int]`. -/
@@ -663,7 +802,7 @@ example : report full .zinc plain baseO editO {A} = some ⟨[B, X, Y], 2, true�
 
 /-- `trait M { def m: Int }`; `A.m` implements it in `C`. -/
 def baseC : Cls → Src
-  | M => { decl := { decls := [(m, intD)], abstract := true } }
+  | M => { decl := { decls := [(m, intD)], abstract := true, kind := .trt } }
   | c => base c
 
 /-- Conflict through two parents: `A.m: Int → String` no longer matches `M.m: Int` in `C`. `B`
@@ -713,6 +852,39 @@ example : report (without .conflicts) .zinc plain base edit3 {M} = some ⟨[C, Y
 example : report (without .conflicts) .zinc plain baseC editC {A} = some ⟨[X, Y], 2, false⟩ := by
   native_decide
 example : report (without .abstract) .zinc plain base editA {A} = some ⟨[X, Y], 2, false⟩ := by
+  native_decide
+
+/-! ### Codegen: forwarders and `final`
+
+`trait M[T] { def g: Int = … }` is mixed into `C`, which gets a forwarder for `g`; the object
+`X extends C[Int]` gets a static forwarder for it in its mirror class. Nobody selects `g`. -/
+
+def baseF : Cls → Src
+  | A => { decl := { decls := [(m, int)], abstract := true } }
+  | B => { decl := { parents := [(A, .int)] } }
+  | M => { decl := { decls := [(g, int)], abstract := true, kind := .trt } }
+  | C => { decl := { parents := [(B, .int), (M, .int)] } }
+  | X => { decl := { kind := .obj, parents := [(C, .int)] } }
+  | Y => { decl := { kind := .obj }, body := [(C, m)] }
+  | Z => { decl := { kind := .obj } }
+
+/-- `M.g: Int → String`: both forwarders change, and no presence or client key sees it. -/
+def editF : Cls → Src
+  | M => { decl := { decls := [(g, str)], abstract := true, kind := .trt } }
+  | c => baseF c
+
+/-- `B` becomes `final`: `C` must fail. -/
+def editFinal : Cls → Src
+  | B => { decl := { parents := [(A, .int)], final := true } }
+  | c => baseF c
+
+example : report full .zinc plain baseF editF {M} = some ⟨[C, X], 2, true⟩ := by native_decide
+example : report (without .trait) .zinc plain baseF editF {M} = some ⟨[X], 2, false⟩ := by
+  native_decide
+example : report (without .mirror) .zinc plain baseF editF {M} = some ⟨[C], 2, false⟩ := by
+  native_decide
+example : report full .zinc plain baseF editFinal {B} = some ⟨[C, X], 2, true⟩ := by native_decide
+example : report (without .header) .zinc plain baseF editFinal {B} = some ⟨[], 1, false⟩ := by
   native_decide
 
 end Zinc.Flat
