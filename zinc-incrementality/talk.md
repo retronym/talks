@@ -411,7 +411,7 @@ flowchart BT
   - Open questions: self-types and refinements as parents; library parents (treat their hash as a constant keyed by the jar stamp); whether per-name composition is precise enough for `asSeenFrom`-heavy code (type-argument changes now move every inherited name).
 - **Decls-only + hierarchy-aware invalidation:** record each `memberRef` against the *declaring* owner and the *receiver* type. When `A.m` changes, walk subclasses at invalidation time. Zinc already does this walk (§9); what changes is that the client records the classes its lookup *visited*, misses included, instead of relying on the receiver's materialised hash. This moves `asSeenFrom` and linearization concerns from extraction into the recorded keys.
 - **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module. The PoC below splits the other way: ancestors in the same subproject are decls-only, while library and upstream-subproject ancestors stay materialised, so invalidation from outside the subproject is unchanged.
-- **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge): stop materialising members inherited from the same subproject, recompile a descendant only when one of five rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants; the full scripted suite passes.
+- **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge): stop materialising members inherited from the same subproject, recompile a descendant only when one of six rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants; the full scripted suite passes.
 
 <!-- break -->
 
@@ -431,7 +431,7 @@ flowchart BT
 
 **Discussion questions:**
 
-- Which scripted tests break under decls-only? The PoC answers this for Scala 2: within a subproject, none, given the five descendant rules of §10a; with no descendant recompiles at all, the five rule tests fail. Across subprojects, `macros/macro-type-change-3` fails without Merkle composition. The model says none for soundness.
+- Which scripted tests break under decls-only? The PoC answers this for Scala 2: within a subproject, none, given the six descendant rules of §10a; with no descendant recompiles at all, the five rule tests that discriminate fail. Across subprojects, `macros/macro-type-change-3` fails without Merkle composition. The model says none for soundness.
 - What fraction of a real analysis file is `inherited`? (TODO: measure on scala/scala and on a large app before the talk.)
 - Scala 3 has TASTy: could $\pi$ be derived from TASTy-level signatures plus a structural parent hash, making it shareable with IDEs and other build tools?
 
@@ -520,21 +520,22 @@ flowchart LR
 
 <!-- break -->
 
-**When a descendant must recompile anyway.** A descendant's compilation reads its ancestors in places its used names $U(D)$ don't cover: refchecks and forwarder generation. The PoC found the necessary set by ablation, disabling each rule in turn against scripted tests; each of these five fails a test of its own when disabled (`merkle-override`, `-conflict`, `-abstract`, `-trait-override`, `-mirror`):
+**When a descendant must recompile anyway.** A descendant's compilation reads its ancestors in places its used names $U(D)$ don't cover: refchecks and forwarder generation. The PoC's default set has six rules. Disabling each in turn against scripted tests, five fail a test of their own (`merkle-override`, `-conflict`, `-abstract`, `-trait-override`, `-mirror`); `header` is there because the Lean model needs it:
 
 - **overrides**: a member `D` declares that overrides an ancestor's member must still conform to it (and may need a bridge);
 - **conflicts**: members of the same name inherited from two parents must be reconciled (Edit 3);
-- **abstract members**: a concrete `D` must implement every abstract member it inherits;
+- **abstract members**: a concrete `D` must implement every abstract member it inherits, so the rule counts names deferred in *any* ancestor of `D`, not only in the edited class. Deleting `B`'s implementation of `A`'s abstract `m` leaves `class C extends B` unimplemented (`merkle-abstract-ancestor`). The narrower rule leaves 672 of 142,500 single-class edits unclean in the Lean model's exhaustive check (`FlatRules.lean`), and the widened one none;
+- **the ancestor's header**: parents, type parameters, self type, `final`/`sealed`. The cross-subproject Merkle composition (§10) reads each class's *stored* linearization, which is only sound if every transitive descendant of a class whose parents changed is recompiled (`flat_sound`, `Flat.lean`). No scripted test fails without this rule yet;
 - **trait mixin forwarders**: if $P$ is a trait, `D`'s bytecode has a forwarder for each concrete member of $P$;
 - **static forwarders**: if `D` is a top-level object with no companion class, its mirror class has a static forwarder for every member, inherited ones included.
 
-Two candidates need no rule of their own. *Uses*: a descendant is a `memberRef` client of its parent (the constructor call, inherited member selections), so ordinary name-filtered invalidation already reaches it. *The ancestor's header* (parents, type parameters, self type, `final`/`sealed`): a header change already invalidates every `memberRef` client of every descendant. The PoC keeps `header` in its default anyway: composition across subprojects reads each descendant's *stored* linearization, which is sound only if every transitive descendant of a header change recompiles (`Flat.lean`, `flat_sound`).
+*Uses* need no rule: a descendant is a `memberRef` client of its parent (the constructor call, inherited member selections), so ordinary name-filtered invalidation already reaches it.
 
 So after an edit to ancestor $P$ with changed names $N$, descendant $D$ must recompile, beyond its ordinary `memberRef` invalidation, if
 
-$$N \cap \big(\mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad P \text{ is a trait} \quad\text{or}\quad D \text{ has a mirror class}$$
+$$N \cap \big(\mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad \mathrm{header}(P) \text{ changed} \quad\text{or}\quad P \text{ is a trait} \quad\text{or}\quad D \text{ has a mirror class}$$
 
-and every concrete $D$ must recompile when $N$ contains a name deferred in *any* of its ancestors, not just in $P$: deleting `B`'s implementation of `A`'s abstract `m` leaves `class C extends B` unimplemented (`FlatRules.lean`; the PoC's `merkle-abstract-ancestor`). The rules are to a descendant's refchecks and codegen what $U(d)$ is to a client's lookups: the key abstraction of the part of its trace that reads other classes (§12). The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (`Flat.lean` models the override, conflict and abstract checks as queries from the descendant to its ancestors, recorded as keys; `FlatRules.lean` checks the rules as an invalidation policy, exhaustively over a small program space. The forwarder rules were found by thinking about bytecode, not by the model.)
+and, for concrete $D$, if $N$ contains a name deferred in any ancestor of $D$. The rules are to a descendant's refchecks and codegen what $U(d)$ is to a client's lookups: the key abstraction of the part of its trace that reads other classes (§12). The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (`Flat.lean` models the override, conflict and abstract checks as queries from the descendant to its ancestors, recorded as keys; `FlatRules.lean` checks the rules as an invalidation policy, exhaustively over a small program space. The forwarder rules were found by thinking about bytecode, not by the model.)
 
 <!-- break -->
 
