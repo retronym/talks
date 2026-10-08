@@ -154,18 +154,20 @@ def f(b: B) = b.get.length          // scalac: Int
 - IntelliJ's designators pointed at the declaration, `A#x`. So `analyzer.global` was an arbitrary `Global`, not `Global.this`.
 - **Fix:** one override-aware `memberType` (`ScProjectionType.actual`), replacing three hand-written copies.
 
-### 7. Base types, lub and block types
+### 7. Merged base types
 
-**Merged base types.** When a class is reached through several parents, scalac merges the type arguments position by position by variance:
+When a class is reached through several parents, scalac merges the type arguments position by position by variance:
 
 $$\mathrm{baseType}(\mathit{Box}[\mathit{Dog}] \;\mathtt{with}\; \mathit{Box}[\mathit{Cat}],\ \mathit{Box}) = \mathit{Box}[\mathit{Dog} \;\mathtt{with}\; \mathit{Cat}] \quad (\text{covariant } \mathit{Box})$$
 
 - The SLS rule is stricter: one instance must conform to all the others, or it's an error. scalac enforces that for class definitions but accepts compound types and merges them. **The variance merge is unspecified; only scalac defines it.**
 - IntelliJ took the first arm it found, and the base types of `X.this` missed `X`'s self type.
 
-**lub keeps the prefix.** `BoundsUtil` normalized `global.AliasTypeSymbol` to its declaration-site type before walking base classes, so the lub of two cake siblings came out as `Symbols.this.TypeSymbol`, which doesn't conform to `global.Symbol`. **This one bug caused most of the false errors left in `Typers.scala`.** It affects every `if`/`match` with cake-typed branches.
+#### 7a. lub keeps the prefix
 
-**Block type avoidance** (`packedType`):
+`BoundsUtil` normalized `global.AliasTypeSymbol` to its declaration-site type before walking base classes, so the lub of two cake siblings came out as `Symbols.this.TypeSymbol`, which doesn't conform to `global.Symbol`. **This one bug caused most of the false errors left in `Typers.scala`.** It affects every `if`/`match` with cake-typed branches.
+
+#### 7b. Block type avoidance (`packedType`)
 
 ```scala
 { class C extends Base; new Ref(new C) }   // Ref[_1] forSome { type _1 <: Base }
