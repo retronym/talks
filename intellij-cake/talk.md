@@ -490,8 +490,9 @@ flowchart TB
   G -- "no" --> A
 ```
 
-- The agent did almost all of the climbing: repros, fixes, Lean proofs, harnesses, census runs, bisects, history surgery, write-ups.
-- The human's contribution was mostly **questions**, each one turning a vague goal into something an agent can climb, and **vetoes**, each one closing a direction where the score was rising for the wrong reason.
+- **Early on, I wrote much of the code myself, with agent assistance.** That got the anchoring, `memberType` and base-type changes in place, and then hit a ceiling: each fix moved errors elsewhere, and there was no way to tell when the work was done.
+- **The shift was to posing questions instead.** From then on the agent did most of the climbing: repros, fixes, Lean proofs, harnesses, census runs, bisects, history surgery, write-ups. My contribution was mostly **questions**, each one turning a vague goal into something an agent can climb, and **vetoes**, each one closing a direction where the score was rising for the wrong reason.
+- That is what got the work to a finished state.
 
 ### 27. The questions that moved the work
 
