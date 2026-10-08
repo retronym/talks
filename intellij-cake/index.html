@@ -311,15 +311,53 @@ $$\mathrm{baseType}(\mathit{Box}[\mathit{Dog}] \;\mathtt{with}\; \mathit{Box}[\m
 
 #### 7a. lub keeps the prefix
 
-`BoundsUtil` normalized `global.AliasTypeSymbol` to its declaration-site type before walking base classes, so the lub of two cake siblings came out as `Symbols.this.TypeSymbol`, which doesn't conform to `global.Symbol`. **This one bug caused most of the false errors left in `Typers.scala`.** It affects every `if`/`match` with cake-typed branches.
-
-#### 7b. Block type avoidance (`packedType`)
+Cut down from `Typers.scala` (`CakeLubTest`):
 
 ```scala
-{ class C extends Base; new Ref(new C) }   // Ref[_1] forSome { type _1 <: Base }
+trait Symbols { self: SymbolTable =>
+  abstract class Symbol
+  abstract class TypeSymbol extends Symbol
+  abstract class AliasTypeSymbol extends TypeSymbol
+  abstract class AbstractTypeSymbol extends TypeSymbol
+}
+trait Typers { self: Analyzer =>
+  import global._
+  def f(a: AliasTypeSymbol, b: AbstractTypeSymbol, c: Boolean): Symbol =
+    if (c) a else b   // scalac: global.TypeSymbol
+                      // IntelliJ was: Symbols.this.TypeSymbol, which doesn't conform to Symbol
+}
 ```
 
-A local class becomes its parents where it occurs covariantly, an existential bounded by them where it occurs invariantly.
+- `BoundsUtil` normalized `global.AliasTypeSymbol` to its declaration-site type before walking base classes, so the lub lost the `global.` prefix.
+- scalac computes the lub over the base type sequences of `global.AliasTypeSymbol` and `global.AbstractTypeSymbol`, which are seen from `global`.
+- **This one bug caused most of the false errors left in `Typers.scala`.** It affects every `if`/`match` with cake-typed branches.
+
+#### 7b. Block type avoidance: escaping local singletons
+
+A block's type must not mention its local definitions (scalac's `packedType`, SLS §6.11).
+
+```scala
+trait Tree { def thisTree: this.type = this }
+def foo = { val X: Tree = mkTree(); X.thisTree }   // scalac: foo: Tree
+```
+
+- The block's result type is `X.type`, but `X` is local to the block, so `foo`'s inferred type must widen it to `Tree`.
+- IntelliJ let `X.type` escape, then reported "Required Tree, found X.type" at every use of `foo`.
+- `ScBlock` now widens a block-local singleton to its declared type, repeatedly, since the widened type may mention another one.
+
+#### 7c. Block type avoidance: local classes and invariant positions
+
+Widening is right only in a covariant position, and a local class has no singleton to widen.
+
+```scala
+{ class C extends Base; new C }               // scalac: Base. IntelliJ was: C
+{ val X: Tree = t; new Ref[X.type](X) }       // scalac: Ref[_1] forSome { type _1 <: Tree with Singleton }
+                                              // IntelliJ was: Ref[Tree]
+{ class C extends Base; new Ref(new C) }      // scalac: Ref[_1] forSome { type _1 <: Base }
+```
+
+- Each local occurrence is abstracted existentially, then simplified as SLS §3.2.12 does: covariantly to its upper bound (a val's declared type, a class's parents), contravariantly to `Nothing`, invariantly to a quantified `_k`.
+- Still open: a local class with a member returning `this.type` packs to its plain parents, where scalac keeps a refinement (`Object { def me: this.type }`, TCK 33).
 
 ### 8. IntelliJ's design: the chain
 
