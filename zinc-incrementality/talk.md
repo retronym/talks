@@ -175,7 +175,8 @@ $$\mathrm{cost}(I) \approx \sum_{n} \big(c_0 + c\,\lvert R_n\rvert + c_{\mathrm{
 <!-- break -->
 
 - **Lost batch efficiencies:** one big run amortises typer caches, the parallel backend (`-Ybackend-parallelism`) and module-level pipelining. Several small runs don't.
-- **A tax on every build:** the extraction phases (`xsbt-api`, `xsbt-dependency`) and Analysis persistence run even on a clean build. So a Zinc clean build is slower than plain `scalac`. (TODO: measure the share with `-Vstatistics` on scala/scala.)
+- **A tax on every build:** the extraction phases (`xsbt-api`, `xsbt-dependency`) and Analysis persistence run even on a clean build. So a Zinc clean build is slower than plain `scalac`. For Scala 3, [scala/scala3#19422](https://github.com/scala/scala3/issues/19422) puts `ExtractAPI` plus `ExtractDependencies` at about 8% of compilation time. (TODO: measure the Scala 2 share with `-Vstatistics` on scala/scala.)
+- **Future work: take extraction off the critical path.** The same issue proposes running both phases asynchronously, from the TASTy the build already produces (via TASTy Query), instead of in sequence with the other phases. A student project explored it. That would unblock the regular compile and shorten time-to-TASTy, which matters for pipelining (§21). §11 covers what it implies for where $\pi$ is computed.
 - **Incremental wins only when** $\sum_n \lvert R_n\rvert \ll \lvert S\rvert$ *and* there are few rounds. `recompileAllFraction` is a crude, static estimate of that inequality.
 
 **Implications:**
@@ -593,6 +594,7 @@ So for every compiled class, on every run, we build a large object graph mainly 
 - Hash the classfile ABI (`ijar`-style descriptors, per member) plus the signature payload (Scala sig / TASTy signatures).
 - This is compiler-agnostic and erasure-correct by construction. Zinc 2.x's `bytecodeHash` / `transitiveBytecodeHash` already lean this way, replacing timestamps.
 - It still needs the compiler for $U(d)$ and for macro observation.
+- **A TASTy-based variant** ([scala/scala3#19422](https://github.com/scala/scala3/issues/19422)): extract both $\pi$ and $U(d)$ from TASTy, asynchronously from the main compile. TASTy has the trees, positions and symbols Zinc needs, but not everything the compiler sees. For example, code inlined during Mirror synthesis is dropped before pickling. The open questions in the issue are the coverage obligation of §22 in practice: what must be added to TASTy so nothing is lost, and whether the overhead of loading TASTy in parallel pays off. Desugaring and post-typer decisions (§16(h), (i)) would need to survive into TASTy as well.
 
 **The trade-off:** the `xsbti.api` tree is a *general* reflection of the type system that we pay for on every compile, while incremental compilation only needs a *hash* of it. If we optimise for incremental compilation alone, the tree is overhead, and test discovery should get its own narrow channel.
 
