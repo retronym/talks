@@ -5,3 +5,4 @@ import Zinc.Uniqueness
 import Zinc.Termination
 import Zinc.Toy
 import Zinc.Examples
+import Zinc.NonLocal
