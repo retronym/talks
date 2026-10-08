@@ -257,3 +257,26 @@ The proofs say the loop is sound *given a cover*. The conformance harness checks
 **Trait private members and fields: the `extraHash` channel.** A class that mixes in a trait implements the trait's fields (getters, setters, initialisation in `$init$`) and private members it calls through, none of which is in the trait's public API. The PoC folds trait parents' `extraHash` into a descendant's hash. Model it as a trait decl kind `field` (private, not selectable by clients) that the mixing class must implement: a forwarder-like query `(t, fields)` from each class mixing `t` in directly. Program space: `M` optionally declares a `val` or `private def`; edits change its type or remove it. Clients cannot see it, so only `trait` (or a narrower `fields` rule) can recompile the mixing class; the harness checks that the class's field and its `$init$` call match a clean build.
 
 Order: macros first (the one hole found so far that the model does not express), then erasure (it touches the rule table's assumption that a changed name lives in the changed class), then fields.
+
+## Phase 5 — the next observables, built (branch `claude/lean-extensions-overnight`)
+
+All four Phase 4 extensions are now queries with keys in `Flat.lean`, and `Fl_obligations` still holds, so T2″/T3a″ cover them.
+
+- **Fields and private members.** `Mem` has a kind (`def`, `val`, `var`, `lazy val`) and may be private. A class that mixes a trait in directly implements its fields, private ones included. Override checks reject what scalac rejects. In `FlatRules`, `M` may declare a field, and `traitPub` is `traitDirect` blind to private members, i.e. a trait API without Zinc's `extraHash`. Result: 48,000 unclean runs without the private channel, 0 with it. This backs the PoC's `extraHash` folding trait parents only: a class parent's private members reach no descendant's bytecode.
+- **Whole-class observation (macros).** A client may observe a class: key `(c, all)`, hashed over every member along the stored linearization. It is non-local, so `Δ` must range over the descendants of the recompiled set (T2″), which is the PoC's macro-edge fix. Dropping the macro keys leaves 437,696 unclean runs. The conformance run also found what the model leaves out: Zinc's stored external API of an upstream class went stale when no direct dependent recompiled (`macro-upstream-member-removed`, PoC-only, fixed in the PoC); and a macro can read private members, which no API records (`macro-observes-private-member`, pre-existing, outside any name-keyed cover).
+- **The extends clause.** A descendant's key on the parent it names (Zinc's `memberRef` on the parent's name), hashed by the parent's header and stored linearization. With it, header changes cascade one level per round, and the `header` rule is subsumed: without `header`, recording extends clauses leaves 0 unclean runs (120,000 to 648,000 without either).
+- **Erasure and value classes.** `V` is a class with an optional underlying type. Erasure is a query `(V, under ctx)` asked by a selection, a mixin forwarder, a static forwarder and a bridge. Under Zinc's keys (client and macro) only the selection's is recorded. Over the value-class space (4,320 bases × 16 edits, `exhaustive v`), the widened default leaves 5,428 unclean runs, and recording codegen's erasure reads leaves 0. The checked examples are the pre-existing `value-class-mixin-forwarder` and `value-class-mirror-forwarder`, and `erasure-bridge-upstream-grandparent` for a type parameter's erasure. The PoC's bridge fix ("Hash the erasure of value-class references") is the implementation of that key: a reference's API now determines its erasure.
+
+Main space: 216,000 bases × 27 edits (`M` may declare a field; `Z` may observe `C`). Run before `V` was added; `V` does not occur in this space.
+
+| rule set | unclean |
+|---|---|
+| none | 3,874,336 |
+| default as stated | 9,600 |
+| widened | 0 |
+| widened, `traitDirect` | 0 |
+| widened, `traitDirect` without private members (`traitPub`) | 48,000 |
+| widened, no macro keys | 437,696 |
+| widened without `header`, extends clauses recorded | 0 |
+| widened without uses / overrides / conflicts / abstract | 22,240 / 293,104 / 3,456 / 77,440 |
+| widened without header / trait / mirror | 648,000 / 189,568 / 100,864 |

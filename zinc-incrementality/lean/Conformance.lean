@@ -54,8 +54,8 @@ def clsJson (c : Cls) (s : Src) : String :=
     ",\"body\":" ++ jarr (s.body.map fun (c', n) => jarr [jstr (clsName c'), jstr (nameStr n)]) ++ "}"
 
 /-- The classes of a program; `V` only where it is declared (the value-class space). -/
-def progJson (src : Cls → Src) : String :=
-  jarr ((all.filter fun c => c != V || src V != { decl := {} }).map fun c => clsJson c (src c))
+def progJson (src : Cls → Src) (withV : Bool := false) : String :=
+  jarr ((all.filter fun c => c != V || withV).map fun c => clsJson c (src c))
 
 def errStr : Err → String
   | .override n => "override " ++ nameStr n
@@ -100,13 +100,14 @@ def factorsJson (k : Cfg) : String :=
     ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait), ("zObs", toString k.zObs)]
   "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
 
-def editJsonSrc (src₀ src₁ : Cls → Src) (cfg factors : String) (e : Cls) : String :=
+def editJsonSrc (src₀ src₁ : Cls → Src) (cfg factors : String) (e : Cls) (withV : Bool := false) :
+    String :=
   let r := reportR clientOnly true allRules src₀ src₁ {e}
   let (recd, ok) := match r with
     | some r => (r.recompiled.map (jstr ∘ clsName), r.clean)
     | none => ([], false)
   "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr cfg ++ ",\"factors\":" ++ factors ++
-    ",\"prog\":" ++ progJson src₁ ++
+    ",\"prog\":" ++ progJson src₁ withV ++
     ",\"modelErrs\":" ++ jarr ((modelErrs src₁).map jstr) ++
     ",\"modelRecompiled\":" ++ jarr recd ++ ",\"modelClean\":" ++ toString ok ++ "}"
 
@@ -134,9 +135,9 @@ def mainV (everything : Bool) : IO Unit := do
   for k in cfgsV do
     if everything || valid k.src then
       out.putStrLn ("{\"space\":\"flatV\",\"id\":\"v" ++ toString i ++ "\",\"cfg\":" ++
-        jstr (cfgVStr k) ++ ",\"factors\":" ++ factorsV k ++ ",\"prog\":" ++ progJson k.src ++
+        jstr (cfgVStr k) ++ ",\"factors\":" ++ factorsV k ++ ",\"prog\":" ++ progJson k.src true ++
         ",\"edits\":" ++ jarr ((editsV k).map fun (k', e) =>
-          editJsonSrc k.src k'.src (cfgVStr k') (factorsV k') e) ++ "}")
+          editJsonSrc k.src k'.src (cfgVStr k') (factorsV k') e true) ++ "}")
     i := i + 1
 
 def main (args : List String) : IO Unit := do
