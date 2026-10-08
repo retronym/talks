@@ -620,10 +620,10 @@ The work goes upstream as one PR, for review as a whole. These are the parts tha
 
 ```mermaid
 flowchart LR
-  U["1. Upstream fixes"] --> C["4. Core: memberType,<br/>base types, anchoring, checks"]
-  T["2. TCK harness + corpus"] --> C
-  I["3. Independent fixes"]
-  C --> K["5. Type caches"]
+  U["PR 1: upstream fixes"] --> C["PR 4: core (memberType,<br/>base types, anchoring, checks)"]
+  T["PR 2: TCK harness and corpus"] --> C
+  I["PR 3: independent fixes"]
+  C --> K["PR 5: type caches"]
 ```
 
 | PR | commits | depends on |
