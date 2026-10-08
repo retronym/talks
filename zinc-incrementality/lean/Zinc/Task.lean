@@ -52,6 +52,32 @@ theorem run_eq_of_trace (t : Task Q A α) (e e' : Env Q A)
     · simp only [run_ask]; rw [hr, hq]
     · simp only [trace_ask]; rw [ht, hq]
 
+/-! ## Monad structure -/
+
+def bind {β : Type} : Task Q A α → (α → Task Q A β) → Task Q A β
+  | pure a, f => f a
+  | ask q k, f => ask q fun a => (k a).bind f
+
+instance : Monad (Task Q A) where
+  pure := Task.pure
+  bind := Task.bind
+
+@[simp] theorem run_bind {β : Type} (e : Env Q A) (t : Task Q A α) (f : α → Task Q A β) :
+    (t.bind f).run e = (f (t.run e)).run e := by
+  induction t with
+  | pure a => rfl
+  | ask q k ih => simp only [bind, run_ask]; exact ih (e q)
+
+@[simp] theorem trace_bind {β : Type} (e : Env Q A) (t : Task Q A α) (f : α → Task Q A β) :
+    (t.bind f).trace e = t.trace e ++ (f (t.run e)).trace e := by
+  induction t with
+  | pure a => rfl
+  | ask q k ih => simp only [bind, trace_ask, run_ask, List.cons_append]; rw [ih (e q)]
+
+@[simp] theorem bind_eq (t : Task Q A α) {β : Type} (f : α → Task Q A β) :
+    (t >>= f) = t.bind f := rfl
+@[simp] theorem pure_eq (a : α) : (Pure.pure a : Task Q A α) = Task.pure a := rfl
+
 theorem run_congr (t : Task Q A α) (e e' : Env Q A) (h : ∀ q ∈ t.trace e, e q = e' q) :
     t.run e = t.run e' := (run_eq_of_trace t e e' h).1
 

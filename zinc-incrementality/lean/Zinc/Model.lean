@@ -44,12 +44,14 @@ abbrev Env := Task.Env (CUnit × Q) (fun p => A p.2)
 def envOf (I : CUnit → Iface) : Env (CUnit := CUnit) (Q := Q) (A := A) :=
   fun p => C.answer (I p.1) p.2
 
+variable [DecidableEq CUnit]
+
 /-- Override an oracle on the units of `G` with fresh interfaces. -/
-def override [DecidableEq CUnit] (e : Env (CUnit := CUnit) (Q := Q) (A := A)) (G : Finset CUnit)
+def override (e : Env (CUnit := CUnit) (Q := Q) (A := A)) (G : Finset CUnit)
     (I : CUnit → Iface) : Env (CUnit := CUnit) (Q := Q) (A := A) :=
   fun p => if p.1 ∈ G then C.answer (I p.1) p.2 else e p
 
-theorem override_envOf [DecidableEq CUnit] (I I' : CUnit → Iface) (G : Finset CUnit) :
+theorem override_envOf (I I' : CUnit → Iface) (G : Finset CUnit) :
     C.override (C.envOf I) G I' = C.envOf (fun u => if u ∈ G then I' u else I u) := by
   funext p
   simp only [override, envOf]
@@ -59,7 +61,7 @@ theorem override_envOf [DecidableEq CUnit] (I I' : CUnit → Iface) (G : Finset 
 structure Obligations : Prop where
   /-- Compositionality (§6): joint compilation of `G` is a fixed point of the per-unit tasks,
   with group-mates answered from their fresh interfaces. -/
-  comp : ∀ [DecidableEq CUnit] (G : Finset CUnit) (src : CUnit → Src) (e : Env (CUnit := CUnit) (Q := Q) (A := A)),
+  comp : ∀ (G : Finset CUnit) (src : CUnit → Src) (e : Env (CUnit := CUnit) (Q := Q) (A := A)),
     ∀ d ∈ G, C.group G src e d =
       (C.unit (src d)).run (C.override e G (C.iface ∘ C.group G src e))
   /-- Coverage: every traced query (misses and closure queries included) has a recorded key. -/
@@ -72,8 +74,6 @@ structure Obligations : Prop where
 structure State (CUnit Out K : Type) where
   out : CUnit → Out
   U   : CUnit → Finset (CUnit × K)
-
-variable [DecidableEq CUnit]
 
 /-- The oracle a state presents: every unit answered from the interface of its current output. -/
 def env (s : State CUnit Out K) : Env (CUnit := CUnit) (Q := Q) (A := A) :=
