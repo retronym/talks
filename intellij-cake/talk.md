@@ -61,10 +61,23 @@ Cannot resolve method MethodType.unapply
 
 ### 3. Why one-at-a-time fixes didn't converge
 
-- These had been fixed one report at a time for years ([JetBrains/intellij-scala#663](https://github.com/JetBrains/intellij-scala/pull/663) is the most recent). Each fix was local, and new reports kept arriving.
+- Individual reports had been fixed one at a time for years. Each fix was local, and new reports kept arriving.
 - The cause is structural. scalac computes these types with a handful of core operations. IntelliJ approximates the same operations in *several* places (substitutors, projection types, conformance, resolution, bounds) that disagree with scalac and with each other.
 - A symptom surfaces far from its cause: a substitutor built wrong during resolution does no harm where it is built, and shows up later as a conformance error on an unrelated expression.
 - **The useful question is which core operation diverges from scalac, and where IntelliJ computes it.**
+
+#### 3a. The first attempt (2023–2024)
+
+- **2023:** Jason's fix for SCL-21585 (a type-member refinement lost through an HList-style projection), merged upstream by Andrei Sugak.
+- **2024:** Dale Wijnand and Jason, [JetBrains/intellij-scala#663](https://github.com/JetBrains/intellij-scala/pull/663). It identified the core of the problem:
+  - pass the anchor, the class whose member's type is being substituted (scalac's `seenFromClass`), into `ThisTypeSubstitution`, and use it to guide the walk through enclosing classes;
+  - fix `BaseTypes` for `ScThisType`.
+- Lukas Rytz confirmed it fixed SCL-21947 on scala/scala, and it was merged into 251.x.
+- It was not comprehensive or rigorous enough to avoid collateral damage:
+  - the anchor was optional, and passed at a few call sites; elsewhere the walk fell back to guessing by inheritance (this work's census later counted 7245 unanchored links, §19);
+  - the other operations (`memberType`, merged base types, lub) were left as they were;
+  - it was checked against the existing tests and the reports at hand, and JetBrains CI found four more failures (scalac test data, Meerkat, dependent pattern types, a recursive alias), fixed in a second round.
+- **This work starts from the same diagnosis and adds what was missing: an oracle for each operation, a corpus large enough to show collateral damage, and a model that says when the anchoring is complete.**
 
 ---
 
