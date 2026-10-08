@@ -571,7 +571,7 @@ flowchart BT
 
 - **Soundness requirement or convenience?** Convenience. Any of the three works; what is *required* is either a non-local hash kept fresh (by recompiling the hierarchy, or by recomputing hashes over the inheritance closure, `affected` in the model) or local keys that name every ancestor visited.
 - **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles (`Stale.lean`, T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
-- **Precision comes from the hash function.** On an `asSeenFrom` edit (`B extends A[Int]` → `A[String]`), the materialised hash moves only the names whose rendering changed; the decls design moves every client of `B` through `(B, parents)`; the §5 Merkle formula moves every inherited name of `B`. A Merkle hash of the *resolved* member would be as precise as materialised, with the same freshness obligation.
+- **Precision comes from the hash function.** On an `asSeenFrom` edit (`B extends A[Int]` → `A[String]`), the model's materialised hash moves only the names whose rendering changed (in Zinc, the name hash of `B` itself also moves, so every client that mentions `B` recompiles; §10a); the decls design moves every client of `B` through `(B, parents)`; the §5 Merkle formula moves every inherited name of `B`. A Merkle hash of the *resolved* member would be as precise as materialised, with the same freshness obligation.
 
 **Discussion questions:**
 
@@ -652,9 +652,10 @@ flowchart LR
 
 **Edit 2: `asSeenFrom`.** Start from `A[T] { def m: T = ???; def g: Int = 0 }` and change `B extends A[Int]` to `B extends A[String]`.
 
-- *Materialised:* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
+- *Materialised, in the model (`Hier.lean`):* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
+- *Materialised, in today's Zinc:* **`C X Y Z`**, pinned by the PoC's `merkle-as-seen-from` test on its baseline commit. `Z` mentions the type `B`, so the name `B` is in $U(Z)$, and the name hash of `B` itself covers `B`'s header, parents included. The model has no key for a class's own name.
 - *Merkle (§5 formula):* the parent and its type argument are inside *every* $h_B(n)$, so $h_B(g)$ changes too. Result: **`X Y Z`**; `Z` is recompiled although nothing it uses changed.
-- So the materialised design is more precise here. A Merkle hash of the *resolved* member, $h(\mathrm{res}_B(n))$ computed by a memoised walk, would be as precise as materialised while keeping local storage, but it must be recomputed for the same set of classes.
+- So the materialised design is more precise here in the model, not in Zinc: the class-name key already moves every client that mentions `B`. The PoC also recompiles `C X Y Z`. A Merkle hash of the *resolved* member, $h(\mathrm{res}_B(n))$ computed by a memoised walk, would be as precise as the model's materialised design while keeping local storage, but it must be recomputed for the same set of classes, and it buys nothing until the class-name key stops covering parents.
 
 **Edit 3: linearization.** The mixin `M` gains a member `m`.
 
@@ -685,7 +686,7 @@ and abstract members of $P$ in $N$ count against every concrete $D$. The materia
 | state per class | every member, own and inherited, as seen from the class | own declarations plus parent references |
 | total state | $\sum_c \lvert\mathrm{members}(c)\rvert$ | $\sum_c \lvert\mathrm{decls}(c)\rvert$ plus memoised hashes |
 | ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own type check depends on the change |
-| `asSeenFrom` edit | only the names whose rendering changed | every name inherited through that parent |
+| `asSeenFrom` edit | in the model, only the names whose rendering changed; in Zinc, also every client that mentions the class | every name inherited through that parent |
 | linearization edit | recompile the class (needed anyway: conflict check, mixin forwarder) | the recorded miss changes the hash; the class still recompiles for its own reasons |
 | freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
 | rounds | 2 with Zinc's walk | 2 |
@@ -1346,7 +1347,7 @@ The Merkle hash that makes the per-query model work is the *verifying trace* of 
 | `B extends A[Int] → A[String]`, `A.m : T` | `X Y Z`, 2 | `C X Y`, 3 | `C X Y`, 2 | `X Y Z`, 2 | |
 | mixin `M` gains `m` | `Y`, 2 | `C Y`, 3 | `C Y`, 2 | `Y`, 2 | |
 
-Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own type check depends on the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
+Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own type check depends on the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays; real Zinc recompiles `Z` through the name hash of `B` itself, §10a), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
 
 <!-- break -->
 
