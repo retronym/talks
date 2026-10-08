@@ -898,7 +898,7 @@ object Client { Provider.printTree(Foo.str) }  // remove Foo.str → Client must
 
 - Sealed children determine exhaustivity; `useOptimizedSealed` broken on 2.13 ([sbt/zinc#1229](https://github.com/sbt/zinc/issues/1229)).
 - Implicit/given resolution observes shadowing, implicit scope and the *absence* of a better candidate (§15a).
-- Pattern matching observes `unapply` shape and arity: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) undercompiled in *every* Scala 3 version, giving `NoSuchMethodError` ([#26262](https://github.com/scala/scala3/pull/26262), 3.10.0-RC1).
+- Pattern matching observes `unapply` shape and arity; see (i).
 - SAM conversion adds an inheritance edge the source never spells out ([sbt/zinc#830](https://github.com/sbt/zinc/issues/830) → [scala/scala#10617](https://github.com/scala/scala/pull/10617), [scala/scala3#16996](https://github.com/scala/scala3/pull/16996)).
 - Inherited members (§7–10) belong in this category too, and are the *reason* $\pi$ is member-level.
 
@@ -921,6 +921,36 @@ object Client { Provider.printTree(Foo.str) }  // remove Foo.str → Client must
 **(f) Cross-language and pipelining** — the two Java front ends (§6); Java sources invalidated every cycle ([#918](https://github.com/sbt/zinc/issues/918), [#867](https://github.com/sbt/zinc/issues/867), [#1819](https://github.com/sbt/zinc/issues/1819)).
 
 **(g) The compiler itself isn't robust to incremental inputs** — stale-symbol crashes ([scala/scala3#17152](https://github.com/scala/scala3/issues/17152), [#13532](https://github.com/scala/scala3/issues/13532)).
+
+<!-- break -->
+
+**(h) Desugaring hides the identifier the user wrote** — used names come from the *typed* tree, so a name the user wrote but the compiler rewrote away is never recorded.
+
+- `x += y`: the typer first tries a member `+=`; if there is none, it rewrites to `x = x + y`. The typed tree mentions `+` (and `x_=` for a field) but not `+=`. If upstream later *adds* a `+=` member, resolution changes, but `+=` isn't in $U(d)$. This is a negative lookup that was never recorded (§12). (TODO: confirm with a scripted test in each compiler.)
+- The same shape appears wherever syntax expands to a name chosen by fallback:
+  - `a(i) = v` becomes `update`;
+  - `x.f = v` becomes `f_=`;
+  - an inserted `apply`;
+  - for-comprehensions becoming `map`/`flatMap`/`withFilter` (with Scala 2's fallback to `filter`);
+  - `Dynamic` (`selectDynamic`, `applyDynamic`);
+  - string interpolators becoming `StringContext`.
+- ExtractUsedNames already walks `TypeTree.original` and pre-expansion macro trees for this reason. Desugarings with no retained original need either the *source-level* name recorded as well, or the fallback recorded as a failed lookup.
+
+<!-- break -->
+
+**(i) Post-typer phases decide from names not yet in the tree** — Scala 3's `ExtractDependencies` runs before `PatternMatcher`, so calls the matcher *will* emit don't exist yet when used names are extracted.
+
+- **`case C(x, y)`** lowers to `C.unapply` plus `_1()`, `_2()`. The synthetic case-class `unapply` has signature `(C): C`, so its hash never changes when field types change. `_1` and `_2` were never recorded. The result was a field type change producing `NoSuchMethodError` at runtime, in *every* Scala 3 version ([scala/scala3#26231](https://github.com/scala/scala3/issues/26231)).
+- **Variants of the same blind spot:**
+  - adding a field (a one-element pattern only calls `_1`);
+  - adding `unapplySeq` next to `unapply`, or the reverse (only the method actually called was recorded);
+  - a product extractor growing past the bound arity;
+  - name-based `isEmpty`/`get`, and `lengthCompare`/`apply`/`drop` for sequence patterns.
+- **The fix** ([#26262](https://github.com/scala/scala3/pull/26262), 3.10.0-RC1) records what the later phase will consult, including *anticipatory* keys for names that don't exist yet:
+  - the primary constructor `C;init;`, whose name encodes the whole parameter list, for synthetic case-class unapplies;
+  - both `unapply` and `unapplySeq` on every extractor pattern;
+  - each `_N` selector, plus a sentinel `_N+1`, so growing the product invalidates.
+- **General rule:** if a phase after extraction makes a decision by *name* (pattern matcher, erasure, mixin, specialization), then extraction must record those names up front, or run after that phase. This is the coverage obligation of §22 applied to phase ordering.
 
 ### 17. Incrementality is the forgotten dimension of feature design
 
@@ -1312,6 +1342,7 @@ Most explain *overcompilation*; few help with *undercompilation*, which needs th
 - Profile the cost of building `xsbti.api` trees (the `xsbt-api` phase plus the `api` callback) on scala/scala, to size the §11 win.
 - Check which external tools read `Analysis.apis` or the minimized `ClassLike` (sbt `definedTests`, Bloop, Mill, IntelliJ).
 - Verify the §22 citations (titles, venues, years).
+- Confirm the `x += y` desugaring case (§16(h)) with a scripted test in both compilers: add a `+=` member upstream and check the client recompiles.
 - Find a citable lines-per-second comparison of scalac/dotc vs javac for the "Why incrementality matters more for Scala" card.
 </script>
 
