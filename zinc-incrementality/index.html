@@ -165,6 +165,13 @@ body.focus .focus-counter { display: block; }
 
 **Suggested budget (~60 min):** I 12 · II 10 · III 3 · IV 14 · V 10 · VI 4 · VII 5 · close 2. Cut Part III to a single slide if time is short; Part VII can be a 2-slide teaser.
 
+### Why incrementality matters more for Scala
+
+- **Scala compilers are slow per line.** scalac and dotc process far fewer lines per second than javac. Typing does real work: inference, implicit/given search, overload resolution, macro expansion and inlining. The pipeline also has many more phases before bytecode. (TODO: put one measured number on the slide, e.g. from scala/compiler-benchmark, scalac vs javac on comparable code.)
+- **So a full rebuild costs more.** A module rebuild that a Java team shrugs off becomes minutes in Scala, and the edit-compile loop is where users feel it. The same holds in the IDE: Metals and IntelliJ compile through Zinc/BSP.
+- **So precision is worth more.** Java build tools can lean on fast compiles plus coarse ABI-jar avoidance (Gradle, Bazel `ijar`). Scala needs fine-grained invalidation inside the module as well. That puts every under/overcompilation bug in this talk on the critical path of daily work.
+- **And rounds cost more** (§4): each extra round pays again for typer setup and signature loading, so keeping round counts low matters as much as keeping file counts low.
+
 ---
 
 ## Part I — First principles
@@ -1305,6 +1312,7 @@ Most explain *overcompilation*; few help with *undercompilation*, which needs th
 - Profile the cost of building `xsbti.api` trees (the `xsbt-api` phase plus the `api` callback) on scala/scala, to size the §11 win.
 - Check which external tools read `Analysis.apis` or the minimized `ClassLike` (sbt `definedTests`, Bloop, Mill, IntelliJ).
 - Verify the §22 citations (titles, venues, years).
+- Find a citable lines-per-second comparison of scalac/dotc vs javac for the "Why incrementality matters more for Scala" card.
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
