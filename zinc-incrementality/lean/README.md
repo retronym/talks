@@ -23,5 +23,8 @@ Lean `v4.34.1`, Mathlib tag `v4.34.1`. No `sorry`. The scripted examples use `na
 | `Zinc/Stale.lean` | **T2-stale**: a non-local hash diffed over the recompiled set alone undercompiles (two-unit counterexample) |
 | `Zinc/Hier.lean` | Toy class hierarchy (type argument, linearization walk, misses); designs `D` (decls + walk), `W` (materialised), `Mk` (Merkle, verifying-trace hash); Zinc's hierarchy walk as `walkPolicy`; three scenarios as checked `example`s (invalidated sets, rounds, equals clean) |
 | `Zinc/HierSound.lean` | `D_obligations`, `W_obligations`, `Mk_obligations`: all three designs are sound instances |
+| `Zinc/NonLocalAns.lean` | `NCompiler`: answers and hash read sets may read several interfaces; **T2″** `round_preserves`, **T3a″** `zinc_sound` |
+| `Zinc/Flat.lean` | The Zinc PoC's flattened Merkle hash over a *stored* linearization; `Fl_obligations`/`flat_sound` (sound with header keys); header rule as keys vs as a policy, transitive vs direct-children counterexample; refchecks prelude (override, conflict, abstract queries) and its per-kind ablation |
+| `Zinc/FlatRules.lean`, `Exhaustive.lean` | The PoC's descendant rules as a policy (no refchecks keys); bounded exhaustive check (`lake exe exhaustive`): the `abstract` rule as stated is unsound, widened it is clean; minimal counterexample per rule as checked examples |
 
 See `PLAN.md` for the design, the encoding choices and the two findings that fed back into the talk (Zinc's actual loop formula; the fixed-point uniqueness hypothesis T3 needs).

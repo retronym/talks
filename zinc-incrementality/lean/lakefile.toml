@@ -9,3 +9,7 @@ rev = "v4.34.1"
 
 [[lean_lib]]
 name = "Zinc"
+
+[[lean_exe]]
+name = "exhaustive"
+root = "Exhaustive"
