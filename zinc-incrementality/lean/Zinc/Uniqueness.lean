@@ -91,7 +91,7 @@ variable [DecidableEq K] [DecidableEq Hash]
 
 /-- Policies that stay inside the project. -/
 def Policy.InS (S : Finset CUnit) (P : Policy CUnit Out K) : Prop :=
-  ∀ n R s I, P n R s I ⊆ S
+  ∀ n R s I, I ⊆ S → P n R s I ⊆ S
 
 omit [DecidableEq K] [DecidableEq Hash] in
 theorem round_out_outside (src : CUnit → Src) (R : Finset CUnit) (s : State CUnit Out K)
@@ -111,7 +111,7 @@ theorem zinc_out_outside (S : Finset CUnit) (src : CUnit → Src) (P : Policy CU
     have hnot : u ∉ R := fun h' => hu (hR h')
     split at h
     · cases h; exact C.round_out_outside src R s u hnot
-    · rw [ih _ _ _ (hP _ _ _ _) s' h u hu, C.round_out_outside src R s u hnot]
+    · rw [ih _ _ _ (hP _ _ _ _ (Finset.filter_subset _ _)) s' h u hu, C.round_out_outside src R s u hnot]
 
 /-- **T3 (acyclic).** The incremental result is the clean build. -/
 theorem zinc_eq_clean_of_wf (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)

@@ -46,7 +46,7 @@ theorem zinc_some_of_monotone (S : Finset CUnit) (src : CUnit → Src) (P : Poli
         exact hsub (hI'.trans (le_of_eq heq.symm))
       have hcard := Finset.card_lt_card hssub
       have hR'S : P n R (C.round src R s) (C.invalidated S R s (C.round src R s)) ⊆ S :=
-        hPS _ _ _ _
+        hPS _ _ _ _ (Finset.filter_subset _ _)
       have hcardS := Finset.card_le_card hR'S
       exact ih (n + 1) _ _ (by omega) hR'S (by omega)
 
@@ -67,7 +67,7 @@ theorem zinc_some_of_monotoneFrom (S : Finset CUnit) (src : CUnit → Src) (P : 
     · simp only [zinc]
       split
       · rfl
-      · exact ih (n + 1) _ _ (hPS _ _ _ _) (by omega)
+      · exact ih (n + 1) _ _ (hPS _ _ _ _ (Finset.filter_subset _ _)) (by omega)
 
 /-- Zinc's brute-force regime: the transitive dependents of the invalidations, plus the round just
 compiled. `deps s c` are the units of `S` holding a key of `c`. -/
@@ -90,7 +90,7 @@ theorem transitiveStep_sound (S : Finset CUnit) (k : ℕ) :
 
 omit [DecidableEq K] in
 theorem transitiveStep_inS (S : Finset CUnit) (k : ℕ) : (Policy.transitiveStep (Out := Out) (K := K) S k).InS S := by
-  intro n R s I p hp
+  intro n R s I _ p hp
   simp only [Policy.transitiveStep] at hp
   split at hp <;> exact (Finset.mem_filter.1 hp).2
 
@@ -144,7 +144,7 @@ theorem zinc_some_of_explicit (ob : C.Obligations) (S : Finset CUnit) (src : CUn
         rw [this]
         exact C.iface_of_upToDate src ifaceSrc hex s u (hInv u hu fun h => huR (hD h))
     set R₁ := P n R s₁ (C.invalidated S R s s₁)
-    have hR₁ : R₁ ⊆ S := hPS _ _ _ _
+    have hR₁ : R₁ ⊆ S := hPS _ _ _ _ (Finset.filter_subset _ _)
     -- round 1 changes no hash, so nothing is invalidated
     have hnone : C.invalidated S R₁ s₁ (C.round src R₁ s₁) = ∅ := by
       apply Finset.filter_eq_empty_iff.2
@@ -164,6 +164,11 @@ omit [DecidableEq K] in
 theorem plain_sound (S : Finset CUnit) :
     (Policy.plain (CUnit := CUnit) (Out := Out) (K := K)).Sound S :=
   fun _ _ _ _ _ => Finset.sdiff_subset
+
+omit [DecidableEq CUnit] [DecidableEq K] in
+theorem plain_inS (S : Finset CUnit) :
+    (Policy.plain (CUnit := CUnit) (Out := Out) (K := K)).InS S :=
+  fun _ _ _ _ h => h
 
 /-- The extractor only records keys owned by units it actually queried (no `⊤`-style
 over-approximation across units). Needed for the round bound, not for soundness. -/
