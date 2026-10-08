@@ -142,7 +142,7 @@ val r = (new d.C).f      // scalac 2.13 and Scala 3: String. Literal SLS: Int. R
 - **Unstable prefixes.** §3.4 answers `S` even when `S` isn't a path; scalac captures it as `_1.type forSome { val _1: S }`, which is what §6.4's "typed as if `{ val y = e; y.x }`" implies.
 - The SLS is declarative and mostly enough. Where it is ambiguous, a second implementation has to follow scalac, so scalac is the oracle.
 
-### 6. `memberType` and `rebind`: why `analyzer.global` looked like any `Global`
+### 6. `memberType` and `rebind`
 
 ```scala
 trait A { val x: AnyRef; def get: x.type = x }
@@ -150,10 +150,9 @@ trait B extends A { val x: String }
 def f(b: B) = b.get.length          // scalac: Int
 ```
 
-- `get`'s type `A.this.x.type` seen from `b.type` is `b.x.type`. Its underlying type is `String` only if `x` is **rebound** to `B#x`, the override the prefix actually has.
-- The SLS identifies members by *name* in the prefix's type, so this needs no extra mechanism. An implementation that identifies members by *declaration* (a scalac `Symbol`, an IntelliJ `PsiElement`) has to re-identify the member whenever a prefix is substituted. scalac does it in `rebind`, called from `singleType` and `typeRef`.
-- IntelliJ's designators pointed at the *declaration*. So `val global: Global.this.type`, an override, was invisible, and `analyzer.global` was an arbitrary `Global` rather than *this* `Global`.
-- Earlier attempts re-implemented the override lookup by hand in resolution, conformance and equivalence, three copies kept in sync by hand. **The fix is one override-aware `memberType`: a projection's singleton underlying comes from the member resolved on the prefix (`ScProjectionType.actual`), and the three copies are deleted.**
+- `b.get` has type `b.x.type`. Its underlying type is `String` only if `x` is **rebound** to `B#x`, the override the prefix has. scalac does this in `rebind`.
+- IntelliJ's designators pointed at the declaration, `A#x`. So `analyzer.global` was an arbitrary `Global`, not `Global.this`.
+- **Fix:** one override-aware `memberType` (`ScProjectionType.actual`), replacing three hand-written copies.
 
 ### 7. Base types, lub and block types
 
