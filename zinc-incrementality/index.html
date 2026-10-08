@@ -1426,6 +1426,7 @@ Lukas Rytz and Jason Zaugg, roughly June–October 2026. Many of these already a
 - Scala 3 pattern match after case class/extractor change → `NoSuchMethodError`, in every Scala 3 version ([scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [#26262](https://github.com/scala/scala3/pull/26262)). Came with `IncrementalCompileSimulator`.
 - Pipelining: a run can end before early TASTy is written, dropping Zinc callbacks ([scala/scala3#27139](https://github.com/scala/scala3/issues/27139)); `dependencyPhaseCompleted` was called before dependencies were sent ([#27125](https://github.com/scala/scala3/issues/27125)); Zinc now waits and announces "no early output" ([sbt/zinc#1822](https://github.com/sbt/zinc/pull/1822), [#1823](https://github.com/sbt/zinc/pull/1823), [#1817](https://github.com/sbt/zinc/pull/1817)).
 - With `-Xjava-tasty`, dependencies of Java sources weren't sent to Zinc ([scala/scala3#27133](https://github.com/scala/scala3/issues/27133)).
+- Making a parent class `final` doesn't recompile its subclasses: `HashAPI.hashAPI` never hashes a top-level class's own modifiers, access or annotations, so the incremental build passes and a clean build fails. Found by the baseline tests of the Merkle PoC (`merkle-header`, [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); a fix for 1.x is in progress.
 
 <!-- break -->
 
