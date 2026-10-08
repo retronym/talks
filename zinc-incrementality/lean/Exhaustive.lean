@@ -39,7 +39,46 @@ def chunks (n : ℕ) : List Cfg → ℕ → List (List Cfg)
   | l, 0 => [l]
   | l, fuel + 1 => l.take n :: chunks n (l.drop n) fuel
 
+/-- The value-class space's rule sets. -/
+def ruleSetsV : List (String × (Kind → Bool) × Bool × List Rule) :=
+  [("default, abstract widened", clientOnly, true, allRules),
+   ("default + erasure keys (codegen's reads of V recorded)",
+     (fun k => clientOnly k || k == .erasure), true, allRules),
+   ("none", clientOnly, false, [])] ++
+  [Rule.overrides, .trait, .mirror].map (fun r =>
+    (s!"+ erasure keys, without {repr r}", (fun k => clientOnly k || k == .erasure), true,
+      allRules.filter (· != r)))
+
+def checkChunkV (bases : List CfgV) : Array (List (CfgV × CfgV × Zinc.Hier.Cls)) := Id.run do
+  let mut bad : Array (List (CfgV × CfgV × Zinc.Hier.Cls)) := ruleSetsV.toArray.map fun _ => []
+  for k in bases do
+    for (k', e) in editsV k do
+      let mut j := 0
+      for (_, E, ab, rs) in ruleSetsV do
+        if !cleanRunSrc E ab rs (init E k.src) k'.src e then bad := bad.modify j ((k, k', e) :: ·)
+        j := j + 1
+  return bad
+
+def chunksV (n : ℕ) : List CfgV → ℕ → List (List CfgV)
+  | [], _ => []
+  | l, 0 => [l]
+  | l, fuel + 1 => l.take n :: chunksV n (l.drop n) fuel
+
+def mainV : IO Unit := do
+  IO.println s!"{cfgsV.length} value-class bases, {(cfgsV.flatMap editsV).length} edits"
+  (← IO.getStdout).flush
+  let results := ((chunksV 100 cfgsV cfgsV.length).map fun ch => Task.spawn fun _ => checkChunkV ch).map Task.get
+  let mut j := 0
+  for (name, _, _, _) in ruleSetsV do
+    let l := results.flatMap fun r => r[j]!
+    IO.println s!"{name}: {l.length} unclean"
+    match l.head? with
+    | some (k, k', e) => IO.println s!"  base {repr k}\n  edit {repr e} → {repr k'}"
+    | none => pure ()
+    j := j + 1
+
 def main (args : List String) : IO Unit := do
+  if args.head? == some "v" then return (← mainV)
   let n := (args.head? >>= String.toNat?).getD cfgs.length
   let bases := cfgs.take n
   IO.println s!"{bases.length} bases, {(bases.flatMap edits).length} edits"

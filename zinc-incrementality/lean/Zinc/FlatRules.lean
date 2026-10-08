@@ -139,6 +139,7 @@ def Cfg.src (k : Cfg) : Cls → Src
   | Y => { decl := { kind := .obj }, body := [(C, m)] }
   | Z => if k.zObs then { decl := { kind := .obj }, observes := [C] }
          else { decl := { kind := .obj }, body := [(A, m)] }
+  | V => { decl := {} }
 
 def cfgs : List Cfg := do
   let a ← opts; let b ← opts; let mm ← optsM; let c ← opts
@@ -168,13 +169,16 @@ def Cfg.size (k : Cfg) : ℕ :=
     (if k.xObj then 1 else 0) + (if k.aTrait then 1 else 0) + (if k.zObs then 1 else 0)
 
 /-- Is the run from `k` after edit `k'` of class `e` clean, under keys `E` and the rule policy? -/
-def cleanRun (E : Kind → Bool) (abstractAll : Bool) (rs : List Rule) (s₀ : St) (k' : Cfg) (e : Cls) :
-    Bool :=
-  match runF E .zinc k'.src (rulePolicy k'.src abstractAll rs) 9 0 ∅ {e} s₀ with
+def cleanRunSrc (E : Kind → Bool) (abstractAll : Bool) (rs : List Rule) (s₀ : St)
+    (src : Cls → Src) (e : Cls) : Bool :=
+  match runF E .zinc src (rulePolicy src abstractAll rs) 9 0 ∅ {e} s₀ with
   | some r =>
-    let cl := memo { out := clean k'.src, U := fun _ => ∅ }
+    let cl := memo { out := clean src, U := fun _ => ∅ }
     all.all fun c => r.state.out c == cl.out c
   | none => false
+
+def cleanRun (E : Kind → Bool) (abstractAll : Bool) (rs : List Rule) (s₀ : St) (k' : Cfg) (e : Cls) :
+    Bool := cleanRunSrc E abstractAll rs s₀ k'.src e
 
 /-- Every unclean (base, edit) pair. -/
 def unclean (E : Kind → Bool) (abstractAll : Bool) (rs : List Rule) : List (Cfg × Cfg × Cls) :=
@@ -288,5 +292,67 @@ example : (reportR clientOnly true allRules { k₀ with aPar := some .int }.src
       { k₀ with aPar := some .int }.src { k₀ with aPar := some .int, oM := .int }.src {M}).map
       (·.recompiled) = some [A, X, Y, Z] := by
   native_decide
+
+/-! ## Value classes
+
+A second, smaller space for erasure: `V` is a plain class or a value class over `Int` or
+`String`; members of `A B M C` may be typed `V` (or deferred `V`); `A` may extend `M[V]` and `B`
+may extend `A[V]`, so `V` also reaches members as a type argument. -/
+
+inductive OptV | none | int | vt | vtd | par
+  deriving DecidableEq, Repr
+
+def OptV.decls : OptV → List (Name × Mem)
+  | .none => []
+  | .int => [(m, Flat.int)]
+  | .vt => [(m, { ty := .v })]
+  | .vtd => [(m, { ty := .v, deferred := true })]
+  | .par => [(m, Flat.par)]
+
+structure CfgV where
+  vU : Option Ty
+  oA : OptV
+  oB : OptV
+  oM : OptV
+  oC : OptV
+  aPar : Option Ty
+  bArg : Ty
+  xObj : Bool
+  deriving DecidableEq, Repr
+
+def CfgV.src (k : CfgV) : Cls → Src
+  | V => { decl := { under := k.vU } }
+  | A => { decl := { parents := (k.aPar.map fun t => [(M, t)]).getD [], decls := k.oA.decls,
+                     abstract := true } }
+  | M => { decl := { decls := k.oM.decls, abstract := true, kind := .trt } }
+  | B => { decl := { parents := [(A, k.bArg)], decls := k.oB.decls } }
+  | C => { decl := { parents := [(B, .int), (M, .int)], decls := k.oC.decls } }
+  | X => if k.xObj then { decl := { kind := .obj, parents := [(C, .int)] } }
+         else { decl := { kind := .obj }, body := [(B, m)] }
+  | Y => { decl := { kind := .obj }, body := [(C, m)] }
+  | Z => { decl := { kind := .obj }, body := [(A, m)] }
+
+def vUs : List (Option Ty) := [none, some .int, some .string]
+def optsVA : List OptV := [.none, .int, .vt, .vtd, .par]
+def optsVB : List OptV := [.none, .int, .vt]
+def optsVM : List OptV := [.none, .int, .vt, .par]
+def optsVC : List OptV := [.none, .vt]
+def aParsV : List (Option Ty) := [none, some .int, some .v]
+def bArgsV : List Ty := [.int, .v]
+
+def cfgsV : List CfgV := do
+  let u ← vUs; let a ← optsVA; let b ← optsVB; let mm ← optsVM; let c ← optsVC
+  let aPar ← aParsV; let bArg ← bArgsV; let xObj ← [false, true]
+  pure ⟨u, a, b, mm, c, aPar, bArg, xObj⟩
+
+def editsV (k : CfgV) : List (CfgV × Cls) :=
+  (vUs.filter (· != k.vU)).map (fun u => ({ k with vU := u }, V)) ++
+  (optsVA.filter (· != k.oA)).map (fun o => ({ k with oA := o }, A)) ++
+  (optsVB.filter (· != k.oB)).map (fun o => ({ k with oB := o }, B)) ++
+  (optsVM.filter (· != k.oM)).map (fun o => ({ k with oM := o }, M)) ++
+  (optsVC.filter (· != k.oC)).map (fun o => ({ k with oC := o }, C)) ++
+  (aParsV.filter (· != k.aPar)).map (fun t => ({ k with aPar := t }, A)) ++
+  (bArgsV.filter (· != k.bArg)).map (fun t => ({ k with bArg := t }, B)) ++
+  [({ k with xObj := !k.xObj }, X)]
 
 end Zinc.Flat

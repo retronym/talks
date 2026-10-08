@@ -18,13 +18,13 @@ open Zinc.Hier (Cls Name Ty)
 open Zinc.Hier.Cls Zinc.Hier.Name
 
 def clsName : Cls → String
-  | A => "A" | B => "B" | M => "M" | C => "C" | X => "X" | Y => "Y" | Z => "Z"
+  | A => "A" | B => "B" | M => "M" | C => "C" | X => "X" | Y => "Y" | Z => "Z" | V => "V"
 
 def nameStr : Name → String
   | m => "m" | g => "g"
 
 def tyStr : Ty → String
-  | .int => "Int" | .string => "String" | .param => "T"
+  | .int => "Int" | .string => "String" | .param => "T" | .v => "V"
 
 /-- The Scala kind of a class. -/
 def kindStr (d : Decl) : String :=
@@ -49,10 +49,13 @@ def clsJson (c : Cls) (s : Src) : String :=
     ",\"decls\":" ++ jarr (s.decl.decls.map fun (n, mm) =>
       jarr [jstr (nameStr n), jstr (tyStr mm.ty), toString mm.deferred, jstr (modStr mm.mod),
         toString mm.priv]) ++
+    ",\"under\":" ++ (match s.decl.under with | some t => jstr (tyStr t) | none => "null") ++
     ",\"observes\":" ++ jarr (s.observes.map (jstr ∘ clsName)) ++
     ",\"body\":" ++ jarr (s.body.map fun (c', n) => jarr [jstr (clsName c'), jstr (nameStr n)]) ++ "}"
 
-def progJson (src : Cls → Src) : String := jarr (all.map fun c => clsJson c (src c))
+/-- The classes of a program; `V` only where it is declared (the value-class space). -/
+def progJson (src : Cls → Src) : String :=
+  jarr ((all.filter fun c => c != V || src V != { decl := {} }).map fun c => clsJson c (src c))
 
 def errStr : Err → String
   | .override n => "override " ++ nameStr n
@@ -97,17 +100,48 @@ def factorsJson (k : Cfg) : String :=
     ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait), ("zObs", toString k.zObs)]
   "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
 
-def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=
-  let r := reportR clientOnly true allRules k.src k'.src {e}
+def editJsonSrc (src₀ src₁ : Cls → Src) (cfg factors : String) (e : Cls) : String :=
+  let r := reportR clientOnly true allRules src₀ src₁ {e}
   let (recd, ok) := match r with
     | some r => (r.recompiled.map (jstr ∘ clsName), r.clean)
     | none => ([], false)
-  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr (cfgStr k') ++ ",\"factors\":" ++ factorsJson k' ++ ",\"prog\":" ++ progJson k'.src ++
-    ",\"modelErrs\":" ++ jarr ((modelErrs k'.src).map jstr) ++
+  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr cfg ++ ",\"factors\":" ++ factors ++
+    ",\"prog\":" ++ progJson src₁ ++
+    ",\"modelErrs\":" ++ jarr ((modelErrs src₁).map jstr) ++
     ",\"modelRecompiled\":" ++ jarr recd ++ ",\"modelClean\":" ++ toString ok ++ "}"
+
+def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=
+  editJsonSrc k.src k'.src (cfgStr k') (factorsJson k') e
+
+def optVStr : OptV → String
+  | .none => "-" | .int => "int" | .vt => "V" | .vtd => "Vdfr" | .par => "par"
+
+def cfgVFields (k : CfgV) : List (String × String) :=
+  [("vU", (k.vU.map tyStr).getD "ref"), ("oA", optVStr k.oA), ("oB", optVStr k.oB),
+   ("oM", optVStr k.oM), ("oC", optVStr k.oC), ("aPar", (k.aPar.map tyStr).getD "-"),
+   ("bArg", tyStr k.bArg), ("xObj", toString k.xObj)]
+
+def cfgVStr (k : CfgV) : String := " ".intercalate ((cfgVFields k).map (·.2))
+
+def factorsV (k : CfgV) : String :=
+  "{" ++ ",".intercalate ((cfgVFields k).map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
+
+def valid (src : Cls → Src) : Bool := (modelErrs src).isEmpty && resolves src && coherent src
+
+def mainV (everything : Bool) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for k in cfgsV do
+    if everything || valid k.src then
+      out.putStrLn ("{\"space\":\"flatV\",\"id\":\"v" ++ toString i ++ "\",\"cfg\":" ++
+        jstr (cfgVStr k) ++ ",\"factors\":" ++ factorsV k ++ ",\"prog\":" ++ progJson k.src ++
+        ",\"edits\":" ++ jarr ((editsV k).map fun (k', e) =>
+          editJsonSrc k.src k'.src (cfgVStr k') (factorsV k') e) ++ "}")
+    i := i + 1
 
 def main (args : List String) : IO Unit := do
   let everything := args.contains "all"
+  if args.contains "v" then return (← mainV everything)
   let out ← IO.getStdout
   let mut i := 0
   for k in cfgs do

@@ -26,16 +26,17 @@ inheritor) is a `Policy` for `W` (`walkPolicy`).
 
 namespace Zinc.Hier
 
-inductive Cls | A | B | M | C | X | Y | Z
+/-- `V` is used only by `Flat`, as a value class whose underlying type decides erasure. -/
+inductive Cls | A | B | M | C | X | Y | Z | V
   deriving DecidableEq, Repr
 
-def allCls : Finset Cls := {.A, .B, .M, .C, .X, .Y, .Z}
+def allCls : Finset Cls := {.A, .B, .M, .C, .X, .Y, .Z, .V}
 
 inductive Name | m | g
   deriving DecidableEq, Repr
 
-/-- Types: `param` is the enclosing class's single type parameter. -/
-inductive Ty | int | string | param
+/-- Types: `param` is the enclosing class's single type parameter; `v` is the class `V`. -/
+inductive Ty | int | string | param | v
   deriving DecidableEq, Repr
 
 /-- `asSeenFrom`: instantiate the parameter. -/
@@ -326,6 +327,7 @@ def base : Cls → Src
   | X => { decl := {}, body := [(B, m)] }
   | Y => { decl := {}, body := [(C, m)] }
   | Z => { decl := {}, body := [(B, g)] }
+  | V => { decl := {} }
 
 /-- Scenario 1: an inherited member's type changes. -/
 def edit1 : Cls → Src
