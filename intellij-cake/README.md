@@ -1,6 +1,6 @@
 # Teaching IntelliJ the cake
 
-Talk on [retronym/intellij-scala#5](https://github.com/retronym/intellij-scala/pull/5): fixing IntelliJ's false errors on cake-pattern Scala at the type operations that diverge from scalac, using a differential TCK against `nsc.Global`, scala/scala's own sources as a corpus, and a Lean model of `asSeenFrom` turned into runtime checks. Part VII is about the method: posing questions precise enough for an LLM agent to hill-climb, and catching the ways the score gets gamed.
+Talk on the intellij-scala branch [`scala-typesystem-tck`](https://github.com/retronym/intellij-scala/tree/scala-typesystem-tck): fixing IntelliJ's false errors on cake-pattern Scala at the type operations that diverge from scalac, using a differential TCK against `nsc.Global`, scala/scala's own sources as a corpus, and a Lean model of `asSeenFrom` turned into runtime checks. Part VII is about the method: posing questions precise enough for an LLM agent to hill-climb, and catching the ways the score gets gamed.
 
 - `talk.md` is the source. Edit this.
 - `make` builds `index.html` (needs only `python3`). `make watch` rebuilds on change.

@@ -742,11 +742,11 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 - All 35 remaining errors are also on `idea263.x`; none involves a cake path or a this-type. They are general inference gaps (overload resolution doesn't check inferred type arguments against bounds; `s @ Some(_)` narrows `T := A` instead of solving `A := T`) and non-type issues.
 - No `TypeRecursionGuard` trips anywhere in the corpus.
-- [retronym/intellij-scala#5](https://github.com/retronym/intellij-scala/pull/5), ready to go upstream as one PR, with offers to split off the precursors.
+- Branch [`scala-typesystem-tck`](https://github.com/retronym/intellij-scala/tree/scala-typesystem-tck), ready to go upstream as one PR, with offers to split off the precursors.
 
 ### 34. Asks
 
-- **IntelliJ:** review #5 as a whole; adopt the TCK in CI.
+- **IntelliJ:** review the PR as a whole; adopt the TCK in CI.
 - **scalac / SLS:** the two spec clarifications (class type parameters in `asSeenFrom`; stable prefixes), and the variance merge of compound base types written down.
 - **Metals, presentation compilers, TASTy readers of Scala 2 signatures:** the TCK has no IntelliJ dependency. Write a second engine.
 - **Scala 3:** the corpus is 2.13 only. `&`/`|`, opaque types and match types need a dotc oracle, and the same three-oracle method would apply.
@@ -760,9 +760,9 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 ## Appendix
 
-### Addendum: splitting #5 into smaller PRs
+### Addendum: splitting the PR into smaller PRs
 
-#5 goes upstream as one PR for review as a whole. These are the parts that could be split off, by commit.
+The work goes upstream as one PR, for review as a whole. These are the parts that could be split off, by commit.
 
 ```mermaid
 flowchart LR
