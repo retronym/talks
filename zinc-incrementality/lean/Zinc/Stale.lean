@@ -53,7 +53,7 @@ def compiler : GCompiler U Src Out Iface K (ℕ × ℕ) Q Ans where
   hashDeps := fun _ => {U.P, U.C}
   hashRevDeps := fun _ => {U.P, U.C}
   keys := fun tr => if tr.isEmpty then ∅ else {(U.C, K.k)}
-  covers := fun _ k => k = (U.C, K.k)
+  covers := fun _ _ k => k = (U.C, K.k)
 
 open GCompiler Compiler
 
@@ -85,14 +85,17 @@ theorem comp_lemma : ∀ (G : Finset U) (src : U → Src) (e : Env),
 theorem obligations : compiler.Obligations where
   comp := comp_lemma
   coverage := by
-    intro tr q hq
+    intro I s q hq
     refine ⟨(U.C, K.k), ?_, rfl⟩
-    have : tr ≠ [] := by rintro rfl; simp at hq
-    simp [compiler, this]
+    show (U.C, K.k) ∈ (if ((compiler.unit s).trace (compiler.envOf I)).isEmpty then ∅ else {(U.C, K.k)})
+    have : ¬ ((compiler.unit s).trace (compiler.envOf I)).isEmpty := by
+      intro h; rw [List.isEmpty_iff] at h; rw [h] at hq; simp at hq
+    simp [this]
   abstraction := by
-    intro I I' k h q _
+    intro I I' k h q hc
     change (I U.P, I U.C) = (I' U.P, I' U.C) at h
     simp only [Prod.mk.injEq] at h
+    refine ⟨?_, hc⟩
     rcases q with ⟨u, _⟩
     cases u
     · exact h.1

@@ -34,8 +34,10 @@ structure GCompiler (CUnit Src Out Iface K Hash Q : Type) (A : Q → Type) where
   /-- The reverse relation (Zinc: `inheritance.internal.reverse`). -/
   hashRevDeps : CUnit → Finset CUnit
   keys   : List (CUnit × Q) → Finset (CUnit × K)
-  /-- `q ⊑ k`, where `q` and `k` may be addressed to different units. -/
-  covers : (CUnit × Q) → (CUnit × K) → Prop
+  /-- `q ⊑_I k`: under interfaces `I`, key `k` covers query `q`. `q` and `k` may be addressed to
+  different units, and which queries a closure key covers may depend on `I` (the ancestors a
+  member lookup walks through). -/
+  covers : (CUnit → Iface) → (CUnit × Q) → (CUnit × K) → Prop
 
 namespace GCompiler
 
@@ -60,10 +62,13 @@ structure Obligations : Prop where
   comp : ∀ (G : Finset CUnit) (src : CUnit → Src) (e : Env (CUnit := CUnit) (Q := Q) (A := A)),
     ∀ d ∈ G, C.group G src e d =
       (C.unit (src d)).run (C.override e G (C.iface ∘ C.group G src e))
-  coverage : ∀ (tr : List (CUnit × Q)), ∀ q ∈ tr, ∃ k ∈ C.keys tr, C.covers q k
-  /-- Equal hashes under two interface maps give equal answers to every covered query. -/
+  /-- Every query a unit's compilation issues under `I` is covered, under `I`, by a recorded key. -/
+  coverage : ∀ (I : CUnit → Iface) (s : Src), ∀ q ∈ (C.unit s).trace (C.envOf I),
+    ∃ k ∈ C.keys ((C.unit s).trace (C.envOf I)), C.covers I q k
+  /-- Equal hashes under two interface maps give equal answers to every query covered under the
+  first, and the key keeps covering it under the second. -/
   abstraction : ∀ (I I' : CUnit → Iface) (k : CUnit × K), C.π I k.1 k.2 = C.π I' k.1 k.2 →
-    ∀ q, C.covers q k → C.answer (I q.1) q.2 = C.answer (I' q.1) q.2
+    ∀ q, C.covers I q k → C.answer (I q.1) q.2 = C.answer (I' q.1) q.2 ∧ C.covers I' q k
   /-- `π _ c _` reads only `hashDeps c`. -/
   locality : ∀ (I I' : CUnit → Iface) (c : CUnit), (∀ d ∈ C.hashDeps c, I d = I' d) →
     ∀ k, C.π I c k = C.π I' c k
@@ -99,7 +104,7 @@ def invalidated [DecidableEq K] [DecidableEq Hash] (S Dom : Finset CUnit)
 
 def UpToDate (src : CUnit → Src) (s : State CUnit Out K) (u : CUnit) : Prop :=
   s.out u = (C.unit (src u)).run (C.env s) ∧
-  ∀ q ∈ (C.unit (src u)).trace (C.env s), ∃ k ∈ s.U u, C.covers q k
+  ∀ q ∈ (C.unit (src u)).trace (C.env s), ∃ k ∈ s.U u, C.covers (C.iface ∘ s.out) q k
 
 def Inv (S : Finset CUnit) (src : CUnit → Src) (s : State CUnit Out K) (D : Finset CUnit) : Prop :=
   ∀ u ∈ S, u ∉ D → C.UpToDate src s u
@@ -133,7 +138,7 @@ theorem round_preserves (ob : C.Obligations) (S : Finset CUnit) (src : CUnit →
       have hU : s'.U u = C.keys ((C.unit (src u)).trace (C.env s')) := by
         simp only [hs', round, huR, ite_true]; rfl
       rw [hU]
-      exact ob.coverage _ q hq
+      exact ob.coverage _ _ q hq
   · have huI : u ∉ C.invalidated S (C.affected R) s s' :=
       fun h => hu (Finset.mem_sdiff.2 ⟨h, huR⟩)
     have huD : u ∉ D := fun h => huR (hD h)
@@ -164,11 +169,14 @@ theorem round_preserves (ob : C.Obligations) (S : Finset CUnit) (src : CUnit →
       intro q hq
       obtain ⟨k, hk, hcovers⟩ := hcov q hq
       simp only [env, envOf]
-      exact ob.abstraction _ _ k (hhash k hk) q hcovers
+      exact (ob.abstraction _ _ k (hhash k hk) q hcovers).1
     obtain ⟨hrun, htrace⟩ := Task.run_eq_of_trace _ _ _ hagree
     refine ⟨?_, ?_⟩
     · rw [hout', hout, hrun]
-    · rw [← htrace, hU]; exact hcov
+    · rw [← htrace, hU]
+      intro q hq
+      obtain ⟨k, hk, hcovers⟩ := hcov q hq
+      exact ⟨k, hk, (ob.abstraction _ _ k (hhash k hk) q hcovers).2⟩
 
 end GCompiler
 end Zinc
