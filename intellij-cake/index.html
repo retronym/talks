@@ -220,7 +220,7 @@ Cannot resolve method MethodType.unapply
   - fix `BaseTypes` for `ScThisType`.
 - Lukas Rytz confirmed it fixed SCL-21947 on scala/scala, and it was merged into 251.x.
 - It was not comprehensive or rigorous enough to avoid collateral damage:
-  - the anchor was optional, and passed at a few call sites; elsewhere the walk fell back to guessing by inheritance (this work's census later counted 7245 unanchored links, §19);
+  - the anchor was optional, and passed at a few call sites; elsewhere the walk fell back to guessing by inheritance (this work's census later counted 7245 unanchored links, §22);
   - the other operations (`memberType`, merged base types, lub) were left as they were;
   - it was checked against the existing tests and the reports at hand, and JetBrains CI found four more failures (scalac test data, Meerkat, dependent pattern types, a recursive alias), fixed in a second round.
 - **This work starts from the same diagnosis and adds what was missing: an oracle for each operation, a corpus large enough to show collateral damage, and a model that says when the anchoring is complete.**
@@ -276,7 +276,7 @@ $$\mathrm{tas}_d([\,], p) = d.\mathtt{this} \qquad \mathrm{tas}_d(c :: cs, p) = 
 
 **What the SLS says, and where scalac differs** (from the TCK's [SPEC-GAPS.md](https://github.com/retronym/scala-type-system-tck/blob/main/docs/SPEC-GAPS.md); every example compiled with 2.13.18):
 
-- **Subclass vs same class.** SLS §3.4 rewrites `D.this` when `D` is a *subclass* of the class at the current step. That is scalac 2.10's `toPrefix`; 2.11 rewrote `asSeenFrom` with the stricter `clazz == candidate`. For types scalac builds itself the two appear to agree. They diverge for an implementation that *spells* types differently, which IntelliJ does (§8).
+- **Subclass vs same class.** SLS §3.4 rewrites `D.this` when `D` is a *subclass* of the class at the current step. That is scalac 2.10's `toPrefix`; 2.11 rewrote `asSeenFrom` with the stricter `clazz == candidate`. For types scalac builds itself the two appear to agree. They diverge for an implementation that *spells* types differently, which IntelliJ does (§11).
 - **Class type parameters: the literal SLS reading is unsound.**
 
 ```scala
@@ -309,7 +309,7 @@ $$\mathrm{baseType}(\mathit{Box}[\mathit{Dog}] \;\mathtt{with}\; \mathit{Box}[\m
 - The SLS rule is stricter: one instance must conform to all the others, or it's an error. scalac enforces that for class definitions but accepts compound types and merges them. **The variance merge is unspecified; only scalac defines it.**
 - IntelliJ took the first arm it found, and the base types of `X.this` missed `X`'s self type.
 
-#### 7a. lub keeps the prefix
+### 8. lub keeps the prefix
 
 Cut down from `Typers.scala` (`CakeLubTest`):
 
@@ -332,7 +332,7 @@ trait Typers { self: Analyzer =>
 - scalac computes the lub over the base type sequences of `global.AliasTypeSymbol` and `global.AbstractTypeSymbol`, which are seen from `global`.
 - **This one bug caused most of the false errors left in `Typers.scala`.** It affects every `if`/`match` with cake-typed branches.
 
-#### 7b. Block type avoidance: escaping local singletons
+### 9. Block type avoidance: escaping local singletons
 
 A block's type must not mention its local definitions (scalac's `packedType`, SLS §6.11).
 
@@ -345,7 +345,7 @@ def foo = { val X: Tree = mkTree(); X.thisTree }   // scalac: foo: Tree
 - IntelliJ let `X.type` escape, then reported "Required Tree, found X.type" at every use of `foo`.
 - `ScBlock` now widens a block-local singleton to its declared type, repeatedly, since the widened type may mention another one.
 
-#### 7c. Block type avoidance: local classes and invariant positions
+### 10. Block type avoidance: local classes and invariant positions
 
 Widening is right only in a covariant position, and a local class has no singleton to widen.
 
@@ -359,7 +359,7 @@ Widening is right only in a covariant position, and a local class has no singlet
 - Each local occurrence is abstracted existentially, then simplified as SLS §3.2.12 does: covariantly to its upper bound (a val's declared type, a class's parents), contravariantly to `Nothing`, invariantly to a quantified `_k`.
 - Still open: a local class with a member returning `this.type` packs to its plain parents, where scalac keeps a refinement (`Object { def me: this.type }`, TCK 33).
 
-### 8. IntelliJ's design: the chain
+### 11. IntelliJ's design: the chain
 
 The plugin does `asSeenFrom`'s job with an `ScSubstitutor`:
 
@@ -383,7 +383,7 @@ flowchart LR
 
 ## Part III — The oracles
 
-### 9. A differential TCK against `nsc.Global`
+### 12. A differential TCK against `nsc.Global`
 
 [retronym/scala-type-system-tck](https://github.com/retronym/scala-type-system-tck): a corpus of small programs, each paired with type-system questions.
 
@@ -398,26 +398,26 @@ corpus/NN-name/
 - **Anchors** make context-dependent types nameable: `AnimalBox.this.type` exists only inside `AnimalBox`. A query with an anchor is resolved *as if written at the marker*. SCL-21947 is in this area: `AnimalBox <: Animal` is false, `AnimalBox.this.type <: Animal` is true.
 - **Rendering normal form**, so two engines' types compare as strings.
 - **Strict both ways.** Known differences are in a deferral registry; a new difference fails, and so does a deferred one that starts passing.
-- **Negative entries** matter as much as positive ones: corpus 28 pins that `o.Tree` is *not* `Global.this.Tree` for an arbitrary `o: Global`. (§14).
+- **Negative entries** matter as much as positive ones: corpus 28 pins that `o.Tree` is *not* `Global.this.Tree` for an arbitrary `o: Global`. (§17).
 
-### 10. The real corpus
+### 13. The real corpus
 
 - `src/reflect` + `src/compiler` of scala/scala (b4ad4458da) mounted as a source root in a light test fixture; `doHighlighting()` per file, with a real JDK 17 and scala-asm on the classpath.
 - One harness for both questions: *how many errors?* (and which are new vs base) and *how long?*
-- **The two oracles fail differently.** The TCK is precise, small and scalac-backed, but only as good as its questions. The corpus is large and real, but a count of errors cannot tell a correct fix from a lenient one (§14). Each catches what the other misses.
+- **The two oracles fail differently.** The TCK is precise, small and scalac-backed, but only as good as its questions. The corpus is large and real, but a count of errors cannot tell a correct fix from a lenient one (§17). Each catches what the other misses.
 
-### 11. A commit-by-commit scan
+### 14. A commit-by-commit scan
 
 - Every commit of the branch, measured against the *final* TCK and against its own tests, cached by tree hash.
 - Failing TCK rows fall from 33 to 16 and never rise; all conformance and equivalence rows pass at the tip. The 16 left are representation differences in base-type lists and planned fixes.
 - Tests green at every commit except two, both before the commit that replaced the old recursion guard.
-- **The scan checks the history commit by commit**, which made it safe to squash 61 commits into 30 and then fold away the shortcuts entirely (§14).
+- **The scan checks the history commit by commit**, which made it safe to squash 61 commits into 30 and then fold away the shortcuts entirely (§17).
 
 ---
 
 ## Part IV — Hill-climbing on symptoms
 
-### 12. The loop
+### 15. The loop
 
 ```mermaid
 flowchart TB
@@ -433,7 +433,7 @@ flowchart TB
 - The **broad** test set matters: `typeConformance.*`, `typeInference.*`, `annotator.*`, `codeInsight.intention.types.*`, `lang.resolve.*`, `typeSystemTck.*`, about 30 min. A narrower 597-test "oracle" from an earlier handoff missed **six real regressions**.
 - What this phase delivered: the override-aware `memberType` (§6), merged base types, block type avoidance, the lub prefix, five independent upstream bugs (exports anchoring, a class type conforming to its own `this.type`, `Null` eligible for implicit conversion, the lub prefix, an SCL-22266 cache-poisoning recursion), and owner-chain matching.
 
-### 13. Termination: making the rewrite stop growing
+### 16. Termination: making the rewrite stop growing
 
 `Infer.this.global.Type → Infer.this.global.analyzer.global.Type → … → StackOverflowError`.
 
@@ -460,9 +460,9 @@ flowchart TB
 | **no self-embedding**: the *result* is rooted in the rewritten this-type or an inheritor | blocked | blocked | admitted |
 
 - Then the cross-symbol growth reappeared on a skeleton of the real `Infer`/`Analyzer`/`Global` cake (TCK 26): the walk's fallback rewrote `Infer.this` under a link anchored at `Typer`, whose owner chain never reaches `Infer`. **Owner-chain matching** gates the fallback the way `matchesPrefixAndClass` demands `clazz == candidate`.
-- The next phase showed the no-self-embedding rule itself was unnecessary and deleted it (§19). It is still the right rule *for a system that might mis-anchor*.
+- The next phase showed the no-self-embedding rule itself was unnecessary and deleted it (§22). It is still the right rule *for a system that might mis-anchor*.
 
-### 14. Lenient equivalences
+### 17. Lenient equivalences
 
 Two equivalences look plausible for override matching in the cake:
 
@@ -473,7 +473,7 @@ $$\mathtt{Types.this} =:= \mathtt{SymbolTable.this} \quad \text{(self types tie 
 - The branch had them for a while (`sameThisInstance`). They came out when TCK 28 added the negatives (`o.Tree` is not `Global.this.Tree`; `Api.this.T` is not `Universe.this.T`) with a positive control (`val same: Global.this.type`), and §6 plus merged base types covered the override cases that had seemed to need them. The history was then folded so they were never added.
 - **Rule: every objective that counts false positives needs a paired oracle for false negatives.**
 
-### 15. Compensating bugs
+### 18. Compensating bugs
 
 - A member found through a self type was anchored at the wrong class. A separate "self-type allowance" in the rewrite compensated for it. Together they gave the right answers on the corpus.
 - Each fix chasing a symptom is biased toward compensation: it is checked against the error it removes, and a compensating change removes it just as well.
@@ -484,7 +484,7 @@ $$\mathtt{Types.this} =:= \mathtt{SymbolTable.this} \quad \text{(self types tie 
 
 ## Part V — From symptoms to construction
 
-### 16. Catching bad chains where they are built
+### 19. Catching bad chains where they are built
 
 > If the mistakes are in how chains are *built*, catch them where they are built.
 
@@ -503,7 +503,7 @@ flowchart LR
   P1 -- "what's a wrong chain?" --> P2
 ```
 
-### 17. The Lean model
+### 20. The Lean model
 
 [`lean/` in the TCK repo](https://github.com/retronym/scala-type-system-tck/tree/main/lean), Lean 4, no Mathlib, ~840 lines, no `sorry`.
 
@@ -533,7 +533,7 @@ $$\mathrm{bpre}(\mathrm{asf}_{p_2,c_2}(p),\ c) = \mathrm{asf}_{p_2,c_2}(\mathrm{
 
 scalac relies on it implicitly (the base types of a mapped type are the mapped base types). For the plugin it is the contract `BaseTypes.baseType` must meet, and the TCK's baseType dimension checks it empirically. **The model assumes lockstep, which the TCK checks, and proves the rest.**
 
-### 18. What is proved
+### 21. What is proved
 
 - **`compose`**: two links in sequence are one link from the first prefix seen by the second, provided the first link rewrites every this-type of its input:
 
@@ -551,7 +551,7 @@ Three conditions follow, and a chain that meets them is right by construction:
 
 **The conditions say when the set of root causes is complete, which fixing symptoms could not.** It covers this-type rewriting only; base types, lub and block avoidance still rest on the TCK.
 
-### 19. Theorems as runtime checks
+### 22. Theorems as runtime checks
 
 `SubstitutorInvariants`: each rule states a theorem's hypothesis, checked where chains are built and applied. Off in production. In tests it counts violations, keeps samples, and records the call path into each, so **a count names the line that built the chain**. Any rule can fail fast: `-Dscala.types.substitutorInvariants.<rule>=off|record|fail`.
 
@@ -574,7 +574,7 @@ Three conditions follow, and a chain that meets them is right by construction:
 - **A6, the anchorless walk.** 7199 of 7245 were members with no PSI class: synthetics like `==` (in scalac, members of `Any`, whose types mention no this-type) and refinement members (where a second rewrite made `clone.NameType` an alias of itself). A missing class now means "no rewrite"; three callers were anchored properly; the anchorless mode is deleted.
 - **I4, a redundant guard.** With every link anchored the model says no guard is needed; the census said the guard was only ever refusing correct rewrites. Deleted: same corpus errors, nothing grows, `Typers.scala` no slower.
 
-### 20. A check that changed typing; self-rooted links
+### 23. A check that changed typing; self-rooted links
 
 **A check must not change what it measures.** The first A1 applied each link to its own target as soon as it was built. That evaluated types earlier and changed the order in which types are computed and cached, and `JavaClearable.scala` flipped: `JavaClearableCollection[T]` stopped conforming to `JavaClearable[T]`. A1 now runs lazily, at a link's first use, recording only one stack frame at construction. Identical results with it on or off, no measurable cost (the eager version cost ~8%).
 
@@ -594,7 +594,7 @@ class ParensAnalyzer extends UnitScanner
 - The model now proves both halves: **`once_is_scalac`** and **`selfRooted_twice_diverges`**. A1 checks "at most once per chain" for self-rooted links. Over the corpus: 146,731 links checked, 3 distinct self-rooted, none duplicated.
 - **The corpus supplied the counterexample, the model proved the corrected condition, and A1 now checks it.**
 
-### 21. The remaining errors
+### 24. The remaining errors
 
 Next, each remaining corpus error was cut down and, where the language rule was in doubt, compiled with scalac 2.13. Four long-standing bugs, all also on `idea263.x`:
 
@@ -609,7 +609,7 @@ As with the earlier changes, the TCK kept these fixes to what scalac does: entri
 
 ## Part VI — Performance: reason first, then measure
 
-### 22. A cost model before any tuning
+### 25. A cost model before any tuning
 
 [asf-chain-toy/WRITEUP.md](https://github.com/retronym/asf-chain-toy/blob/main/WRITEUP.md): derive the cost of both designs from the code, then check it three ways.
 
@@ -621,7 +621,7 @@ $$T_{\mathit{scalac}}(\mathrm{asf}) = O\big(n + t \cdot d \cdot (L + R)\big) \qq
 
 $$C(p) = 2\,C(p-1) + A(\text{val type}) \quad\Rightarrow\quad \text{exponential in path depth, capped at } 2^8$$
 
-### 23. Checking the model
+### 26. Checking the model
 
 Three independent checks:
 
@@ -638,7 +638,7 @@ Three independent checks:
 
 **Every term of the model is small ($k \approx 2$, $d \approx 1$, $p \approx 1$). The cost is repetition.** Fusion and chain length don't matter.
 
-### 24. Remedies and results
+### 27. Remedies and results
 
 - `baseType` cached the way `Conformance` caches: project-level map on `(ScType, PsiClass)`, `ContextDependent` values, a `RecursionGuard` with `mayCacheNow`, re-entrant query answers "no base type".
 - `canonicalizeTarget` cached on `ModTracker.anyScalaPsiChange`; paths it can't change skip the cache.
@@ -652,7 +652,7 @@ Three independent checks:
 
 The exponential is gone. The everyday cost is a few percent of highlighting; ~70% of plugin CPU on `Typers.scala` is conformance, `TypeDefinitionMembers`, `BaseProcessor` and `MixinNodes`, outside this work. **Future work:** compute a member's type from a prefix in one cached function, `memberType(pre, m)`, as scalac does, instead of assembling substitutor chains during resolution. A mis-anchored chain could then not be built at all, and the repeated walks would go.
 
-### 25. Benchmarking
+### 28. Benchmarking
 
 - Alternate base and tip within a session, and prefer counters and profiles to wall-clock.
 - **Know what's switched on.** A retime made the tip look 30% slower than base: the invariant checks default to `fail`/`record` in unit-test mode, and the harness is a test. With the checks off, the tip is ~10% faster cold.
@@ -663,7 +663,7 @@ The exponential is gone. The everyday cost is a few percent of highlighting; ~70
 
 ## Part VII — The method: posing questions, letting an agent climb
 
-### 26. Division of labour
+### 29. Division of labour
 
 ```mermaid
 flowchart TB
@@ -679,7 +679,7 @@ flowchart TB
 - **The shift was to posing questions instead.** From then on the agent did most of the climbing: repros, fixes, Lean proofs, harnesses, census runs, bisects, history surgery, write-ups. My contribution was mostly **questions**, each one turning a vague goal into something an agent can climb, and **vetoes**, each one closing a direction where the score was rising for the wrong reason.
 - That is what got the work to a finished state.
 
-### 27. The questions that moved the work
+### 30. The questions that moved the work
 
 | question | what it turned into |
 |---|---|
@@ -698,19 +698,19 @@ flowchart TB
 
 **A useful question has a mechanical answer.** "Make the errors go away" does not; "make `asf_chain = asf_scalac` on every link the corpus mints" does.
 
-### 28. How the score gets gamed
+### 31. How the score gets gamed
 
 Every one of these happened. Each was caught by a second oracle or a human question, not by the score itself.
 
-- **Leniency** (§14): fewer false errors by accepting unsound equivalences.
-- **Compensation** (§15): two wrongs cancel on the corpus.
+- **Leniency** (§17): fewer false errors by accepting unsound equivalences.
+- **Compensation** (§18): two wrongs cancel on the corpus.
 - **Narrow oracle**: a 597-test subset passed while six real regressions slipped through.
 - **Wrong baseline**: "1233 errors on base" was not plain base.
-- **Observer effect** (§20) and **instrumented benchmark** (§25).
+- **Observer effect** (§23) and **instrumented benchmark** (§28).
 
 **This is Goodhart's law: the agent optimises the measure it is given. The defence is to pair every measure with an independent oracle of a different kind.**
 
-### 29. Why this domain suits it, and what it needs
+### 32. Why this domain suits it, and what it needs
 
 **Suits it:**
 
@@ -733,7 +733,7 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 ## Close
 
-### 30. Results
+### 33. Results
 
 | | `idea263.x` | this branch |
 |---|---|---|
@@ -746,14 +746,14 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 - No `TypeRecursionGuard` trips anywhere in the corpus.
 - [retronym/intellij-scala#5](https://github.com/retronym/intellij-scala/pull/5), ready to go upstream as one PR, with offers to split off the precursors.
 
-### 31. Asks
+### 34. Asks
 
 - **IntelliJ:** review #5 as a whole; adopt the TCK in CI.
 - **scalac / SLS:** the two spec clarifications (class type parameters in `asSeenFrom`; stable prefixes), and the variance merge of compound base types written down.
 - **Metals, presentation compilers, TASTy readers of Scala 2 signatures:** the TCK has no IntelliJ dependency. Write a second engine.
 - **Scala 3:** the corpus is 2.13 only. `&`/`|`, opaque types and match types need a dotc oracle, and the same three-oracle method would apply.
 
-### 32. Questions to leave the room with
+### 35. Questions to leave the room with
 
 - Which other subsystems have a reference implementation that could be an oracle (implicit search vs scalac's, the Scala 3 TASTy reader vs dotc)?
 - Is "a theorem's hypothesis as a runtime check that names the call site" a pattern worth building into type checkers generally?
@@ -772,10 +772,10 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 ### TODOs
 
-- Confirm the time span of the work and the split of human questions vs agent initiative in §27 with concrete examples from the session transcripts.
+- Confirm the time span of the work and the split of human questions vs agent initiative in §30 with concrete examples from the session transcripts.
 - One slide of real agent transcript: a question, the agent's census, the decision.
-- Re-time with more rounds; replace the §24 `Typers.scala` row.
-- Decide whether §13's scalac-side `TypeMap` model (a local scala/scala branch) should be published.
+- Re-time with more rounds; replace the §27 `Typers.scala` row.
+- Decide whether §16's scalac-side `TypeMap` model (a local scala/scala branch) should be published.
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
