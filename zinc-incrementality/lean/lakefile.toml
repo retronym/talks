@@ -13,3 +13,7 @@ name = "Zinc"
 [[lean_exe]]
 name = "exhaustive"
 root = "Exhaustive"
+
+[[lean_exe]]
+name = "conformance"
+root = "Conformance"
