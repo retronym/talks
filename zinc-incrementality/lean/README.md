@@ -19,5 +19,9 @@ Lean `v4.34.1`, Mathlib tag `v4.34.1`. No `sorry`. The scripted examples use `na
 | `Zinc/Termination.lean` | **T4** `zinc_some_of_monotoneFrom` (`transitiveStep`), `zinc_some_of_explicit` (2 rounds), `zinc_some_of_wf` (height + 2 rounds) |
 | `Zinc/Toy.lean` | Toy object language (members, value classes, implicits with shadowing), name-only vs repaired extractors, `obligations_repaired`, `not_obligations_nameOnly` |
 | `Zinc/Examples.lean` | §15b value class and §15a implicit addition/shadowing as `example`s; `repaired_sound`, `repaired_terminates` |
+| `Zinc/NonLocal.lean` | `GCompiler`: non-local `π` with `hashDeps`, interface-dependent closure keys; **T2′** `round_preserves` with `Δ` over `affected` |
+| `Zinc/Stale.lean` | **T2-stale**: a non-local hash diffed over the recompiled set alone undercompiles (two-unit counterexample) |
+| `Zinc/Hier.lean` | Toy class hierarchy (type argument, linearization walk, misses); designs `D` (decls + walk), `W` (materialised), `Mk` (Merkle, verifying-trace hash); Zinc's hierarchy walk as `walkPolicy`; three scenarios as checked `example`s (invalidated sets, rounds, equals clean) |
+| `Zinc/HierSound.lean` | `D_obligations`, `W_obligations`, `Mk_obligations`: all three designs are sound instances |
 
 See `PLAN.md` for the design, the encoding choices and the two findings that fed back into the talk (Zinc's actual loop formula; the fixed-point uniqueness hypothesis T3 needs).

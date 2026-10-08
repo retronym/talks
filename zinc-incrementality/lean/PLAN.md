@@ -219,10 +219,16 @@ Precision statements worth attempting as theorems, after the examples confirm th
 
 ### Steps
 
-- [ ] P2.1 Generalise `Model.lean`/`Soundness.lean` to env-dependent `π` with `hashDeps`; T2′; keep today's theorems as the `hashDeps c = {c}` instance.
-- [ ] P2.2 T2-stale counterexample on a two-unit abstract instance.
-- [ ] P2.3 Toy: parents with a type argument, linearization walk with misses, `asSeenFrom`.
-- [ ] P2.4 The three designs as `Compiler` instances; `Obligations` for each.
-- [ ] P2.5 Scenarios 1–4 as `example`s with invalidated sets and round counts.
-- [ ] P2.6 Precision inclusions as theorems, if the examples bear them out.
-- [ ] P2.7 Slides: correct §9, add "what the model says" to §10 and §11, update §22 and its future work.
+- [x] P2.1 `NonLocal.lean`: `GCompiler` with env-dependent `π`, `hashDeps`/`hashRevDeps`, interface-dependent `covers`; T2′ with `Δ` over `affected R = R ∪ hashRevDeps(R)`. Kept separate from `Model.lean` rather than generalising in place; the local model is the `hashDeps c = {c}` case.
+- [x] P2.2 `Stale.lean`: T2-stale on two units.
+- [x] P2.3 `Hier.lean`: one type parameter, parents with a type argument, right-to-left walk with misses, `select` marker so a flat trace identifies receivers.
+- [x] P2.4 `D`, `W` as `Compiler`, `Mk` as `GCompiler`; `HierSound.lean` proves `Obligations` for all three. Policies were given the old state so Zinc's hierarchy walk can be written as `walkPolicy`.
+- [x] P2.5 Scenarios 1–3 (+ stale Merkle) as `example`s. Results: inherited-member edit: D `X Y`/2, W `B C X Y`/3 (2 with walk), Mk `X Y`/2, stale Mk undercompiles. `asSeenFrom`: D `X Y Z`/2, W `C X Y`/3 (2), Mk `X Y Z`/2. Mixin override: D `Y`/2, W `C Y`/3 (2), Mk `Y`/2.
+- [ ] P2.6 Precision inclusions as theorems (materialised ⊆ decls, materialised ⊆ Merkle-chain on `asSeenFrom`; equality without type parameters). Parked: the examples support it; a general statement over all toy programs needs an induction over the walk.
+- [x] P2.7 Slides: §9 corrected (the walk already exists; the cost is hierarchy recompiles and a redundant Δ), §10 "what the model says" table, §22 non-local card and computed table, future work updated.
+
+Observations worth keeping:
+
+- The Merkle hash that fits the per-query model is the *verifying trace* of the lookup (§10's formula is exactly that). Hashing only the resolved member is sound by a different, semantic argument (the client observes the walk only through its result), which the model expresses as the materialised design's single `members` query.
+- Materialised members' real cost is not rounds but recompiling every subclass to refresh hashes; the walk at invalidation time makes that affordable, and it is a `Policy.Sound` policy.
+- `asSeenFrom` is where the designs differ in precision, and the difference is in the hash function, not the architecture.
