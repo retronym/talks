@@ -419,8 +419,8 @@ flowchart BT
 | design | what the client records | where the walk happens | hash | rounds on an inherited-member edit | recompiles the hierarchy? |
 |---|---|---|---|---|---|
 | materialised (today) | `(C, m)` | in `C`'s own compilation, stored in `C`'s interface | local, but `C`'s interface is stale until `C` recompiles | 3 plain, 2 with the walk | yes |
-| decls + walk | `(X, m)` for every `X` visited, plus `(C, parents)` | in the client's compilation | local | 2 | no |
-| Merkle | `(C, m)` | in the hash function, memoised | non-local: the *verifying trace* of the walk | 2 | no |
+| decls + walk | `(X, m)` for every `X` visited, plus `(C, parents)` | in the client's compilation | local | 2 | only descendants whose own type check depends on the change (§10a) |
+| Merkle | `(C, m)` | in the hash function, memoised | non-local: the *verifying trace* of the walk | 2 | only descendants whose own type check depends on the change (§10a) |
 
 - **Soundness requirement or convenience?** Convenience. Any of the three works; what is *required* is either a non-local hash kept fresh (by recompiling the hierarchy, or by recomputing hashes over the inheritance closure, `affected` in the model) or local keys that name every ancestor visited.
 - **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles (`Stale.lean`, T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
@@ -434,7 +434,7 @@ flowchart BT
 
 #### 10a. Worked example: materialised members vs Merkle hashing
 
-The program is the one `Hier.lean` checks, written as Scala. `A` is an abstract class, so `B` and `C` contain no code generated from `A`'s members; the trait case is at the end.
+The program is the one `Hier.lean` checks, written as Scala. `A` is an abstract class, so `B` and `C` contain no code generated from `A`'s members.
 
 ```scala
 abstract class A[T] { def m: Int = 0; def g: Int = 0 }
@@ -476,7 +476,7 @@ $h_M(m) = h(\text{miss})$ records that `M` has no `m`, so a later `M.m` changes 
 - `A`'s hash for `m` changes. `B`'s and `C`'s stored hashes still say `m: Int`, because they were computed when `B` and `C` were last compiled.
 - Zinc must recompile `B` and `C` to refresh them; the inheritance edges do that.
 - Zinc's hierarchy walk also invalidates the `memberRef` clients of every inheritor that use `m`, so `X` and `Y` join the same round.
-- Result: **`B C X Y` recompiled, 2 rounds.** `B` and `C` produce identical bytecode; they were recompiled only to recompute their hashes.
+- Result: **`B C X Y` recompiled, 2 rounds.** In this program `B` and `C` produce identical output: neither declares `m`, no other ancestor declares `m`, `m` is concrete, and `A`'s header didn't change. So here they were recompiled only to recompute their hashes. That is not true in general (next card).
 
 *Merkle.*
 
@@ -507,11 +507,25 @@ flowchart LR
 - *Merkle (§5 formula):* the parent and its type argument are inside *every* $h_B(n)$, so $h_B(g)$ changes too. Result: **`X Y Z`**; `Z` is recompiled although nothing it uses changed.
 - So the materialised design is more precise here. A Merkle hash of the *resolved* member, $h(\mathrm{res}_B(n))$ computed by a memoised walk, would be as precise as materialised while keeping local storage, but it must be recomputed for the same set of classes.
 
-**Edit 3: linearization.** The mixin `M` gains `def m: String = ""`, so `C.m` now resolves to `M.m`.
+**Edit 3: linearization.** The mixin `M` gains a member `m`.
 
-- *Materialised:* `C`'s rendering of `m` changes; `C` is recompiled to refresh it, and the walk invalidates `Y`. Result: **`C Y`**.
-- *Merkle:* $h_M(m)$ changes from "miss" to a declaration, so $h_C(m)$ changes. Result: **`Y`**.
-- In real Scala, `C` must still recompile here: `M` is a trait with a concrete `m`, so `C`'s own bytecode gains a mixin forwarder. That is the `extraHash` channel (§9), and Merkle hashing does not remove it. What it removes are the recompiles whose only purpose is to refresh a stored hash.
+- *In the model:* $h_M(m)$ changes from "miss" to a declaration, so $h_C(m)$ changes and Merkle recompiles only **`Y`**; materialised recompiles **`C Y`**.
+- *In Scala, `C` must recompile in both designs.* With `trait M { def m: String = "" }`, `C` inherits conflicting members `m` from `A` and `M` and no longer compiles. With a legal edit, `trait M extends A[Int] { override def m: Int = 1 }`, `C` changes linearization and gains a mixin forwarder for `M.m` (the `extraHash` channel, §9). Either way the edit reaches `C`'s own type check, so Merkle saves nothing here.
+
+<!-- break -->
+
+**When a descendant must recompile anyway.** A descendant's own type check reads its ancestors, not just its clients' view of them:
+
+- **override checks**: a member `D` declares that overrides an ancestor's member must still conform to it;
+- **conflicts**: members of the same name inherited from two parents must be reconciled (Edit 3);
+- **abstract members**: a concrete `D` must implement every abstract member it inherits;
+- **the ancestor's header**: parents, type parameters and variance, self type, `final`/`sealed`.
+
+So after an edit to ancestor $P$ with changed names $N$, descendant $D$ must recompile if
+
+$$N \cap \big(U(D) \cup \mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad \mathrm{header}(P) \text{ changed}$$
+
+and abstract members of $P$ in $N$ count against every concrete $D$. The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (The Lean toy doesn't model these checks: its descendants never query their ancestors. Adding override, conflict and abstract-member queries keyed on $(Q, n)$ would make it recompile exactly this set; see the future work in §22.)
 
 <!-- break -->
 
@@ -521,9 +535,9 @@ flowchart LR
 |---|---|---|
 | state per class | every member, own and inherited, as seen from the class | own declarations plus parent references |
 | total state | $\sum_c \lvert\mathrm{members}(c)\rvert$ | $\sum_c \lvert\mathrm{decls}(c)\rvert$ plus memoised hashes |
-| ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile only clients |
+| ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own type check depends on the change |
 | `asSeenFrom` edit | only the names whose rendering changed | every name inherited through that parent |
-| linearization edit | recompile the class to see the new winner | the recorded miss changes the hash |
+| linearization edit | recompile the class (needed anyway: conflict check, mixin forwarder) | the recorded miss changes the hash; the class still recompiles for its own reasons |
 | freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
 | rounds | 2 with Zinc's walk | 2 |
 
@@ -1183,7 +1197,7 @@ The Merkle hash that makes the per-query model work is the *verifying trace* of 
 | `B extends A[Int] → A[String]`, `A.m : T` | `X Y Z`, 2 | `C X Y`, 3 | `C X Y`, 2 | `X Y Z`, 2 | |
 | mixin `M` gains `m` | `Y`, 2 | `C Y`, 3 | `C Y`, 2 | `Y`, 2 | |
 
-Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. Decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. On the `asSeenFrom` row materialised is the most precise (`Z` stays), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
+Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own type check depends on the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
 
 <!-- break -->
 
@@ -1193,6 +1207,7 @@ Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligat
 - **Precision as a theorem.** Minimality relative to $\pi$: no unit outside $\mathrm{inv}(\Delta)$ has a covered key with a changed hash. With it, the rungs of §12 become comparable: prove rung $k+1$ invalidates a subset of rung $k$ given the extra coverage (recorded misses), and measure the gap on the §12 question of `size`/`apply` collisions.
 - **Class vs companion (#1796).** A key type with a namespace component; the precision theorem then quantifies what separating the hashes buys.
 - **Precision of the three hierarchy designs as a theorem.** The computed table suggests materialised ⊆ Merkle-chain and materialised ⊆ decls on `asSeenFrom` edits, and equality when member types mention no type parameter. State it over all programs of the toy, and add the "resolved-member" Merkle hash as a fourth design to show it matches materialised precision with local storage.
+- **Descendants' own checks.** Add override, conflict, abstract-member and header queries from a descendant to its ancestors, keyed on $(Q, n)$, so the decls and Merkle designs recompile exactly the descendants of §10a's condition, and the model can state how many materialised recompiles are refresh-only.
 - **Inheritance edges as a measure.** In the materialised design every subclass recompiles on every ancestor edit. Count, on a real analysis, how many of those recompiles change the subclass's own output; the rest is the price of freshness, and the decls or Merkle designs would skip it.
 - **Macros and inline.** Add `inlineBody(m)` and `macroObserve(sym)` queries. Then: Scala 3 `inline` needs the *body* in $\pi$, not the signature; the macro-downstream policy is the coarsest sound answer when observation is not recorded, and recording `Quotes` reflection ([sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)) is the precise one. The cross-project case (behaviour does not flow through the API) is a stated non-coverage.
 - **Added and deleted units, and the source level.** $S$ is fixed today. Adding units, deletion, `dependents(deleted)` in $R_0$, the source→class mapping and `recompileAllFraction` at the source level are all absent.
