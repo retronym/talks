@@ -439,8 +439,51 @@ flowchart LR
 
 - **Zinc makes the choice visible:** `CompileOrder` (`Mixed`, `JavaThenScala`, `ScalaThenJava`) chooses which Java view scalac sees. **Pipelining** (`-Ypickle-java`) *always* gives downstream the source view of Java, so pipelined and non-pipelined builds see different symbols for the same Java class.
 - **The real invariant:** for every pos test, `compile({A,B})` and `compile(A); compile(B | A.class)` emit identical bytes for `B`, and the same holds with `A` in Java.
-- Scala 3 has started enforcing this mechanically (`DeterminismTest`, [scala/scala3#26553](https://github.com/scala/scala3/pull/26553)).
+- Scala 2 made this a tested property in 2018 (§6a); Scala 3 has started enforcing it mechanically (`DeterminismTest`, [scala/scala3#26553](https://github.com/scala/scala3/pull/26553)).
 - partest's `_1`/`_2` convention tests only that separate compilation *works*, not that it gives *identical* output.
+
+#### 6a. Stability as a compiler property: scala-dev#405 and scala3#7661
+
+The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405) ("Deterministic Compilation / Reproducible Builds", opened 2017, closed for 2.13.0-M5 in 2018) made the §6 premise an explicit, tested property of scalac. Its working definition of *stable*: the same bytes regardless of
+
+- **source file order**: the order of files on the command line drives type-completion order in a joint compile, so anything sensitive to completion order leaks into the output;
+- **partial compilation**: compiling subsets of files separately, file by file, against the others' classfiles. This is joint ≡ separate, the premise of every incremental build.
+
+**Method** ([retronym/scalac-stability](https://github.com/retronym/scalac-stability)): hand-crafted test cases expected to be unstable, plus `scalac-stability-check.sh`, which compiles in normal order, in reverse order and file by file, then diffs the classes with [jardiff](https://github.com/scala/jardiff).
+
+<!-- break -->
+
+**What it found in scalac** (all fixed for 2.13.0-M5):
+
+| Cause | Why the output varied |
+|---|---|
+| fresh names from per-compilation-unit counters | numbering followed type-completion order; now scoped to the enclosing user-written method |
+| `LambdaLift` sorted symbol sets by `Symbol.id` | ids depend on completion order; now a linked set |
+| default getters entered into scope as methods were completed | scope order followed completion order; now entered eagerly by the namer |
+| parameter-alias computation across inheritance levels | a race between `setAlias` and `alias` during typer; moved after typer |
+| mixed-in outer accessors took the mixed-in member's position | that position only exists in a joint compile |
+| decl order not recorded in the pickle | mixin decl order differed between joint and separate compiles; the pickler now enters decls in order |
+| refinement typing set the `OVERRIDE` flag late | inferred types copying the refinement saw the flag or not, depending on timing; now cleared on copies |
+
+<!-- break -->
+
+**Why users cared:** Bazel users sharing build artifacts through a distributed cache found that non-reproducible output "killed the cache". One team removed quasiquotes to improve hit rates (comment on #405).
+
+**Scala 3 lags behind:**
+
+- [scala/scala3#7661](https://github.com/scala/scala3/issues/7661) ("Fully deterministic compilation (stable compiler output under reordering and separate compilation)") was opened in 2019 as the counterpart to #405, quoting the scalac findings above, and is still open.
+- Coverage was `IdempotencyTests` over a handful of `tests/order-idempotency` files.
+- In 2026 a `DeterminismTest` ([#26553](https://github.com/scala/scala3/pull/26553)) checking classfile/TASTy stability under recompilation started finding more: TASTy sharing that depends on type identity ([#26551](https://github.com/scala/scala3/issues/26551)) and classfile member order / `InnerClasses` differing under separate compilation ([#26552](https://github.com/scala/scala3/issues/26552)).
+
+<!-- break -->
+
+**Why it belongs in a Zinc talk:**
+
+- Every instability is a spurious API diff waiting to happen, i.e. overcompilation (§16(e)) that can cascade through extra rounds (§4).
+- It breaks ABI-jar equivalence and remote caching (§21) for exactly the users who have moved past Zinc.
+- Completion-order effects are the global-state back-channel that the purity assumption in the Lean model forbids (§22).
+
+**Ask:** run the stability check (normal order, reverse order, file by file) over the community build for *both* compilers in CI, and treat a diff as a bug in the feature that introduced it.
 
 ---
 
