@@ -1173,9 +1173,9 @@ $$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = 
 
 <!-- break -->
 
-**Two things the proof taught us.** Both were found by trying to write the proof, which is the argument for doing it.
+**Two findings about Zinc.** Both surfaced while writing the proof, which is the argument for doing one.
 
-1. **The loop is not what §3 said.** The subtraction of $R_n$ is only in the stop test; the next round is the full $\mathrm{inv}(\Delta_n)$, and from `transitiveStep` on it includes $R_n$, so it is *monotone* and termination needs no assumption about the class graph. The plain regime does: a mutually recursive pair whose inferred APIs keep changing ping-pongs forever in the model. `transitiveStep` is a termination guarantee.
+1. **`transitiveStep` is a termination guarantee, not an optimisation.** Zinc subtracts the round just compiled only in the stop test; the next round is the full $\mathrm{inv}(\Delta_n)$, so classes can be revisited. In the plain regime, a mutually recursive pair whose inferred APIs keep changing ping-pongs forever (in the model). From `transitiveStep` on, the next round also includes $R_n$, so the round set only grows and the loop ends within $k + \lvert S\rvert + 1$ rounds whatever the shape of the class graph (T4).
 2. **"At termination the result equals the clean build" is false without a further hypothesis.** Termination gives a per-unit fixed point; the clean build is another one; separate compilation can have several (`A.x: typeof(B.y)`, `B.y: typeof(A.x)` admits any type, joint compilation reports a cyclic reference). That is the [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) "include mutual dependencies in initial invalidation" story, and its revert. Two sufficient conditions, each a Scala best practice: **acyclic** unit dependencies, or **source-determined interfaces** (explicit result types on public members, which also bounds the loop at two rounds).
 
 <!-- break -->
