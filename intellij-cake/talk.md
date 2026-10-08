@@ -485,6 +485,7 @@ flowchart TB
 | question | what it turned into |
 |---|---|
 | What does scalac say? | the differential TCK; goldens instead of opinions |
+| What does scalac's trace of this operation look like? | instrumented scalac tracing the operation on the repro (`asSeenFrom`, `lub`), compared step by step with the plugin's |
 | Does it hold on the real thing? | the corpus harness; "probe the real cake, don't guess synthetic ones" |
 | Which *operation* diverges? | the five-operation map; fixes at the operation, copies deleted |
 | Is it right for the right reasons? | the model and the construction checks (Part V) |
