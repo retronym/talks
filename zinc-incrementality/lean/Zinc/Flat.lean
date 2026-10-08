@@ -18,7 +18,8 @@ for its `parents` and stores it in its interface. A client selects `c.n` with on
 whose answer is the lookup along `c`'s *stored* linearization, which is a function of the
 flattened hash by construction. Keys:
 
-* `(c, name n)`, hashed by the flattened composition, for a selection `c.n` (`client`, or `uses`
+* `(c, name n)`, hashed by the flattened composition and `c`'s kind (a trait receiver is
+  `invokeinterface`), for a selection `c.n` (`client`, or `uses`
   when a class selects its own member: Zinc drops those self-references);
 * `(p, parents)`, hashed by `p`'s parents, for every `parents` query a class asks while
   linearizing (`header`). Since a class asks this of *every* ancestor, the keys say "recompile
@@ -105,8 +106,9 @@ inductive Err
 structure Out where
   iface : Iface
   errs : List Err
-  /-- The resolved type of each selection. -/
-  descs : List (Option Ty)
+  /-- The resolved type of each selection, and the receiver's kind: `invokeinterface` for a
+  trait, `invokevirtual` for a class. -/
+  descs : List (CKind × Option Ty)
   /-- Mixin forwarders: a concrete trait member that the class's linearization resolves to, for
   a trait it mixes in (one not already in its superclass's linearization), as seen from it. -/
   fwds : List (Name × Ty) := []
@@ -152,6 +154,7 @@ inductive Q
 inductive AnsV
   | ps (l : List (Cls × Ty))
   | ty (t : Option Ty)
+  | sel (k : CKind) (t : Option Ty)
   | mem (m : Option Mem)
   | b (x : Bool)
   | ob (x : Option Bool)
@@ -161,7 +164,7 @@ inductive AnsV
 
 def answer (I : Cls → Iface) : Cls × Q → AnsV
   | (c, .parents) => .ps (I c).decl.parents
-  | (c, .member n) => .ty (lookupFlat (flatOf I c n))
+  | (c, .member n) => .sel (I c).decl.kind (lookupFlat (flatOf I c n))
   | (c, .ovr n) => .mem (own (I c) n)
   | (c, .cfl n) => .mem (own (I c) n)
   | (c, .has n) => .b (own (I c) n).isSome
@@ -208,12 +211,12 @@ def depth : ℕ := 6
 
 /-! ## Per-unit task -/
 
-def selects : List (Cls × Name) → T (List (Option Ty))
+def selects : List (Cls × Name) → T (List (CKind × Option Ty))
   | [] => pure []
   | (c, n) :: rest => do
     let r ← askQ c (.member n)
     let ts ← selects rest
-    pure ((match r with | .ty t => t | _ => none) :: ts)
+    pure ((match r with | .sel k t => (k, t) | _ => (.cls, none)) :: ts)
 
 /-! ## Refchecks
 
@@ -373,7 +376,7 @@ inductive K
   deriving DecidableEq, Repr
 
 inductive H
-  | flat (l : List (Cls × Ty × Mem))
+  | flat (k : CKind) (l : List (Cls × Ty × Mem))
   | ps (k : CKind) (f : Bool) (l : List (Cls × Ty))
   | ds (l : List (Name × Mem))
   | own (m : Option Mem)
@@ -382,7 +385,7 @@ inductive H
   deriving DecidableEq, Repr
 
 def π (I : Cls → Iface) (c : Cls) : K → H
-  | .name n => .flat (flatOf I c n)
+  | .name n => .flat (I c).decl.kind (flatOf I c n)
   | .parents => .ps (I c).decl.kind (I c).decl.final (I c).decl.parents
   | .decls => .ds (I c).decl.decls
   | .own n => .own (own (I c) n)
@@ -582,7 +585,7 @@ theorem Fl_obligations : (Fl full).Obligations where
     intro I I' c h k
     have hc : I c = I' c := h c (Finset.mem_insert_self _ _)
     cases k with
-    | name n => simp only [Fl, π, flatOf_congr I I' c n h]
+    | name n => simp only [Fl, π, flatOf_congr I I' c n h, hc]
     | parents => simp only [Fl, π, hc]
     | own n => simp only [Fl, π, hc]
     | has n => simp only [Fl, π, hc]

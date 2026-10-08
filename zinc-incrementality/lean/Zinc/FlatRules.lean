@@ -64,7 +64,8 @@ def allRules : List Rule := [.uses, .overrides, .conflicts, .abstract, .header, 
 
 /-! ## The program space
 
-`A[T]` (abstract) optionally `extends M[t]`; trait `M[T]`; `B extends A[t]`, optionally
+`A[T]`, an abstract class or a trait, optionally `extends M[t]` (so trait extends trait, and
+`B`'s first parent may be a trait); trait `M[T]`; `B extends A[t]`, optionally
 `final`; `C extends B with M`; each of `A B M C` declares `m` or not (`Int`, `String`, `T`, or
 deferred `Int`); `B` optionally selects its own `m`; client objects `X (B.m)`, `Y (C.m)`,
 `Z (A.m)`, where `X` optionally `extends C[Int]` instead of selecting (its mirror class has
@@ -93,6 +94,7 @@ structure Cfg where
   bUses : Bool
   bFinal : Bool
   xObj : Bool
+  aTrait : Bool
   deriving DecidableEq, Repr
 
 def Cfg.aParents (k : Cfg) : List (Cls × Ty) :=
@@ -103,7 +105,8 @@ def Cfg.aParents (k : Cfg) : List (Cls × Ty) :=
 def Cfg.bBody (k : Cfg) : List (Cls × Name) := if k.bUses then [(B, m)] else []
 
 def Cfg.src (k : Cfg) : Cls → Src
-  | A => { decl := { parents := k.aParents, decls := k.oA.decls, abstract := true } }
+  | A => { decl := { parents := k.aParents, decls := k.oA.decls, abstract := true,
+                     kind := if k.aTrait then .trt else .cls } }
   | M => { decl := { decls := k.oM.decls, abstract := true, kind := .trt } }
   | B => { decl := { parents := [(A, k.bArg)], decls := k.oB.decls, final := k.bFinal },
             body := k.bBody }
@@ -120,7 +123,8 @@ def cfgs : List Cfg := do
   let bUses ← [false, true]
   let bFinal ← [false, true]
   let xObj ← [false, true]
-  pure ⟨a, b, mm, c, aPar, bArg, bUses, bFinal, xObj⟩
+  let aTrait ← [false, true]
+  pure ⟨a, b, mm, c, aPar, bArg, bUses, bFinal, xObj, aTrait⟩
 
 /-- Single-class edits, with the class edited. -/
 def edits (k : Cfg) : List (Cfg × Cls) :=
@@ -130,12 +134,13 @@ def edits (k : Cfg) : List (Cfg × Cls) :=
   (opts.filter (· != k.oC)).map (fun o => ({ k with oC := o }, C)) ++
   ([none, some .int, some .string].filter (· != k.aPar)).map (fun t => ({ k with aPar := t }, A)) ++
   ([Ty.int, .string].filter (· != k.bArg)).map (fun t => ({ k with bArg := t }, B)) ++
-  [({ k with bFinal := !k.bFinal }, B), ({ k with xObj := !k.xObj }, X)]
+  [({ k with bFinal := !k.bFinal }, B), ({ k with xObj := !k.xObj }, X),
+   ({ k with aTrait := !k.aTrait }, A)]
 
 def Cfg.size (k : Cfg) : ℕ :=
   ([k.oA, k.oB, k.oM, k.oC].filter (· != .none)).length + (if k.aPar.isSome then 1 else 0) +
     (if k.bArg != .int then 1 else 0) + (if k.bUses then 1 else 0) + (if k.bFinal then 1 else 0) +
-    (if k.xObj then 1 else 0)
+    (if k.xObj then 1 else 0) + (if k.aTrait then 1 else 0)
 
 /-- Is the run from `k` after edit `k'` of class `e` clean, under keys `E` and the rule policy? -/
 def cleanRun (E : Kind → Bool) (abstractAll : Bool) (rs : List Rule) (s₀ : St) (k' : Cfg) (e : Cls) :
@@ -198,7 +203,7 @@ example : reportR clientOnly true allRules baseImpl editImpl {B} = some ⟨[C], 
 Each pair is clean under the widened default and unclean with that one rule dropped (counts of
 unclean pairs over the whole space in brackets). They are the candidate scripted tests. -/
 
-def k₀ : Cfg := ⟨.none, .none, .none, .none, none, .int, false, false, false⟩
+def k₀ : Cfg := ⟨.none, .none, .none, .none, none, .int, false, false, false, false⟩
 
 def cleanUnder (rs : List Rule) (k k' : Cfg) (e : Cls) : Bool :=
   ((reportR clientOnly true rs k.src k'.src {e}).map (·.clean)).getD false

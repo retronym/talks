@@ -63,7 +63,7 @@ def modelErrs (src : Cls → Src) : List String :=
 /-- Does every selection resolve in the model's clean build? Scala rejects one that does not. -/
 def resolves (src : Cls → Src) : Bool :=
   let o := clean src
-  all.all fun c => (o c).descs.all Option.isSome
+  all.all fun c => (o c).descs.all (·.2.isSome)
 
 /-- Does no class inherit two instances of one ancestor, `M[Int]` and `M[String]`? Scala rejects
 that ("illegal inheritance"); the model's linearization merge keeps the first. -/
@@ -77,18 +77,26 @@ def coherent (src : Cls → Src) : Bool :=
 def optStr : Opt → String
   | .none => "-" | .int => "int" | .str => "str" | .par => "par" | .dfr => "dfr"
 
-/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj`. -/
+/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj aTrait`. -/
 def cfgStr (k : Cfg) : String :=
   " ".intercalate ([k.oA, k.oB, k.oM, k.oC].map optStr ++
     [(k.aPar.map tyStr).getD "-", tyStr k.bArg, if k.bUses then "uses" else "-",
-     if k.bFinal then "final" else "-", if k.xObj then "xobj" else "-"])
+     if k.bFinal then "final" else "-", if k.xObj then "xobj" else "-",
+     if k.aTrait then "atrait" else "-"])
+
+/-- `Cfg` as named factors, for the harness's covering-array ordering. -/
+def factorsJson (k : Cfg) : String :=
+  let fs := [("oA", optStr k.oA), ("oB", optStr k.oB), ("oM", optStr k.oM), ("oC", optStr k.oC),
+    ("aPar", (k.aPar.map tyStr).getD "-"), ("bArg", tyStr k.bArg), ("bUses", toString k.bUses),
+    ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait)]
+  "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
 
 def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=
   let r := reportR clientOnly true allRules k.src k'.src {e}
   let (recd, ok) := match r with
     | some r => (r.recompiled.map (jstr ∘ clsName), r.clean)
     | none => ([], false)
-  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr (cfgStr k') ++ ",\"prog\":" ++ progJson k'.src ++
+  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr (cfgStr k') ++ ",\"factors\":" ++ factorsJson k' ++ ",\"prog\":" ++ progJson k'.src ++
     ",\"modelErrs\":" ++ jarr ((modelErrs k'.src).map jstr) ++
     ",\"modelRecompiled\":" ++ jarr recd ++ ",\"modelClean\":" ++ toString ok ++ "}"
 
@@ -98,7 +106,7 @@ def main (args : List String) : IO Unit := do
   let mut i := 0
   for k in cfgs do
     if everything || ((modelErrs k.src).isEmpty && resolves k.src && coherent k.src) then
-      out.putStrLn ("{\"space\":\"flat\",\"id\":" ++ toString i ++ ",\"cfg\":" ++ jstr (cfgStr k) ++
+      out.putStrLn ("{\"space\":\"flat\",\"id\":" ++ toString i ++ ",\"cfg\":" ++ jstr (cfgStr k) ++ ",\"factors\":" ++ factorsJson k ++
         ",\"prog\":" ++ progJson k.src ++
         ",\"edits\":" ++ jarr ((edits k).map fun (k', e) => editJson k k' e) ++ "}")
     i := i + 1
