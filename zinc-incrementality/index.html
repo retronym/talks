@@ -210,9 +210,9 @@ $$E(A) = E(\mathrm{underlying}(A))$$
 
 ### 3. The algorithm: a fixed point over a dependency graph
 
-$$R_0 = \mathit{changed} \cup \mathrm{dependents}(\mathit{deleted}) \qquad R_{n+1} = \mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n \qquad \text{stop at } \emptyset$$
+$$R_0 = \mathit{changed} \cup \mathrm{dependents}(\mathit{deleted}) \qquad R_{n+1} = \mathrm{inv}(\Delta\mathrm{API}_n) \qquad \text{stop when } \mathrm{inv}(\Delta\mathrm{API}_n) \subseteq R_n$$
 
-Only the *current* round is subtracted, so a class compiled in round 1 can be recompiled in round 3 (§4).
+The next round recompiles *all* of $\mathrm{inv}(\Delta\mathrm{API}_n)$, including classes from the round just finished; subtracting $R_n$ only decides whether to stop (§4).
 
 ```mermaid
 flowchart TB
@@ -274,11 +274,14 @@ flowchart TB
 
 **Precisely** (`IncrementalCommon.invalidateAfterInternalCompilation`):
 
-$$R_{n+1} = \big(\mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n\big) \ \cup\ \mathrm{macroDownstream}(R_n) \ \cup\ \mathrm{collisions}$$
+$$N_n = \mathrm{inv}(\Delta\mathrm{API}_n) \ \cup\ \mathrm{macroDownstream}(R_n) \ \cup\ \mathrm{collisions} \qquad \text{continue iff } N_n \setminus R_n \neq \emptyset$$
 
-- Only $R_n$ is subtracted. A class compiled in round 1 is recompiled again in round 3 if one of its dependencies' APIs changes in round 2, which happens with cycles in the class graph.
+$$R_{n+1} = \begin{cases} N_n & n < \mathtt{transitiveStep} \\ \mathrm{closure}(N_n) \cup R_n & n \ge \mathtt{transitiveStep} \end{cases}$$
+
+- Subtracting $R_n$ is only the stop test. The next round recompiles everything invalidated, so classes from the previous round can come back, and with cycles in the class graph the plain regime need not terminate.
+- From `transitiveStep` on, the round set is monotone ($R_{n+1} \supseteq R_n$, closed under dependents). That is what bounds the loop without any assumption about the graph (the Lean plan proves termination this way, §22).
 - **Typical round counts:** a body-only change takes 1 round (early cutoff); a signature change takes 2.
-- **Inferred types ripple:** a change to the inferred result type of a public `def` changes the API of every unedited class whose own public signature is inferred from it, adding a round per level. Explicit result types on public members are an *incremental-compilation* best practice, not just a style rule.
+- **Inferred types ripple:** a change to the inferred result type of a public `def` changes the API of every unedited class whose own public signature is inferred from it, adding a round per level. Explicit result types on public members are an *incremental-compilation* best practice, not just a style rule: they make interfaces source-determined, which caps a signature change at two rounds and guarantees the result matches a clean build (§22, T3).
 
 <!-- break -->
 
@@ -1078,7 +1081,7 @@ flowchart TB
 **The model of the compiler we need:**
 
 1. **Compilation units with an explicit environment.** $\mathit{compile} : \mathit{Unit} \to \mathit{Env} \to \mathit{Out}$, where $\mathit{Env}$ is the *interface* view of everything else, derived from outputs: $\mathrm{iface} : \mathit{Out} \to \mathit{Env}$. This makes separate compilation a definable notion.
-2. **Compositionality axiom (§6).** Mutually recursive units compile as one SCC; Zinc already compiles each invalidated set together. Every §6 bug is a violation of this axiom, so stating it is half the value:
+2. **Compositionality axiom (§6).** Mutually recursive units compile as one group; Zinc already compiles each invalidated set together. In the Lean encoding, joint compilation is a black box characterised as a fixed point of the per-unit tasks, each seeing its group-mates' fresh outputs. Every §6 bug is a violation of this axiom, so stating it is half the value:
 
 $$\mathit{compile}_{\mathrm{joint}}(S)\big|_R = \mathit{compile}_{\mathrm{sep}}\Big(R,\ \mathrm{iface}\big(\mathit{compile}_{\mathrm{joint}}(S \setminus R)\big)\Big)$$
 
@@ -1120,7 +1123,17 @@ $$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = 
 
 <!-- break -->
 
-- **T3 (fixed point):** at termination, every unrecompiled unit's trace answers are unchanged, so by T1 + T2 + compositionality the result equals the clean build. *Termination* needs care: Zinc's loop is not monotone (classes can recompile in later rounds, §4). It is bounded by the heuristics (`transitiveStep`, `recompileAllFraction`), so the model must include them, or prove a measure for the closure regime.
+- **T3 (fixed point)** needs an extra hypothesis. Termination yields a fixed point of *separate* compilation per unit. The clean build is *a* fixed point too, but under mutual recursion through inferred types they need not coincide:
+
+```scala
+object A { def x = B.y }   // typeof(A.x) = typeof(B.y)
+object B { def y = A.x }   // typeof(B.y) = typeof(A.x)
+```
+
+  Separate compilation can settle on interfaces that a joint compile wouldn't produce. This is the territory behind [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284), "include mutual dependency in initial invalidation", later reverted ([#1462](https://github.com/sbt/zinc/pull/1462)). Either of two sufficient conditions, each an existing Scala practice, restores T3:
+  - **acyclic unit dependencies**; or
+  - **source-determined interfaces**: explicit result types on public members, so a unit's interface doesn't depend on its dependencies' bodies. This also bounds the loop at two rounds.
+- **Termination is per policy.** The invalidation policy is a *parameter* of the model with a single obligation, $\mathit{next} \supseteq \mathrm{inv}(\Delta) \setminus R_n$. Soundness then holds for every heuristic Zinc uses. Termination holds by monotonicity in the `transitiveStep` regime (§4), or needs acyclicity in the plain regime.
 - **Overcompilation as a theorem about precision:** a minimality statement relative to $\pi$ (no unit outside $R$ has a changed covered key) is the formal version of "no spurious invalidations". §5's table lists where Zinc deliberately gives this up.
 
 **What the model makes crisp:**
@@ -1135,7 +1148,7 @@ $$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = 
 
 **A Lean 4 plan:**
 
-1. An abstract model (Mathlib `Finset`, a free-monad or `StateT` encoding of tasks, well-founded recursion for T3): a few hundred lines.
+1. An abstract model: a few hundred lines. Tasks are a free monad, so the query trace is data T1 can induct over. The invalidation policy is a parameter. The loop is fuelled, so the toy examples run by `decide`.
 2. Instantiate it on a toy object language with classes, inheritance, type-directed implicit lookup and an erasure function with value classes.
 3. State the §15 examples as Lean `example`s. *Counterexamples* show that name-only keys are unsound for value classes and for implicit addition; repaired keys yield proofs. Each counterexample doubles as a scripted test.
 4. Optional: connect to reality by checking the bridge's *recorded* keys against a query log instrumented in the real compiler. That is differential testing (§19) with the formal model as the oracle.
