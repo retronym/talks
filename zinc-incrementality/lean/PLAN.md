@@ -154,14 +154,15 @@ Macros (§15c) are out of scope for the toy; `macroObserve` is just another quer
 
 ## Steps
 
-- [ ] 0. Review this plan. Decide: Mathlib (cache download) vs core-only.
-- [ ] 1. Lake project `zinc-incrementality/lean/` with Mathlib `v4.34.1`; `lake build` green on an empty module. Commit.
-- [ ] 2. `Task.lean`: free monad, `run`, `trace`, T1. Commit.
-- [ ] 3. `Model.lean`: `Compiler`, `Env`, `State`, `round`, `inv`, `Obligations`, generic policy and fuelled `zinc`. Commit.
-- [ ] 4. `Soundness.lean`: T2 (round invariant), T3a. Commit.
-- [ ] 5. `Uniqueness.lean`: T3b acyclic and explicit-interface variants; T3 corollaries. Commit.
-- [ ] 6. `Termination.lean`: T4 for the brute-force, `transitiveStep`, acyclic and explicit regimes. Commit.
-- [ ] 7. `Toy.lean`: object language, per-unit task, the two key spaces, `group` with `comp` proved. Commit.
-- [ ] 8. `Examples.lean`: §15a/§15b counterexamples and repaired proofs by `decide`. Commit.
-- [ ] 9. `README.md` for the Lean dir; update §22 of the talk with the two findings and pointers to the theorem names.
+- [x] 0. Review this plan. Decided: Mathlib.
+- [x] 1. Lake project `zinc-incrementality/lean/` with Mathlib `v4.34.1`; `lake build` green on an empty module. Commit.
+- [x] 2. `Task.lean`: free monad, `run`, `trace`, T1. Commit.
+- [x] 3. `Model.lean`: `Compiler`, `Env`, `State`, `round`, `inv`, `Obligations`, generic policy and fuelled `zinc`. Commit.
+- [x] 4. `Soundness.lean`: T2 (round invariant), T3a. Commit.
+- [x] 5. `Uniqueness.lean`: T3b acyclic and explicit-interface variants; T3 corollaries. Commit.
+- [x] 6. `Termination.lean`: T4 for the brute-force, `transitiveStep`, acyclic and explicit regimes. Commit. (`transitiveStep` is modelled as one step of `dependents` rather than the full closure; the bound only needs `I ∪ R ⊆ next`.)
+- [x] 7. `Toy.lean`: object language, per-unit task, the two key spaces, `group` with `comp` proved. Commit.
+- [x] 8. `Examples.lean`: §15a/§15b counterexamples and repaired proofs. Commit. (`decide` gets stuck in the kernel on `Finset`/`Option` matching; `native_decide` is used.)
+- [x] 9a. `README.md` for the Lean dir.
+- [ ] 9b. Update §3, §4 and §22 of the talk with the two findings and pointers to the theorem names.
 - [ ] Future work: added/deleted units; external (library) units and classpath stamps; the macro-downstream policy as a modelled channel; precision/minimality theorem; `localInheritance` and inheritance edges that bypass the name filter (today both are just keys with `covers = ⊤`).
