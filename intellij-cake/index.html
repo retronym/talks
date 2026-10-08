@@ -300,8 +300,8 @@ IntelliJ does the same job with an `ScSubstitutor`, built up during resolution r
 ```mermaid
 flowchart LR
   R["resolve global.analyzer.typer"] --> S1["signature substitutor<br/>of the class (cached)"]
-  S1 --> S2["+ projection's actualSubst"]
-  S2 --> S3["+ use-site link<br/>this → global.analyzer.type<br/>anchored at Typers"]
+  S1 --> S2["then: projection's actualSubst"]
+  S2 --> S3["then: use-site link<br/>this → global.analyzer.type<br/>anchored at Typers"]
   S3 --> A["applied later, per consumer:<br/>Typers.this.Typer ⟶ global.analyzer.Typer"]
 ```
 
