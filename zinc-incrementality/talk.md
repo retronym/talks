@@ -170,7 +170,7 @@ $$\mathrm{cost}(I) \approx \sum_{n} \big(c_0 + c\,\lvert R_n\rvert + c_{\mathrm{
   - a cold JIT if the compiler isn't in a long-lived server;
   - Analysis merge and API diff;
   - classfile backup/restore, and jar rewriting for straight-to-jar output and the pipelining early-output jar.
-- **Overlap:** $\sum_n \lvert R_n \rvert$ can exceed $\lvert S \rvert$ when classes recompile in several rounds.
+- **The same source file can be compiled in several rounds.** The next round is the full invalidated set, not just the newcomers, so a file compiled in round 1 is compiled again in round 2 or 3 whenever a class it depends on changes API in between (cycles, inferred types). Recompilation is per *file*, so a file holding several classes can also be pulled back in by each of them in turn. Each repeat pays full parsing, typing and code generation for the whole file again, which a clean build pays once. So $\sum_n \lvert R_n \rvert$ can exceed $\lvert S \rvert$.
 
 <!-- break -->
 
