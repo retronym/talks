@@ -518,7 +518,7 @@ The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/
 
 ### 8. Why it's done (what it buys)
 
-- **Locality of dependencies:** a client of `c.m`, where `m` is inherited from `A`, depends on `C`'s API. A change to `A.m` shows up as a change to `C`, so no hierarchy walk is needed at invalidation time.
+- **Locality of dependencies:** a client of `c.m`, where `m` is inherited from `A`, depends on `C`'s API. A change to `A.m` shows up as a change to `C`, so no hierarchy walk is needed at invalidation time. (In practice Zinc records a `memberRef` on the owner `A` as well, and walks anyway; §10.)
 - **`asSeenFrom`:** in `class B extends A[Int]`, `def f: T` is observed as `f: Int`. Changing only `B`'s extends clause changes the members clients see, with no change to any decl.
 - **Linearization:** adding an override in a mixin changes *which* member wins for `C`. A member-level view captures that; a decls-only view would have to recompute the linearization.
 
@@ -556,7 +556,7 @@ flowchart BT
   - It is a sound over-approximation of today's materialised resolution.
   - Open questions: self-types and refinements as parents; library parents (treat their hash as a constant keyed by the jar stamp); whether per-name composition is precise enough for `asSeenFrom`-heavy code (type-argument changes now move every inherited name).
 - **Decls-only + hierarchy-aware invalidation:** record each `memberRef` against the *declaring* owner and the *receiver* type. When `A.m` changes, walk subclasses at invalidation time. Zinc already does this walk (§9); what changes is that the client records the classes its lookup *visited*, misses included, instead of relying on the receiver's materialised hash. This moves `asSeenFrom` and linearization concerns from extraction into the recorded keys.
-- **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module.
+- **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module. The PoC below splits the other way: ancestors in the same subproject are decls-only, while library and upstream-subproject ancestors stay materialised, so invalidation from outside the subproject is unchanged.
 - **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge): stop materialising members inherited from the same subproject, recompile a descendant only when one of five rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants; the full scripted suite passes.
 
 <!-- break -->
@@ -565,10 +565,11 @@ flowchart BT
 
 | design | what the client records | where the walk happens | hash | rounds on an inherited-member edit | recompiles the hierarchy? |
 |---|---|---|---|---|---|
-| materialised (today) | `(C, m)` | in `C`'s own compilation, stored in `C`'s interface | local, but `C`'s interface is stale until `C` recompiles | 3 plain, 2 with the walk | yes |
+| materialised (today) | `(C, m)`; Zinc also records `(A, m)`, a `memberRef` on the owner of the selected member | in `C`'s own compilation, stored in `C`'s interface | local, but `C`'s interface is stale until `C` recompiles | 3 plain, 2 with the walk | yes |
 | decls + walk | `(X, m)` for every `X` visited, plus `(C, parents)` | in the client's compilation | local | 2 | only descendants whose own type check depends on the change (§10a) |
 | Merkle | `(C, m)` | in the hash function, memoised | non-local: the *verifying trace* of the walk | 2 | only descendants whose own type check depends on the change (§10a) |
 
+- **Zinc is already partly decls + walk.** A client of `B.m`, with `m` inherited from `A`, already has a `memberRef` on `A` under the name `m`, and the invalidator already walks the `memberRef` clients of every inheritor, filtered by the ancestor's changed names (§9). Within a subproject that is enough: the PoC needed no composed hashes there, only to stop materialising inherited members and to stop recompiling every descendant.
 - **Soundness requirement or convenience?** Convenience. Any of the three works; what is *required* is either a non-local hash kept fresh (by recompiling the hierarchy, or by recomputing hashes over the inheritance closure, `affected` in the model) or local keys that name every ancestor visited.
 - **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles (`Stale.lean`, T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
 - **Precision comes from the hash function.** On an `asSeenFrom` edit (`B extends A[Int]` → `A[String]`), the model's materialised hash moves only the names whose rendering changed (in Zinc, the name hash of `B` itself also moves, so every client that mentions `B` recompiles; §10a); the decls design moves every client of `B` through `(B, parents)`; the §5 Merkle formula moves every inherited name of `B`. A Merkle hash of the *resolved* member would be as precise as materialised, with the same freshness obligation.
