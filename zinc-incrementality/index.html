@@ -577,6 +577,103 @@ flowchart BT
 - What fraction of a real analysis file is `inherited`? (TODO: measure on scala/scala and on a large app before the talk.)
 - Scala 3 has TASTy: could $\pi$ be derived from TASTy-level signatures plus a structural parent hash, making it shareable with IDEs and other build tools?
 
+#### 10a. Worked example: materialised members vs Merkle hashing
+
+The program is the one `Hier.lean` checks, written as Scala. `A` is an abstract class, so `B` and `C` contain no code generated from `A`'s members; the trait case is at the end.
+
+```scala
+abstract class A[T] { def m: Int = 0; def g: Int = 0 }
+class B extends A[Int]
+trait M
+class C extends B with M
+
+object X { def f(b: B) = b.m }   // client of B.m
+object Y { def f(c: C) = c.m }   // client of C.m
+object Z { def f(b: B) = b.g }   // client of B.g
+```
+
+<!-- break -->
+
+**What each design stores.**
+
+*Materialised (today).* Each class's API lists every member as seen from that class, and the name hash hashes that rendering:
+
+| class | `declared` | `inherited` | $h(m)$ | $h(g)$ |
+|---|---|---|---|---|
+| `A` | `m: Int`, `g: Int` | | $h(\texttt{m: Int})$ | $h(\texttt{g: Int})$ |
+| `B` | | `m: Int`, `g: Int` | $h(\texttt{m: Int})$ | $h(\texttt{g: Int})$ |
+| `C` | | `m: Int`, `g: Int` | $h(\texttt{m: Int})$ | $h(\texttt{g: Int})$ |
+
+Every inherited member is stored again in every descendant, and each descendant's hashes are computed when *that descendant* is compiled.
+
+*Merkle.* Each class stores only its own declarations and its parents with their type arguments. The hash of a name is composed on demand and memoised:
+
+$$h_A(m) = h(\texttt{m: Int}) \qquad h_B(m) = h\big(\emptyset,\ \langle (A, \texttt{Int}, h_A(m)) \rangle\big) \qquad h_C(m) = h\big(\emptyset,\ \langle (B, h_B(m)),\ (M, h_M(m)) \rangle\big)$$
+
+$h_M(m) = h(\text{miss})$ records that `M` has no `m`, so a later `M.m` changes $h_C(m)$.
+
+<!-- break -->
+
+**Edit 1: `A.m: Int` becomes `A.m: String`.**
+
+*Materialised.*
+
+- `A`'s hash for `m` changes. `B`'s and `C`'s stored hashes still say `m: Int`, because they were computed when `B` and `C` were last compiled.
+- Zinc must recompile `B` and `C` to refresh them; the inheritance edges do that.
+- Zinc's hierarchy walk also invalidates the `memberRef` clients of every inheritor that use `m`, so `X` and `Y` join the same round.
+- Result: **`B C X Y` recompiled, 2 rounds.** `B` and `C` produce identical bytecode; they were recompiled only to recompute their hashes.
+
+*Merkle.*
+
+- $h_A(m)$ changes, so $h_B(m)$ and $h_C(m)$ change when Zinc *recomputes* them from the stored ingredients. No compilation is needed for that.
+- `X` uses `m` on `B`, `Y` uses `m` on `C`: both are invalidated.
+- Result: **`X Y` recompiled, 2 rounds.** `Z` stays in both designs, since $h(g)$ didn't move.
+
+```mermaid
+flowchart LR
+  subgraph MAT["Materialised"]
+    direction TB
+    A1["A edited"] --> B1["recompile B<br/>(refresh hash)"]
+    A1 --> C1["recompile C<br/>(refresh hash)"]
+    A1 -. "walk" .-> X1["X, Y"]
+  end
+  subgraph MRK["Merkle"]
+    direction TB
+    A2["A edited"] --> H2["recompute h_B(m), h_C(m)<br/>(no compile)"]
+    H2 --> X2["X, Y"]
+  end
+```
+
+<!-- break -->
+
+**Edit 2: `asSeenFrom`.** Start from `A[T] { def m: T = ???; def g: Int = 0 }` and change `B extends A[Int]` to `B extends A[String]`.
+
+- *Materialised:* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
+- *Merkle (§5 formula):* the parent and its type argument are inside *every* $h_B(n)$, so $h_B(g)$ changes too. Result: **`X Y Z`**; `Z` is recompiled although nothing it uses changed.
+- So the materialised design is more precise here. A Merkle hash of the *resolved* member, $h(\mathrm{res}_B(n))$ computed by a memoised walk, would be as precise as materialised while keeping local storage, but it must be recomputed for the same set of classes.
+
+**Edit 3: linearization.** The mixin `M` gains `def m: String = ""`, so `C.m` now resolves to `M.m`.
+
+- *Materialised:* `C`'s rendering of `m` changes; `C` is recompiled to refresh it, and the walk invalidates `Y`. Result: **`C Y`**.
+- *Merkle:* $h_M(m)$ changes from "miss" to a declaration, so $h_C(m)$ changes. Result: **`Y`**.
+- In real Scala, `C` must still recompile here: `M` is a trait with a concrete `m`, so `C`'s own bytecode gains a mixin forwarder. That is the `extraHash` channel (§9), and Merkle hashing does not remove it. What it removes are the recompiles whose only purpose is to refresh a stored hash.
+
+<!-- break -->
+
+**What the example shows:**
+
+| | materialised (today) | Merkle chain |
+|---|---|---|
+| state per class | every member, own and inherited, as seen from the class | own declarations plus parent references |
+| total state | $\sum_c \lvert\mathrm{members}(c)\rvert$ | $\sum_c \lvert\mathrm{decls}(c)\rvert$ plus memoised hashes |
+| ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile only clients |
+| `asSeenFrom` edit | only the names whose rendering changed | every name inherited through that parent |
+| linearization edit | recompile the class to see the new winner | the recorded miss changes the hash |
+| freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
+| rounds | 2 with Zinc's walk | 2 |
+
+The recompiled sets are the ones `Hier.lean` checks (§22); the walk policy is what brings the materialised design down to two rounds.
+
 ### 11. Who computes the hash? Bridge-side hashing vs projecting into xsbti.api
 
 Today:
