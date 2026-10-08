@@ -519,18 +519,21 @@ flowchart LR
 
 <!-- break -->
 
-**When a descendant must recompile anyway.** A descendant's own type check reads its ancestors, not just its clients' view of them:
+**When a descendant must recompile anyway.** A descendant's compilation reads its ancestors in places its used names $U(D)$ don't cover: refchecks and forwarder generation. The PoC found the necessary set by ablation, disabling each rule in turn against scripted tests; each of these five fails a test of its own when disabled (`merkle-override`, `-conflict`, `-abstract`, `-trait-override`, `-mirror`):
 
-- **override checks**: a member `D` declares that overrides an ancestor's member must still conform to it;
+- **overrides**: a member `D` declares that overrides an ancestor's member must still conform to it (and may need a bridge);
 - **conflicts**: members of the same name inherited from two parents must be reconciled (Edit 3);
 - **abstract members**: a concrete `D` must implement every abstract member it inherits;
-- **the ancestor's header**: parents, type parameters and variance, self type, `final`/`sealed`.
+- **trait mixin forwarders**: if $P$ is a trait, `D`'s bytecode has a forwarder for each concrete member of $P$;
+- **static forwarders**: if `D` is a top-level object with no companion class, its mirror class has a static forwarder for every member, inherited ones included.
 
-So after an edit to ancestor $P$ with changed names $N$, descendant $D$ must recompile if
+Two candidates need no rule of their own. *Uses*: a descendant is a `memberRef` client of its parent (the constructor call, inherited member selections), so ordinary name-filtered invalidation already reaches it. *The ancestor's header* (parents, type parameters, self type, `final`/`sealed`): a header change already invalidates every `memberRef` client of every descendant.
 
-$$N \cap \big(U(D) \cup \mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad \mathrm{header}(P) \text{ changed}$$
+So after an edit to ancestor $P$ with changed names $N$, descendant $D$ must recompile, beyond its ordinary `memberRef` invalidation, if
 
-and abstract members of $P$ in $N$ count against every concrete $D$. The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (The Lean toy doesn't model these checks: its descendants never query their ancestors. Adding override, conflict and abstract-member queries keyed on $(Q, n)$ would make it recompile exactly this set; see the future work in §22.)
+$$N \cap \big(\mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad P \text{ is a trait} \quad\text{or}\quad D \text{ has a mirror class}$$
+
+and abstract members of $P$ in $N$ count against every concrete $D$. The rules are to a descendant's refchecks and codegen what $U(d)$ is to a client's lookups: the key abstraction of the part of its trace that reads other classes (§12). The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (The Lean toy doesn't model these checks: its descendants never query their ancestors. Adding override, conflict and abstract-member queries keyed on $(Q, n)$ would make it recompile exactly this set; see the future work in §22. The forwarder rules were found by thinking about bytecode, not by the model.)
 
 <!-- break -->
 
