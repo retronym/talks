@@ -530,8 +530,6 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 **What it didn't do:** choose the oracle, choose the model's abstraction (classes as owner paths, two world facts, lockstep as the one assumption), or decide that a check which fires 22,529 times on correct code means the guard should go rather than the check. Those were design judgements. **The agent found counterexamples; the human decided what counts as one.**
 
-Same pattern as the Zinc work this autumn: agents found under/over-compilation conflations because there was a mechanical oracle (`checkRecompilations`, clean-vs-incremental diffs); humans chose `AnalysisCallback4`.
-
 ---
 
 ## Close
@@ -558,7 +556,7 @@ Same pattern as the Zinc work this autumn: agents found under/over-compilation c
 
 ### 32. Questions to leave the room with
 
-- Which other subsystems have a reference implementation that could be an oracle (implicit search vs scalac's, Zinc vs clean builds, the Scala 3 TASTy reader vs dotc)?
+- Which other subsystems have a reference implementation that could be an oracle (implicit search vs scalac's, the Scala 3 TASTy reader vs dotc)?
 - Is "a theorem's hypothesis as a runtime check that names the call site" a pattern worth building into type checkers generally?
 - How much of a 2.13 type system can a few hundred lines of Lean say something useful about, and where does lockstep stop being a reasonable assumption?
 - Agents optimise whatever score they are given. What is the cheapest *pair* of oracles for your project?
