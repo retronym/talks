@@ -166,9 +166,9 @@ def minimal (l : List (Cfg × Cfg × Cls)) : Option (Cfg × Cfg × Cls) :=
 
 /-! ## Results
 
-Over the 30,000 bases and 630,000 single-class edits (`lake exe exhaustive`, compiled; a
+Over the 60,000 bases and 1,320,000 single-class edits (`lake exe exhaustive`, compiled; a
 `native_decide` over the whole space is too slow for the build), the default rules as stated
-leave 1,824 runs unclean; widening `abstract` to names deferred in any ancestor of `d` leaves none,
+leave 3,072 runs unclean; widening `abstract` to names deferred in any ancestor of `d` leaves none,
 and so does narrowing `trait` to descendants that mix the trait in directly (`traitDirect`).
 The minimal counterexamples, as checked examples, follow. -/
 
@@ -220,36 +220,36 @@ example : ((reportR (fun k => k == .client || k == .uses) true (without' .uses)
     ({ k₀ with bUses := true }).src ({ k₀ with oA := .par, bUses := true }).src {A}).map (·.clean)) =
     some true := by native_decide
 
-/-- `overrides` (40,680): `B` declares `def m: Int`; `A` gains `m: String`. -/
+/-- `overrides` (55,656): `B` declares `def m: Int`; `A` gains `m: String`. -/
 example : cleanUnder allRules { k₀ with oB := .dfr } { k₀ with oA := .str, oB := .dfr } A ∧
     !cleanUnder (without' .overrides) { k₀ with oB := .dfr } { k₀ with oA := .str, oB := .dfr } A := by
   native_decide
 
-/-- `conflicts` (576): the mixin `M` has a concrete `m: T`; `A` gains one too, which reaches `C`
+/-- `conflicts` (864): the mixin `M` has a concrete `m: T`; `A` gains one too, which reaches `C`
 through `B`. (An edit to `M` itself would also recompile `C` by `trait`.) -/
 example : cleanUnder allRules { k₀ with oM := .par } { k₀ with oA := .par, oM := .par } A ∧
     !cleanUnder (without' .conflicts) { k₀ with oM := .par } { k₀ with oA := .par, oM := .par } A := by
   native_decide
 
-/-- `abstract` (13,760): `A` gains a deferred `m`; the concrete `B` and `C` must implement it. -/
+/-- `abstract` (21,632): `A` gains a deferred `m`; the concrete `B` and `C` must implement it. -/
 example : cleanUnder allRules k₀ { k₀ with oA := .dfr } A ∧
     !cleanUnder (without' .abstract) k₀ { k₀ with oA := .dfr } A := by
   native_decide
 
-/-- `header` (120,000): `B extends A[Int]` → `A[String]` with no members at all: `C`'s stored
+/-- `header` (180,000): `B extends A[Int]` → `A[String]` with no members at all: `C`'s stored
 linearization still says `A[Int]`. Only a reader of stored linearizations (cross-project
 composition) can observe it. (The smallest is `B` made `final`, which `C` must reject.) -/
 example : cleanUnder allRules k₀ { k₀ with bArg := .string } B ∧
     !cleanUnder (without' .header) k₀ { k₀ with bArg := .string } B := by
   native_decide
 
-/-- `trait` (12,960): `M` gains a concrete `m: T`; nobody else declares or selects it, but `C`
+/-- `trait` (18,400): `M` gains a concrete `m: T`; nobody else declares or selects it, but `C`
 gets a mixin forwarder for it. -/
 example : cleanUnder allRules k₀ { k₀ with oM := .par } M ∧
     !cleanUnder (without' .trait) k₀ { k₀ with oM := .par } M := by
   native_decide
 
-/-- `mirror` (13,072): `object X extends C[Int]`; `C` gains `m: T`, a new static forwarder in
+/-- `mirror` (25,568): `object X extends C[Int]`; `C` gains `m: T`, a new static forwarder in
 `X`'s mirror class. -/
 example : cleanUnder allRules { k₀ with xObj := true } { k₀ with xObj := true, oC := .par } C ∧
     !cleanUnder (without' .mirror) { k₀ with xObj := true } { k₀ with xObj := true, oC := .par } C := by
