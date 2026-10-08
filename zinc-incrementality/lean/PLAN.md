@@ -232,3 +232,8 @@ Observations worth keeping:
 - The Merkle hash that fits the per-query model is the *verifying trace* of the lookup (§10's formula is exactly that). Hashing only the resolved member is sound by a different, semantic argument (the client observes the walk only through its result), which the model expresses as the materialised design's single `members` query.
 - Materialised members' real cost is not rounds but recompiling every subclass to refresh hashes; the walk at invalidation time makes that affordable, and it is a `Policy.Sound` policy.
 - `asSeenFrom` is where the designs differ in precision, and the difference is in the hash function, not the architecture.
+
+## Phase 3 — checking the Merkle PoC's design (`PLAN-merkle-poc.md` in the Zinc worktree)
+
+- [x] P3.1 `NonLocalAns.lean`: `NCompiler`, answers that read several interfaces (a lookup along a stored linearization), interface-dependent `hashDeps`, extractor that knows its unit; T2″, T3a″.
+- [x] P3.2 `Flat.lean`: decision 1 (flattened composition over the stored linearization). Proved sound with header keys (`flat_sound`); the PoC's `Δ` domain (`R ∪ inheritance.reverse*(R)`) agrees on the scenarios. Header edits take 3 rounds (the header round diffs descendants over their stale linearization). Header rule as a policy: transitive is equivalent to the keys; direct children only, or none, undercompiles (Edit 4: grandparent `A extends M[Int] → M[String]`).
