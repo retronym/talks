@@ -542,18 +542,16 @@ class ParensAnalyzer extends UnitScanner
 - The model now proves both halves: **`once_is_scalac`** and **`selfRooted_twice_diverges`**. A1 checks "at most once per chain" for self-rooted links. Over the corpus: 146,731 links checked, 3 distinct self-rooted, none duplicated.
 - **The corpus supplied the counterexample, the model proved the corrected condition, and A1 now checks it.**
 
-### 21. The remaining errors, and fixes that went too far
+### 21. The remaining errors
 
 Next, each remaining corpus error was cut down and, where the language rule was in doubt, compiled with scalac 2.13. Four long-standing bugs, all also on `idea263.x`:
 
-- an untyped override of an `if`/`match` is typed against the overridden result type, not the lub of its branches;
+- an untyped override of an `if`/`match` is typed against the overridden result type, not the lub of its branches; lub keeps a type-member refinement that both operands define alike, except where scalac drops it (an alias to a type parameter, an abstract type or a singleton);
 - a method with a missing argument list eta-expands to an expected SAM type;
 - a `var` may override a concrete getter/setter pair;
-- a `val` typed by an alias to a singleton *is* that singleton.
+- a `val` typed by an alias to a singleton type is equivalent to that singleton: `TastyUniverse.symbolTable.type =:= symbolTable.type`, with each path keeping its own spelling, as in scalac.
 
-**The first versions of two of these fixes went too far, and the TCK caught them.** One made lub keep a `{ type Pos = P }` refinement that scalac drops when `P` is a type parameter. The other respelled `TastyUniverse.Symbol` as `ClassfileParser.this.symbolTable.Symbol` everywhere, where scalac only *equates* the two. TCK 38–40 pin both with scalac's answers.
-
-**Checking a fix only against the error it removes is not enough; scalac's answer on a TCK entry is.**
+As with the earlier changes, the TCK kept these fixes to what scalac does: entries 38–40 pin the lub refinement and the alias-to-singleton cases with scalac's answers.
 
 ---
 
@@ -621,7 +619,7 @@ flowchart TB
   O --> A["Agent: search, cut down, fix, re-measure"]
   A --> S["Score moves"]
   S --> G{"Is the score<br/>being gamed?"}
-  G -- "yes: leniency, compensation,<br/>overshoot, wrong base" --> H
+  G -- "yes: leniency, compensation,<br/>wrong base" --> H
   G -- "no" --> A
 ```
 
@@ -652,7 +650,6 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 - **Leniency** (§14): fewer false errors by accepting unsound equivalences.
 - **Compensation** (§15): two wrongs cancel on the corpus.
-- **Overshoot** (§21): the error goes away; a different scalac answer breaks.
 - **Narrow oracle**: a 597-test subset passed while six real regressions slipped through.
 - **Wrong baseline**: "1233 errors on base" was not plain base.
 - **Observer effect** (§20) and **instrumented benchmark** (§25).
