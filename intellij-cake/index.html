@@ -611,7 +611,7 @@ Three independent checks:
 | substitution share of plugin CPU on `Typers.scala` | 9.0% | 3.8% |
 | `Typers.scala` cold / warm min, vs `idea263.x` | 22.7 / 14.7 s | 20.0 / 13.0 s |
 
-The exponential is gone. The everyday cost is a few percent of highlighting; ~70% of plugin CPU on `Typers.scala` is conformance, `TypeDefinitionMembers`, `BaseProcessor` and `MixinNodes`, outside this work. **The structural fix, one `memberType(pre, m)` entry point as scalac's `typeAsMemberOf`, is future work.**
+The exponential is gone. The everyday cost is a few percent of highlighting; ~70% of plugin CPU on `Typers.scala` is conformance, `TypeDefinitionMembers`, `BaseProcessor` and `MixinNodes`, outside this work. **Future work:** compute a member's type from a prefix in one cached function, `memberType(pre, m)`, as scalac does, instead of assembling substitutor chains during resolution. A mis-anchored chain could then not be built at all, and the repeated walks would go.
 
 ### 25. Benchmarking
 
@@ -708,7 +708,7 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 ### 31. Asks
 
-- **IntelliJ:** review #5 as a whole; adopt the TCK in CI; consider the single `memberType(pre, m)` entry point.
+- **IntelliJ:** review #5 as a whole; adopt the TCK in CI.
 - **scalac / SLS:** the two spec clarifications (class type parameters in `asSeenFrom`; stable prefixes), and the variance merge of compound base types written down.
 - **Metals, presentation compilers, TASTy readers of Scala 2 signatures:** the TCK has no IntelliJ dependency. Write a second engine.
 - **Scala 3:** the corpus is 2.13 only. `&`/`|`, opaque types and match types need a dotc oracle, and the same three-oracle method would apply.
