@@ -130,7 +130,7 @@ $$\mathrm{tas}_d([\,], p) = d.\mathtt{this} \qquad \mathrm{tas}_d(c :: cs, p) = 
 
 **What the SLS says, and where scalac differs** (from the TCK's [SPEC-GAPS.md](https://github.com/retronym/scala-type-system-tck/blob/main/docs/SPEC-GAPS.md); every example compiled with 2.13.18):
 
-- **Subclass vs same class.** SLS §3.4 rewrites `D.this` when `D` is a *subclass* of the class at the current step. That is scalac 2.10's `toPrefix`; 2.11 rewrote `asSeenFrom` with the stricter `clazz == candidate`. For types scalac builds itself the two appear to agree. They diverge for an implementation that *spells* types differently, which IntelliJ does (§11).
+- **Subclass vs same class.** SLS §3.4 rewrites `D.this` when `D` is a *subclass* of the class at the current step. That is scalac 2.10's `toPrefix`; 2.11 rewrote `asSeenFrom` with the stricter `clazz == candidate`. For types scalac builds itself the two appear to agree. They diverge for an implementation that *spells* types differently, which IntelliJ does (§6).
 - **Class type parameters: the literal SLS reading is unsound.**
 
 ```scala
@@ -142,7 +142,27 @@ val r = (new d.C).f      // scalac 2.13 and Scala 3: String. Literal SLS: Int. R
 - **Unstable prefixes.** §3.4 answers `S` even when `S` isn't a path; scalac captures it as `_1.type forSome { val _1: S }`, which is what §6.4's "typed as if `{ val y = e; y.x }`" implies.
 - The SLS is declarative and mostly enough. Where it is ambiguous, a second implementation has to follow scalac, so scalac is the oracle.
 
-### 6. `memberType` and `rebind`
+### 6. IntelliJ's version: the substitutor chain
+
+IntelliJ does the same job with an `ScSubstitutor`, built up during resolution rather than computed as one map:
+
+- a **chain** of **links** applied left to right (`a.followed(b)` applies `a` first);
+- a link is a type-argument binding (`T -> Int`) or a this-type rewrite: "replace `C.this` by this prefix, walking from anchor `D`";
+- a chain is attached to every resolve result, extended as resolution descends through prefixes and parents, and applied lazily, each time a consumer asks for a type;
+- links are *fused*: one traversal, each leaf passed through every link; a replacement that is not a leaf is traversed by the remaining links.
+
+```mermaid
+flowchart LR
+  R["resolve global.analyzer.typer"] --> S1["signature substitutor<br/>of the class (cached)"]
+  S1 --> S2["+ projection's actualSubst"]
+  S2 --> S3["+ use-site link<br/>this → global.analyzer.type<br/>anchored at Typers"]
+  S3 --> A["applied later, per consumer:<br/>Typers.this.Typer ⟶ global.analyzer.Typer"]
+```
+
+- Two differences from scalac matter. **Results recirculate:** a rewritten type flows back into resolution, which mints new chains from it, and `baseType` is a live recomputation that re-enters the walk. **Spelling:** IntelliJ names a self-type member after its *declaring* trait (`SymbolTable.this.Type` inside `trait Definitions { self: SymbolTable => }`), scalac after the trait the reference is in (`Definitions.this.Type`).
+- **The false errors came from chains built wrong and then applied, not from the rewrite itself: a link with the wrong anchor, a link where there should be none, a chain stored where it is later applied to unrelated types.**
+
+### 7. `memberType` and `rebind`
 
 ```scala
 trait A { val x: AnyRef; def get: x.type = x }
@@ -154,7 +174,7 @@ def f(b: B) = b.get.length          // scalac: Int
 - IntelliJ's designators pointed at the declaration, `A#x`. So `analyzer.global` was an arbitrary `Global`, not `Global.this`.
 - **Fix:** one override-aware `memberType` (`ScProjectionType.actual`), replacing three hand-written copies.
 
-### 7. Merged base types
+### 8. Merged base types
 
 When a class is reached through several parents, scalac merges the type arguments position by position by variance:
 
@@ -163,7 +183,7 @@ $$\mathrm{baseType}(\mathit{Box}[\mathit{Dog}] \;\mathtt{with}\; \mathit{Box}[\m
 - The SLS rule is stricter: one instance must conform to all the others, or it's an error. scalac enforces that for class definitions but accepts compound types and merges them. **The variance merge is unspecified; only scalac defines it.**
 - IntelliJ took the first arm it found, and the base types of `X.this` missed `X`'s self type.
 
-### 8. lub keeps the prefix
+### 9. lub keeps the prefix
 
 Cut down from `Typers.scala` (`CakeLubTest`):
 
@@ -186,7 +206,7 @@ trait Typers { self: Analyzer =>
 - scalac computes the lub over the base type sequences of `global.AliasTypeSymbol` and `global.AbstractTypeSymbol`, which are seen from `global`.
 - **This one bug caused most of the false errors left in `Typers.scala`.** It affects every `if`/`match` with cake-typed branches.
 
-### 9. Block type avoidance: escaping local singletons
+### 10. Block type avoidance: escaping local singletons
 
 A block's type must not mention its local definitions (scalac's `packedType`, SLS §6.11).
 
@@ -199,7 +219,7 @@ def foo = { val X: Tree = mkTree(); X.thisTree }   // scalac: foo: Tree
 - IntelliJ let `X.type` escape, then reported "Required Tree, found X.type" at every use of `foo`.
 - `ScBlock` now widens a block-local singleton to its declared type, repeatedly, since the widened type may mention another one.
 
-### 10. Block type avoidance: local classes and invariant positions
+### 11. Block type avoidance: local classes and invariant positions
 
 Widening is right only in a covariant position, and a local class has no singleton to widen.
 
@@ -212,26 +232,6 @@ Widening is right only in a covariant position, and a local class has no singlet
 
 - Each local occurrence is abstracted existentially, then simplified as SLS §3.2.12 does: covariantly to its upper bound (a val's declared type, a class's parents), contravariantly to `Nothing`, invariantly to a quantified `_k`.
 - Still open: a local class with a member returning `this.type` packs to its plain parents, where scalac keeps a refinement (`Object { def me: this.type }`, TCK 33).
-
-### 11. IntelliJ's design: the chain
-
-The plugin does `asSeenFrom`'s job with an `ScSubstitutor`:
-
-- a **chain** of **links** applied left to right (`a.followed(b)` applies `a` first);
-- a link is a type-argument binding (`T -> Int`) or a this-type rewrite: "replace `C.this` by this prefix, walking from anchor `D`";
-- a chain is attached to every resolve result, extended as resolution descends through prefixes and parents, and applied lazily, each time a consumer asks for a type;
-- links are *fused*: one traversal, each leaf passed through every link; a replacement that is not a leaf is traversed by the remaining links.
-
-```mermaid
-flowchart LR
-  R["resolve global.analyzer.typer"] --> S1["signature substitutor<br/>of the class (cached)"]
-  S1 --> S2["+ projection's actualSubst"]
-  S2 --> S3["+ use-site link<br/>this → global.analyzer.type<br/>anchored at Typers"]
-  S3 --> A["applied later, per consumer:<br/>Typers.this.Typer ⟶ global.analyzer.Typer"]
-```
-
-- Two differences from scalac matter. **Results recirculate:** a rewritten type flows back into resolution, which mints new chains from it, and `baseType` is a live recomputation that re-enters the walk. **Spelling:** IntelliJ names a self-type member after its *declaring* trait (`SymbolTable.this.Type` inside `trait Definitions { self: SymbolTable => }`), scalac after the trait the reference is in (`Definitions.this.Type`).
-- **The false errors came from chains built wrong and then applied, not from the rewrite itself: a link with the wrong anchor, a link where there should be none, a chain stored where it is later applied to unrelated types.**
 
 ---
 
@@ -285,7 +285,7 @@ flowchart TB
 
 - An agent is very good at this loop: the score is mechanical, the repros are small, the space is large and regular.
 - The **broad** test set matters: `typeConformance.*`, `typeInference.*`, `annotator.*`, `codeInsight.intention.types.*`, `lang.resolve.*`, `typeSystemTck.*`, about 30 min. A narrower 597-test "oracle" from an earlier handoff missed **six real regressions**.
-- What this phase delivered: the override-aware `memberType` (§6), merged base types, block type avoidance, the lub prefix, five independent upstream bugs (exports anchoring, a class type conforming to its own `this.type`, `Null` eligible for implicit conversion, the lub prefix, an SCL-22266 cache-poisoning recursion), and owner-chain matching.
+- What this phase delivered: the override-aware `memberType` (§7), merged base types, block type avoidance, the lub prefix, five independent upstream bugs (exports anchoring, a class type conforming to its own `this.type`, `Null` eligible for implicit conversion, the lub prefix, an SCL-22266 cache-poisoning recursion), and owner-chain matching.
 
 ### 16. Termination: making the rewrite stop growing
 
@@ -324,7 +324,7 @@ $$\mathtt{Types.this} =:= \mathtt{SymbolTable.this} \quad \text{(self types tie 
 
 - Both make false errors disappear. Both are **unsound**, and scalac rejects both.
 - An error count rewards them: every leniency removes errors and adds none. **An agent optimising for fewer false errors will find these.**
-- The branch had them for a while (`sameThisInstance`). They came out when TCK 28 added the negatives (`o.Tree` is not `Global.this.Tree`; `Api.this.T` is not `Universe.this.T`) with a positive control (`val same: Global.this.type`), and §6 plus merged base types covered the override cases that had seemed to need them. The history was then folded so they were never added.
+- The branch had them for a while (`sameThisInstance`). They came out when TCK 28 added the negatives (`o.Tree` is not `Global.this.Tree`; `Api.this.T` is not `Universe.this.T`) with a positive control (`val same: Global.this.type`), and §7 plus merged base types covered the override cases that had seemed to need them. The history was then folded so they were never added.
 - **Rule: every objective that counts false positives needs a paired oracle for false negatives.**
 
 ### 18. Compensating bugs
