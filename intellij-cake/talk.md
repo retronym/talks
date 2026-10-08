@@ -524,7 +524,7 @@ Every one of these happened. Each was caught by a second oracle or a human quest
 
 - isolation: one git worktree and one IntelliJ test sandbox per agent;
 - durable memory outside the context window: PR comments for design notes and investigation records, tags for every pre-rewrite history, notes the next session reads first;
-- a human who stops it: "STOP" when it heads the wrong way, and "Agree?" when it should argue back.
+- a human who interrupts it as soon as it heads the wrong way, and who asks for its opinion on a proposal rather than its agreement.
 
 <!-- break -->
 
