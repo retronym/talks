@@ -166,3 +166,63 @@ Macros (§15c) are out of scope for the toy; `macroObserve` is just another quer
 - [x] 9a. `README.md` for the Lean dir.
 - [ ] 9b. Update §3, §4 and §22 of the talk with the two findings and pointers to the theorem names.
 - [ ] Future work: added/deleted units; external (library) units and classpath stamps; the macro-downstream policy as a modelled channel; precision/minimality theorem; `localInheritance` and inheritance edges that bypass the name filter (today both are just keys with `covers = ⊤`).
+
+## Phase 2 — members vs decls vs Merkle: what the model can say
+
+### What Zinc does today, read off the code
+
+Two facts that change the question in §7–10:
+
+1. **The invalidator already walks the hierarchy.** `IncrementalNameHashing.invalidateClassesInternally`: for a change to `A` with modified names $N$, it computes the *transitive inheritors* of `A` (`invalidateByInheritance`, seed included) and then invalidates the `memberRef` clients of **every** inheritor `C` whose used names meet $N$. So a client of `C.m`, with `m` declared in `A`, is invalidated in the *same* round as `A`'s own clients, with `A`'s name hashes, not `C`'s.
+2. **So the materialised `inherited` members never drive a round.** After the inheritors recompile, their changed name hashes point at clients that were already in that round, and the stop test ($\mathrm{inv}(\Delta_n) \subseteq R_n$) absorbs it. §9's "each descendant counts as API changed, which drives another invalidation round" is wrong as stated: it drives a *redundant* $\Delta$, not a round. The real costs of `inherited` are extraction, storage and nondeterminism amplification, as §9 also says.
+
+That leaves the actual job `inherited` does: it makes a **non-local** hash. `π_C(m)` depends on `A`'s decl of `m`, on `C`'s parents with their type arguments (`asSeenFrom`) and on the linearization. The walk in (1) is what keeps that non-local hash *fresh enough*: when `A` changes, the invalidator does not trust the stale `π_C`, it goes to `C`'s clients through the hierarchy. Merkle composition is the same non-local hash, memoised. Decls-only is the local alternative, where the client's keys must name the ancestor and the parents list. All three are instances of one generalised model.
+
+### The generalised model
+
+Today `π : Iface → K → Hash` reads one unit's interface, and coverage requires the key's owner to be the query's owner (`q.1 = k.1`). Generalise:
+
+- `π : (CUnit → Iface) → CUnit → K → Hash` with a declared read set `hashDeps : CUnit → Finset CUnit` and the obligation **hash locality**: `π I c k` depends only on `I` restricted to `hashDeps c`.
+- **Coverage** may cover queries addressed to units in `hashDeps k.1`: `q.1 ∈ hashDeps k.1 ∧ covers q.2 k.2` (closure keys: `(C, m)` covers `decl(A, m)`, `parents(C)`, …).
+- **Δ over the hash-dependency closure**: `changed` ranges over $R \cup \{c \mid \mathrm{hashDeps}(c) \cap R \neq \emptyset\}$ (transitively), with hashes recomputed from the current interfaces. Today's model is the special case `hashDeps c = {c}`.
+
+Theorems:
+
+- **T2′** (`round_preserves'`): the round invariant holds for the generalised model. Same proof shape; the new case is a key whose owner was not recompiled but whose hash read a recompiled unit.
+- **T2-stale** (counterexample, as a Lean `example`): with a non-local `π`, taking Δ over $R$ only is unsound. This is the trap in the bridge's own TODO ("use parent hashes instead"): memoised Merkle hashes of unrecompiled descendants must be recomputed (or their clients reached by the walk), or the build undercompiles.
+- **Today = Merkle + walk**: Zinc's inheritance walk is `hashDeps⁻¹` applied at invalidation time, and the materialised `inherited` is the Merkle composition done eagerly inside the compiler. The inheritance edge is not merely "unfiltered"; it is the mechanism that makes a non-local hash sound.
+
+### The toy, extended
+
+Add to `Toy.lean`: `parents : List (Cls × TyArg)` (one type parameter per class is enough for `asSeenFrom`: member types may be `param`, instantiated through the parent's argument), and a linearization walk for member lookup that records misses. Three $\pi$/key designs over the same compiler trace:
+
+| design | keys the client records | `π` | explicit ifaces? |
+|---|---|---|---|
+| materialised (today) | `(C, name m)`; inheritance `(A, ⊤)` for subclasses | hash of the resolved, as-seen-from member; `Iface` includes `inherited` | no |
+| decls + walk | `(C, parents)`, `(X, name m)` for every class `X` visited in the walk, misses included | hash of the local decl | yes |
+| Merkle per name | `(C, name m)` | $h(\mathrm{decl}_C(m), \langle (P_i, T_i, h_{P_i}(m))\rangle)$, non-local | n/a (hash is non-local, iface is local) |
+
+Scenarios, each an `example` computing the invalidated sets and round counts under all three:
+
+1. **Edit an inherited member's type** `A.m : Int → String`, clients of `A.m`, `B.m` and `C.m` (B, C descendants). Expect equal invalidated sets, 2 rounds everywhere; the materialised design shows a redundant non-empty $\Delta_1$.
+2. **`asSeenFrom`**: `class B extends A[Int]` → `A[String]`, `A.f : T`. Expect: materialised moves only `f`; Merkle per name moves every inherited name of `B`; decls + walk moves every client of `B` through `(B, parents)`. This is the precision ladder of §10, now computed rather than argued.
+3. **Linearization**: add an override of `m` to a mixin `M` of `C`. Expect all three sound; decls + walk catches it through `(M, name m)` recorded by the walk of `C.m`'s clients, which is the hierarchy walk made explicit in $U$.
+4. **Stale Merkle**: scenario 1 with Δ over $R$ only. Expect undercompilation (T2-stale).
+
+Precision statements worth attempting as theorems, after the examples confirm them: for a fixed trace, the invalidated set under materialised ⊆ Merkle-per-name ⊆ decls-with-parents-key (coarser keys invalidate more), and all three are equal when no `asSeenFrom` is involved (member types mention no type parameter).
+
+### What it answers for the talk
+
+- §10's discussion question "soundness requirement or convenience?": the materialised `inherited` is one of three sound ways to make the hash of an inherited member depend on the ancestor; what is *required* is either a non-local hash kept fresh (walk or recompute) or local keys that name the ancestor. The walk already exists, so decls-only is a change to `π` and to what `U` records, not to the invalidator.
+- §9's round claim is corrected; the honest cost of `inherited` is extraction, storage and nondeterminism, plus a redundant $\Delta$.
+- §11's bridge-side memoised hashing *is* the Merkle design; its obligation is T2′'s Δ-over-`hashDeps⁻¹`, which the existing inheritance walk discharges.
+
+### Steps
+
+- [ ] P2.1 Generalise `Model.lean`/`Soundness.lean` to env-dependent `π` with `hashDeps`; T2′; keep today's theorems as the `hashDeps c = {c}` instance.
+- [ ] P2.2 T2-stale counterexample on a two-unit abstract instance.
+- [ ] P2.3 Toy: parents with a type argument, linearization walk with misses, `asSeenFrom`.
+- [ ] P2.4 The three designs as `Compiler` instances; `Obligations` for each.
+- [ ] P2.5 Scenarios 1–4 as `example`s with invalidated sets and round counts.
+- [ ] P2.6 Precision inclusions as theorems, if the examples bear them out.
+- [ ] P2.7 Slides: correct §9, add "what the model says" to §10 and §11, update §22 and its future work.
