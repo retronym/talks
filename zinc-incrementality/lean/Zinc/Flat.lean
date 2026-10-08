@@ -495,11 +495,21 @@ structure Run where
 
 /-- The loop, with the policy applied *before* the stop test, as Zinc does with its inheritance
 invalidation (`NCompiler.zinc` applies it after; for a sound policy this only stops later). -/
+def all : List Cls := [A, B, M, C, X, Y, Z]
+
+/-- Tabulate a state, so later rounds do not recompute it through the closures of earlier ones.
+Extensionally the identity. -/
+def memo (s : St) : St :=
+  let o := all.map fun c => (c, s.out c)
+  let u := all.map fun c => (c, s.U c)
+  { out := fun c => match o.lookup c with | some x => x | none => s.out c
+    U := fun c => match u.lookup c with | some x => x | none => s.U c }
+
 def runF (E : Kind → Bool) (dom : Dom) (src : Cls → Src) (P : Policy Cls Out K) :
     ℕ → ℕ → Finset Cls → Finset Cls → St → Option Run
   | 0, _, _, _, _ => none
   | fuel + 1, n, acc, R, s =>
-    let s' := (Fl E).round src R s
+    let s' := memo ((Fl E).round src R s)
     let I := P n R s s' ((Fl E).invalidated Finset.univ (domain E dom R s s') s s')
     if I ⊆ R then some ⟨s', n + 1, acc ∪ R⟩
     else runF E dom src P fuel (n + 1) (acc ∪ R) I s'
@@ -515,11 +525,9 @@ def headerPolicy (transitive : Bool) : Policy Cls Out K := fun _ R s s' I =>
 
 def dummy : St := { out := fun _ => ⟨⟨{}, []⟩, [], []⟩, U := fun _ => ∅ }
 
-def init (E : Kind → Bool) (src : Cls → Src) : St := (Fl E).round src Finset.univ dummy
+def init (E : Kind → Bool) (src : Cls → Src) : St := memo ((Fl E).round src Finset.univ dummy)
 
 def clean (src : Cls → Src) : Cls → Out := group Finset.univ src fun _ => ⟨{}, []⟩
-
-def all : List Cls := [A, B, M, C, X, Y, Z]
 
 structure Report where
   recompiled : List Cls
@@ -532,7 +540,8 @@ def report (E : Kind → Bool) (dom : Dom) (P : Policy Cls Out K) (src₀ src₁
   (runF E dom src₁ P 9 0 ∅ R₀ (init E src₀)).map fun r =>
     { recompiled := all.filter fun c => c ∈ r.compiled ∧ c ∉ R₀
       rounds := r.rounds
-      clean := all.all fun c => r.state.out c == clean src₁ c }
+      clean := let cl := memo { out := clean src₁, U := fun _ => ∅ }
+        all.all fun c => r.state.out c == cl.out c }
 
 end runs
 

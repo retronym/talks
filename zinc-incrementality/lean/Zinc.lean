@@ -11,3 +11,4 @@ import Zinc.Hier
 import Zinc.HierSound
 import Zinc.NonLocalAns
 import Zinc.Flat
+import Zinc.FlatRules
