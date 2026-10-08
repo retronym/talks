@@ -15,7 +15,10 @@ namespace Zinc.Flat
 open Zinc.Hier (Cls Name Ty)
 open Zinc.Hier.Cls Zinc.Hier.Name
 
-inductive Rule | uses | overrides | conflicts | abstract | header | «trait» | traitDirect | mirror
+inductive Rule
+  | uses | overrides | conflicts | abstract | header | «trait» | traitDirect | mirror
+  /-- `traitDirect`, but blind to private members: a trait's API without Zinc's `extraHash`. -/
+  | traitPub
   deriving DecidableEq, Repr
 
 def ifc (s : St) (c : Cls) : Iface := (s.out c).iface
@@ -33,6 +36,19 @@ def deferredIn (s : St) (q : Cls) (n : Name) : Bool :=
 def sides (s : St) (d : Cls) : List Lin :=
   (ifc s d).decl.parents.map fun e => e :: (ifc s e.1).lin
 
+/-- Does `d` mix the trait `p` in directly (and so hold its forwarders and fields)? -/
+def mixesDirectly (s : St) (p d : Cls) : Bool :=
+  let i := ifc s d
+  let hs := i.lin.map fun e => (e.1, (ifc s e.1).decl.kind, (ifc s e.1).decl.final)
+  (mixins i.decl (sides s d) i.lin hs).any (·.1 == p)
+
+/-- Did `p`'s interface change at all, private members included (Zinc's `extraHash`)? -/
+def anyChanged (s s' : St) (p : Cls) : Bool := ifc s p != ifc s' p
+
+/-- Did `p`'s public interface change? -/
+def pubChanged (s s' : St) (p : Cls) : Bool :=
+  headerChanged s s' p || pub (ifc s p).decl != pub (ifc s' p).decl
+
 /-- Does rule `r` say that descendant `d` must recompile after `p` was recompiled? The PoC's
 table, with `U(d)` the names `d`'s source selects. `abstractAll` widens `abstract` to names
 deferred in *any* ancestor of `d` (see below). -/
@@ -45,20 +61,19 @@ def fires (src : Cls → Src) (abstractAll : Bool) (s s' : St) (p d : Cls) : Rul
       deferredIn s p n || deferredIn s' p n ||
         (abstractAll && (ifc s' d).lin.any fun e => deferredIn s' e.1 n)
   | .header => headerChanged s s' p
-  | .trait => (ifc s p).decl.kind == .trt || (ifc s' p).decl.kind == .trt
-  | .traitDirect =>
-    let i := ifc s' d
-    let hs := i.lin.map fun e => (e.1, (ifc s' e.1).decl.kind, (ifc s' e.1).decl.final)
-    (mixins i.decl (sides s' d) i.lin hs).any (·.1 == p)
-  | .mirror => (ifc s' d).decl.kind == .obj
+  | .trait => anyChanged s s' p && ((ifc s p).decl.kind == .trt || (ifc s' p).decl.kind == .trt)
+  | .traitDirect => anyChanged s s' p && mixesDirectly s' p d
+  | .traitPub => pubChanged s s' p && mixesDirectly s' p d
+  | .mirror => anyChanged s s' p && (ifc s' d).decl.kind == .obj
 
 /-- The rule set as a policy over `inheritance.reverse*` of each recompiled class. -/
 def rulePolicy (src : Cls → Src) (abstractAll : Bool) (rs : List Rule) : Compiler.Policy Cls Out K :=
   fun _ R s s' I => I ∪ Finset.univ.filter fun d =>
     ∃ p ∈ R, d ≠ p ∧ d ∈ descendants s' {p} ∧ ∃ r ∈ rs, fires src abstractAll s s' p d r = true
 
-/-- Zinc's keys: client `memberRef`s only. -/
-def clientOnly : Kind → Bool := (· == .client)
+/-- Zinc's keys: client `memberRef`s, and macro-expansion dependencies (which Zinc follows from
+every descendant of a changed class, the non-local cover of `Flat`'s `all` key). -/
+def clientOnly : Kind → Bool := fun k => k == .client || k == .macro
 
 def allRules : List Rule := [.uses, .overrides, .conflicts, .abstract, .header, .trait, .mirror]
 
@@ -67,12 +82,12 @@ def allRules : List Rule := [.uses, .overrides, .conflicts, .abstract, .header, 
 `A[T]`, an abstract class or a trait, optionally `extends M[t]` (so trait extends trait, and
 `B`'s first parent may be a trait); trait `M[T]`; `B extends A[t]`, optionally
 `final`; `C extends B with M`; each of `A B M C` declares `m` or not (`Int`, `String`, `T`, or
-deferred `Int`); `B` optionally selects its own `m`; client objects `X (B.m)`, `Y (C.m)`,
-`Z (A.m)`, where `X` optionally `extends C[Int]` instead of selecting (its mirror class has
+deferred `Int`), and `M` may instead declare a field (`val`, `var`, `lazy val`, private `val`); `B` optionally selects its own `m`; client objects `X (B.m)`, `Y (C.m)`,
+`Z (A.m)` or `Z` observing all of `C` (a macro), where `X` optionally `extends C[Int]` instead of selecting (its mirror class has
 static forwarders for every inherited member). An edit
 changes one class. -/
 
-inductive Opt | none | int | str | par | dfr
+inductive Opt | none | int | str | par | dfr | val | var | lzy | pval
   deriving DecidableEq, Repr
 
 def Opt.decls : Opt → List (Name × Mem)
@@ -81,8 +96,15 @@ def Opt.decls : Opt → List (Name × Mem)
   | .str => [(m, Flat.str)]
   | .par => [(m, Flat.par)]
   | .dfr => [(m, intD)]
+  | .val => [(m, { ty := .int, mod := .val })]
+  | .var => [(m, { ty := .int, mod := .var })]
+  | .lzy => [(m, { ty := .int, mod := .lzy })]
+  | .pval => [(m, { ty := .int, mod := .val, priv := true })]
 
 def opts : List Opt := [.none, .int, .str, .par, .dfr]
+
+/-- The trait `M` may also declare a field: a `val`, `var`, `lazy val` or private `val`. -/
+def optsM : List Opt := opts ++ [.val, .var, .lzy, .pval]
 
 structure Cfg where
   oA : Opt
@@ -95,6 +117,7 @@ structure Cfg where
   bFinal : Bool
   xObj : Bool
   aTrait : Bool
+  zObs : Bool
   deriving DecidableEq, Repr
 
 def Cfg.aParents (k : Cfg) : List (Cls × Ty) :=
@@ -114,33 +137,35 @@ def Cfg.src (k : Cfg) : Cls → Src
   | X => if k.xObj then { decl := { kind := .obj, parents := [(C, .int)] } }
          else { decl := { kind := .obj }, body := [(B, m)] }
   | Y => { decl := { kind := .obj }, body := [(C, m)] }
-  | Z => { decl := { kind := .obj }, body := [(A, m)] }
+  | Z => if k.zObs then { decl := { kind := .obj }, observes := [C] }
+         else { decl := { kind := .obj }, body := [(A, m)] }
 
 def cfgs : List Cfg := do
-  let a ← opts; let b ← opts; let mm ← opts; let c ← opts
+  let a ← opts; let b ← opts; let mm ← optsM; let c ← opts
   let aPar ← [none, some .int, some .string]
   let bArg ← [Ty.int, .string]
   let bUses ← [false, true]
   let bFinal ← [false, true]
   let xObj ← [false, true]
   let aTrait ← [false, true]
-  pure ⟨a, b, mm, c, aPar, bArg, bUses, bFinal, xObj, aTrait⟩
+  let zObs ← [false, true]
+  pure ⟨a, b, mm, c, aPar, bArg, bUses, bFinal, xObj, aTrait, zObs⟩
 
 /-- Single-class edits, with the class edited. -/
 def edits (k : Cfg) : List (Cfg × Cls) :=
   (opts.filter (· != k.oA)).map (fun o => ({ k with oA := o }, A)) ++
   (opts.filter (· != k.oB)).map (fun o => ({ k with oB := o }, B)) ++
-  (opts.filter (· != k.oM)).map (fun o => ({ k with oM := o }, M)) ++
+  (optsM.filter (· != k.oM)).map (fun o => ({ k with oM := o }, M)) ++
   (opts.filter (· != k.oC)).map (fun o => ({ k with oC := o }, C)) ++
   ([none, some .int, some .string].filter (· != k.aPar)).map (fun t => ({ k with aPar := t }, A)) ++
   ([Ty.int, .string].filter (· != k.bArg)).map (fun t => ({ k with bArg := t }, B)) ++
   [({ k with bFinal := !k.bFinal }, B), ({ k with xObj := !k.xObj }, X),
-   ({ k with aTrait := !k.aTrait }, A)]
+   ({ k with aTrait := !k.aTrait }, A), ({ k with zObs := !k.zObs }, Z)]
 
 def Cfg.size (k : Cfg) : ℕ :=
   ([k.oA, k.oB, k.oM, k.oC].filter (· != .none)).length + (if k.aPar.isSome then 1 else 0) +
     (if k.bArg != .int then 1 else 0) + (if k.bUses then 1 else 0) + (if k.bFinal then 1 else 0) +
-    (if k.xObj then 1 else 0) + (if k.aTrait then 1 else 0)
+    (if k.xObj then 1 else 0) + (if k.aTrait then 1 else 0) + (if k.zObs then 1 else 0)
 
 /-- Is the run from `k` after edit `k'` of class `e` clean, under keys `E` and the rule policy? -/
 def cleanRun (E : Kind → Bool) (abstractAll : Bool) (rs : List Rule) (s₀ : St) (k' : Cfg) (e : Cls) :
@@ -203,7 +228,7 @@ example : reportR clientOnly true allRules baseImpl editImpl {B} = some ⟨[C], 
 Each pair is clean under the widened default and unclean with that one rule dropped (counts of
 unclean pairs over the whole space in brackets). They are the candidate scripted tests. -/
 
-def k₀ : Cfg := ⟨.none, .none, .none, .none, none, .int, false, false, false, false⟩
+def k₀ : Cfg := ⟨.none, .none, .none, .none, none, .int, false, false, false, false, false⟩
 
 def cleanUnder (rs : List Rule) (k k' : Cfg) (e : Cls) : Bool :=
   ((reportR clientOnly true rs k.src k'.src {e}).map (·.clean)).getD false

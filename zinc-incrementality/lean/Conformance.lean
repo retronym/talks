@@ -34,6 +34,9 @@ def kindStr (d : Decl) : String :=
     | .obj => "object"
     | .cls => if d.abstract then "abstract class" else "class"
 
+def modStr : Mod → String
+  | .dfn => "def" | .val => "val" | .var => "var" | .lzy => "lazy val"
+
 def jstr (s : String) : String := "\"" ++ s ++ "\""
 
 def jarr (l : List String) : String := "[" ++ ",".intercalate l ++ "]"
@@ -44,7 +47,9 @@ def clsJson (c : Cls) (s : Src) : String :=
     ",\"tparams\":" ++ tparams ++
     ",\"parents\":" ++ jarr (s.decl.parents.map fun (p, t) => jarr [jstr (clsName p), jstr (tyStr t)]) ++
     ",\"decls\":" ++ jarr (s.decl.decls.map fun (n, mm) =>
-      jarr [jstr (nameStr n), jstr (tyStr mm.ty), toString mm.deferred]) ++
+      jarr [jstr (nameStr n), jstr (tyStr mm.ty), toString mm.deferred, jstr (modStr mm.mod),
+        toString mm.priv]) ++
+    ",\"observes\":" ++ jarr (s.observes.map (jstr ∘ clsName)) ++
     ",\"body\":" ++ jarr (s.body.map fun (c', n) => jarr [jstr (clsName c'), jstr (nameStr n)]) ++ "}"
 
 def progJson (src : Cls → Src) : String := jarr (all.map fun c => clsJson c (src c))
@@ -63,7 +68,7 @@ def modelErrs (src : Cls → Src) : List String :=
 /-- Does every selection resolve in the model's clean build? Scala rejects one that does not. -/
 def resolves (src : Cls → Src) : Bool :=
   let o := clean src
-  all.all fun c => (o c).descs.all (·.2.isSome)
+  all.all fun c => (o c).descs.all (·.2.1.isSome)
 
 /-- Does no class inherit two instances of one ancestor, `M[Int]` and `M[String]`? Scala rejects
 that ("illegal inheritance"); the model's linearization merge keeps the first. -/
@@ -76,19 +81,20 @@ def coherent (src : Cls → Src) : Bool :=
 
 def optStr : Opt → String
   | .none => "-" | .int => "int" | .str => "str" | .par => "par" | .dfr => "dfr"
+  | .val => "val" | .var => "var" | .lzy => "lazy" | .pval => "pval"
 
-/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj aTrait`. -/
+/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj aTrait zObs`. -/
 def cfgStr (k : Cfg) : String :=
   " ".intercalate ([k.oA, k.oB, k.oM, k.oC].map optStr ++
     [(k.aPar.map tyStr).getD "-", tyStr k.bArg, if k.bUses then "uses" else "-",
      if k.bFinal then "final" else "-", if k.xObj then "xobj" else "-",
-     if k.aTrait then "atrait" else "-"])
+     if k.aTrait then "atrait" else "-", if k.zObs then "zobs" else "-"])
 
 /-- `Cfg` as named factors, for the harness's covering-array ordering. -/
 def factorsJson (k : Cfg) : String :=
   let fs := [("oA", optStr k.oA), ("oB", optStr k.oB), ("oM", optStr k.oM), ("oC", optStr k.oC),
     ("aPar", (k.aPar.map tyStr).getD "-"), ("bArg", tyStr k.bArg), ("bUses", toString k.bUses),
-    ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait)]
+    ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait), ("zObs", toString k.zObs)]
   "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
 
 def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=

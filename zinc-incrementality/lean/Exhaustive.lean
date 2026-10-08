@@ -14,7 +14,12 @@ def ruleSets : List (String × (Kind → Bool) × Bool × List Rule) :=
   allRules.map (fun r => (s!"widened without {repr r}", clientOnly, true, allRules.filter (· != r))) ++
   [("widened, trait narrowed to direct mixins", clientOnly, true,
      allRules.map (fun r => if r == .trait then .traitDirect else r)),
-   ("widened without uses, self-uses recorded as keys", (fun k => k == .client || k == .uses), true,
+   ("widened, traitDirect blind to private members (no extraHash)", clientOnly, true,
+     allRules.map (fun r => if r == .trait then .traitPub else r)),
+   ("widened, macro-expansion keys dropped", (· == .client), true, allRules),
+   ("widened without header, extends clauses recorded", (fun k => clientOnly k || k == .extends),
+     true, allRules.filter (· != .header)),
+   ("widened without uses, self-uses recorded as keys", (fun k => clientOnly k || k == .uses), true,
      allRules.filter (· != .uses))]
 
 abbrev Bad := List (Cfg × Cfg × Zinc.Hier.Cls)
