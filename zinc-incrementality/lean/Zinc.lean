@@ -16,3 +16,4 @@ import Zinc.Erasure
 import Zinc.ImplicitScope
 import Zinc.Classpath
 import Zinc.Snapshot
+import Zinc.Pipelining

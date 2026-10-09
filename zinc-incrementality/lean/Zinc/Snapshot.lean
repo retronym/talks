@@ -20,7 +20,11 @@ Refreshing every upstream unit, or every unit in the read sets of the referenced
 `X` (`refreshAll_after_revert`). With local hashes Zinc's rule is enough
 (`NCompiler.fresh_refreshRef_local`), which is the case for Zinc today: an upstream class's stored
 API is its own, materialised members included. The PoC's composition across subprojects is the
-non-local case, where `macro-upstream-member-removed` was found.
+non-local case, where `macro-upstream-member-removed` was found: lib's `B` gains a member, app's
+`C extends B` is skipped, only the macro client `W` recompiles, `B`'s record stays old, and removing
+the member again goes unseen. The PoC's fix (`9904df698`, "Refresh the stored API of every
+processed upstream change") refreshes every changed upstream class after a compiling run, which is
+`refreshAll` on the classes that changed (an unchanged class's record is already current).
 -/
 
 namespace Zinc.Snapshot
