@@ -411,7 +411,7 @@ P9.3 found one way an edit changes what a name resolves to without Zinc noticing
 
 `Givens.lean`: the same with an instance found by type (`implicitly`/`summon`). Scala 2 calls any two instances in the lexical scope ambiguous and searches the companion only when there is none; Scala 3 prefers the innermost nesting level, with the file's imports and the client's own package at one level. A changed implicit invalidates every member-ref dependent of its class, so an import's edge to any class of the file is enough; what is left is the scopes with no edge at all.
 
-Fixes, checked on the whole space (`searched_clean`, `names_clean`): recording every scope the lookup searched, misses included, or invalidating the users of a name whenever a binding of it is added or removed. Neither touches F4, F5 and F6, which are not about the client's resolution.
+Fixes, checked on the whole space (`searched_clean`, `names_clean`): recording every scope the lookup searched, misses included, or invalidating the users of a name whenever a binding of it is added or removed. Neither touches F4, F5 and F6, which are not about the client's resolution. F6's fix belongs in dotc: decide whether a class calls a trait's initialiser the same way from source and from TASTy (or always call it).
 
 ### Harness
 
@@ -430,7 +430,7 @@ Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` 
 | F5 | Scala 3 only: a class and a package object member (or top-level export) of one name in one package; the double definition is reported only when both files compile together, and nothing connects them in Zinc (the member is `a.b.package$.Foo`). | `missedClash` | `package-object-member-clashes-with-class-scala3` |
 | G1 | An implicit or given added to a package object (Scala 2: `package object a` too), over the companion or making the search ambiguous. | `pobj_added_today_s2` | `added-implicit-package-object`, `added-given-package-object-scala3` |
 | G2 | Scala 3: a top-level given added in a new file. | `inner_added_today_s3` | `added-given-top-level-scala3` |
-| F6, G3 | Scala 3 only: a client extending a trait whose members are all lazy (`object Foo`, a given alias) compiles without the call to the trait's `$init$` when compiled apart from it (the trait read from TASTy has no initialiser); Zinc recompiles the client in a later round than the trait or without it. Classfile bytes only (the `$init$` is empty), the compiler's joint/separate difference. | `Names.separateInit`, `Givens.separateInit` | none (bytes only) |
+| F6, G3 | Scala 3 only: a client extending a trait whose members are all lazy (`object Foo`, a given alias) compiles without the call to the trait's `$init$` when compiled apart from it (the trait read from TASTy has no initialiser); Zinc recompiles the client in a later round than the trait or without it. In the space the `$init$` is empty, so only bytes differ; but it is a separate compilation bug in dotc: once a client has been compiled apart, a statement later added to the trait (not API, so Zinc recompiles the trait alone) never runs for it, where a clean build runs it. | `Names.separateInit`, `Givens.separateInit` | `trait-initialiser-skipped-scala3` (behavioural: `run` fails) |
 
 ### Counts
 

@@ -223,8 +223,11 @@ def missedClash (v : Ver) (p' : Prog) : Bool := resolve v p' == .clash
 /-- Scala 3 compiles a class that extends a trait whose members are all lazy (here `object Foo`)
 differently alone than with the trait: read from TASTy, the trait has no initialiser, and the
 class's static initialiser omits the call to `P.$init$`. Zinc compiles the client in a later round
-than `P`, or without it; a clean build compiles them together. Classfile bytes only (`Givens.lean`
-has the same with a given). -/
+than `P`, or without it; a clean build compiles them together. In this space the trait's `$init$`
+is empty and only the classfiles differ (`Givens.lean` has the same with a given). It is a separate
+compilation bug all the same: once a client has been compiled apart, a statement added to the trait
+(not API, so Zinc recompiles the trait alone) never runs for it, where a clean build runs it
+(pending scripted test `trait-initialiser-skipped-scala3`). -/
 def separateInit (v : Ver) (p' : Prog) (rc : Bool) : Bool := v == .s3 && p'.cl.inh && p'.st .inh == .foo && rc
 
 /-- The divergences that are not about the client's resolution. -/

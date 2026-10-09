@@ -130,8 +130,10 @@ lazy val) differently alone than with the trait: read from TASTy, the trait has 
 the class's static initialiser omits the call to `P.$init$` that a joint compile emits. Zinc
 recompiles the client in a later round than `P`, or without it, unless the companion of `T` changed
 (both `P` and the client depend on `T`, and a changed implicit invalidates them together); a clean
-build compiles them together. The classfiles differ; the behaviour does not (the trait's `$init$`
-is empty). -/
+build compiles them together. Here the trait's `$init$` is empty, so only the classfiles differ.
+But the client's behaviour now depends on how it was compiled: a statement later added to the
+trait is not API, Zinc recompiles the trait alone, and a client compiled apart never runs it
+(`Names.separateInit`; pending scripted test `trait-initialiser-skipped-scala3`). -/
 def separateInit (v : Ver) (p p' : Prog) (rc : Bool) : Bool :=
   v == .s3 && p'.cl.inh && p'.has .inh && rc && p.has .comp == p'.has .comp
 
