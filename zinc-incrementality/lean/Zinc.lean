@@ -23,3 +23,4 @@ import Zinc.Inline
 import Zinc.PingPong
 import Zinc.Embed
 import Zinc.Added
+import Zinc.Sealed

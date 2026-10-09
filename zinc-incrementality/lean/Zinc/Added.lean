@@ -18,6 +18,10 @@ dependents of the new class (none, nobody resolved it yet) and nothing else
 (`added_today_wrong`). Recording the scopes searched (`fixed`) meets the obligations
 (`obligations_fixed`) and recompiles it.
 
+Confirmed on Zinc `develop` (`e65e35a8d`, default scripted Scala version): the incremental build
+succeeds and a clean build fails. Pending scripted test `added-class-inner-package` on
+retronym/zinc branch `claude/added-class-inner-package`.
+
 Deletion is already handled by keys: the client recorded the class it resolved, whose hash moves
 when it becomes absent (`deleted_today_clean`); Zinc also invalidates dependents of removed
 classes directly.

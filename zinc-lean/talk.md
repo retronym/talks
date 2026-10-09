@@ -509,7 +509,7 @@ Notes: 1 min. Files: `lean/V1/Task.lean`, `Soundness.lean`, `Uniqueness.lean`, `
 
 ### 14. Two things the proof found out about Zinc
 
-**1. `transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test, so the plain loop can recompile the same classes again. Two mutually recursive classes whose inferred types keep changing can alternate forever. From `transitiveStep` on, the next round also includes the last one, so the set only grows.
+**1. `transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test, so the plain loop can recompile the same classes again. Two mutually recursive classes whose inferred types keep changing alternate forever (proved, for every amount of fuel). From `transitiveStep` on, the next round also includes the last one, so the set only grows, and the pair compiles together.
 
 **2. "It stops, so it equals the clean build" is false without another assumption.**
 
@@ -525,7 +525,7 @@ Separately compiled, any type is a consistent answer; joint compilation reports 
 
 <div class="fn">
 
-Notes: 1.5 min. `PLAN.md` "Two findings"; `fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`. Finding 2 is the problem behind sbt/zinc#1284 ("include mutual dependencies in initial invalidation") and its revert, #1462. Gap: the non-termination of the plain policy is argued, not a Lean `example` yet. Both findings corrected `zinc-incrementality` §3–4.
+Notes: 1.5 min. `PLAN.md` "Two findings"; `fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`. Finding 2 is the problem behind sbt/zinc#1284 ("include mutual dependencies in initial invalidation") and its revert, #1462. Finding 1 is `PingPong.plain_diverges`: two classes whose inferred types read each other, a table edit, and the plain loop alternates forever (proved for every amount of fuel); `transitiveStep_stops` reaches the joint fixed point. Both findings corrected `zinc-incrementality` §3–4.
 
 Bugs of note: [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) · [sbt/zinc#1462](https://github.com/sbt/zinc/pull/1462) · [sbt/zinc#1420](https://github.com/sbt/zinc/issues/1420)
 
@@ -891,9 +891,11 @@ x match { case A(a, b) => }   // the tree shows unapply; _1, _2 and the arity ch
 
 The model's extractor becomes a function of the output; T2 and T3a hold with the same proofs, and the last column meets the obligations.
 
+Adding a class is the same kind of miss. A class added as `a.b.Foo` shadows `a.Foo` for a client in `package a; package b`, but the client's tree shows only `a.Foo`, and Zinc invalidates only dependents of the new class: none. Recording the scopes searched fixes it. Deleting a class is caught by the key on the class the client resolved. The model predicted this; a scripted test confirms it on Zinc `develop` (the incremental build succeeds, a clean build fails).
+
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`). The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
+Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
 
 Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors)
 
@@ -903,19 +905,17 @@ Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231)
 
 | feature | what the model needs |
 |---|---|
-| sealed hierarchies and exhaustivity | a query for the children of a sealed class (non-local, and a new child changes the answer) |
 | SAM conversion | an inheritance edge that the source does not spell out |
 | exports, top-level definitions, package objects | units that are not classes: a source → class mapping |
 | class vs companion | keys with a namespace component |
 | annotations, parameter annotations, literal types | more of the declaration in the answer to a lookup |
 | Java sources | a second front end, and compositionality between the source and classfile views of Java |
-| added and deleted sources | a set of classes that changes between builds |
 
 <div class="fn">
 
 Notes: 1 min. None of these is in the Lean yet. The taxonomy is `zinc-incrementality` §16.
 
-Bugs of note: [sbt/zinc#1229](https://github.com/sbt/zinc/issues/1229) (sealed) · [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names)
+Bugs of note: [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names)
 
 </div>
 
@@ -935,6 +935,7 @@ Bugs of note: [sbt/zinc#1229](https://github.com/sbt/zinc/issues/1229) (sealed) 
 | desugaring, post-typer phases | `lookup`, from the typed tree | failed lookups, `_N` and a sentinel | `TreeToy.obligations_fixed` |
 | inline bodies, constants | `member` with its body | the body | `Inline.obligations_withBodies` |
 | upstream subprojects, libraries | any, against a snapshot or stamp | as above | T5 `downstream_sound` |
+| sealed hierarchies, Java `permits` | the parent's children | children in the parent's hash | `Sealed.obligations_withChildren` |
 
 A change to the bridge can say which row it extends and which obligation it discharges.
 
@@ -957,6 +958,7 @@ Notes: 1 min. Files: `Zinc/Toy.lean`, `Zinc/HierSound.lean`, `Zinc/Flat.lean`, `
 | implicit summary must be in the API hash; objects are a gap | `ImplicitScope.lean` | sbt/zinc#1845 |
 | refreshing only referenced snapshots is unsound for non-local hashes | `Snapshot.stale_after_revert` | PoC refreshes every changed upstream class (`9904df698`) |
 | a failed upstream must roll back its early output | `Pipelining.lean` | pending `pipelining-failed-upstream-revert` |
+| a class added in an inner package scope is missed | `Added.lean` | pending scripted test `added-class-inner-package`, confirmed on develop |
 | Zinc's loop formula; fixed points need not be unique | the T3/T4 proofs | `zinc-incrementality` §3–4 |
 
 <!-- break -->
@@ -1034,7 +1036,7 @@ Notes: 2 min. `Conformance.lean`; the harness is `sbt.internal.inc.bench.Conform
 ### 28. What the model does not show
 
 - That scalac or dotc meet the obligations. That is still a testing problem; §27 is one way to do it.
-- Added or deleted sources, and the source → class mapping (Zinc recompiles files, not classes).
+- The source → class mapping (Zinc recompiles files, not classes).
 - Precision: that a design recompiles *no more* than another. The model computes it on examples; there is no theorem.
 - Hash collisions: hashes are modelled as injective.
 
@@ -1051,7 +1053,7 @@ Notes: 30 s. `zinc-incrementality` §22 "Limits"; `PLAN.md` P2.6 (precision, par
 ### 29. Next steps
 
 - **For compiler teams:** treat the three obligations as the review checklist for any feature that adds something a client can observe. Add the feature to a program space and run the conformance harness.
-- **For the model:** precision theorems for the hashing schemes; whether invalidating mutually recursive classes together removes the acyclicity assumption; a Lean example of non-termination; the features in §23d.
+- **For the model:** precision theorems for the hashing schemes; whether invalidating mutually recursive classes together removes the acyclicity assumption; the features in §23d.
 - **Logging queries from the real compiler** and checking the recorded keys against `coverage` would find a missing key before anyone writes a test for it.
 - **You can do this too, with help.** The model, the harness and most of the fixes were written with LLM agents doing much of the Lean and the test-writing.
 
@@ -1081,7 +1083,7 @@ My pick: 1 and 4, with 3 as a fallback.
 - Port `lean/V2/Embed.lean` back to the full model.
 - §18: the Scala 2 row is split across two files (`Hier.W` for typing, `Erasure` `.asf` for codegen). One instance per scheme over one program space would make the slide's table a single comparison.
 - Stale docs: `zinc-incrementality` §22 says the model is about 1,100 lines (now about 8,300); `PLAN.md` P6.6/P6.8 cite `wit_obligations`, `wit_sound`, `vEdge_obligations`, `vEdge_sound`, which were replaced in P6.9.
-- Results the talk would like: a non-termination example; precision theorems (P2.6).
+- Results the talk would like: precision theorems (P2.6).
 - Freeze the numbers from retronym/zinc#24 and #25 at a commit.
 - Lean syntax highlighting in `template.html` (highlight.js has no Lean grammar).
 
