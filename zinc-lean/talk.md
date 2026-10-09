@@ -70,7 +70,7 @@ flowchart LR
 
 <div class="fn">
 
-Notes: 1 min. This becomes the axiom `comp` in §12. Evidence: `zinc-incrementality` §6, §6a; the catalyst differential.
+Notes: 1 min. This becomes the axiom `comp` in §12. Evidence: `zinc-incrementality` §6, §6a; the catalyst differential. A second 2026 instance: a sort keyed on `Symbol.id`, whose order differs between symbols from source and symbols from a JAR (found in a sibling session; add the link). Keep this slide short: joint ≡ separate is planned as its own talk (Notes for Jason, T).
 
 Bugs of note: [scala/scala#11289](https://github.com/scala/scala/pull/11289) (forwarder signatures and the batch) · [scala/scala3#7661](https://github.com/scala/scala3/issues/7661) (deterministic compilation, open since 2019) · [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405)
 
@@ -918,6 +918,10 @@ My pick: 1 and 4, with 3 as a fallback.
 - Results the talk would like: a non-termination example; precision theorems (P2.6).
 - Freeze the numbers from retronym/zinc#24 and #25 at a commit.
 - Lean syntax highlighting in `template.html` (highlight.js has no Lean grammar).
+
+### T. A separate talk: joint ≡ separate compilation
+
+§3's premise, that compiling against classfiles gives the same bytes as compiling jointly from source, has enough material for its own talk: `zinc-incrementality` §6 and §6a (scala-dev#405, scala3#7661, the Java front ends), the 2026 batch-dependent forwarder signatures (scala/scala#11289) and the `Symbol.id` sort that differs between source and JAR symbols. In this talk it stays one slide and one axiom (`comp`).
 
 ### Q. Decisions (2026-10-09)
 
