@@ -411,7 +411,7 @@ P9.3 found one way an edit changes what a name resolves to without Zinc noticing
 
 `Givens.lean`: the same with an instance found by type (`implicitly`/`summon`). Scala 2 calls any two instances in the lexical scope ambiguous and searches the companion only when there is none; Scala 3 prefers the innermost nesting level, with the file's imports and the client's own package at one level. A changed implicit invalidates every member-ref dependent of its class, so an import's edge to any class of the file is enough; what is left is the scopes with no edge at all.
 
-Fixes, checked on the whole space (`searched_clean`, `names_clean`): recording every scope the lookup searched, misses included, or invalidating the users of a name whenever a binding of it is added or removed. Neither touches F4 and F5, which are not about the client's resolution.
+Fixes, checked on the whole space (`searched_clean`, `names_clean`): recording every scope the lookup searched, misses included, or invalidating the users of a name whenever a binding of it is added or removed. Neither touches F4, F5 and F6, which are not about the client's resolution.
 
 ### Harness
 
@@ -430,15 +430,16 @@ Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` 
 | F5 | Scala 3 only: a class and a package object member (or top-level export) of one name in one package; the double definition is reported only when both files compile together, and nothing connects them in Zinc (the member is `a.b.package$.Foo`). | `missedClash` | `package-object-member-clashes-with-class-scala3` |
 | G1 | An implicit or given added to a package object (Scala 2: `package object a` too), over the companion or making the search ambiguous. | `pobj_added_today_s2` | `added-implicit-package-object`, `added-given-package-object-scala3` |
 | G2 | Scala 3: a top-level given added in a new file. | `inner_added_today_s3` | `added-given-top-level-scala3` |
+| F6, G3 | Scala 3 only: a client extending a trait whose members are all lazy (`object Foo`, a given alias) compiles without the call to the trait's `$init$` when compiled apart from it (the trait read from TASTy has no initialiser); Zinc recompiles the client in a later round than the trait or without it. Classfile bytes only (the `$init$` is empty), the compiler's joint/separate difference. | `Names.separateInit`, `Givens.separateInit` | none (bytes only) |
 
 ### Counts
 
 | Space | Edits | Model unclean (F1/F2/F3/F4/F5 or G) | Harness cases | Model vs harness disagree | Divergences (F1/F2/F3/F4/F5 or G) |
 |---|---|---|---|---|---|
 | names, 2.13 | 61,812 | 5,892 (3,228/936/864/864/0) | 11,506 | 0 | 1,532 (844/252/260/176/0) |
-| names, 3 | 122,528 | 17,392 (6,400/1,008/1,728/0/8,256) | S3CASES | S3DISAGREE | S3DIV |
-| givens, 2.13 | 1,076 | 256 (G1 256) | 1,076 | 0 | 256 |
-| givens, 3 | 2,355 | 356 (G1 148, G2 208) | G3CASES | G3DISAGREE | G3DIV |
+| names, 3 | 122,528 | 25,312 (6,400/1,008/1,728/0/8,256; F6 7,920) | 3,876 | 0 | 796 (256/42/78/0/270; F6 150) |
+| givens, 2.13 | 1,076 | 256 (G1: package object `b` 128, package object `a` 128) | 1,076 | 0 | 256 |
+| givens, 3 | 2,355 | 645 (G1 148, G2 208, G3 289) | 2,355 | 0 | 645 |
 
 Model unclean counts are over the whole space; the harness ran every edit of the givens spaces and a greedy selection of bases for the names spaces. Resolution agreed with the compiler on every case run.
 
@@ -447,6 +448,6 @@ Model unclean counts are over the whole space; the harness ran every edit of the
 - [x] P10.1 `Names.lean`: scopes, resolution per version, Zinc's edges, verdict; families as checked examples; `searched_clean`, `names_clean`.
 - [x] P10.2 `Givens.lean`: instances by type.
 - [x] P10.3 `conformance names|givens 2|3`; harness: source-file bases, a classfile probe, Scala 3's TASTy files and source paths.
-- [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the missed clash).
+- [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the explicit selector's name charged to the import's class, the missed clash, the trait initialiser).
 - [x] P10.5 Pending scripted tests per family.
 - [ ] Future: the cheap fix in Zinc (on an added or removed binding of a name, invalidate the name's users; for an added source, its classes' simple names) and a run of the space against it; the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
