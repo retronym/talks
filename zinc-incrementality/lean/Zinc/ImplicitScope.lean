@@ -69,8 +69,9 @@ keys count (`plain`).
    project stale (checked example).
 4. Counterexamples: `object O extends B` (only `NameKind.Type` sources reach `typeParents`), and,
    only if inherited members were missing from name hashes, `object C extends L`.
-5. `lake exe exhaustive implicit`: stored = recomputed run for run, and the fix across projects
-   recompiles what the fallback recompiles in one project (counts at the end of the file).
+5. `lake exe exhaustive implicit`: stored = recomputed run for run, and across projects the fix
+   recompiles exactly the clients the fallback recompiles in one project, except clients of an
+   object's singleton type (counts at the end of the file).
 -/
 
 namespace Zinc.ImplicitScope
@@ -971,5 +972,129 @@ def cs₁ : Cls → Src
 
 example : report develop (.proj twoP) gp₀ cs₁ {B} = some ⟨[C, X], 3, [], [X]⟩ := by native_decide
 example : report stored (.proj twoP) gp₀ cs₁ {B} = some ⟨[C, X], 3, [], [X]⟩ := by native_decide
+
+/-! ### Without the fix the obligations fail
+
+The recomputed design without the summary: `(C, imp)` has the same hash before and after `B` gains
+`sb`, yet it is the key that covers `X`'s read of `B`'s companion. And with the fix published only
+for classes, the same holds for `(O, imp)` and `Y`'s read of `B`'s companion. -/
+
+/-- Source-determined interfaces. -/
+def ifs (src : Cls → Src) : Cls → Pub := fun c => { decl := (src c).decl }
+
+example : π { fix := false } (ifs gp₀) C .imp = π { fix := false } (ifs gp₁) C .imp ∧
+    keyOf (B, .cscope (.srch C)) = (C, .imp) ∧ B ∈ chainP (ifs gp₀) depth C ∧
+    answer (ifs gp₀) (B, .cscope (.srch C)) ≠ answer (ifs gp₁) (B, .cscope (.srch C)) := by
+  native_decide
+
+example : π {} (ifs ob₀) O .imp = π {} (ifs ob₁) O .imp ∧ B ∈ chainP (ifs ob₀) depth O ∧
+    answer (ifs ob₀) (B, .cscope (.srch O)) ≠ answer (ifs ob₁) (B, .cscope (.srch O)) := by
+  native_decide
+
+/-! ## Bounded exhaustive comparison
+
+`A extends nothing`, `B extends A`, `C extends B`, `D extends A`, `object O extends B`, trait `L`.
+Choices: `A`'s companion has nothing, `sa`, or `sa` for `Show[List[_]]`; `B` has nothing, `sb`,
+`sb` for lists, a class-side implicit, or a non-implicit companion member; `L` has a class-side
+implicit `lp[T <: C]` or not; `C`'s companion extends `L` or not; `C`'s companion has its own
+implicit or not. Clients: `X` (`Show[C]`), `W` (`Show[List[C]]`), `Y` (`Show[O.type]`), `Z`
+(`Show[D]`). An edit changes one choice. `lake exe exhaustive implicit` runs every (base, edit)
+pair under each variant; the baseline for precision is develop in one project, i.e. the fallback.
+
+Results: 120 bases, 1,080 (base, edit) pairs, every run terminates. Unclean runs, the classes left
+wrong, and the clients recompiled against the fallback:
+
+| variant | unclean | wrong | clients recompiled |
+|---|---|---|---|
+| develop, one project (the fallback; baseline) | 0 | | `X` 912, `W` 912, `Y` 672, `Z` 240 |
+| develop, lib → app (or lib → mid → app) | 288 | `X` 51, `W` 136, `Y` 136, `Z` 80 | misses one in 480 runs |
+| fix (stored), one project | 0 | | = baseline |
+| fix (stored), lib → app (or lib → mid → app) | 136 | `Y` 136 | = baseline for `X W Z`; misses `Y` in 296 runs |
+| fix (stored) without the `apiHash` fold, lib → mid → app | 312 | `C` 240, `O` 240, `X` 24, `W` 64, `Y` 136 | misses one in 396 runs |
+| fix (stored) for objects too, lib → mid → app | **0** | | = baseline |
+| fix (stored), inherited members not in name hashes | 256 | `X` 120, `Y` 136 | misses one in 416 runs |
+| fix (recomputed), no in-project rule | 136 | `Y` 136 | = stored |
+| fix (recomputed) for objects too, no in-project rule | **0** | | = baseline |
+
+* No variant ever recompiles a client the fallback does not: the fix costs nothing beyond what the
+  fallback already costs within a project. Run for run, across projects it recompiles exactly the
+  fallback's clients except `Y`.
+* That cost is the fallback's coarseness: `X` 552, `W` 592, `Z` 80 of those recompiles leave the
+  output unchanged (any implicit change in an ancestor recompiles every memberRef client of every
+  descendant, whatever it searched for: `W` recompiles when a `Show[C]` implicit changes).
+* The stored fix agrees with the recomputed one on every client, wrong set included: no stale
+  summary is ever read (`stored_eq_recomputed` explains why). Without the fold, edits to `A` leave
+  `C` and `O` in `mid` with stale stored summaries (240 runs each).
+* What remains is the singleton type of an object (all 136 runs are `Y`, after edits to `A`'s or
+  `B`'s companion). Publishing the summary for objects too closes it.
+-/
+
+def saL : Imp := { sa with list := true }
+def sbL : Imp := { sb with list := true }
+def sc : Imp := ⟨C, false, 4⟩
+
+structure Cfg where
+  a : Fin 3
+  b : Fin 5
+  l : Bool
+  cp : Bool
+  cc : Bool
+  deriving DecidableEq, Repr
+
+def Cfg.src (k : Cfg) : Cls → Src
+  | A => { me := A, decl := { comp := [[], [sa], [saL]].getD k.a.val [] } }
+  | B => { me := B, decl := match k.b.val with
+    | 1 => { parent := some A, comp := [sb] }
+    | 2 => { parent := some A, comp := [sbL] }
+    | 3 => { parent := some A, cimps := [⟨B, false, 5⟩] }
+    | 4 => { parent := some A, other := 1 }
+    | _ => { parent := some A } }
+  | C => { me := C, decl := { parent := some B, cpar := if k.cp then some L else none,
+                              comp := if k.cc then [sc] else [] } }
+  | D => { me := D, decl := { parent := some A } }
+  | L => { me := L, decl := { cimps := if k.l then [lp] else [] } }
+  | O => { me := O, decl := { obj := true, parent := some B } }
+  | X => { me := X, goals := [(C, false)] }
+  | W => { me := W, goals := [(C, true)] }
+  | Y => { me := Y, goals := [(O, false)] }
+  | Z => { me := Z, goals := [(D, false)] }
+
+def cfgs : List Cfg := do
+  let a ← [0, 1, 2]; let b ← [0, 1, 2, 3, 4]
+  let l ← [false, true]; let cp ← [false, true]; let cc ← [false, true]
+  pure ⟨a, b, l, cp, cc⟩
+
+/-- Single-choice edits, with the class edited. -/
+def edits (k : Cfg) : List (Cfg × Cls) :=
+  (([0, 1, 2] : List (Fin 3)).filter (· != k.a)).map (fun o => ({ k with a := o }, A)) ++
+  (([0, 1, 2, 3, 4] : List (Fin 5)).filter (· != k.b)).map (fun o => ({ k with b := o }, B)) ++
+  [({ k with l := !k.l }, L), ({ k with cp := !k.cp }, C), ({ k with cc := !k.cc }, C)]
+
+def Cfg.size (k : Cfg) : ℕ :=
+  (if k.a != 0 then 1 else 0) + (if k.b != 0 then 1 else 0) + (if k.l then 1 else 0) +
+    (if k.cp then 1 else 0) + (if k.cc then 1 else 0)
+
+structure Variant where
+  name : String
+  ext : Ext
+  pol : Pol
+
+def variants : List Variant :=
+  [⟨"develop, one project (the fallback; baseline)", develop, .proj oneP⟩,
+   ⟨"develop, lib → app", develop, .proj twoP⟩,
+   ⟨"develop, lib → mid → app", develop, .proj threeP⟩,
+   ⟨"fix (stored), one project", stored, .proj oneP⟩,
+   ⟨"fix (stored), lib → app", stored, .proj twoP⟩,
+   ⟨"fix (stored), lib → mid → app", stored, .proj threeP⟩,
+   ⟨"fix (stored) without the apiHash fold, lib → mid → app", { stored with fold := false },
+     .proj threeP⟩,
+   ⟨"fix (stored) for objects too, lib → mid → app", { stored with objects := true }, .proj threeP⟩,
+   ⟨"fix (stored), inherited members not in name hashes, lib → mid → app",
+     { stored with inhNames := false }, .proj threeP⟩,
+   ⟨"fix (recomputed), no in-project rule", recomputed, .plain⟩,
+   ⟨"fix (recomputed) for objects too, no in-project rule", recAll, .plain⟩]
+
+def runVariant (v : Variant) (k k' : Cfg) (e : Cls) : Option Report :=
+  report v.ext v.pol k.src k'.src {e}
 
 end Zinc.ImplicitScope
