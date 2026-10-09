@@ -301,3 +301,32 @@ Findings for the talk:
 - As seen from is the wrong input for erasure; as declared plus parent type arguments is the sound key for descendants, and it determines as seen from. The resolved-member (as-seen-from) hash may refine `memberRef` clients, never the descendant rules.
 - Neither rendering determines erasure through a value class referenced by name. An erasure witness on inherited members does, but so does a plain dependency edge from the descendant to the value class, with no hash change; with either and faithfully recorded macro reads the bounded space is clean.
 - Scala 3's per-name hashes don't move on a type-argument change; the class-name key does, and is sufficient for every recorded client. The escape is a reader that observes as-seen-from types without recording the class name (a macro).
+
+## Phase 7 — implicit scope through an ancestor's companion, across projects (sbt/zinc#1845)
+
+Input: the fix on retronym/zinc `fix/implicit-scope-ancestor-companion` (`AnalysisCallback.InheritedImplicitScopes`). A client of `Show[C]` depends on the companion of every base class of `C` without naming them. In a project, `MemberRefInvalidator` reaches it (memberRef clients of every inheritor of the owner); downstream only diffs `C`, whose `AnalyzedClass` doesn't change. The fix publishes, per class, one more `Implicit` name hash: the set of its direct parents' implicit name-hash sets (which include their own entry, so it is transitive), folded into `apiHash`; external parents' sets are captured on the inheritance dependency.
+
+### Model (`Zinc/ImplicitScope.lean`)
+
+- Classes `A B C` (a chain; `B` may be a trait), an object `O extends B`, a trait `L` that `C`'s companion may extend, clients `X` (`Show[C]`), `W` (`Show[List[C]]`), `Y` (`Show[O.type]`), `Z` (names an unrelated class). Each unit has a project (`lib`/`mid`/`app`), a few fixed layouts.
+- A class's contents: companion implicits `(name, bound, shape, value)` (`implicit def sb[T <: B]: Show[T]`, or `Show[List[T]]`), class-side implicits, a non-implicit companion member. Search: candidates from the companions of the type's base classes (and what the companion inherits), applicable by bound and shape, most specific by owner derivation, else ambiguous.
+- Name hashes as Zinc computes them: per class, `Implicit` entries over class side + companion, *including inherited members* (`Visit` walks `structure.inherited`); everything else under one non-implicit key. Clients record `(T, imp)` and `(T, cls)` for the type they search (memberRef on `T`), plus the selected implicit's owner. Descendants record `(p, inh)` on direct parents, hash = `apiHash`.
+- Projects as policies on one loop, as in `Erasure.lean`: Zinc's transitive inheritance invalidation and the implicit fallback (memberRef clients of the owner's inheritors) apply only within the owner's project; across projects only recorded keys count.
+- Two forms of the fix: **recomputed** (`(T, imp)` a non-local hash over `T`'s ancestors, `NCompiler`, T2″) and **stored** (the summary is part of the published interface, computed at `T`'s compile from its parents' published summaries; local hashes; freshness from the inheritance key, which covers the summary because it is folded into `apiHash`).
+
+### Results
+
+- [ ] P7.1 Model + scenarios as checked examples, each `report` = recompiled set, rounds, wrong-vs-clean: grandparent companion (+ `Z` untouched, non-implicit member → `X` not recompiled, removal); type argument (`W`); trait parent; ancestor in upstream project (`lib → mid → app`). Without the fix, split projects: `X` wrong; one project: clean via the fallback.
+- [ ] P7.2 Soundness: the recomputed fix meets `NCompiler.Obligations` (`is_obligations`), so `zinc_sound` (T3a″) applies with the plain policy, i.e. with no in-project rule at all: any change to an ancestor's companion implicits reaches every downstream client of every descendant. Without the fix the obligations fail (abstraction on the grandparent scenario, as a checked counterexample).
+- [ ] P7.3 Cold vs warm: `stored_eq_recomputed`: in a state where every class is up to date (acyclic hierarchy, bounded depth), the stored summary equals the recomputed one. This is why taking an uncompiled parent's summary from the previous analysis is fine, and it is the `Stale.lean` question answered by the inheritance edge. Ablation as a checked counterexample: without folding the summary into `apiHash`, `lib(A, B) → mid(C) → app(X)` with an edit to `A`'s companion leaves `C`'s stored summary stale and `X` wrong (B recompiles in lib, its own API is unchanged, mid never recompiles `C`).
+- [ ] P7.4 Precision (bounded exhaustive, `lake exe exhaustive implicit`): over the space (contents of `A`, `B`, `L` × layouts × single edits), stored = recomputed run for run; the fix across projects recompiles exactly what the fallback recompiles in one project; a non-implicit companion change and classes with no implicit ancestry recompile nothing extra. Report wasted recompiles.
+- [ ] P7.5 Over-approximation: a class-side implicit on an ancestor moves the summary too (stored name hashes don't say which side a name came from). Check whether that costs anything: a public class-side implicit is already an inherited member of `C`, so `C`'s own `Implicit` hashes move without the fix; the extra cost should be confined to private/overridden ones. Count it.
+- [ ] P7.6 Non-coverage, as counterexample `example`s: `object O extends B` (only `NameKind.Type` sources reach `typeParents`, so `O` publishes nothing; `Y` stays wrong across projects, clean in one).
+
+### A correction to the brief, to confirm on the Zinc side
+
+`object C extends LowPriority` (implicits a companion inherits) looks covered *without* the fix: the inherited `lp` is in object `C`'s public definitions (`Visit.visitStructure0` visits `inherited`), so its `Implicit` name hash is `C`'s, and object `C` recompiles when `L` changes (inheritance, in-project or external). The model will show it covered; it is a gap only if inherited members are missing from the API, e.g. Scala 3 skipping Scala2x ancestors (an `Ext` flag, counterexample under it). A scripted test on the Zinc branch would settle it (follow-up, not this session).
+
+### Not modelled
+
+Show's own companion and `List`'s companion (constant across edits); type-parameter bounds beyond "subclass of"; given priorities in Scala 3; hash collisions (hashes are modelled injectively, as elsewhere).
