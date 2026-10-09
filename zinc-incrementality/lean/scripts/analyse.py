@@ -15,6 +15,9 @@ def slot_of(probe, name):
     toks |= {t[1:] for t in toks if t.startswith('L')}
     if name is None:
         hits = [s for k, s in GIVENS.items() if k in toks]
+        # a client that extends P holds P's given as a member, whatever it resolved to
+        if len(hits) > 1 and 'inh' in hits:
+            hits.remove('inh')
         return '+'.join(hits) if hits else '?'
     m = {f'a/V${name}$': 'blk', f'a/P${name}$': 'inh', f'a/X${name}$': 'expl', f'a/W${name}$': 'wild',
          f'a/q/{name}$': 'wpkg', f'a/b/{name}$': 'inner', f'a/b/package${name}$': 'pobj',

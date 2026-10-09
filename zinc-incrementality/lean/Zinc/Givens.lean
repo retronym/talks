@@ -125,11 +125,21 @@ def recompiles (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Bool :=
   | .searched => !(changed v p p').isEmpty
   | .names => !(changed v p p').isEmpty
 
+/-- Scala 3 compiles a class that extends a trait whose members are all lazy (a given alias is a
+lazy val) differently alone than with the trait: read from TASTy, the trait has no initialiser, and
+the class's static initialiser omits the call to `P.$init$` that a joint compile emits. Zinc
+recompiles the client in a later round than `P`, or without it, unless the companion of `T` changed
+(both `P` and the client depend on `T`, and a changed implicit invalidates them together); a clean
+build compiles them together. The classfiles differ; the behaviour does not (the trait's `$init$`
+is empty). -/
+def separateInit (v : Ver) (p p' : Prog) (rc : Bool) : Bool :=
+  v == .s3 && p'.cl.inh && p'.has .inh && rc && p.has .comp == p'.has .comp
+
 def verdict (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Verdict :=
   let r := resolve v p
   let r' := resolve v p'
   let rc := recompiles m v p p'
-  ⟨r, r', rc, rc || r == r'⟩
+  ⟨r, r', rc, (rc || r == r') && !separateInit v p p' rc⟩
 
 def Prog.set (p : Prog) (s : Slot) (x : Bool) : Prog :=
   { p with has := fun t => if t == s then x else p.has t }
@@ -191,8 +201,12 @@ theorem wild_first_clean :
       ⟨{ cl0 with wild := true, first := true }, fun s => s == .comp || s == .wild⟩).clean = true := by
   native_decide
 
+/-- Recording the scopes searched is clean on the whole space, but for the classfile bytes of a
+client compiled apart from its trait. -/
 theorem searched_clean : ([Ver.s2, .s3].all fun v => (bases v).all fun p =>
-    (edits v p).all fun (_, p') => (verdict .searched v p p').clean) = true := by native_decide
+    (edits v p).all fun (_, p') =>
+      (verdict .searched v p p').clean || separateInit v p p' (recompiles .searched v p p')) = true := by
+  native_decide
 
 /-! ## Rendering -/
 

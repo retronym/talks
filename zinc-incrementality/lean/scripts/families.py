@@ -18,6 +18,8 @@ def family(edit, before, after):
 def givens_family(edit, before, after):
     kind, *slots = edit.split()
     dest = slots[-1]
+    if before == after or dest in ('inh', 'wild', 'blk', 'comp'):
+        return 'G3 trait initialiser, compiled apart (Scala 3, bytes only)'
     if kind in ('add', 'move') and dest == 'pobj':
         return 'G1 package object instance'
     if kind in ('add', 'move') and dest in ('inner', 'outer'):

@@ -400,3 +400,53 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 - [x] P9.3 `Added.lean`: added and deleted classes as edits from and to an absent source. Keys from the tree (`TCompiler`). A class added in an inner package scope (`a.b.Foo` for a client in `package a; package b` that resolved `a.Foo`) is missed: the tree shows the resolved class only, and Zinc invalidates only the added class's dependents (`invalidateInitial` schedules added sources and nothing else). Recording the scopes searched meets the obligations. Deletion is caught by the key on the resolved class. **Confirmed on Zinc `develop`**, Scala 2.13 and 3, for an inner package scope and for a wildcard import that now supplies the name (over the client's package, or over `scala.Option`); not for an import over a class added to the client's package (the import wins). Pending scripted tests `added-class-*` (retronym/zinc branch `claude/added-class-inner-package`); probes showed the incremental build compiling only the added file and succeeding, and a clean build failing. Cheap fix: on an addition, invalidate the users of the added class's simple name.
 - [x] P9.4 `Sealed.lean`: exhaustivity reads a sealed parent's children; the same-file rule (and Java's `permits`) keeps the query local to the parent, and a hash covering the children meets the obligations. A hash without them (Zinc's `ClassToAPI` for Java before retronym/zinc#21) fails abstraction; adding a permitted subclass leaves the client without its warning (`java_permits_wrong`).
 - [ ] Future: files as recompilation units (Zinc recompiles every class of an invalidated file); a scripted variant of P9.3 under Scala 3 and with an explicit import (precedence rules differ); class vs companion keys (sbt/zinc#1796).
+
+## Phase 10 — name resolution, mechanically (`Names.lean`, `Givens.lean`)
+
+P9.3 found one way an edit changes what a name resolves to without Zinc noticing. This phase searches the family mechanically: a program space over Scala's scopes, the model's verdict per edit, the conformance harness on Zinc `develop`, and a pending scripted test per family.
+
+### Model
+
+`Names.lean`: the client's simple name `Foo` (or `Option`, with `scala.Option` as the last resort) can be bound by a block's wildcard import, an inherited member, an explicit import, a wildcard import of an object or of a package, a class of the inner package, the inner package's package object, a class of the outer package, and `scala._`. Client factors: the package clause (`package a; package b`, `package a.b`, `package a`), which imports and `extends` are present, another class in the client's file, and (Scala 3) whether `W` and package `a.b` get their member through a wildcard `export`. Edits: add or delete a binding, rename a top-level class to or from `Bar`, move a class between packages. Resolution follows each compiler; the rules were probed with `scala-cli` and then checked on every case the harness ran (the client's classfile shows what it resolved to). Zinc's side is the edges its extractors record and the rules of `IncrementalCommon`: an import's edge goes to one class of the file (the first in Scala 2; the *last* in Scala 3, whose `responsibleForImports` keeps the last `TypeDef` it folds over), a package records nothing, an added source invalidates nothing.
+
+`Givens.lean`: the same with an instance found by type (`implicitly`/`summon`). Scala 2 calls any two instances in the lexical scope ambiguous and searches the companion only when there is none; Scala 3 prefers the innermost nesting level, with the file's imports and the client's own package at one level. A changed implicit invalidates every member-ref dependent of its class, so an import's edge to any class of the file is enough; what is left is the scopes with no edge at all.
+
+Fixes, checked on the whole space (`searched_clean`, `names_clean`): recording every scope the lookup searched, misses included, or invalidating the users of a name whenever a binding of it is added or removed. Neither touches F4 and F5, which are not about the client's resolution.
+
+### Harness
+
+retronym/zinc branch `claude/names-conformance` (develop + the harness of retronym/zinc#25): base programs as source files, a probe of the client's constant pool, and two fixes for Scala 3 that the earlier spaces never needed. Scripted's `IncHandler` did not register `TastyFiles` as auxiliary class files (sbt does), so a deleted or restored classfile left its `.tasty` behind and later builds read it ("out of sync with its TASTy file"); and TASTy records source paths relative to the working directory, so the work and clean builds, in different directories, never had equal classfiles. `scripts/select.py` picks bases greedily until every signature (the edit, the model's resolution before and after, the package clause, `first`, and more) has a case.
+
+### Families
+
+Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` (on top of P9.3's `claude/added-class-inner-package`); each was checked to fail only at its last step (the incremental build succeeds) and its edited sources to fail a clean compile.
+
+| | Family | Lean | Scripted (pending) |
+|---|---|---|---|
+| F1 | A top-level class added (or renamed to, or moved) into a scope searched earlier: an inner package, a wildcard-imported package, the client's package over `scala._`. Zinc compiles only the added source. | `inner_added_today` (`Added.lean`: `added_today_wrong`) | `added-class-*` (P9.3) |
+| F2 | A member added to a package object over an outer binding; in Scala 3 also a top-level `export` gaining a forwarder. The client reached the package object through no symbol. | `pobj_added_today`, `export_added_today` | `added-member-package-object`, `-scala3`, `added-member-top-level-export-scala3` |
+| F3 | A member added to a wildcard-imported object, the import charged to another class of the file (Scala 2: the first; Scala 3: the last) that does not use the name. | `wild_first_today` | `added-member-wildcard-import-second-class`, `added-member-wildcard-import-last-class-scala3` |
+| F4 | Scala 2 only: a package object member added beside a class of the same name; scalac's joint compilation leaves the class's mirror without its `ScalaSignature`, the incremental one keeps it. Classfile bytes only: downstream resolution is the same either way, and it is scalac's joint/separate difference, not an invalidation Zinc misses. | `staleMirror` | none (not observable in scripted) |
+| F5 | Scala 3 only: a class and a package object member (or top-level export) of one name in one package; the double definition is reported only when both files compile together, and nothing connects them in Zinc (the member is `a.b.package$.Foo`). | `missedClash` | `package-object-member-clashes-with-class-scala3` |
+| G1 | An implicit or given added to a package object (Scala 2: `package object a` too), over the companion or making the search ambiguous. | `pobj_added_today_s2` | `added-implicit-package-object`, `added-given-package-object-scala3` |
+| G2 | Scala 3: a top-level given added in a new file. | `inner_added_today_s3` | `added-given-top-level-scala3` |
+
+### Counts
+
+| Space | Edits | Model unclean (F1/F2/F3/F4/F5 or G) | Harness cases | Model vs harness disagree | Divergences (F1/F2/F3/F4/F5 or G) |
+|---|---|---|---|---|---|
+| names, 2.13 | 61,812 | 5,892 (3,228/936/864/864/0) | 11,506 | 0 | 1,532 (844/252/260/176/0) |
+| names, 3 | 122,528 | 17,392 (6,400/1,008/1,728/0/8,256) | S3CASES | S3DISAGREE | S3DIV |
+| givens, 2.13 | 1,076 | 256 (G1 256) | 1,076 | 0 | 256 |
+| givens, 3 | 2,355 | 356 (G1 148, G2 208) | G3CASES | G3DISAGREE | G3DIV |
+
+Model unclean counts are over the whole space; the harness ran every edit of the givens spaces and a greedy selection of bases for the names spaces. Resolution agreed with the compiler on every case run.
+
+### Steps
+
+- [x] P10.1 `Names.lean`: scopes, resolution per version, Zinc's edges, verdict; families as checked examples; `searched_clean`, `names_clean`.
+- [x] P10.2 `Givens.lean`: instances by type.
+- [x] P10.3 `conformance names|givens 2|3`; harness: source-file bases, a classfile probe, Scala 3's TASTy files and source paths.
+- [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the missed clash).
+- [x] P10.5 Pending scripted tests per family.
+- [ ] Future: the cheap fix in Zinc (on an added or removed binding of a name, invalidate the name's users; for an added source, its classes' simple names) and a run of the space against it; the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
