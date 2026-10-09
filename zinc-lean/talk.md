@@ -20,7 +20,7 @@ All Lean and tool output is shown as screenshots.
 
 <!-- break -->
 
-**Contents (~64 min):**
+**Contents (~60 min):**
 
 | part | sections | min |
 |---|---|---|
@@ -30,12 +30,12 @@ All Lean and tool output is shown as screenshots.
 | IV. A Lean primer | §P1 types · §P2 dependent queries · §P3 proofs as programs · §P4 tactics and `decide` | 9 |
 | V. A compiler as a query tree | §8 a `Task` per class · §9 a small Scala · §10 lookup walks the linearization | 6 |
 | VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 the first counterexample | 9.5 |
-| VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §18a the PoC · §19 subprojects | 7.5 |
-| VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23 trait fields · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree · §23d not covered yet | 11.5 |
-| IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §27a verifying on Spark · §28 limits | 8.5 |
+| VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §19 subprojects | 6.5 |
+| VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree | 9.5 |
+| IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §27a verifying on Spark · §28 limits | 8 |
 | Close | §29 next steps | 2 |
 
-Over budget: cut §18a, §23, §23d and §26's table first, then one of §23a–c.
+Overflow (§18a, §23, §23d) holds the demoted slides. If still over: §2a to one sentence, then one of §23a–c.
 
 ---
 
@@ -720,40 +720,11 @@ What the common model lets us say:
 - **Relate schemes by theorem.** `asf_of_decl`: Scala 3's hashes determine Scala 2's. So for anything a client observes through typing, Scala 3 is sound wherever Scala 2 is, and recompiles at least as much. The converse fails, with a checked example (a parent's type argument changes a member only as seen from the subclass).
 - **Compare schemes on one program space.** Same programs, same edits: undercompiling runs and total recompiles per scheme (§20's table is one such comparison).
 - **Check a proposed scheme before implementing it.** A change to hashing (retronym/zinc#27, #28) is a new `π`/`keys`; the model says whether it meets the obligations and what it costs.
+- The Merkle scheme is a working PoC (retronym/zinc#24): on Spark's catalyst, adding a member to `TreeNode` recompiles 420 classes where Zinc recompiles 1,371. Its six descendant rules are what most of §25 is about (overflow §18a).
 
 <div class="fn">
 
 Notes: 2 min. `Zinc/Hier.lean`, `Zinc/HierSound.lean`, `Zinc/Erasure.lean` (`Rend .asf | .decl`, `asf_of_decl`, `asfInh_of_declInh`), `Zinc/Flat.lean`. Scala 3 renders inherited members as declared since lampepfl/dotty#1244 (2016). Precision case: as declared recompiles `B` and `X` for nothing on `B extends A[Int] → A[Long]` with `A.m: T`.
-
-</div>
-
-### 18a. The Merkle PoC in one slide
-
-```mermaid
-flowchart BT
-  subgraph TODAY["Materialised (Zinc today)"]
-    A1["A: m, n"]
-    B1["B extends A: m, n (copied), p"]
-  end
-  subgraph MERKLE["Merkle (PoC)"]
-    A2["A: decls m, n"]
-    B2["B: decl p + h(A)"]
-    B2 --> A2
-  end
-```
-
-- The PoC (retronym/zinc#24) hashes each class's own declarations and composes along the linearization, so an ancestor edit no longer recompiles every subclass just to refresh its hashes.
-- Descendants that must recompile are chosen by six rules: header, overrides, conflicts, abstract, trait, mirror. Most of Part IX's findings are about these rules.
-- On Spark: adding an unused member to `TreeNode` recompiles 1,371 classes in catalyst today and 420 with the PoC; downstream, in `sql/core`, 518 today and 44 with the PoC.
-
-| edit (in catalyst) | catalyst today | PoC | `sql/core` today | PoC |
-|---|---|---|---|---|
-| `TreeNode`: add unused member | 1,371 / 3 rounds | 420 / 2 | 518 / 2 | 44 / 2 |
-| `LogicalPlan`: add unused member | 389 / 3 | 47 / 2 | 148 / 1 | 2 / 1 |
-
-<div class="fn">
-
-Notes: 1 min. Backup slide: the computed 3×5 table from `zinc-incrementality` §22 (decls + walk, materialised, materialised + walk, Merkle, Merkle with stale Δ). Cross-module numbers: retronym/zinc#30 (catalyst → core, Spark 4.0.1, Scala 2.13.16, pipelining off). Measuring across the module boundary found a PoC precision bug: the `traitDirect` rule fired downstream for every class mixing in a trait that extends a class (`LeafNode extends LogicalPlan`), because the trait's composed hash moves with its class ancestors, whose members get no forwarders; fixed by hashing the trait-only contributions (`merkle-x-trait-class-ancestor`, guarded by `merkle-x-trait-move`).
 
 </div>
 
@@ -862,25 +833,6 @@ Bugs of note: [sbt/zinc#945](https://github.com/sbt/zinc/issues/945) (removing `
 
 </div>
 
-### 23. Trait fields and private members
-
-```scala
-trait M { private def helper = 1; val f: Int = helper }
-class C extends M     // C implements f, its setter, and calls M.$init$
-```
-
-- A class that mixes in a trait implements the trait's fields and calls its private members, none of which is public API.
-- Without a key for them, 48,000 runs undercompile; with it, 0.
-- Only *trait* parents need it: a class parent's private members reach no descendant's bytecode. This backs the PoC folding only trait parents into `extraHash`.
-
-<div class="fn">
-
-Notes: 1 min, first to cut. `Zinc/Flat.lean` (`Mod`, private members), `FlatRules` `traitPub`.
-
-Bugs of note: [sbt/zinc#1787](https://github.com/sbt/zinc/pull/1787) (trait `extraHash` over-invalidation) · [sbt/zinc#1794](https://github.com/sbt/zinc/issues/1794) → [sbt/zinc#1799](https://github.com/sbt/zinc/pull/1799) (comment-only trait edit recompiled heirs) · [sbt/zinc#1795](https://github.com/sbt/zinc/issues/1795) → [sbt/zinc#1807](https://github.com/sbt/zinc/pull/1807) (object/trait conflation)
-
-</div>
-
 ### 23a. The classpath: upstream snapshots and libraries
 
 A downstream stores a snapshot of each upstream class's API and, at the next build, invalidates the holders of keys whose hash moved since. A library is the case where every key hashes the JAR's stamp.
@@ -957,31 +909,15 @@ object Client { def v: Int = Foo.v }  // add a.b.Foo with v: String
 | arrives through a wildcard import, over `scala._` (`q.Option` over `scala.Option`) | **missed** | **missed** |
 | sits in the client's package, under an import of the name | unchanged | unchanged |
 
-"Missed": the incremental build compiles only the added file and succeeds; a clean build fails. The model predicted the first row; the rest are the same shape. Recording the scopes searched fixes it; invalidating the users of the added class's simple name is a coarser fix. Deleting a class is caught by the key on the class the client resolved.
+"Missed": the incremental build compiles only the added file and succeeds; a clean build fails. The model predicted the first row; the rest are the same shape. Deleting a class is caught by the key on the class the client resolved.
+
+**On Spark:** adding a class `catalyst.util.Utils` makes catalyst's existing `import org.apache.spark.util.Utils` ambiguous. Zinc compiles only the new file and succeeds. The fix, invalidating the users of an added class's simple name, reports the clean build's error; a fresh name costs nothing, and `Column`, used by 102 classes, costs them and a round.
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32)), probed on `develop`. The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
+Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32)), probed on `develop`; the fix is [retronym/zinc#34](https://github.com/retronym/zinc/pull/34) (coarse: it ignores the client's package and imports, because the bridge records an import's selectors but not its qualifier; catalyst numbers in its description). The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
 
 Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors)
-
-</div>
-
-### 23d. Further features the model does not cover yet
-
-| feature | what the model needs |
-|---|---|
-| SAM conversion | an inheritance edge that the source does not spell out |
-| exports, top-level definitions, package objects | units that are not classes: a source → class mapping |
-| class vs companion | keys with a namespace component |
-| annotations, parameter annotations, literal types | more of the declaration in the answer to a lookup |
-| Java sources | a second front end, and compositionality between the source and classfile views of Java |
-
-<div class="fn">
-
-Notes: 1 min. None of these is in the Lean yet. The taxonomy is `zinc-incrementality` §16.
-
-Bugs of note: [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names)
 
 </div>
 
@@ -1024,7 +960,7 @@ Notes: 1 min. Files: `Zinc/Toy.lean`, `Zinc/HierSound.lean`, `Zinc/Flat.lean`, `
 | implicit summary must be in the API hash; objects are a gap | `ImplicitScope.lean` | sbt/zinc#1845 |
 | refreshing only referenced snapshots is unsound for non-local hashes | `Snapshot.stale_after_revert` | PoC refreshes every changed upstream class (`9904df698`) |
 | a failed upstream must roll back its early output | `Pipelining.lean` | pending `pipelining-failed-upstream-revert` |
-| an added class that shadows a resolved name is missed (inner package, wildcard import; 2.13 and 3) | `Added.lean` | pending scripted tests, [retronym/zinc#32](https://github.com/retronym/zinc/pull/32) |
+| an added class that shadows a resolved name is missed (inner package, wildcard import; 2.13 and 3; on Spark too) | `Added.lean` | tests [retronym/zinc#32](https://github.com/retronym/zinc/pull/32), fix [retronym/zinc#34](https://github.com/retronym/zinc/pull/34) |
 | without `transitiveStep`, three mutually inferred classes alternate forever | `PingPong.zinc_diverges` | scripted test, [retronym/zinc#33](https://github.com/retronym/zinc/pull/33) |
 | Zinc's loop formula; fixed points need not be unique | the T3/T4 proofs | `zinc-incrementality` §3–4 |
 
@@ -1055,8 +991,7 @@ Notes: 2 min. `Zinc/FlatRules.lean`; retronym/talks#5, #8, #9. A `Report` is (cl
 
 ### 26. Exhaustive checks over bounded program spaces
 
-- Proofs say "sound, given a cover". The exhaustive check says which cover: run every program in a bounded space, under every rule set, with each rule removed in turn.
-- Main space: 216,000 programs × 27 single-class edits, as a compiled executable (`lake exe exhaustive`).
+Proofs say "sound, given a cover". Running every program in a bounded space, with each rule removed in turn, says which cover. Main space: 216,000 programs × 27 edits.
 
 | rules | undercompiling runs |
 |---|---|
@@ -1067,11 +1002,9 @@ Notes: 2 min. `Zinc/FlatRules.lean`; retronym/talks#5, #8, #9. A `Report` is (cl
 | widened, without the macro keys | 437,696 |
 | widened, without `header` (extends clauses recorded) | 0 |
 
-- Each minimal counterexample becomes a checked `example`, and a scripted test.
-
 <div class="fn">
 
-Notes: 1.5 min. `Exhaustive.lean`; full table in `PLAN.md` Phase 5. Caveat: these are executions, not theorems; the space is bounded; hashes are modelled as injective. A whole-space `native_decide` is too slow for the build.
+Notes: 1 min. `Exhaustive.lean` (`lake exe exhaustive`); full table in `PLAN.md` Phase 5. Each minimal counterexample becomes a checked `example` and a scripted test. Caveat: these are executions, not theorems; the space is bounded; hashes are modelled as injective. A whole-space `native_decide` is too slow for the build.
 
 </div>
 
@@ -1152,6 +1085,79 @@ Notes: 2 min.
 
 ---
 
+## Overflow (cut for time)
+
+Slides demoted from the main run. Section numbers are kept so references still resolve.
+
+### 18a. The Merkle PoC in one slide
+
+```mermaid
+flowchart BT
+  subgraph TODAY["Materialised (Zinc today)"]
+    A1["A: m, n"]
+    B1["B extends A: m, n (copied), p"]
+  end
+  subgraph MERKLE["Merkle (PoC)"]
+    A2["A: decls m, n"]
+    B2["B: decl p + h(A)"]
+    B2 --> A2
+  end
+```
+
+- The PoC (retronym/zinc#24) hashes each class's own declarations and composes along the linearization, so an ancestor edit no longer recompiles every subclass just to refresh its hashes.
+- Descendants that must recompile are chosen by six rules: header, overrides, conflicts, abstract, trait, mirror. Most of Part IX's findings are about these rules.
+- On Spark: adding an unused member to `TreeNode` recompiles 1,371 classes in catalyst today and 420 with the PoC; downstream, in `sql/core`, 518 today and 44 with the PoC.
+
+| edit (in catalyst) | catalyst today | PoC | `sql/core` today | PoC |
+|---|---|---|---|---|
+| `TreeNode`: add unused member | 1,371 / 3 rounds | 420 / 2 | 518 / 2 | 44 / 2 |
+| `LogicalPlan`: add unused member | 389 / 3 | 47 / 2 | 148 / 1 | 2 / 1 |
+
+<div class="fn">
+
+Notes: 1 min. Backup slide: the computed 3×5 table from `zinc-incrementality` §22 (decls + walk, materialised, materialised + walk, Merkle, Merkle with stale Δ). Cross-module numbers: retronym/zinc#30 (catalyst → core, Spark 4.0.1, Scala 2.13.16, pipelining off). Measuring across the module boundary found a PoC precision bug: the `traitDirect` rule fired downstream for every class mixing in a trait that extends a class (`LeafNode extends LogicalPlan`), because the trait's composed hash moves with its class ancestors, whose members get no forwarders; fixed by hashing the trait-only contributions (`merkle-x-trait-class-ancestor`, guarded by `merkle-x-trait-move`).
+
+</div>
+
+### 23. Trait fields and private members
+
+```scala
+trait M { private def helper = 1; val f: Int = helper }
+class C extends M     // C implements f, its setter, and calls M.$init$
+```
+
+- A class that mixes in a trait implements the trait's fields and calls its private members, none of which is public API.
+- Without a key for them, 48,000 runs undercompile; with it, 0.
+- Only *trait* parents need it: a class parent's private members reach no descendant's bytecode. This backs the PoC folding only trait parents into `extraHash`.
+
+<div class="fn">
+
+Notes: 1 min, first to cut. `Zinc/Flat.lean` (`Mod`, private members), `FlatRules` `traitPub`.
+
+Bugs of note: [sbt/zinc#1787](https://github.com/sbt/zinc/pull/1787) (trait `extraHash` over-invalidation) · [sbt/zinc#1794](https://github.com/sbt/zinc/issues/1794) → [sbt/zinc#1799](https://github.com/sbt/zinc/pull/1799) (comment-only trait edit recompiled heirs) · [sbt/zinc#1795](https://github.com/sbt/zinc/issues/1795) → [sbt/zinc#1807](https://github.com/sbt/zinc/pull/1807) (object/trait conflation)
+
+</div>
+
+### 23d. Further features the model does not cover yet
+
+| feature | what the model needs |
+|---|---|
+| SAM conversion | an inheritance edge that the source does not spell out |
+| exports, top-level definitions, package objects | units that are not classes: a source → class mapping |
+| class vs companion | keys with a namespace component |
+| annotations, parameter annotations, literal types | more of the declaration in the answer to a lookup |
+| Java sources | a second front end, and compositionality between the source and classfile views of Java |
+
+<div class="fn">
+
+Notes: 1 min. None of these is in the Lean yet. The taxonomy is `zinc-incrementality` §16.
+
+Bugs of note: [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names)
+
+</div>
+
+---
+
 ## Notes for Jason
 
 ### D. Demos, as screenshot sequences (pick two)
@@ -1184,7 +1190,7 @@ My pick: 1 and 4, with 3 as a fallback.
 2. Overlap with `zinc-incrementality` Part VII: leave until this talk is fleshed out.
 3. The full model stays in `zinc-incrementality/lean/`; this talk adds `lean/` with the primer and V1/V2 snapshots.
 4. Screenshots, not live Lean.
-5. Merkle PoC: one slide (§18a).
+5. Merkle PoC: one line in §18; the slide (§18a) is in overflow.
 6. Agents: one line (§29).
 7. Title: "Formalising Zinc's incremental compilation in Lean".
 
