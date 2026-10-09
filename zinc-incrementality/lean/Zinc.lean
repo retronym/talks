@@ -14,3 +14,5 @@ import Zinc.Flat
 import Zinc.FlatRules
 import Zinc.Erasure
 import Zinc.ImplicitScope
+import Zinc.Classpath
+import Zinc.Snapshot
