@@ -372,14 +372,23 @@ The model compiles a fixed set `S` from source against a constant environment, a
 
 Each step adds a layout or a dimension that the harness (retronym/zinc#25) already has or can add: `split` exists; add a `library` layout (the upstream published as a JAR without an Analysis) and pipelining on/off, which the harness already runs.
 
+### Results
+
+- **P8.1, T5** (`Classpath.lean`). External units, a stored snapshot per downstream, Zinc's initial external invalidation (`extInvalidated`). `inv_external` (T5a): from an up-to-date downstream with fresh snapshots, the new classpath leaves dirty only the changed sources and the holders of keys whose hash moved; `downstream_sound` (T5) composes it with T3a″. A library is the instance whose every key hashes the stamp: coarse, sound by the abstraction obligation alone.
+- **P8.2, snapshot refresh** (`Classpath.lean`, `Snapshot.lean`). `fresh_refreshAll`: refreshing every upstream class keeps snapshots fresh. `fresh_refreshRef_local`: with local hashes, Zinc's rule (refresh the classes a recompiled unit references) is enough, and needs no freshness before the build. With a non-local hash (a key on `C` reading its ancestor `A`), it is not: `stale_after_revert` (edit `A`, `X` recompiles, `A`'s record is not refreshed, revert `A`, nothing is seen). Zinc today stores local APIs (materialised members), so its rule is sound; the Merkle PoC composes across subprojects, which made `macro-upstream-member-removed` possible, and its fix `9904df698` refreshes every changed upstream class (`refreshAll`). P8.0 (a scripted test for the gap on develop) is dropped: on develop the gap only re-detects a change, it cannot hide one.
+- **P8.3, composed vs single loop** (`ImplicitScope.lean` `reportComposed`, `lake exe exhaustive composed`). One loop per project, upstream first, starting from Zinc's external walk as the bridge records it: direct parents only (`Dependency.scala` records `parents`), then transitive inheritors in the project, name-filtered clients, and nothing unless the upstream class's `apiHash` moved (`detectAPIChanges`). Over 1,080 runs per layout: develop and the fix agree with the single-loop encoding run for run (wrong sets and client recompiles), in `lib → app` and `lib → mid → app`. Without the `apiHash` fold they differ: 384 unclean composed against 312 in the single loop, which compares every key's hash across projects and so sees a summary change that Zinc's `apiHash` gate hides (smallest: `A` gains an implicit, `Z`, a client of `D extends A`, stays stale). The single-loop encoding is sound to use for the designs that publish everything through `apiHash`; ablations that move a name hash without `apiHash` need the composed run.
+- **P8.4, pipelining** (`Pipelining.lean`, `Inline.lean`). `early_agreement` (T1 restated). `stale_after_failed_upstream`: an upstream fails after writing its early output, the downstream compiles against it, the upstream is reverted and sees no change against its last successful build, and the downstream keeps the failed output; `rollback_after_failed_upstream`: rolling the early output back with the rest fixes it (Zinc's pending `pipelining-failed-upstream-revert`). `pipelined_ne_final`: with a Scala 2 `@inline` body or a Java constant, a pipelined clean build differs from a non-pipelined one; Scala 3 `inline` agrees.
+- **P8.5, keys from the tree** (`Tree.lean`, `TreeToy.lean`). `TCompiler`: `keysOf : Out → Keys`; T2 and T3a with the same proofs. Toy with `x += 1` (desugared through a failed lookup of `+=`) and a two-binder extractor pattern (the pattern matcher's `_1`, `_2` and an arity check on `_3` after extraction). Zinc's extractor (`today`) fails coverage (`not_obligations_today`) and misses all three edits; recording the selectors fixes the field-type edit only; recording the failed lookup and the `_3` sentinel (`fixed`) meets the obligations (`obligations_fixed`) and is clean on all three.
+- **P8.7, bodies as API** (`Inline.lean`). Today's hash leaves a Scala 2 `@inline` body out (`not_obligations_today`, sbt/zinc#537): a body-only edit leaves `C` with the old inlined value, and is hidden whenever another hashed body changes too. Hashing every body meets the obligations in either view (`obligations_withBodies`).
+
 ### Steps
 
-- [ ] P8.0 Confirm the snapshot-refresh gap with a scripted test in Zinc.
-- [ ] P8.1 Projects, external units, snapshots, initial invalidation; stamp abstraction; T5 and the DAG corollary.
-- [ ] P8.2 Snapshot freshness: Zinc's refresh rule as a checked example (counterexample or proof).
-- [ ] P8.3 Composed run vs single loop with the cross-project policy, on the `Erasure` and `ImplicitScope` spaces.
-- [ ] P8.4 Pipelining: early and final interfaces, early agreement, failure after early output.
-- [ ] P8.5 Keys from the tree, two-phase tasks, anticipatory keys.
-- [ ] P8.6 Source files and sealed hierarchies.
-- [ ] P8.7 Inline bodies.
-- [ ] P8.8 `library` layout and pipelining in the conformance dump.
+- [x] P8.0 Dropped (see P8.2).
+- [x] P8.1 Projects, external units, snapshots, initial invalidation; stamp abstraction; T5 and the DAG corollary.
+- [x] P8.2 Snapshot freshness: Zinc's refresh rule as a checked example (counterexample or proof).
+- [x] P8.3 Composed run vs single loop with the cross-project policy, on the `Erasure` and `ImplicitScope` spaces.
+- [x] P8.4 Pipelining: early and final interfaces, early agreement, failure after early output.
+- [x] P8.5 Keys from the tree, two-phase tasks, anticipatory keys.
+- [ ] P8.6 Source files and sealed hierarchies. Not started: the same-file rule makes the children query local to the parent's file, so the model's interest is in making units files; Java `permits` (retronym/zinc#21) is an abstraction failure (the hash omitted the clause), not a non-local query.
+- [x] P8.7 Inline bodies.
+- [ ] P8.8 `library` layout and pipelining in the conformance dump. Not started; needs the harness (retronym/zinc#25).
