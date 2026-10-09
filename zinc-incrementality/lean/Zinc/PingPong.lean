@@ -1,43 +1,57 @@
 import Zinc.Termination
 
 /-!
-# The plain policy need not terminate; `transitiveStep` does
+# Without `transitiveStep`, Zinc's loop need not terminate
 
-Two classes whose interfaces are inferred from each other: `A`'s from `B`'s (`A.x = B.y`), `B`'s
-from `A`'s through a table (`B.y = h(A.x)`). Separately compiled, each takes the other's current
-interface; jointly compiled, the pair takes a common fixed point (every table maps 3 to 3, so
-`(3, 3)` always is one). The compiler meets the obligations (`obligations`).
+Three classes whose interfaces are inferred from one another, in a cycle: `A.x = B.y`,
+`B.y = C.z`, `C.z = h(A.x)`. Each class reads one other class and applies a table to its
+interface; values past the table map to 3, so 3 is always a common fixed point, and a group that
+contains a whole cycle compiles to it. A group that contains part of a cycle computes along it
+from the classes outside. The compiler meets the obligations (`obligations`).
 
-Start from a state in which both classes are up to date with `A.x = B.y = 2`, a per-unit fixed
-point of the old table, and change `B`'s table so that `2 ↦ 0, 0 ↦ 1, 1 ↦ 0`. With Zinc's plain
-policy each round recompiles one class against the other's previous interface, which changes, and
-invalidates the other:
+**Zinc's next round** is the invalidated classes *and* the classes whose API changed (the seed of
+`invalidateByInheritance`, logged as "transitive inheritance"), `zincPolicy`. That is why two
+mutually inferred classes do not alternate in Zinc: the changed class is recompiled together with
+its dependent. Three can: every round compiles a pair, and no pair holds the whole cycle.
 
-| round | compiles | `A.x` | `B.y` |
-|---|---|---|---|
-| 1 | `B` | 2 | 0 |
-| 2 | `A` | 0 | 0 |
-| 3 | `B` | 0 | 1 |
-| 4 | `A` | 1 | 1 |
-| 5 | `B` | 1 | 0 |
-| 6 | `A` | 0 | 0 (as after round 2) |
+**The run.** Start from a per-unit fixed point of the old sources (`A.x = B.y = C.z = 2`, all
+tables the identity) and change `C`'s table to `0 ↦ 1, 1 ↦ 0, 2 ↦ 0`:
 
-* `plain_diverges`: for every amount of fuel, the plain loop does not stop.
-* `transitiveStep_stops`: with `transitiveStep 2`, round 3 compiles both classes together and the
-  loop stops at the joint fixed point, as T4 (`zinc_some_of_monotoneFrom`) guarantees in general.
+| round | compiles | `A.x` | `B.y` | `C.z` |
+|---|---|---|---|---|
+| 1 | `C` | 2 | 2 | 0 |
+| 2 | `B C` | 2 | 0 | 0 |
+| 3 | `A B` | 0 | 0 | 0 |
+| 4 | `A C` | 0 | 0 | 1 |
+| 5 | `B C` | 0 | 1 | 1 |
+| … | … | | | |
+| 10 | `A C` | 0 | 0 | 1 (as after round 4) |
 
-So `transitiveStep` is what makes Zinc terminate on mutually recursive inferred types, not a
-heuristic for speed (`zinc-incrementality` §4, §22).
+* `zinc_diverges`: with Zinc's rule and no `transitiveStep`, the loop does not stop, for every
+  amount of fuel.
+* `transitiveStep_stops`: with `transitiveStep 3` the brute-force round compiles all three
+  together and the loop stops at the joint fixed point.
+
+In Scala the table is a type constructor: `C.z = Some(A.x)` makes the types grow by one `Some` per
+round, and the brute-force round's joint compile reports the cyclic inference, as a clean build
+does (Zinc scripted test `inferred-type-cycle-rounds`, retronym/zinc branch
+`claude/inferred-type-cycle-rounds`).
+
+`lake exe exhaustive pingpong` searches every read graph on three classes, every new table for
+one class (the others copy), from every per-unit fixed point: 12,402 runs. With the model's old
+loop (invalidated classes only) 1,080 never stop, 900 of them on two-class cycles. With Zinc's
+next round, 180 never stop, every one on a three-class cycle; 936 stop after round 2, where
+`transitiveStep 3` would already apply. With `transitiveStep 3`, none.
 -/
 
 namespace Zinc.PingPong
 
 open Compiler (State Policy)
 
-inductive U | A | B
+inductive U | A | B | C
   deriving DecidableEq, Repr
 
-instance : Fintype U := ⟨{.A, .B}, by intro x; cases x <;> decide⟩
+instance : Fintype U := ⟨{.A, .B, .C}, by intro x; cases x <;> decide⟩
 
 inductive Q | val
   deriving DecidableEq, Repr
@@ -47,14 +61,14 @@ abbrev Ans (_ : Q) : Type := ℕ
 inductive K | val
   deriving DecidableEq, Repr
 
-/-- A class's source: the class whose interface it reads, and a table applied to that interface
-(entries past the table's end map to 3). -/
+/-- A class's source: the class it reads, and a table for the values 0, 1, 2. -/
 structure Src where
   reads : U
-  table : List ℕ
-  deriving DecidableEq, Repr
+  table : Fin 3 → ℕ
 
-def Src.f (s : Src) (v : ℕ) : ℕ := s.table.getD v 3
+def Src.f (s : Src) (v : ℕ) : ℕ := if h : v < 3 then s.table ⟨v, h⟩ else 3
+
+theorem Src.f_three (s : Src) : s.f 3 = 3 := by simp [Src.f]
 
 abbrev Out := ℕ
 abbrev Iface := ℕ
@@ -62,10 +76,23 @@ abbrev Iface := ℕ
 def unit (s : Src) : Task (U × Q) (fun p => Ans p.2) Out :=
   .ask (s.reads, .val) fun v => .pure (s.f v)
 
-/-- Joint compilation: a class reading a group-mate gets 3 (the common fixed point), one reading
-an outsider applies its table to the outsider's interface. -/
+/-- The values of a group's classes: follow the reads inside the group, from the interfaces of
+the classes outside; a cycle inside the group gives 3. -/
+def val (G : Finset U) (rd : U → U) (f : U → ℕ → ℕ) (ext : U → ℕ) : ℕ → U → ℕ
+  | 0, u => if rd u ∈ G then 3 else f u (ext (rd u))
+  | k + 1, u => if rd u ∈ G then f u (val G rd f ext k (rd u)) else f u (ext (rd u))
+
+/-- With three classes, two steps along the reads are as good as three. -/
+theorem val_stable (G : Finset U) (rd : U → U) (f : U → ℕ → ℕ) (ext : U → ℕ)
+    (hf : ∀ u, f u 3 = 3) (r : U) : val G rd f ext 2 r = val G rd f ext 3 r := by
+  simp only [val]
+  cases r <;> cases hA : rd .A <;> cases hB : rd .B <;> cases hC : rd .C <;>
+    by_cases a : U.A ∈ G <;> by_cases b : U.B ∈ G <;> by_cases c : U.C ∈ G <;>
+    simp [hA, hB, hC, a, b, c, hf]
+
 def group (G : Finset U) (src : U → Src) (e : Task.Env (U × Q) (fun p => Ans p.2)) : U → Out :=
-  fun u => if (src u).reads ∈ G then 3 else (src u).f (e ((src u).reads, .val))
+  fun u => if u ∈ G then val G (fun x => (src x).reads) (fun x => (src x).f) (fun x => e (x, .val)) 3 u
+    else 0
 
 def compiler : Compiler U Src Out Iface K ℕ Q Ans where
   unit := unit
@@ -76,34 +103,16 @@ def compiler : Compiler U Src Out Iface K ℕ Q Ans where
   keys := fun tr => (tr.map fun p => (p.1, K.val)).toFinset
   covers := fun _ _ => True
 
-/-- Tables map 3 to 3 when they have at most three entries. -/
-def Src.Ok (s : Src) : Prop := s.table.length ≤ 3
-
-theorem f_three (s : Src) (h : s.Ok) : s.f 3 = 3 := by
-  simp [Src.f, List.getD_eq_getElem?_getD, List.getElem?_eq_none (by unfold Src.Ok at h; omega)]
-
-/-! The obligations hold for sources whose tables have at most three entries. -/
-
-theorem obligations (hok : ∀ s : Src, s.Ok) : compiler.Obligations where
+theorem obligations : compiler.Obligations where
   comp := by
     intro G src e d hd
     show group G src e d = (unit (src d)).run _
-    simp only [unit, Task.run_ask, Task.run_pure, group, Compiler.override, compiler,
-      Function.comp, id]
+    simp only [unit, Task.run_ask, Task.run_pure, Compiler.override, compiler, Function.comp, id]
+    simp only [group, hd, ite_true]
+    rw [show (3 : ℕ) = 2 + 1 from rfl, val]
     by_cases hr : (src d).reads ∈ G
-    · -- with two classes, the class `d` reads reads a group-mate too
-      have hr2 : (src (src d).reads).reads ∈ G := by
-        by_cases hdr : (src d).reads = d
-        · rw [hdr]; exact hr
-        · have key : ∀ u : U, u ∈ G := by
-            intro u
-            have : u = d ∨ u = (src d).reads := by
-              generalize (src d).reads = r at hdr ⊢
-              cases u <;> cases d <;> cases r <;> simp_all
-            rcases this with h | h <;> rw [h] <;> assumption
-          exact key _
-      simp only [hr, hr2, ite_true]
-      exact (f_three _ (hok _)).symm
+    · simp only [hr, ite_true]
+      rw [val_stable G _ _ _ (fun x => Src.f_three _)]
     · simp only [hr, ite_false]
   coverage := by
     intro tr q hq
@@ -115,99 +124,147 @@ theorem obligations (hok : ∀ s : Src, s.Ok) : compiler.Obligations where
     intro i i' _ h _ _
     exact h
 
-/-! ## The scenario -/
+/-- Zinc's next round: the invalidated classes and the classes whose API changed. -/
+def zincPolicy : Policy U Out K := fun _ R s s' I => I ∪ R.filter fun u => s.out u ≠ s'.out u
 
-abbrev S : Finset U := {U.A, U.B}
+theorem zincPolicy_sound (S : Finset U) : zincPolicy.Sound S :=
+  fun _ _ _ _ _ _ _ hp => Finset.mem_union_left _ (Finset.mem_sdiff.1 hp).1
 
-/-- After the edit: `A.x = B.y`, `B.y = h₁(A.x)` with `h₁ = [1, 0, 0]`. -/
-def src : U → Src
-  | .A => ⟨.B, [0, 1, 2]⟩
-  | .B => ⟨.A, [1, 0, 0]⟩
+/-! ## The run -/
 
-/-- Before the edit `B`'s table was the identity, and `(2, 2)` was a per-unit fixed point. -/
+abbrev S : Finset U := {U.A, U.B, U.C}
+
+def ident : Fin 3 → ℕ := fun i => i.val
+
+/-- `C`'s new table: `0 ↦ 1, 1 ↦ 0, 2 ↦ 0`. -/
+def h₁ : Fin 3 → ℕ := fun i => if i.val = 0 then 1 else 0
+
 def srcOld : U → Src
-  | .A => ⟨.B, [0, 1, 2]⟩
-  | .B => ⟨.A, [0, 1, 2]⟩
+  | .A => ⟨.B, ident⟩
+  | .B => ⟨.C, ident⟩
+  | .C => ⟨.A, ident⟩
 
+def src : U → Src
+  | .C => ⟨.A, h₁⟩
+  | u => srcOld u
+
+/-- A per-unit fixed point of the old sources, with the keys each class recorded. -/
 def s₀ : State U Out K :=
-  { out := fun _ => 2, U := fun u => match u with | .A => {(U.B, K.val)} | .B => {(U.A, K.val)} }
+  { out := fun _ => 2
+    U := fun u => match u with
+      | .A => {(U.B, K.val)} | .B => {(U.C, K.val)} | .C => {(U.A, K.val)} }
 
-/-- `s₀` is up to date for the old sources: both outputs are their own compilation against the
-other's interface, and the recorded keys cover the trace. -/
 example : ∀ u, s₀.out u = (compiler.unit (srcOld u)).run (compiler.env s₀) := by
   intro u; cases u <;> rfl
 
-example : ∀ u, (compiler.unit (srcOld u)).trace (compiler.env s₀) =
-    [((srcOld u).reads, Q.val)] ∧ ((srcOld u).reads, K.val) ∈ s₀.U u := by
-  intro u; cases u <;> decide
+/-- The next round after compiling `R` in `s`, or `none` if the loop stops. -/
+def next (R : Finset U) (s : State U Out K) : Option (Finset U) :=
+  let s' := compiler.round src R s
+  let I := compiler.invalidated S R s s'
+  if I ⊆ R then none else some (zincPolicy 0 R s s' I)
 
-def s₁ := compiler.round src {U.B} s₀
-def s₂ := compiler.round src {U.A} s₁
-def s₃ := compiler.round src {U.B} s₂
-def s₄ := compiler.round src {U.A} s₃
-def s₅ := compiler.round src {U.B} s₄
-def s₆ := compiler.round src {U.A} s₅
+theorem step (fuel n : ℕ) (R R' : Finset U) (s : State U Out K) (h : next R s = some R') :
+    compiler.zinc S src zincPolicy (fuel + 1) n R s =
+      compiler.zinc S src zincPolicy fuel (n + 1) R' (compiler.round src R s) := by
+  simp only [next] at h
+  simp only [Compiler.zinc]
+  split at h
+  · cases h
+  · rename_i hI
+    simp only [hI, ite_false]
+    cases h
+    rfl
 
-example : [s₁, s₂, s₃, s₄, s₅, s₆].map (fun s => (s.out U.A, s.out U.B)) =
-    [(2, 0), (0, 0), (0, 1), (1, 1), (1, 0), (0, 0)] := by native_decide
+def R₁ : Finset U := {U.C}
+def RBC : Finset U := {U.B, U.C}
+def RAB : Finset U := {U.A, U.B}
+def RAC : Finset U := {U.A, U.C}
+
+def s₁ := compiler.round src R₁ s₀
+def s₂ := compiler.round src RBC s₁
+def s₃ := compiler.round src RAB s₂
+def s₄ := compiler.round src RAC s₃
+def s₅ := compiler.round src RBC s₄
+def s₆ := compiler.round src RAB s₅
+def s₇ := compiler.round src RAC s₆
+def s₈ := compiler.round src RBC s₇
+def s₉ := compiler.round src RAB s₈
+def s₁₀ := compiler.round src RAC s₉
+
+example : [s₁, s₂, s₃, s₄, s₅, s₆, s₇, s₈, s₉, s₁₀].map (fun s => (s.out .A, s.out .B, s.out .C)) =
+    [(2, 2, 0), (2, 0, 0), (0, 0, 0), (0, 0, 1), (0, 1, 1), (1, 1, 1), (1, 1, 0), (1, 0, 0),
+     (0, 0, 0), (0, 0, 1)] := by native_decide
+
+theorem n₀ : next R₁ s₀ = some RBC := by native_decide
+theorem n₁ : next RBC s₁ = some RAB := by native_decide
+theorem n₂ : next RAB s₂ = some RAC := by native_decide
+theorem n₃ : next RAC s₃ = some RBC := by native_decide
+theorem n₄ : next RBC s₄ = some RAB := by native_decide
+theorem n₅ : next RAB s₅ = some RAC := by native_decide
+theorem n₆ : next RAC s₆ = some RBC := by native_decide
+theorem n₇ : next RBC s₇ = some RAB := by native_decide
+theorem n₈ : next RAB s₈ = some RAC := by native_decide
+theorem n₉ : next RAC s₉ = some RBC := by native_decide
 
 theorem State.ext' (s t : State U Out K) (h₁ : s.out = t.out) (h₂ : s.U = t.U) : s = t := by
   cases s; cases t; simp_all
 
-/-- Round 6 is back at round 2. -/
-theorem s₆_eq_s₂ : s₆ = s₂ :=
+/-- Round 10 is back at round 4. -/
+theorem s₁₀_eq_s₄ : s₁₀ = s₄ :=
   State.ext' _ _ (funext fun u => by cases u <;> native_decide)
     (funext fun u => by cases u <;> native_decide)
 
-theorem inv₀ : compiler.invalidated S {U.B} s₀ s₁ = {U.A} := by native_decide
-theorem inv₂ : compiler.invalidated S {U.B} s₂ s₃ = {U.A} := by native_decide
-theorem inv₃ : compiler.invalidated S {U.A} s₃ s₄ = {U.B} := by native_decide
-theorem inv₄ : compiler.invalidated S {U.B} s₄ s₅ = {U.A} := by native_decide
-theorem inv₅ : compiler.invalidated S {U.A} s₅ s₆ = {U.B} := by native_decide
-theorem inv₁ : compiler.invalidated S {U.A} s₁ s₂ = {U.B} := by native_decide
-
-theorem notAB : ¬ ({U.A} : Finset U) ⊆ {U.B} := by decide
-theorem notBA : ¬ ({U.B} : Finset U) ⊆ {U.A} := by decide
-
-/-- One plain round that does not stop. -/
-theorem step (fuel n : ℕ) (R R' : Finset U) (s : State U Out K)
-    (hI : compiler.invalidated S R s (compiler.round src R s) = R') (hR : ¬ R' ⊆ R) :
-    compiler.zinc S src Policy.plain (fuel + 1) n R s =
-      compiler.zinc S src Policy.plain fuel (n + 1) R' (compiler.round src R s) := by
-  simp only [Compiler.zinc, hI, hR, ite_false, Policy.plain]
-
-/-- **The plain policy does not stop**, whatever the fuel. -/
-theorem plain_diverges : ∀ fuel, compiler.zinc S src Policy.plain fuel 0 {U.B} s₀ = none := by
-  have cycle : ∀ k n, compiler.zinc S src Policy.plain k n {U.B} s₂ = none ∧
-      compiler.zinc S src Policy.plain k n {U.A} s₃ = none ∧
-      compiler.zinc S src Policy.plain k n {U.B} s₄ = none ∧
-      compiler.zinc S src Policy.plain k n {U.A} s₅ = none := by
+/-- **Zinc's loop without `transitiveStep` does not stop**, whatever the fuel. -/
+theorem zinc_diverges : ∀ fuel, compiler.zinc S src zincPolicy fuel 0 R₁ s₀ = none := by
+  have cycle : ∀ k n,
+      compiler.zinc S src zincPolicy k n RBC s₄ = none ∧
+      compiler.zinc S src zincPolicy k n RAB s₅ = none ∧
+      compiler.zinc S src zincPolicy k n RAC s₆ = none ∧
+      compiler.zinc S src zincPolicy k n RBC s₇ = none ∧
+      compiler.zinc S src zincPolicy k n RAB s₈ = none ∧
+      compiler.zinc S src zincPolicy k n RAC s₉ = none := by
     intro k
     induction k with
     | zero => intro n; simp [Compiler.zinc]
     | succ k ih =>
       intro n
-      refine ⟨?_, ?_, ?_, ?_⟩
-      · rw [step k n _ _ _ inv₂ notAB]; exact (ih _).2.1
-      · rw [step k n _ _ _ inv₃ notBA]; exact (ih _).2.2.1
-      · rw [step k n _ _ _ inv₄ notAB]; exact (ih _).2.2.2
-      · rw [step k n _ _ _ inv₅ notBA]
-        show compiler.zinc S src Policy.plain k (n + 1) {U.B} s₆ = none
-        rw [s₆_eq_s₂]; exact (ih _).1
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+      · rw [step k n _ _ _ n₄]; exact (ih _).2.1
+      · rw [step k n _ _ _ n₅]; exact (ih _).2.2.1
+      · rw [step k n _ _ _ n₆]; exact (ih _).2.2.2.1
+      · rw [step k n _ _ _ n₇]; exact (ih _).2.2.2.2.1
+      · rw [step k n _ _ _ n₈]; exact (ih _).2.2.2.2.2
+      · rw [step k n _ _ _ n₉]
+        show compiler.zinc S src zincPolicy k (n + 1) RBC s₁₀ = none
+        rw [s₁₀_eq_s₄]; exact (ih _).1
   intro fuel
   match fuel with
   | 0 => rfl
-  | 1 => rw [step 0 0 _ _ _ inv₀ notAB]; rfl
-  | k + 2 =>
-    rw [step (k + 1) 0 _ _ _ inv₀ notAB]
-    change compiler.zinc S src Policy.plain (k + 1) 1 {U.A} s₁ = none
-    rw [step k 1 _ _ _ inv₁ notBA]
-    exact (cycle k 2).1
+  | 1 => rw [step 0 0 _ _ _ n₀]; rfl
+  | 2 =>
+    rw [step 1 0 _ _ _ n₀]
+    change compiler.zinc S src zincPolicy 1 1 RBC s₁ = none
+    rw [step 0 1 _ _ _ n₁]; rfl
+  | 3 =>
+    rw [step 2 0 _ _ _ n₀]
+    change compiler.zinc S src zincPolicy 2 1 RBC s₁ = none
+    rw [step 1 1 _ _ _ n₁]
+    change compiler.zinc S src zincPolicy 1 2 RAB s₂ = none
+    rw [step 0 2 _ _ _ n₂]; rfl
+  | k + 4 =>
+    rw [step (k + 3) 0 _ _ _ n₀]
+    change compiler.zinc S src zincPolicy (k + 3) 1 RBC s₁ = none
+    rw [step (k + 2) 1 _ _ _ n₁]
+    change compiler.zinc S src zincPolicy (k + 2) 2 RAB s₂ = none
+    rw [step (k + 1) 2 _ _ _ n₂]
+    change compiler.zinc S src zincPolicy (k + 1) 3 RAC s₃ = none
+    rw [step k 3 _ _ _ n₃]
+    exact (cycle k 4).1
 
-/-- **`transitiveStep` stops**: from round 2 on, the round includes the last one, so `A` and `B`
-compile together and land on the joint fixed point. -/
+/-- **`transitiveStep` stops**: the brute-force round compiles all three together and the loop
+stops at the joint fixed point. -/
 theorem transitiveStep_stops :
-    ((compiler.zinc S src (Policy.transitiveStep S 2) 6 0 {U.B} s₀).map
-      fun s => (s.out U.A, s.out U.B)) = some (3, 3) := by native_decide
+    ((compiler.zinc S src (Policy.transitiveStep S 3) 8 0 R₁ s₀).map
+      fun s => (s.out .A, s.out .B, s.out .C)) = some (3, 3, 3) := by native_decide
 
 end Zinc.PingPong

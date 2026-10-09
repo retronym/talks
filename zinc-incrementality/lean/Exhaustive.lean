@@ -1,6 +1,7 @@
 import Zinc.FlatRules
 import Zinc.Erasure
 import Zinc.ImplicitScope
+import Zinc.PingPong
 
 /-! Runs the bounded exhaustive checks as native code.
 
@@ -317,10 +318,114 @@ def mainComposed : IO Unit := do
 
 end implicit
 
+section pingpong
+
+namespace PP
+open Zinc.PingPong (U compiler zincPolicy)
+open Zinc.Compiler (State Policy)
+
+abbrev PState := State U Zinc.PingPong.Out Zinc.PingPong.K
+
+def allU : List U := [.A, .B, .C]
+def S : Finset U := {.A, .B, .C}
+
+def tbl (t : ℕ × ℕ × ℕ) : Fin 3 → ℕ := fun i => [t.1, t.2.1, t.2.2].getD i.val 0
+
+/-- A program: what each class reads, the edited class, its new table (the others copy). -/
+structure Case where
+  rd : U → U
+  e : U
+  t : ℕ × ℕ × ℕ
+
+def Case.src (c : Case) : U → Zinc.PingPong.Src :=
+  fun u => ⟨c.rd u, if u = c.e then tbl c.t else fun i => i.val⟩
+
+/-- Rounds until the loop stops, or `none` within the fuel. -/
+def rounds (P : Policy U Zinc.PingPong.Out Zinc.PingPong.K) (src : U → Zinc.PingPong.Src) :
+    ℕ → ℕ → Finset U → PState → Option ℕ
+  | 0, _, _, _ => none
+  | fuel + 1, n, R, s =>
+    let s' := compiler.round src R s
+    let I := compiler.invalidated S R s s'
+    if I ⊆ R then some (n + 1) else rounds P src fuel (n + 1) (P n R s s' I) s'
+
+/-- Zinc with `transitiveStep k`: its own next round before `k`, brute force from `k` on. -/
+def zincWithStep (k : ℕ) : Policy U Zinc.PingPong.Out Zinc.PingPong.K := fun n R s s' I =>
+  zincPolicy n R s s' I ∪ (if k ≤ n then Policy.transitiveStep S k n R s s' I else ∅)
+
+/-- The length of the cycle of reads through `e`, or 0. -/
+def cycleLen (rd : U → U) (e : U) : ℕ :=
+  if rd e = e then 1 else if rd (rd e) = e then 2 else if rd (rd (rd e)) = e then 3 else 0
+
+def uStr : U → String | .A => "A" | .B => "B" | .C => "C"
+
+structure PTally where
+  runs : ℕ := 0
+  early : ℕ := 0
+  late : ℕ := 0
+  never : ℕ := 0
+  neverByCycle : List ℕ := [0, 0, 0, 0]
+  first : Option String := none
+  deriving Inhabited
+
+def mainPingPong : IO Unit := do
+  let us := allU
+  let rds : List (U → U) := do
+    let a ← us; let b ← us; let c ← us
+    pure fun u => match u with | .A => a | .B => b | .C => c
+  let ts : List (ℕ × ℕ × ℕ) := do
+    let a ← [0, 1, 2]; let b ← [0, 1, 2]; let c ← [0, 1, 2]; pure (a, b, c)
+  let vs : List (U → ℕ) := do
+    let a ← [0, 1, 2]; let b ← [0, 1, 2]; let c ← [0, 1, 2]
+    pure fun u => match u with | .A => a | .B => b | .C => c
+  let pols : List (String × Policy U Zinc.PingPong.Out Zinc.PingPong.K) :=
+    [("model's plain loop (invalidated classes only)", Policy.plain),
+     ("Zinc's next round (invalidated + API-changed), no transitiveStep", zincPolicy),
+     ("Zinc's next round with transitiveStep 3", zincWithStep 3)]
+  let mut tallies : Array PTally := pols.toArray.map fun _ => {}
+  for rd in rds do
+    for e in us do
+      for t in ts do
+        if t == (0, 1, 2) then continue
+        let c : Case := ⟨rd, e, t⟩
+        for v in vs do
+          -- a per-unit fixed point of the old sources (every class copies)
+          if !(us.all fun u => v u == v (rd u)) then continue
+          let s₀ : PState := { out := v, U := fun u => {(rd u, Zinc.PingPong.K.val)} }
+          let mut j := 0
+          for (_, P) in pols do
+            let r := rounds P c.src 40 0 {e} s₀
+            let tl := tallies[j]!
+            let tl := { tl with runs := tl.runs + 1 }
+            let tl := match r with
+              | some n => if n ≤ 2 then { tl with early := tl.early + 1 } else { tl with late := tl.late + 1 }
+              | none =>
+                let k := cycleLen rd e
+                { tl with never := tl.never + 1,
+                          neverByCycle := tl.neverByCycle.modify k (· + 1),
+                          first := tl.first.orElse fun _ => some
+                            s!"reads A→{uStr (rd .A)} B→{uStr (rd .B)} C→{uStr (rd .C)}; edit {uStr e}'s table to {repr t}; start {repr (us.map v)}" }
+            tallies := tallies.set! j tl
+            j := j + 1
+  let mut j := 0
+  for (name, _) in pols do
+    let tl := tallies[j]!
+    IO.println s!"{name}: {tl.runs} runs; stop by round 2: {tl.early}; stop later: {tl.late}; never stop (40 rounds): {tl.never}"
+    IO.println s!"  never-stopping runs by the length of the read cycle through the edited class (none, 1, 2, 3): {repr tl.neverByCycle}"
+    match tl.first with
+    | some str => IO.println s!"  first: {str}"
+    | none => pure ()
+    j := j + 1
+
+end PP
+
+end pingpong
+
 def main (args : List String) : IO Unit :=
   match args with
   | "erasure" :: rest => mainErasure rest
   | "implicit" :: _ => mainImplicit
   | "composed" :: _ => mainComposed
+  | "pingpong" :: _ => PP.mainPingPong
   | "v" :: _ => mainV
   | _ => mainRules args
