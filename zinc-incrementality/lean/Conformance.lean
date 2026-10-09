@@ -1,0 +1,112 @@
+import Zinc.FlatRules
+
+/-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
+with all of its single-class edits, for the Zinc conformance harness (`Conformance` in Zinc's
+`zincScripted` tests). The harness renders each program as Scala, builds the base, applies each
+edit, and compares the incremental build's classfiles with a clean build of the edited program.
+
+The programs are data in a generic shape (classes with a kind, parents with type arguments,
+declared members, selections), so a later program space only has to supply its `Cls → Src`.
+Each edit carries the model's verdict under the widened default rules: the classes the policy
+recompiles besides the edited one, and whether the run equals the clean build.
+
+`conformance [all]`: bases whose model build has no errors, resolves every selection and
+inherits one instance of each ancestor, or every base with `all`. -/
+
+open Zinc.Flat
+open Zinc.Hier (Cls Name Ty)
+open Zinc.Hier.Cls Zinc.Hier.Name
+
+def clsName : Cls → String
+  | A => "A" | B => "B" | M => "M" | C => "C" | X => "X" | Y => "Y" | Z => "Z"
+
+def nameStr : Name → String
+  | m => "m" | g => "g"
+
+def tyStr : Ty → String
+  | .int => "Int" | .string => "String" | .param => "T"
+
+/-- The Scala kind of a class. -/
+def kindStr (d : Decl) : String :=
+  (if d.final then "final " else "") ++
+    match d.kind with
+    | .trt => "trait"
+    | .obj => "object"
+    | .cls => if d.abstract then "abstract class" else "class"
+
+def jstr (s : String) : String := "\"" ++ s ++ "\""
+
+def jarr (l : List String) : String := "[" ++ ",".intercalate l ++ "]"
+
+def clsJson (c : Cls) (s : Src) : String :=
+  let tparams := if s.decl.kind == .obj then "[]" else "[\"T\"]"
+  "{\"name\":" ++ jstr (clsName c) ++ ",\"kind\":" ++ jstr (kindStr s.decl) ++
+    ",\"tparams\":" ++ tparams ++
+    ",\"parents\":" ++ jarr (s.decl.parents.map fun (p, t) => jarr [jstr (clsName p), jstr (tyStr t)]) ++
+    ",\"decls\":" ++ jarr (s.decl.decls.map fun (n, mm) =>
+      jarr [jstr (nameStr n), jstr (tyStr mm.ty), toString mm.deferred]) ++
+    ",\"body\":" ++ jarr (s.body.map fun (c', n) => jarr [jstr (clsName c'), jstr (nameStr n)]) ++ "}"
+
+def progJson (src : Cls → Src) : String := jarr (all.map fun c => clsJson c (src c))
+
+def errStr : Err → String
+  | .override n => "override " ++ nameStr n
+  | .conflict n => "conflict " ++ nameStr n
+  | .abstract n => "abstract " ++ nameStr n
+  | .final p => "final " ++ clsName p
+
+/-- The model's errors of a clean build, by class. -/
+def modelErrs (src : Cls → Src) : List String :=
+  let o := clean src
+  all.flatMap fun c => (o c).errs.map fun e => clsName c ++ ": " ++ errStr e
+
+/-- Does every selection resolve in the model's clean build? Scala rejects one that does not. -/
+def resolves (src : Cls → Src) : Bool :=
+  let o := clean src
+  all.all fun c => (o c).descs.all (·.2.isSome)
+
+/-- Does no class inherit two instances of one ancestor, `M[Int]` and `M[String]`? Scala rejects
+that ("illegal inheritance"); the model's linearization merge keeps the first. -/
+def coherent (src : Cls → Src) : Bool :=
+  let o := clean src
+  all.all fun c =>
+    let es := (src c).decl.parents.flatMap fun (p, a) =>
+      (p, a) :: (o p).iface.lin.map fun e => (e.1, Ty.subst a e.2)
+    es.all fun e => es.all fun e' => e.1 != e'.1 || e.2 == e'.2
+
+def optStr : Opt → String
+  | .none => "-" | .int => "int" | .str => "str" | .par => "par" | .dfr => "dfr"
+
+/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj aTrait`. -/
+def cfgStr (k : Cfg) : String :=
+  " ".intercalate ([k.oA, k.oB, k.oM, k.oC].map optStr ++
+    [(k.aPar.map tyStr).getD "-", tyStr k.bArg, if k.bUses then "uses" else "-",
+     if k.bFinal then "final" else "-", if k.xObj then "xobj" else "-",
+     if k.aTrait then "atrait" else "-"])
+
+/-- `Cfg` as named factors, for the harness's covering-array ordering. -/
+def factorsJson (k : Cfg) : String :=
+  let fs := [("oA", optStr k.oA), ("oB", optStr k.oB), ("oM", optStr k.oM), ("oC", optStr k.oC),
+    ("aPar", (k.aPar.map tyStr).getD "-"), ("bArg", tyStr k.bArg), ("bUses", toString k.bUses),
+    ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait)]
+  "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
+
+def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=
+  let r := reportR clientOnly true allRules k.src k'.src {e}
+  let (recd, ok) := match r with
+    | some r => (r.recompiled.map (jstr ∘ clsName), r.clean)
+    | none => ([], false)
+  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr (cfgStr k') ++ ",\"factors\":" ++ factorsJson k' ++ ",\"prog\":" ++ progJson k'.src ++
+    ",\"modelErrs\":" ++ jarr ((modelErrs k'.src).map jstr) ++
+    ",\"modelRecompiled\":" ++ jarr recd ++ ",\"modelClean\":" ++ toString ok ++ "}"
+
+def main (args : List String) : IO Unit := do
+  let everything := args.contains "all"
+  let out ← IO.getStdout
+  let mut i := 0
+  for k in cfgs do
+    if everything || ((modelErrs k.src).isEmpty && resolves k.src && coherent k.src) then
+      out.putStrLn ("{\"space\":\"flat\",\"id\":" ++ toString i ++ ",\"cfg\":" ++ jstr (cfgStr k) ++ ",\"factors\":" ++ factorsJson k ++
+        ",\"prog\":" ++ progJson k.src ++
+        ",\"edits\":" ++ jarr ((edits k).map fun (k', e) => editJson k k' e) ++ "}")
+    i := i + 1
