@@ -933,11 +933,27 @@ x match { case A(a, b) => }   // the tree shows unapply; _1, _2 and the arity ch
 
 The model's extractor becomes a function of the output; T2 and T3a hold with the same proofs, and the last column meets the obligations.
 
-Adding a class is the same kind of miss. A class added as `a.b.Foo` shadows `a.Foo` for a client in `package a; package b`, but the client's tree shows only `a.Foo`, and Zinc invalidates only dependents of the new class: none. Recording the scopes searched fixes it. Deleting a class is caught by the key on the class the client resolved. The model predicted this; a scripted test confirms it on Zinc `develop` (the incremental build succeeds, a clean build fails).
+<!-- break -->
+
+**Adding a class is the same kind of miss.** The tree shows the class a name resolved to, not the scopes searched before it, and Zinc invalidates only the dependents of an added class: none yet.
+
+```scala
+package a; package b                  // a.Foo exists
+object Client { def v: Int = Foo.v }  // add a.b.Foo with v: String
+```
+
+| the added class … | 2.13 | 3 |
+|---|---|---|
+| sits in an inner package scope (`a.b.Foo` over `a.Foo`) | **missed** | **missed** |
+| arrives through a wildcard import, over the client's package (`q.Foo` over `a.Foo`) | **missed** | **missed** |
+| arrives through a wildcard import, over `scala._` (`q.Option` over `scala.Option`) | **missed** | **missed** |
+| sits in the client's package, under an import of the name | unchanged | unchanged |
+
+"Missed": the incremental build compiles only the added file and succeeds; a clean build fails. The model predicted the first row; the rest are the same shape. Recording the scopes searched fixes it; invalidating the users of the added class's simple name is a coarser fix. Deleting a class is caught by the key on the class the client resolved.
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
+Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` on retronym/zinc branch `claude/added-class-inner-package`, probed on `develop`. The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
 
 Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors)
 

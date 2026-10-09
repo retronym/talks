@@ -18,9 +18,16 @@ dependents of the new class (none, nobody resolved it yet) and nothing else
 (`added_today_wrong`). Recording the scopes searched (`fixed`) meets the obligations
 (`obligations_fixed`) and recompiles it.
 
-Confirmed on Zinc `develop` (`e65e35a8d`, default scripted Scala version): the incremental build
-succeeds and a clean build fails. Pending scripted test `added-class-inner-package` on
-retronym/zinc branch `claude/added-class-inner-package`.
+Confirmed on Zinc `develop` (`e65e35a8d`), Scala 2.13 and 3: the incremental build compiles only
+the added file and succeeds, a clean build fails. The same holds wherever the new class sits in a
+scope searched before the one that resolved: a wildcard import that now supplies `Foo` over the
+client's own package, or `Option` over `scala.Option`. It does not hold for an explicit or wildcard
+import over a class added to the client's package: the import wins, resolution is unchanged.
+Pending scripted tests `added-class-*` on retronym/zinc branch `claude/added-class-inner-package`.
+
+The model's `inner`/`outer` stand for any two scopes in search order. A cheap fix in Zinc, coarser
+than `fixed`: when a class is added, invalidate the classes that use its simple name (the used-names
+relation already indexes them).
 
 Deletion is already handled by keys: the client recorded the class it resolved, whose hash moves
 when it becomes absent (`deleted_today_clean`); Zinc also invalidates dependents of removed
