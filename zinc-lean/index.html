@@ -164,7 +164,26 @@ body.focus .focus-counter { display: block; }
 
 `lake build` in `lean/` builds all three, with no `sorry`. The Lake project reuses the full model's Mathlib (`v4.34.1`).
 
-**Budget (~62 min):** I 5.5 · II 3 · III 2.5 · IV 9 · V 6 · VI 7.5 · VII 8.5 · VIII 11.5 · IX 7 · close 2. Over budget: cut §18a, §23, §23d and §26's table first, then one of §23a–c. All Lean and tool output is shown as screenshots.
+All Lean and tool output is shown as screenshots.
+
+<!-- break -->
+
+**Contents (~61 min):**
+
+| part | sections | min |
+|---|---|---|
+| I. The problem, and Zinc | §1 incremental = clean · §2 Zinc compares hashes · §2a modules and JARs · §3 every round is a separate compilation | 5.5 |
+| II. Bugs arrive one feature at a time | §4 features add observables · §5 scripted tests are a weak oracle | 3 |
+| III. Why formalise | §6 sound relative to the compiler · §7 why Lean | 2.5 |
+| IV. A Lean primer | §P1 types · §P2 dependent queries · §P3 proofs as programs · §P4 tactics and `decide` | 9 |
+| V. A compiler as a query tree | §8 a `Task` per class · §9 a small Scala · §10 lookup walks the linearization | 6 |
+| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §15 the first counterexample | 7.5 |
+| VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §18a the PoC · §19 subprojects | 7.5 |
+| VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23 trait fields · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree · §23d not covered yet | 11.5 |
+| IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §28 limits | 7 |
+| Close | §29 next steps | 2 |
+
+Over budget: cut §18a, §23, §23d and §26's table first, then one of §23a–c.
 
 ---
 
