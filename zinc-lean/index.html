@@ -164,7 +164,7 @@ body.focus .focus-counter { display: block; }
 
 `lake build` in `lean/` builds all three, with no `sorry`. The Lake project reuses the full model's Mathlib (`v4.34.1`).
 
-**Budget (~58 min):** I 5.5 · II 3 · III 2.5 · IV 9 · V 6 · VI 7.5 · VII 8.5 · VIII 7 · IX 7 · close 2. Cut §18a, §23 and §26's table first if short. All Lean and tool output is shown as screenshots.
+**Budget (~62 min):** I 5.5 · II 3 · III 2.5 · IV 9 · V 6 · VI 7.5 · VII 8.5 · VIII 11.5 · IX 7 · close 2. Over budget: cut §18a, §23, §23d and §26's table first, then one of §23a–c. All Lean and tool output is shown as screenshots.
 
 ---
 
@@ -221,7 +221,7 @@ Notes: 2.5 min. Recap of `zinc-incrementality` §2–4. Mention the `transitiveS
 
 <div class="fn">
 
-Notes: 1.5 min. Verify the history (when each step landed) before presenting. The table is read off `IncrementalCommon.scala` (`byLibraryDep`, `detectAPIChanges`) and `IncrementalNameHashing.invalidateClassesExternally`. The model extension is designed in `zinc-incrementality/lean/PLAN.md` Phase 8. In the model, subprojects are a policy on one loop (§19); libraries and pipelining are not modelled (§23a, §28).
+Notes: 1.5 min. Verify the history (when each step landed) before presenting. The table is read off `IncrementalCommon.scala` (`byLibraryDep`, `detectAPIChanges`) and `IncrementalNameHashing.invalidateClassesExternally`. The model extension is designed in `zinc-incrementality/lean/PLAN.md` Phase 8. In the model: subprojects as a policy on one loop (§19), checked against one loop per project; snapshots, libraries and pipelining in §23a–b.
 
 Bugs of note: [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (implicit scope across projects) · [retronym/zinc#26](https://github.com/retronym/zinc/pull/26) (erasure across subprojects) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14) (`compile-to-jar-no-op-recompiles`) · [scala/scala3#27139](https://github.com/scala/scala3/issues/27139), [scala/scala3#27125](https://github.com/scala/scala3/issues/27125) (pipelining callbacks) · [sbt/zinc#1819](https://github.com/sbt/zinc/issues/1819) (pipelining and Java) · [scala/scala3#27117](https://github.com/scala/scala3/issues/27117) (JDK classes reported as project classes under `-release`)
 
@@ -847,7 +847,7 @@ Same edit, two layouts (`implicit-scope-grandparent-companion`: `B`, an ancestor
 
 - Inside one subproject Zinc has extra rules (transitive inheritance invalidation, the implicit fallback). Across subprojects only recorded keys count.
 - The model treats the layout as a policy on one loop, so the cross-subproject bugs appear and the single-subproject runs stay clean, as in Zinc.
-- Not modelled yet: library JARs (a stamp instead of an API), the snapshot of an upstream API that the downstream stores, and pipelining's early outputs (an interface that must agree with the final one). These change the obligations, not only the policy. Designed in `PLAN.md` Phase 8.
+- Checked against one loop per project, starting from Zinc's external walk as the bridge records it: the two encodings agree run for run on the implicit-scope space for Zinc today and for the fix (§23a).
 
 <div class="fn">
 
@@ -866,7 +866,7 @@ flowchart LR
   Q["new query kind"] --> K["new key kind"] --> O["prove Obligations,<br/>or find the counterexample"] --> S["new dimension in<br/>the program space"] --> E["exhaustive check,<br/>each key removed in turn"] --> C["conformance cases<br/>against Zinc"]
 ```
 
-The next four slides are this process applied to four features.
+The next slides apply this process to one feature at a time.
 
 <div class="fn">
 
@@ -960,29 +960,91 @@ Bugs of note: [sbt/zinc#1787](https://github.com/sbt/zinc/pull/1787) (trait `ext
 
 </div>
 
-### 23a. Further features the model does not cover yet
+### 23a. The classpath: upstream snapshots and libraries
+
+A downstream stores a snapshot of each upstream class's API and, at the next build, invalidates the holders of keys whose hash moved since. A library is the case where every key hashes the JAR's stamp.
+
+- **T5** (`downstream_sound`): fresh snapshots plus that initial invalidation re-establish the round invariant, so a downstream loop that stops is up to date against the new upstream.
+- **Refreshing the snapshot.** Zinc refreshes a class's snapshot only when a recompiled source references it. Proved enough when hashes are local, which is Zinc today. Not enough when a key on `C` hashes its ancestor `A`:
+
+| build | `A` | `X` recompiled? | `A`'s snapshot | `X` observes |
+|---|---|---|---|---|
+| clean | 1 | — | 1 | 1 |
+| edit `A` | 2 | yes, through `(C, k)` | 1 (only `C` referenced) | 2 |
+| revert `A` | 1 | no: snapshot and current agree | 1 | 2, **wrong** |
+
+- This is the Merkle PoC's `macro-upstream-member-removed`. Its fix refreshes every changed upstream class, which the model proves sufficient.
+- **One loop per project vs one loop for everything**: agree run for run on the implicit-scope space for Zinc today and sbt/zinc#1845's fix, so the single-loop encoding of §19 is safe for them.
+
+<div class="fn">
+
+Notes: 1.5 min. `Zinc/Classpath.lean` (`inv_external`, `downstream_sound`, `fresh_refreshAll`, `fresh_refreshRef_local`), `Zinc/Snapshot.lean` (`stale_after_revert`, `refreshAll_after_revert`), `ImplicitScope.reportComposed`, `lake exe exhaustive composed`. The composed run differs only for the no-fold ablation (384 vs 312 unclean), where Zinc's `apiHash` gate hides a name-hash change. PoC fix: `9904df698`. Lean on retronym/talks#16.
+
+</div>
+
+### 23b. Pipelining and bodies that are API
+
+- **Early agreement:** every answer a downstream reads from an early output must equal the final answer. It fails where the body is the API but is not in the pickles:
+
+| callee | early output (pipelined) | classfiles | same bytes? |
+|---|---|---|---|
+| Scala 3 `inline def g = 2` | inlined | inlined | yes |
+| Scala 2 `@inline def f = 2`, optimizer on | a call | inlined | **no** |
+| Java `static final int K = 2` | a field read | folded | **no** |
+
+- **A failed upstream after its early output:** the downstream compiled against it; reverting the upstream leaves the downstream on the failed output, unless the early output is rolled back with the classfiles (Zinc's pending `pipelining-failed-upstream-revert`).
+- **Bodies in the hash:** leaving the Scala 2 `@inline` body out fails abstraction (sbt/zinc#537); the gap is hidden whenever another hashed body changes in the same edit.
+
+<div class="fn">
+
+Notes: 1.5 min. `Zinc/Pipelining.lean` (`early_agreement`, `stale_after_failed_upstream`, `rollback_after_failed_upstream`), `Zinc/Inline.lean` (`pipelined_ne_final`, `not_obligations_today`, `obligations_withBodies`).
+
+Bugs of note: [sbt/zinc#537](https://github.com/sbt/zinc/issues/537) → [sbt/zinc#1310](https://github.com/sbt/zinc/pull/1310) (`@inline`, 5 years) · [scala/scala3#11861](https://github.com/scala/scala3/issues/11861) → [scala/scala3#12931](https://github.com/scala/scala3/pull/12931) (nested inline) · [scala/bug#5333](https://github.com/scala/bug/issues/5333) (Java constants) · [scala/scala3#27139](https://github.com/scala/scala3/issues/27139), [sbt/zinc#1819](https://github.com/sbt/zinc/issues/1819) (pipelining)
+
+</div>
+
+### 23c. Keys come from the typed tree, not the trace
+
+Zinc's extractor reads the typed tree at one point in the pipeline. It never sees a lookup the typer made and discarded, or a lookup made by a later phase.
+
+```scala
+x += 1            // A has no +=: the typer's miss on += is gone, the tree shows x = x + 1
+x match { case A(a, b) => }   // the tree shows unapply; _1, _2 and the arity check come later
+```
+
+| edit to `A` | Zinc's keys | + selectors | + failed lookup, `_3` sentinel |
+|---|---|---|---|
+| gains `+=` | **wrong** | **wrong** | clean |
+| `_1: Int` → `String` | **wrong** | clean | clean |
+| gains `_3` | **wrong** | **wrong** | clean |
+
+The model's extractor becomes a function of the output; T2 and T3a hold with the same proofs, and the last column meets the obligations.
+
+<div class="fn">
+
+Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`). The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
+
+Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors)
+
+</div>
+
+### 23d. Further features the model does not cover yet
 
 | feature | what the model needs |
 |---|---|
-| Scala 3 `inline`, Scala 2 `@inline` with the optimiser | a query for a method's *body*, and a key whose hash covers it |
-| constant folding (`final val`, Java `static final`) | the constant value in the answer to a lookup |
 | sealed hierarchies and exhaustivity | a query for the children of a sealed class (non-local, and a new child changes the answer) |
-| extractor patterns (`unapply`, `_N`, name-based) | queries issued by a phase after extraction, recorded up front |
-| desugarings with a fallback (`+=`, `update`, `Dynamic`) | a recorded failed lookup for the name the user wrote |
 | SAM conversion | an inheritance edge that the source does not spell out |
 | exports, top-level definitions, package objects | units that are not classes: a source → class mapping |
 | class vs companion | keys with a namespace component |
 | annotations, parameter annotations, literal types | more of the declaration in the answer to a lookup |
 | Java sources | a second front end, and compositionality between the source and classfile views of Java |
-| pipelining | a weaker compositionality obligation: the early interface must agree with the final one |
-| library JARs without an Analysis | external units identified by a stamp, with the obligation that the stamp changes whenever any answer does |
 | added and deleted sources | a set of classes that changes between builds |
 
 <div class="fn">
 
 Notes: 1 min. None of these is in the Lean yet. The taxonomy is `zinc-incrementality` §16.
 
-Bugs of note: [scala/scala3#11861](https://github.com/scala/scala3/issues/11861) → [scala/scala3#12931](https://github.com/scala/scala3/pull/12931) (nested inline) · [sbt/zinc#537](https://github.com/sbt/zinc/issues/537) → [sbt/zinc#1310](https://github.com/sbt/zinc/pull/1310) (`@inline`, 5 years) · [scala/bug#5333](https://github.com/scala/bug/issues/5333) (Java constants) · [sbt/zinc#1229](https://github.com/sbt/zinc/issues/1229) (sealed) · [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors) · [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names) · [scala/scala3#27139](https://github.com/scala/scala3/issues/27139), [sbt/zinc#1819](https://github.com/sbt/zinc/issues/1819) (pipelining)
+Bugs of note: [sbt/zinc#1229](https://github.com/sbt/zinc/issues/1229) (sealed) · [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names)
 
 </div>
 
@@ -999,6 +1061,9 @@ Bugs of note: [scala/scala3#11861](https://github.com/scala/scala3/issues/11861)
 | descendant checks and codegen | `ovr`, `has`, `cfl`, `dfr`, `hdr`, `fwd`, `fhas`, `mirror`, `ext`, `all`, `under` | one kind each | `Fl_obligations` |
 | erasure through inheritance | erasure per context | name, class name, inheritance, `V` | `Er_obligations` |
 | implicit scope across subprojects | candidates per base class | implicit summary | `is_obligations` |
+| desugaring, post-typer phases | `lookup`, from the typed tree | failed lookups, `_N` and a sentinel | `TreeToy.obligations_fixed` |
+| inline bodies, constants | `member` with its body | the body | `Inline.obligations_withBodies` |
+| upstream subprojects, libraries | any, against a snapshot or stamp | as above | T5 `downstream_sound` |
 
 A change to the bridge can say which row it extends and which obligation it discharges.
 
@@ -1019,6 +1084,8 @@ Notes: 1 min. Files: `Zinc/Toy.lean`, `Zinc/HierSound.lean`, `Zinc/Flat.lean`, `
 | macro keys are non-local | T2″; 437,696 runs | PoC follows macro edges from descendants |
 | erasure fails at two steps | `Erasure.lean` | retronym/zinc#27, #28 |
 | implicit summary must be in the API hash; objects are a gap | `ImplicitScope.lean` | sbt/zinc#1845 |
+| refreshing only referenced snapshots is unsound for non-local hashes | `Snapshot.stale_after_revert` | PoC refreshes every changed upstream class (`9904df698`) |
+| a failed upstream must roll back its early output | `Pipelining.lean` | pending `pipelining-failed-upstream-revert` |
 | Zinc's loop formula; fixed points need not be unique | the T3/T4 proofs | `zinc-incrementality` §3–4 |
 
 <!-- break -->
@@ -1096,7 +1163,7 @@ Notes: 2 min. `Conformance.lean`; the harness is `sbt.internal.inc.bench.Conform
 ### 28. What the model does not show
 
 - That scalac or dotc meet the obligations. That is still a testing problem; §27 is one way to do it.
-- Added or deleted sources, the source → class mapping, libraries and pipelining.
+- Added or deleted sources, and the source → class mapping (Zinc recompiles files, not classes).
 - Precision: that a design recompiles *no more* than another. The model computes it on examples; there is no theorem.
 - Hash collisions: hashes are modelled as injective.
 
@@ -1113,7 +1180,7 @@ Notes: 30 s. `zinc-incrementality` §22 "Limits"; `PLAN.md` P2.6 (precision, par
 ### 29. Next steps
 
 - **For compiler teams:** treat the three obligations as the review checklist for any feature that adds something a client can observe. Add the feature to a program space and run the conformance harness.
-- **For the model:** precision theorems for the hashing schemes; whether invalidating mutually recursive classes together removes the acyclicity assumption; a Lean example of non-termination; the features in §23a.
+- **For the model:** precision theorems for the hashing schemes; whether invalidating mutually recursive classes together removes the acyclicity assumption; a Lean example of non-termination; the features in §23d.
 - **Logging queries from the real compiler** and checking the recorded keys against `coverage` would find a missing key before anyone writes a test for it.
 - **You can do this too, with help.** The model, the harness and most of the fixes were written with LLM agents doing much of the Lean and the test-writing.
 
