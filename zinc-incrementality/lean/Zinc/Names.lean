@@ -182,9 +182,10 @@ def invalidates (p : Prog) (r : Res) (s : Slot) : Bool :=
   | .blk => true
   -- `X` and the selector's name `Foo`, both charged to the first class of the file
   | .expl => true
-  -- `W` is charged to the first class (Scala 3: the last); it uses `Foo` only if it is the client, or resolved
-  -- through `W` (then `Client` has its own edge to `W`)
-  | .wild => !p.cl.first || r == .ok .wild
+  -- `W` is charged to the first class (Scala 3: the last); it uses `Foo` if it is the client, or if
+  -- the explicit import's selector is charged to it too; otherwise only a client that resolved
+  -- through `W` has its own edge to `W`
+  | .wild => !p.cl.first || p.cl.expl || r == .ok .wild
   -- the package object is reached only through the resolved symbol
   | .pobj => r == .ok .pobj
   -- a top-level class: only a deleted class's dependents are invalidated
@@ -219,6 +220,13 @@ them, and nothing in Zinc connects the other (Zinc names the member `a.b.package
 incremental build misses the error. -/
 def missedClash (v : Ver) (p' : Prog) : Bool := resolve v p' == .clash
 
+/-- Scala 3 compiles a class that extends a trait whose members are all lazy (here `object Foo`)
+differently alone than with the trait: read from TASTy, the trait has no initialiser, and the
+class's static initialiser omits the call to `P.$init$`. Zinc compiles the client in a later round
+than `P`, or without it; a clean build compiles them together. Classfile bytes only (`Givens.lean`
+has the same with a given). -/
+def separateInit (v : Ver) (p' : Prog) (rc : Bool) : Bool := v == .s3 && p'.cl.inh && p'.st .inh == .foo && rc
+
 /-- The divergences that are not about the client's resolution. -/
 def besideResolution (v : Ver) (p p' : Prog) : Bool := staleMirror v p p' || missedClash v p'
 
@@ -226,7 +234,8 @@ def verdict (m : Mode) (v : Ver) (p p' : Prog) : Verdict :=
   let r := resolve v p
   let r' := resolve v p'
   let rc := recompiles m v p p'
-  ⟨r, r', rc, (rc || r == r') && !besideResolution v p p'⟩
+  let bytes := separateInit v p' rc && r' matches .ok _
+  ⟨r, r', rc, (rc || r == r') && !besideResolution v p p' && !bytes⟩
 
 /-! ## The program space -/
 
@@ -350,14 +359,17 @@ theorem wild_client_today :
   native_decide
 
 /-- Every edit of the space, both versions, is clean when the lookup's misses are recorded, and
-when the users of a name are invalidated on every added or removed binding; the stale mirror and
-the missed clash are not about the client's resolution, and neither fix touches them. -/
+when the users of a name are invalidated on every added or removed binding; the stale mirror, the
+missed clash and the trait initialiser are not about the client's resolution, and neither fix
+touches them. -/
 theorem searched_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean || besideResolution v p p') = true := by
+    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean || besideResolution v p p' ||
+      separateInit v p' (recompiles .searched v p p')) = true := by
   native_decide
 
 theorem names_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean || besideResolution v p p') = true := by
+    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean || besideResolution v p p' ||
+      separateInit v p' (recompiles .names v p p')) = true := by
   native_decide
 
 end Zinc.Names

@@ -6,10 +6,14 @@ def family(edit, before, after):
     dest = slots[-1]
     if after == 'clash':
         return 'F5 missed clash'
+    if before == after and dest in ('inh', 'wild', 'blk', 'expl'):
+        return 'F6 trait initialiser, compiled apart (Scala 3, bytes only)'
     if kind in ('add', 'unrename', 'move') and dest in ('inner', 'outer', 'wpkg'):
         return 'F1 added class'
     if kind == 'add' and dest == 'pobj':
         return 'F2 package object member' if before != after else 'F4 stale mirror'
+    if kind == 'add' and dest == 'inh':
+        return 'F6 trait initialiser, compiled apart (Scala 3, bytes only)'
     if kind == 'add' and dest == 'wild':
         return 'F3 wildcard import, other class'
     return 'other ' + kind + ' ' + dest
