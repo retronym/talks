@@ -1,12 +1,18 @@
-# Zinc in Lean: formalising incremental compilation
+# Whack-a-mole, mechanised: Zinc in Lean
 
 **Status:** outline for review. Each card gives the section's *point*, the *evidence* (a Lean file, theorem or checked example, or "future work"), a candidate *slide* or snippet, and a *time* budget. No prose yet.
 
-**Audience:** Scala compiler and tooling people (and PL folk) who know dependent types and maybe Curry–Howard, but not Lean. Most don't know Zinc's internals.
+**Audience:** Scala tooling people: compiler, build-tool and IDE maintainers. They know Zinc as users and some of its internals, know dependent types and maybe Curry–Howard, but not Lean. So Parts I–II are a recap and the primer gets the extra time.
 
 **Thesis:** incremental compilation is sound *relative to a small set of obligations on the compiler*. Writing those obligations down in Lean turned Zinc bug whack-a-mole into a loop: model a language feature as a new kind of query, re-prove the obligations or find the counterexample, check the model exhaustively, then test real Zinc against the model's program space.
 
-**Where the Lean lives:** the model stays in `../zinc-incrementality/lean/` (one Lake project, Lean and Mathlib `v4.34.1`, no `sorry`); this talk references it by path. The primer toy (§P below) is new and should go in the same Lake project as `Zinc/Primer.lean`, without Mathlib imports, so the whole talk builds with `lake build`. Moving the model to its own top-level directory is an open question (§Q).
+**Where the Lean lives:** the full model stays in `../zinc-incrementality/lean/` (Lean and Mathlib `v4.34.1`, no `sorry`); Parts VIII–IX cite it by path. This talk gets its own Lake project, `zinc-lean/lean/` (**new work**), pinned to the same toolchain and Mathlib, holding simplified snapshots for the slides:
+
+- `Primer/`: the P1–P4 snippets, no Mathlib imports.
+- `V1/`: Parts V–VI. `Task` and T1; a typecheck-only toy (lookups with misses, implicits with shadowing, no erasure); `Compiler`, `Obligations`, `round`, `zinc`; T2, T3a, T3 and T4 as in the full model; name-only vs repaired keys as checked examples.
+- `V2/`: Part VII. V1 plus codegen queries (erasure through a value class, one forwarder), a non-local hash and the stale-Δ counterexample, with one general compiler structure instead of three.
+
+The snapshots are copies cut down for reading, not imports of the full model, so slides show short code. Each says in its header which full-model file it simplifies.
 
 <!-- break -->
 
@@ -14,10 +20,10 @@
 
 | part | minutes |
 |---|---|
-| I. The problem, and Zinc | 5 |
+| I. The problem, and Zinc (recap) | 4 |
 | II. Whack-a-mole | 4 |
 | III. Why formalise | 3 |
-| IV. A Lean primer | 8 |
+| IV. A Lean primer | 9 |
 | V. A compiler as a query tree (typechecking a Scala subset) | 6 |
 | VI. Zinc on top | 8 |
 | VII. The backend and separate compilation | 6 |
@@ -26,6 +32,8 @@
 | Close | 2 |
 
 Cut order if short: VIII down to one feature (value classes), VII's projects card, IV's tactic card.
+
+All Lean and tool output is shown as screenshots (infoview, terminal), not live.
 
 ---
 
@@ -36,14 +44,14 @@ Cut order if short: VIII down to one feature (value classes), VII's projects car
 - **Point:** an incremental build must equal a clean build. Undercompilation breaks that; overcompilation keeps it but is slow. Everything later is about that equation.
 - **Evidence:** `zinc-incrementality` §1. In the model: `Compiler.clean` and the conclusion of `zinc_eq_clean_of_wf` / `zinc_eq_clean_of_explicit` (`Zinc/Uniqueness.lean`).
 - **Slide:** $I(\mathit{State}, S', \Delta) \equiv C(S')$, with the two failure modes and what users do about each (type `clean`).
-- **Time:** 1 min.
+- **Time:** 0.5 min.
 
 ### 2. How Zinc approximates it
 
 - **Point:** Zinc does not resolve anything at invalidation time. The compiler emits a per-class API summary $\pi$ and per-client used names $U(d)$; Zinc diffs hashes and loops to a fixed point. Soundness lives in what the compiler records, not in Zinc's set algebra.
 - **Evidence:** `zinc-incrementality` §2–4 (the loop formula, name hashing, the `transitiveStep` fallback, round counts).
-- **Slide:** the §3 loop diagram (compile $R_n$ → diff hashes → invalidate → stop when $\mathrm{inv}(\Delta_n) \subseteq R_n$) and the compiler/bridge/Zinc split diagram.
-- **Time:** 3 min.
+- **Slide:** the §3 loop diagram (compile $R_n$ → diff hashes → invalidate → stop when $\mathrm{inv}(\Delta_n) \subseteq R_n$) and the compiler/bridge/Zinc split diagram. A recap for this audience: dwell only on "Zinc does set algebra; the compiler decides what is recorded".
+- **Time:** 2.5 min.
 
 ### 3. The premise underneath: separate ≡ joint
 
@@ -92,14 +100,14 @@ Cut order if short: VIII down to one feature (value classes), VII's projects car
 
 ## Part IV — A Lean primer
 
-Goal: the audience can read every later snippet. Four cards, each built on the talk's own definitions, not on generic examples. A tiny standalone file (`Zinc/Primer.lean`, **new work**) holds the snippets so they can be run live.
+Goal: the audience can read every later snippet. Four cards, each built on the talk's own definitions, not on generic examples. The snippets live in `zinc-lean/lean/Primer/` (**new work**) and appear as screenshots with the infoview beside them.
 
 ### P1. Types, inductives, functions
 
 - **Point:** `inductive`, `structure`, pattern-matching `def`, `#eval`. Lean is a functional language first.
-- **Evidence:** new `Zinc/Primer.lean`: a two-class lookup with `Option`, e.g. `inductive Cls | A | B`, `def members : Cls → List (Name × Ty)`, `#eval lookup B .m`.
+- **Evidence:** new `Primer/`: a two-class lookup with `Option`, e.g. `inductive Cls | A | B`, `def members : Cls → List (Name × Ty)`, `#eval lookup B .m`.
 - **Slide:** 8 lines of Lean beside the equivalent Scala `enum`/`case class`/`match`.
-- **Time:** 1.5 min.
+- **Time:** 2 min.
 
 ### P2. Dependent types: a query whose answer type depends on the query
 
@@ -142,8 +150,8 @@ theorem run_eq_of_trace (t : Task Q A α) (e e' : Env Q A)
 
 - **Point:** three tools used everywhere later. Tactics build proof terms interactively (show the infoview goal once). A `structure` whose fields are propositions is a spec (`Obligations`). `decide` / `native_decide` prove a decidable proposition by running it: this is how counterexamples become checked facts.
 - **Evidence:** `Compiler.Obligations` (`Zinc/Model.lean`); every `example … := by native_decide` in `Zinc/Examples.lean`.
-- **Slide:** a screenshot of the infoview mid-proof; one `example : … ≠ … := by native_decide`. One honest line: `native_decide` trusts the compiler (it adds the `Lean.ofReduceBool` axiom); kernel `decide` gets stuck on `Finset` here (`PLAN.md` step 8).
-- **Time:** 2.5 min.
+- **Slide:** a screenshot of the infoview mid-proof, from the T1 proof; one `example : … ≠ … := by native_decide`. One honest line: `native_decide` trusts the compiler (it adds the `Lean.ofReduceBool` axiom); kernel `decide` gets stuck on `Finset` here (`PLAN.md` step 8).
+- **Time:** 3 min.
 
 ---
 
@@ -161,7 +169,7 @@ theorem run_eq_of_trace (t : Task Q A α) (e e' : Env Q A)
 - **Point:** a toy object language is enough to state real bugs. Classes with typed members and an `implicit` flag; bodies that select members and search for implicits over imports with shadowing. The shadowing check is itself a lookup, so a miss is recorded.
 - **Evidence:** `Zinc/Toy.lean`: `Member`, `ClassDecl`, `Expr`, `Q` (`lookup`, `underlying`, `implicitCandidates`), `search`, `shadowed`, `compileBody`.
 - **Slide:** `shadowed` and `search` (10 lines), with the matching Scala from `zinc-incrementality` §15a beside it.
-- **Cleanup needed:** `Toy.lean` already includes erasure of value classes in `compileBody`. For this part, present a *typecheck-only slice* (no `erase`, `Out` without descriptors), and bring erasure back in Part VII. Either split the file or show the slice on the slide only.
+- **Snapshot:** `Toy.lean` already includes erasure of value classes in `compileBody`. `V1/` has the typecheck-only slice (no `erase`, `Out` without descriptors); erasure comes back in `V2/` for Part VII.
 - **Time:** 2.5 min.
 
 ### 10. Hierarchies: lookup is a walk
@@ -244,15 +252,15 @@ def zinc (S) (src) (P : Policy CUnit Out K) : ℕ → ℕ → Finset CUnit → S
 - **Point:** materialised inherited members and Merkle hashes are *non-local*: $\pi_C$ reads ancestors. The round invariant still holds, but only if $\Delta$ is diffed over the affected units, not just the recompiled ones. Getting this wrong undercompiles, and the counterexample has two units.
 - **Evidence:** `Zinc/NonLocal.lean` (`GCompiler`, T2′ `round_preserves`), `Zinc/Stale.lean` (`stale_unsound`, `stale_affected`), `Zinc/NonLocalAns.lean` (`NCompiler`, T2″, T3a″, answers that read several interfaces).
 - **Slide:** the two-unit picture: `P` changes, `C`'s hash reads `P`, `C` not recompiled, nothing invalidated.
-- **Cleanup needed:** three compiler structures (`Compiler`, `GCompiler`, `NCompiler`) with parallel theorem names. For the talk, present `NCompiler` as the general model and the others as special cases; a Lean embedding of `Compiler` into `NCompiler` would make that a theorem (**future work**).
+- **Snapshot:** the full model has three compiler structures (`Compiler`, `GCompiler`, `NCompiler`) with parallel theorem names. `V2/` has one, the `NCompiler` shape, with the local model as the case `hashDeps c = {c}`. An embedding lemma in the full model would make that a theorem (**future work**).
 - **Time:** 1.5 min.
 
-### 18. Members vs declarations vs Merkle, computed
+### 18. Members vs declarations vs Merkle, and the PoC (one slide)
 
-- **Point:** three designs for hashing inherited members are three sound instances of one model; their differences in rounds and recompiles are computed, not argued.
+- **Point:** three designs for hashing inherited members are three sound instances of one model; their differences in rounds and recompiles are computed, not argued. The Merkle PoC ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)) is the third design plus a table of descendant rules (header, overrides, conflicts, abstract, trait, mirror) that decide which subclasses recompile; Part IX's findings are mostly about those rules.
 - **Evidence:** `Zinc/Hier.lean` scenarios (checked `example`s), `walkPolicy_sound`; `Zinc/HierSound.lean` `D_obligations`, `W_obligations`, `Mk_obligations`.
-- **Slide:** the 3×5 table from `zinc-incrementality` §22 (decls + walk / materialised / materialised + walk / Merkle / stale Merkle).
-- **Time:** 1 min (can be cut; it's covered in the other talk).
+- **Slide:** left, the materialised vs Merkle diagram from `zinc-incrementality` §5; right, the PoC's headline (catalyst: adding a member to `TreeNode` recompiles 1,371 classes today, 420 with the PoC) and its rule names. The 3×5 computed table goes to a backup slide.
+- **Time:** 1 min.
 
 ### 19. Separate compilation across projects as a policy
 
@@ -354,6 +362,7 @@ The pattern for each feature: a new *query* kind → a new *key* kind → re-pro
 ### 29. What's next, and the ask
 
 - **Point:** the cheapest next step for compiler teams is to adopt the obligations as the review checklist for features, and to run the conformance harness (or a source-file space) when a feature touches $\pi$.
+- **You can do this too, with help:** the model, the harness and most fixes were built with LLM agents doing much of the Lean and the test-writing. A model like this is within reach of a feature author, not only of a verification specialist.
 - **Future work worth naming:** precision theorems for the hierarchy designs; SCC-closed initial invalidation (would T3 hold without acyclicity?); a non-termination witness; instrumenting the compiler to log queries and checking recorded keys against `coverage` (differential testing at the level of obligations).
 - **Time:** 2 min.
 
@@ -361,20 +370,19 @@ The pattern for each feature: a new *query* kind → a new *key* kind → re-pro
 
 ## Notes for Jason
 
-### D. Demo candidates (pick two)
+### D. Demos, as screenshot sequences (pick two)
 
 1. **A counterexample by evaluation.** In VS Code with the infoview, open `FlatRules.lean` at the `abstract` example; flip `abstractAll` from `true` to `false` and watch `reportR … = some ⟨[C], 2, true⟩` go red, then `#eval` the `false` case to show `⟨[], 1, false⟩`. Under 10 s once the file is elaborated; pre-build with `lake build`.
 2. **A proof breaks where the key is missing.** In `Toy.lean`, map `keyOf .underlying` to `.name x` instead of `.self` and show `coverage_repaired` (hence `obligations_repaired`) failing with the uncovered `underlying` query in the context. *To verify:* that the failing goal is readable on a slide; may need a smaller primer copy.
 3. **`lake exe exhaustive erasure`** live: 24 s, prints the 13-variant table. Safe and visual.
 4. **The conformance harness finding a Zinc bug** (pre-recorded): `lake exe conformance > cases.jsonl`, then the harness on the baseline with `--order covering`, stopping at the class-becomes-trait divergence; show the `javap` diff (`invokevirtual` vs `invokeinterface`). Too slow (sbt) to run live.
 
-My pick: 1 and 4 (one in Lean, one in Zinc), with 3 as a fallback.
+My pick: 1 and 4 (one in Lean, one in Zinc), with 3 as a fallback. All are captured as screenshots or a short terminal recording, not run live: for 1 and 2, the infoview before and after the edit; for 3 and 4, the terminal output.
 
 ### C. Cleanup and new work before this is presentable
 
-- **Primer file** (new): `Zinc/Primer.lean`, no Mathlib, the P1–P4 snippets, runnable live.
-- **Typecheck-only slice** of `Toy.lean` for Part V (erasure moves to Part VII), or a slide-only excerpt.
-- **One general compiler structure** for the talk: explain `Compiler`/`GCompiler`/`NCompiler` as one model, ideally with an embedding lemma.
+- **New Lake project** `zinc-lean/lean/` with `Primer/`, `V1/`, `V2/` (see the top card), green with `lake build`.
+- **An embedding lemma** in the full model, so `V2/`'s single compiler structure is justified rather than asserted.
 - **Naming:** theorem names are inconsistent across files (`round_preserves` in three namespaces, `Fl_`/`Er_`/`is_` prefixes, T2′/T2″ in docs). A table mapping slide names → Lean names may be enough; renaming is optional.
 - **Stale docs:** `zinc-incrementality` §22 says "~1100 lines" (now ~8,300 across `Zinc/*.lean`); `PLAN.md` P6.6/P6.8 cite `wit_obligations`, `wit_sound`, `vEdge_obligations`, `vEdge_sound`, which no longer exist after P6.9's restructure (now `Er_obligations`, `fresh_obligations`, `dep_obligations`, `dep_sound`).
 - **Missing results the talk would like:** the non-termination `example` for the plain policy; precision inclusions for the hierarchy designs (P2.6); added/deleted units.
@@ -382,12 +390,14 @@ My pick: 1 and 4 (one in Lean, one in Zinc), with 3 as a fallback.
 - **Lean highlighting:** highlight.js has no Lean grammar, so Lean blocks render plain in `template.html`. Add a small language definition, or accept plain.
 - **Diagrams:** theorem dependency graph (§13), conformance loop (§27), two-hop erasure (§20).
 
-### Q. Open questions
+### Q. Decisions (2026-10-09)
 
-1. **Venue and audience.** A Scala tooling audience (needs less Zinc, more Lean) or a PL/Lean audience (needs more Zinc, less Lean)? It moves 3–4 minutes between Parts I–II and IV.
-2. **Overlap with `zinc-incrementality` Part VII.** Shrink that to a two-slide teaser pointing here, or keep both self-contained?
-3. **Where the Lean lives.** Keep `zinc-incrementality/lean/` and reference it (this draft), or move it to a top-level `zinc-model/` shared by both talks? Moving breaks links in merged PRs and the zinc harness's docs; staying couples the new talk to the old directory name.
-4. **Live Lean or screenshots?** Live is more convincing but Mathlib elaboration on a laptop is slow on a cold start.
-5. **How much Merkle PoC background?** Many of the model's wins are about the PoC's rules (§25). Without §10 of the other talk they need a one-slide intro.
-6. **The agents.** Much of the model, the harness and the fixes were developed with LLM agents. Is "a formal model as the oracle for agent-driven bug finding" part of this talk's story, or out of scope?
-7. **Title.** Working title "Zinc in Lean"; alternatives: "Proving incremental compilation sound (relative to the compiler)", "Whack-a-mole, mechanised".
+1. **Audience:** Scala tooling. Parts I–II are a recap; the primer gets the minute.
+2. **Overlap with `zinc-incrementality` Part VII:** leave it until this talk is fleshed out.
+3. **Lean location:** the full model stays in `zinc-incrementality/lean/`; this talk adds `zinc-lean/lean/` with `Primer/`, `V1/`, `V2/` snapshots.
+4. **Screenshots**, not live Lean.
+5. **Merkle PoC:** one slide (§18).
+6. **Agents:** one line, "you can do this too, with help" (§29).
+7. **Title:** "Whack-a-mole, mechanised: Zinc in Lean".
+
+Still open: should a check keep the `V1/`/`V2/` theorem statements in step with the full model, or are they frozen copies? Frozen is simpler; the risk is a slide showing a statement the model has since generalised.
