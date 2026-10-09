@@ -20,7 +20,7 @@ All Lean and tool output is shown as screenshots.
 
 <!-- break -->
 
-**Contents (~61 min):**
+**Contents (~63 min):**
 
 | part | sections | min |
 |---|---|---|
@@ -29,7 +29,7 @@ All Lean and tool output is shown as screenshots.
 | III. Why formalise | §6 sound relative to the compiler · §7 why Lean | 2.5 |
 | IV. A Lean primer | §P1 types · §P2 dependent queries · §P3 proofs as programs · §P4 tactics and `decide` | 9 |
 | V. A compiler as a query tree | §8 a `Task` per class · §9 a small Scala · §10 lookup walks the linearization | 6 |
-| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §15 the first counterexample | 7.5 |
+| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 the first counterexample | 9.5 |
 | VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §18a the PoC · §19 subprojects | 7.5 |
 | VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23 trait fields · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree · §23d not covered yet | 11.5 |
 | IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §28 limits | 7 |
@@ -509,7 +509,7 @@ Notes: 1 min. Files: `lean/V1/Task.lean`, `Soundness.lean`, `Uniqueness.lean`, `
 
 ### 14. Two things the proof found out about Zinc
 
-**1. `transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test, so the plain loop can recompile the same classes again. Two mutually recursive classes whose inferred types keep changing alternate forever (proved, for every amount of fuel). From `transitiveStep` on, the next round also includes the last one, so the set only grows, and the pair compiles together.
+**1. `transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test, so the loop can recompile the same classes again, and mutually inferred types can keep changing (§14a). From `transitiveStep` on, the next round also includes the last one, so the set only grows.
 
 **2. "It stops, so it equals the clean build" is false without another assumption.**
 
@@ -525,9 +525,51 @@ Separately compiled, any type is a consistent answer; joint compilation reports 
 
 <div class="fn">
 
-Notes: 1.5 min. `PLAN.md` "Two findings"; `fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`. Finding 2 is the problem behind sbt/zinc#1284 ("include mutual dependencies in initial invalidation") and its revert, #1462. Finding 1 is `PingPong.plain_diverges`: two classes whose inferred types read each other, a table edit, and the plain loop alternates forever (proved for every amount of fuel); `transitiveStep_stops` reaches the joint fixed point. Both findings corrected `zinc-incrementality` §3–4.
+Notes: 1.5 min. `PLAN.md` "Two findings"; `fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`. Finding 2 is the problem behind sbt/zinc#1284 ("include mutual dependencies in initial invalidation") and its revert, #1462. Finding 1 is §14a. Both findings corrected `zinc-incrementality` §3–4.
 
 Bugs of note: [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) · [sbt/zinc#1462](https://github.com/sbt/zinc/pull/1462) · [sbt/zinc#1420](https://github.com/sbt/zinc/issues/1420)
+
+</div>
+
+### 14a. Finding 1, from a search to a proof to Zinc
+
+**A search in Lean**, before any `transitiveStep`: three classes, any read graph, one class's table edited, every per-unit fixed point as the start; 12,402 runs.
+
+| next round | stop by round 2 | stop later | never stop |
+|---|---|---|---|
+| invalidated classes only | 9,990 | 1,332 | 1,080 (900 on 2-cycles) |
+| Zinc's: invalidated + API-changed | 11,286 | 936 | **180, all on 3-cycles** |
+| Zinc's, with `transitiveStep 3` | 11,286 | 1,116 | 0 |
+
+First hit: `A` reads `B`, `B` reads `C`, `C` reads `A`, and one table changes. As Scala:
+
+```scala
+object A { def x = B.y }
+object B { def y = C.z }
+object C { def z: Int = 1 }      // edit: def z = Some(A.x)
+```
+
+<!-- break -->
+
+**Zinc** (`develop`, `transitiveStep = 6`): each cycle compiles a pair against the third's classfile, so it typechecks, and the types grow.
+
+```
+cycle 1  C        z: Some[Int]
+cycle 2  B C      y: Some[Int]
+cycle 3  A B      x: Some[Int]
+cycle 4  A C      z: Some[Some[Int]]
+cycle 5  B C      y: Some[Some[Int]]
+cycle 6  A B      x: Some[Some[Int]]
+cycle 7  A B C    error: recursive method x needs result type
+```
+
+- Only the brute-force cycle compiles all three together, and reports what a clean build reports. With the default `transitiveStep = 3` that is cycle 4.
+- Two classes never do this in Zinc: the class whose API changed is recompiled with its dependent, so a 2-cycle compiles together at once. The search shows the same: the model's first loop, which left that class out, also diverged on 2-cycles.
+- **Proved** (`zinc_diverges`): without `transitiveStep`, the loop on the Lean version of this program does not stop, for any amount of fuel.
+
+<div class="fn">
+
+Notes: 2 min. `Zinc/PingPong.lean` (`zincPolicy`, `zinc_diverges`, `transitiveStep_stops`), `lake exe exhaustive pingpong` (9 s). Zinc scripted test `inferred-type-cycle-rounds` (retronym/zinc branch `claude/inferred-type-cycle-rounds`); the cycle listing is from its invalidation log, `[diff] def …` lines. Not a soundness bug: the cost is rounds, and the final error is right. It does say `transitiveStep` is load-bearing: set it high enough and the rounds never end.
 
 </div>
 
