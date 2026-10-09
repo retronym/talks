@@ -213,7 +213,7 @@ Notes: 2.5 min. Recap of `zinc-incrementality` §2–4. Mention the `transitiveS
 |---|---|---|
 | a class in the same subproject | its source, its API and name hashes, every edge in the graph | name hashes, plus rules that walk the graph: transitive inheritance invalidation, the implicit and macro fallbacks |
 | a class in an upstream subproject | the API stored in the upstream's Analysis | the stored API is diffed; the in-project rules do not cross the boundary |
-| a class in a library JAR | a stamp (a hash of the classfile or JAR) | a changed stamp invalidates the dependents, with no name filter |
+| a class in a library JAR | a stamp: a content hash of the JAR or classfile | a changed stamp invalidates every source that uses the library, with no name filter |
 
 - Zinc's design grew in this order: one module's sources; then multi-module builds, with an Analysis per subproject and lookups across them; then JARs: straight-to-JAR output, pipelining's early-output JARs, remote caches.
 - Each step moved information out of the compiler run. Rules that need the whole graph stop at the boundary, so the same edit can be clean in one subproject and wrong across two (§19).
@@ -221,7 +221,7 @@ Notes: 2.5 min. Recap of `zinc-incrementality` §2–4. Mention the `transitiveS
 
 <div class="fn">
 
-Notes: 1.5 min. Verify the history (when each step landed) and the library-JAR row against `IncrementalCommon` / `invalidateExternal` before presenting. In the model, subprojects are a policy on one loop (§19); libraries and pipelining are not modelled (§23a, §28).
+Notes: 1.5 min. Verify the history (when each step landed) before presenting. The table is read off `IncrementalCommon.scala` (`byLibraryDep`, `detectAPIChanges`) and `IncrementalNameHashing.invalidateClassesExternally`. The model extension is designed in `zinc-incrementality/lean/PLAN.md` Phase 8. In the model, subprojects are a policy on one loop (§19); libraries and pipelining are not modelled (§23a, §28).
 
 Bugs of note: [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (implicit scope across projects) · [retronym/zinc#26](https://github.com/retronym/zinc/pull/26) (erasure across subprojects) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14) (`compile-to-jar-no-op-recompiles`) · [scala/scala3#27139](https://github.com/scala/scala3/issues/27139), [scala/scala3#27125](https://github.com/scala/scala3/issues/27125) (pipelining callbacks) · [sbt/zinc#1819](https://github.com/sbt/zinc/issues/1819) (pipelining and Java) · [scala/scala3#27117](https://github.com/scala/scala3/issues/27117) (JDK classes reported as project classes under `-release`)
 
@@ -847,7 +847,7 @@ Same edit, two layouts (`implicit-scope-grandparent-companion`: `B`, an ancestor
 
 - Inside one subproject Zinc has extra rules (transitive inheritance invalidation, the implicit fallback). Across subprojects only recorded keys count.
 - The model treats the layout as a policy on one loop, so the cross-subproject bugs appear and the single-subproject runs stay clean, as in Zinc.
-- Not modelled yet: library JARs (a stamp instead of an API), and pipelining's early outputs (an interface that must agree with the final one). Both change the obligations, not only the policy.
+- Not modelled yet: library JARs (a stamp instead of an API), the snapshot of an upstream API that the downstream stores, and pipelining's early outputs (an interface that must agree with the final one). These change the obligations, not only the policy. Designed in `PLAN.md` Phase 8.
 
 <div class="fn">
 
