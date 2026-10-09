@@ -1,4 +1,4 @@
-# Whack-a-mole, mechanised: Zinc in Lean
+# Formalising Zinc's incremental compilation in Lean
 
 Talk on the Lean 4 model of Zinc's incremental compilation. The model itself lives in `../zinc-incrementality/lean/`.
 
