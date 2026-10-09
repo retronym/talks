@@ -5,11 +5,17 @@ take the model's verdicts from) and reports:
 * the divergences (incremental differs from clean), grouped by edit and resolution change."""
 import collections, json, re, sys
 
-from families import family
+from families import family, givens_family
+
+GIVENS = {'gBlk': 'blk', 'gInh': 'inh', 'gWild': 'wild', 'gInner': 'inner', 'gPobj': 'pobj',
+          'gOuter': 'outer', 'gComp': 'comp'}
 
 def slot_of(probe, name):
     toks = set(re.findall(r'[A-Za-z0-9_/$]+', ' '.join(probe)))
     toks |= {t[1:] for t in toks if t.startswith('L')}
+    if name is None:
+        hits = [s for k, s in GIVENS.items() if k in toks]
+        return '+'.join(hits) if hits else '?'
     m = {f'a/V${name}$': 'blk', f'a/P${name}$': 'inh', f'a/X${name}$': 'expl', f'a/W${name}$': 'wild',
          f'a/q/{name}$': 'wpkg', f'a/b/{name}$': 'inner', f'a/b/package${name}$': 'pobj',
          f'a/{name}$': 'outer', 'scala/Option$': 'lib', f'a/U${name}$': 'wild', f'a/U2${name}$': 'pobj'}
@@ -20,7 +26,7 @@ def model_res(cfg):
     b, a = cfg.split(': ', 1)[1].split(' -> ')
     return b, a
 
-rs = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+rs = [json.loads(l, strict=False) for l in open(sys.argv[1]) if l.strip()]
 # A fresh dump (optional) supplies the current model's verdicts, matched by base cfg and edit.
 if len(sys.argv) > 2:
     fresh = {}
@@ -45,7 +51,7 @@ for r in rs:
     if r['verdict'] == 'base-error':
         res_mis[('base-error', r['cfg'], tuple(r['errors'][:1]))] += 1
         continue
-    name = 'Option' if r['cfg'].split()[7] == 'true' else 'Foo'
+    name = None if r['space'] == 'givens' else 'Option' if r['cfg'].split()[7] == 'true' else 'Foo'
     # with `exp`, the factor list has one more field before the slots
     mb, ma = model_res(r['edited'])
     rb = slot_of(r.get('baseProbe', []), name)
@@ -85,7 +91,8 @@ fam = collections.Counter()
 for (e, res, v, rv), xs in div.items():
     b, a = res.split(' -> ')
     for r in xs:
-        fam[family(r['edit'], b, a)] += 1
+        mb, ma = model_res(r['edited'])
+        fam[(givens_family if r['space'] == 'givens' else family)(r['edit'], mb, ma)] += 1
 print('\n== divergences by family')
 for k, n in sorted(fam.items()):
     print(n, k)

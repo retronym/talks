@@ -123,7 +123,7 @@ inductive Res
   | ok (s : Slot)
   /-- The client does not compile. -/
   | err (why : String)
-  /-- Another file does not compile: `a.b.Foo` and the package object's `Foo` clash. -/
+  /-- Another file does not compile: `a.b.Foo` and the package object's `Foo` clash (Scala 3). -/
   | clash
   deriving DecidableEq, Repr
 
@@ -199,8 +199,7 @@ def recompiles (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
   | .names => !(changed p p').isEmpty
 
 /-- The verdict of an edit: the client's resolution before, after, whether Zinc recompiles it,
-and whether the incremental build equals the clean one. A clash is reported by the edited file
-itself, so the incremental build sees it too. -/
+and whether the incremental build equals the clean one. -/
 structure Verdict where
   before : Res
   after : Res
@@ -214,11 +213,20 @@ member is compiled with it. Adding the member leaves the class's file alone, and
 def staleMirror (v : Ver) (p p' : Prog) : Bool :=
   v == .s2 && p.st .pobj != .foo && p'.st .pobj == .foo && p.st .inner == .foo && p'.st .inner == .foo
 
+/-- Scala 3 reports the clash of a class `a.b.Foo` with a member `Foo` of package `a.b`'s package
+object (or a top-level export) only when it compiles both files together. An edit changes one of
+them, and nothing in Zinc connects the other (Zinc names the member `a.b.package$.Foo`), so the
+incremental build misses the error. -/
+def missedClash (v : Ver) (p' : Prog) : Bool := resolve v p' == .clash
+
+/-- The divergences that are not about the client's resolution. -/
+def besideResolution (v : Ver) (p p' : Prog) : Bool := staleMirror v p p' || missedClash v p'
+
 def verdict (m : Mode) (v : Ver) (p p' : Prog) : Verdict :=
   let r := resolve v p
   let r' := resolve v p'
   let rc := recompiles m v p p'
-  ⟨r, r', rc, (rc || r == r' || r' == .clash) && !staleMirror v p p'⟩
+  ⟨r, r', rc, (rc || r == r') && !besideResolution v p p'⟩
 
 /-! ## The program space -/
 
@@ -342,14 +350,14 @@ theorem wild_client_today :
   native_decide
 
 /-- Every edit of the space, both versions, is clean when the lookup's misses are recorded, and
-when the users of a name are invalidated on every added or removed binding; the stale mirror is
-not about resolution, and neither fix touches it. -/
+when the users of a name are invalidated on every added or removed binding; the stale mirror and
+the missed clash are not about the client's resolution, and neither fix touches them. -/
 theorem searched_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean || staleMirror v p p') = true := by
+    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean || besideResolution v p p') = true := by
   native_decide
 
 theorem names_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean || staleMirror v p p') = true := by
+    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean || besideResolution v p p') = true := by
   native_decide
 
 end Zinc.Names
