@@ -5,6 +5,8 @@ take the model's verdicts from) and reports:
 * the divergences (incremental differs from clean), grouped by edit and resolution change."""
 import collections, json, re, sys
 
+from families import family
+
 def slot_of(probe, name):
     toks = set(re.findall(r'[A-Za-z0-9_/$]+', ' '.join(probe)))
     toks |= {t[1:] for t in toks if t.startswith('L')}
@@ -78,3 +80,12 @@ for k, v in sorted(div.items(), key=lambda x: -len(x[1])):
         f = r['cfg'].split()
         fs[f'first={f[6]}'] += 1
     print(len(v), k, dict(fs), v[0]['base'], v[0]['cfg'])
+
+fam = collections.Counter()
+for (e, res, v, rv), xs in div.items():
+    b, a = res.split(' -> ')
+    for r in xs:
+        fam[family(r['edit'], b, a)] += 1
+print('\n== divergences by family')
+for k, n in sorted(fam.items()):
+    print(n, k)

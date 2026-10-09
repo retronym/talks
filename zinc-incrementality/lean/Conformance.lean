@@ -181,7 +181,7 @@ def mainNames (v : Ver) : IO Unit := do
         ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
     out.putStrLn ("{\"space\":\"names\",\"id\":\"n" ++ toString i ++ "\",\"cfg\":" ++ jstr (namesCfg p) ++
       ",\"factors\":" ++ jfactors (namesFactors p) ++
-      ",\"probe\":" ++ jstr (clientClass p) ++ ",\"files\":" ++ jfiles ((files p).map fun (f, s) => (f, some s)) ++ ",\"edits\":" ++ jarr es ++ "}")
+      ",\"probe\":" ++ jstr (clientClass p) ++ ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++ ",\"edits\":" ++ jarr es ++ "}")
     i := i + 1
 
 end names

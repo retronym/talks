@@ -16,7 +16,7 @@ The binding sites (`Slot`), innermost first, for
 package a; package b              // or `package a.b`, or `package a`
 import a.W._; import a.q._        // optional
 import a.X.Foo                    // optional
-object First                      // optional: another class before the client
+object First                      // optional: another class, charged with the imports (Scala 3: `object Last`, after)
 object Client extends a.P {       // `extends` optional
   val use: Any = { import a.V._; Foo }   // the block import optional
 }
@@ -37,7 +37,9 @@ Zinc's dependencies, read off the bridges (`Dependency.scala`, Scala 3's `Extrac
 * a reference records a member-ref edge to the class that owns the symbol it resolved to, and to
   the classes of its qualifier; the used name `Foo` goes to the enclosing class;
 * an import records an edge to its qualifier (a package records nothing), and an explicit
-  selector's name; a top-level import is charged to the *first* class of the file;
+  selector's name; a top-level import is charged to one class of the file: the first in Scala 2
+  (`Dependency.firstClassOrModuleClass`), the last in Scala 3 (`responsibleForImports` folds over
+  the file and keeps the last `TypeDef` it meets, though its comment says first);
 * `extends` records an inheritance edge.
 
 Zinc's invalidation (`IncrementalCommon`, `MemberRefInvalidator`): a recompiled class whose API
@@ -83,7 +85,8 @@ structure Client where
   expl : Bool
   wild : Bool
   wpkg : Bool
-  /-- Another class precedes the client in its file, and is charged with the top-level imports. -/
+  /-- Another class shares the client's file and is charged with the top-level imports: before the
+  client in Scala 2 (`object First`), after it in Scala 3 (`object Last`). -/
   first : Bool
   /-- The name is `Option`, so `scala.Option` binds it when nothing else does. -/
   opt : Bool
@@ -179,7 +182,7 @@ def invalidates (p : Prog) (r : Res) (s : Slot) : Bool :=
   | .blk => true
   -- `X` and the selector's name `Foo`, both charged to the first class of the file
   | .expl => true
-  -- `W` is charged to the first class; it uses `Foo` only if it is the client, or resolved
+  -- `W` is charged to the first class (Scala 3: the last); it uses `Foo` only if it is the client, or resolved
   -- through `W` (then `Client` has its own edge to `W`)
   | .wild => !p.cl.first || r == .ok .wild
   -- the package object is reached only through the resolved symbol
@@ -324,7 +327,7 @@ theorem export_added_today :
     verdict .today .s3 expBase (expBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
-/-- **Wildcard import, second class**: `Foo` added to `object W` over `a.Foo`, the import charged to
+/-- **Wildcard import, another class**: `Foo` added to `object W` over `a.Foo`, the import charged to
 `First`, which does not use `Foo`. -/
 def wildBase : Prog := mkProg { cl0 with wild := true, first := true } [(.outer, .foo)]
 
@@ -387,24 +390,25 @@ def slotSrc (p : Prog) : Slot → Option String
   | .outer => topClass p .outer "a"
   | .lib => none
 
-def clientSrc (p : Prog) : String :=
+def clientSrc (v : Ver) (p : Prog) : String :=
   let c := p.cl
   let pkg := match c.pkg with
     | .nested => "package a\npackage b\n" | .flat => "package a.b\n" | .top => "package a\n"
   let imps := (if c.wild then "import a.W._\n" else "") ++ (if c.wpkg then "import a.q._\n" else "") ++
     (if c.expl then "import a.X." ++ p.name ++ "\n" else "")
-  let first := if c.first then "object First\n\n" else ""
+  let first := if c.first && v == .s2 then "object First\n\n" else ""
+  let last := if c.first && v == .s3 then "\nobject Last\n" else ""
   let ext := if c.inh then " extends a.P" else ""
   let use := if c.blk then "{ import a.V._; " ++ p.name ++ " }" else p.name
   pkg ++ "\n" ++ imps ++ (if imps.isEmpty then "" else "\n") ++ first ++
-    "object Client" ++ ext ++ " {\n  val use: Any = " ++ use ++ "\n}\n"
+    "object Client" ++ ext ++ " {\n  val use: Any = " ++ use ++ "\n}\n" ++ last
 
 /-- The client's classfile, where the harness reads what the name resolved to. -/
 def clientClass (p : Prog) : String := if p.cl.pkg == .top then "a/Client$" else "a/b/Client$"
 
 /-- The program's files. `Other.scala` keeps package `a.q` in existence for its import. -/
-def files (p : Prog) : List (String × String) :=
-  [("Client.scala", clientSrc p)] ++
+def files (v : Ver) (p : Prog) : List (String × String) :=
+  [("Client.scala", clientSrc v p)] ++
   (if p.cl.wpkg then [("Other.scala", "package a.q\n\nobject Other\n")] else []) ++
   (if p.cl.exp && p.cl.wild then [("W.scala", "package a\n\nobject W {\n  export a.U.*\n}\n")] else []) ++
   (if p.cl.exp && p.cl.pkg != .top then [("PObj.scala", "package a.b\n\nexport a.U2.*\n")] else []) ++
