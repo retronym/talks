@@ -18,13 +18,13 @@ open Zinc.Hier (Cls Name Ty)
 open Zinc.Hier.Cls Zinc.Hier.Name
 
 def clsName : Cls → String
-  | A => "A" | B => "B" | M => "M" | C => "C" | X => "X" | Y => "Y" | Z => "Z"
+  | A => "A" | B => "B" | M => "M" | C => "C" | X => "X" | Y => "Y" | Z => "Z" | V => "V"
 
 def nameStr : Name → String
   | m => "m" | g => "g"
 
 def tyStr : Ty → String
-  | .int => "Int" | .string => "String" | .param => "T"
+  | .int => "Int" | .string => "String" | .param => "T" | .v => "V"
 
 /-- The Scala kind of a class. -/
 def kindStr (d : Decl) : String :=
@@ -33,6 +33,9 @@ def kindStr (d : Decl) : String :=
     | .trt => "trait"
     | .obj => "object"
     | .cls => if d.abstract then "abstract class" else "class"
+
+def modStr : Mod → String
+  | .dfn => "def" | .val => "val" | .var => "var" | .lzy => "lazy val"
 
 def jstr (s : String) : String := "\"" ++ s ++ "\""
 
@@ -44,10 +47,15 @@ def clsJson (c : Cls) (s : Src) : String :=
     ",\"tparams\":" ++ tparams ++
     ",\"parents\":" ++ jarr (s.decl.parents.map fun (p, t) => jarr [jstr (clsName p), jstr (tyStr t)]) ++
     ",\"decls\":" ++ jarr (s.decl.decls.map fun (n, mm) =>
-      jarr [jstr (nameStr n), jstr (tyStr mm.ty), toString mm.deferred]) ++
+      jarr [jstr (nameStr n), jstr (tyStr mm.ty), toString mm.deferred, jstr (modStr mm.mod),
+        toString mm.priv]) ++
+    ",\"under\":" ++ (match s.decl.under with | some t => jstr (tyStr t) | none => "null") ++
+    ",\"observes\":" ++ jarr (s.observes.map (jstr ∘ clsName)) ++
     ",\"body\":" ++ jarr (s.body.map fun (c', n) => jarr [jstr (clsName c'), jstr (nameStr n)]) ++ "}"
 
-def progJson (src : Cls → Src) : String := jarr (all.map fun c => clsJson c (src c))
+/-- The classes of a program; `V` only where it is declared (the value-class space). -/
+def progJson (src : Cls → Src) (withV : Bool := false) : String :=
+  jarr ((all.filter fun c => c != V || withV).map fun c => clsJson c (src c))
 
 def errStr : Err → String
   | .override n => "override " ++ nameStr n
@@ -63,7 +71,7 @@ def modelErrs (src : Cls → Src) : List String :=
 /-- Does every selection resolve in the model's clean build? Scala rejects one that does not. -/
 def resolves (src : Cls → Src) : Bool :=
   let o := clean src
-  all.all fun c => (o c).descs.all (·.2.isSome)
+  all.all fun c => (o c).descs.all (·.2.1.isSome)
 
 /-- Does no class inherit two instances of one ancestor, `M[Int]` and `M[String]`? Scala rejects
 that ("illegal inheritance"); the model's linearization merge keeps the first. -/
@@ -76,32 +84,65 @@ def coherent (src : Cls → Src) : Bool :=
 
 def optStr : Opt → String
   | .none => "-" | .int => "int" | .str => "str" | .par => "par" | .dfr => "dfr"
+  | .val => "val" | .var => "var" | .lzy => "lazy" | .pval => "pval"
 
-/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj aTrait`. -/
+/-- `Cfg` compactly: `oA oB oM oC aPar bArg bUses bFinal xObj aTrait zObs`. -/
 def cfgStr (k : Cfg) : String :=
   " ".intercalate ([k.oA, k.oB, k.oM, k.oC].map optStr ++
     [(k.aPar.map tyStr).getD "-", tyStr k.bArg, if k.bUses then "uses" else "-",
      if k.bFinal then "final" else "-", if k.xObj then "xobj" else "-",
-     if k.aTrait then "atrait" else "-"])
+     if k.aTrait then "atrait" else "-", if k.zObs then "zobs" else "-"])
 
 /-- `Cfg` as named factors, for the harness's covering-array ordering. -/
 def factorsJson (k : Cfg) : String :=
   let fs := [("oA", optStr k.oA), ("oB", optStr k.oB), ("oM", optStr k.oM), ("oC", optStr k.oC),
     ("aPar", (k.aPar.map tyStr).getD "-"), ("bArg", tyStr k.bArg), ("bUses", toString k.bUses),
-    ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait)]
+    ("bFinal", toString k.bFinal), ("xObj", toString k.xObj), ("aTrait", toString k.aTrait), ("zObs", toString k.zObs)]
   "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
 
-def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=
-  let r := reportR clientOnly true allRules k.src k'.src {e}
+def editJsonSrc (src₀ src₁ : Cls → Src) (cfg factors : String) (e : Cls) (withV : Bool := false) :
+    String :=
+  let r := reportR clientOnly true allRules src₀ src₁ {e}
   let (recd, ok) := match r with
     | some r => (r.recompiled.map (jstr ∘ clsName), r.clean)
     | none => ([], false)
-  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr (cfgStr k') ++ ",\"factors\":" ++ factorsJson k' ++ ",\"prog\":" ++ progJson k'.src ++
-    ",\"modelErrs\":" ++ jarr ((modelErrs k'.src).map jstr) ++
+  "{\"cls\":" ++ jstr (clsName e) ++ ",\"cfg\":" ++ jstr cfg ++ ",\"factors\":" ++ factors ++
+    ",\"prog\":" ++ progJson src₁ withV ++
+    ",\"modelErrs\":" ++ jarr ((modelErrs src₁).map jstr) ++
     ",\"modelRecompiled\":" ++ jarr recd ++ ",\"modelClean\":" ++ toString ok ++ "}"
+
+def editJson (k : Cfg) (k' : Cfg) (e : Cls) : String :=
+  editJsonSrc k.src k'.src (cfgStr k') (factorsJson k') e
+
+def optVStr : OptV → String
+  | .none => "-" | .int => "int" | .vt => "V" | .vtd => "Vdfr" | .par => "par"
+
+def cfgVFields (k : CfgV) : List (String × String) :=
+  [("vU", (k.vU.map tyStr).getD "ref"), ("oA", optVStr k.oA), ("oB", optVStr k.oB),
+   ("oM", optVStr k.oM), ("oC", optVStr k.oC), ("aPar", (k.aPar.map tyStr).getD "-"),
+   ("bArg", tyStr k.bArg), ("xObj", toString k.xObj)]
+
+def cfgVStr (k : CfgV) : String := " ".intercalate ((cfgVFields k).map (·.2))
+
+def factorsV (k : CfgV) : String :=
+  "{" ++ ",".intercalate ((cfgVFields k).map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
+
+def valid (src : Cls → Src) : Bool := (modelErrs src).isEmpty && resolves src && coherent src
+
+def mainV (everything : Bool) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for k in cfgsV do
+    if everything || valid k.src then
+      out.putStrLn ("{\"space\":\"flatV\",\"id\":\"v" ++ toString i ++ "\",\"cfg\":" ++
+        jstr (cfgVStr k) ++ ",\"factors\":" ++ factorsV k ++ ",\"prog\":" ++ progJson k.src true ++
+        ",\"edits\":" ++ jarr ((editsV k).map fun (k', e) =>
+          editJsonSrc k.src k'.src (cfgVStr k') (factorsV k') e true) ++ "}")
+    i := i + 1
 
 def main (args : List String) : IO Unit := do
   let everything := args.contains "all"
+  if args.contains "v" then return (← mainV everything)
   let out ← IO.getStdout
   let mut i := 0
   for k in cfgs do

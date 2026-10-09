@@ -59,9 +59,20 @@ open Zinc.Hier.Cls Zinc.Hier.Name
 
 instance : Fintype Cls := ⟨allCls, by intro x; cases x <;> decide⟩
 
+def names : List Name := [m, g]
+
+/-- What a member is: a method, or a field with its accessors (`val`, `var`, `lazy val`). A field
+of a trait is implemented in each class that mixes the trait in directly. -/
+inductive Mod | dfn | val | var | lzy
+  deriving DecidableEq, Repr
+
 structure Mem where
   ty : Ty
   deferred : Bool := false
+  mod : Mod := .dfn
+  /-- Private: invisible to clients, descendants and the API, but a trait's private field is
+  still implemented by the classes that mix it in (Zinc's `extraHash` channel). -/
+  priv : Bool := false
   deriving DecidableEq, Repr
 
 /-- What a definition is. Traits get no forwarders; a class or object gets mixin forwarders for
@@ -77,6 +88,8 @@ structure Decl where
   abstract : Bool := false
   kind : CKind := .cls
   final : Bool := false
+  /-- A value class's underlying type: `V` erases to it. -/
+  under : Option Ty := none
   deriving DecidableEq, Repr
 
 /-- Proper ancestors, most derived first, with type arguments as seen from the class. -/
@@ -85,6 +98,8 @@ abbrev Lin := List (Cls × Ty)
 structure Src where
   decl : Decl
   body : List (Cls × Name) := []
+  /-- Whole-class observations, as by a macro that reads every member of its type argument. -/
+  observes : List Cls := []
   deriving DecidableEq, Repr
 
 /-- The interface stores the declaration and the linearization computed when it was compiled. -/
@@ -106,17 +121,27 @@ inductive Err
 structure Out where
   iface : Iface
   errs : List Err
-  /-- The resolved type of each selection, and the receiver's kind: `invokeinterface` for a
-  trait, `invokevirtual` for a class. -/
-  descs : List (CKind × Option Ty)
+  /-- The resolved and erased type of each selection, and the receiver's kind:
+  `invokeinterface` for a trait, `invokevirtual` for a class. -/
+  descs : List (CKind × Option Ty × Option Ty)
   /-- Mixin forwarders: a concrete trait member that the class's linearization resolves to, for
   a trait it mixes in (one not already in its superclass's linearization), as seen from it. -/
-  fwds : List (Name × Ty) := []
-  /-- Static forwarders of an object's mirror class: every member, resolved, as seen from it. -/
-  statics : List (Name × Ty) := []
+  fwds : List (Name × Ty × Ty) := []
+  /-- Static forwarders of an object's mirror class: every member, resolved, as seen from it,
+  and erased. -/
+  statics : List (Name × Ty × Ty) := []
+  /-- Fields implemented for the traits mixed in directly, private ones included. -/
+  fields : List (Name × Ty × Mod × Bool) := []
+  /-- Bridges: an own member whose erasure differs from that of a member it overrides. -/
+  bridges : List (Name × Ty) := []
+  /-- Each whole-class observation: every member of the class, resolved, as seen from it. -/
+  obs : List (List (Option Ty × Option Ty)) := []
   deriving DecidableEq, Repr
 
-def own (i : Iface) (n : Name) : Option Mem := i.decl.decls.lookup n
+/-- The public declarations: what clients, descendants and the API see. -/
+def pub (d : Decl) : List (Name × Mem) := d.decls.filter fun e => !e.2.priv
+
+def own (i : Iface) (n : Name) : Option Mem := (pub i.decl).lookup n
 
 /-- The flattened composition: `own_C(n)`, then each ancestor of the stored linearization that
 declares `n`, with its type argument as seen from `c`. -/
@@ -127,7 +152,21 @@ def flatOf (I : Cls → Iface) (c : Cls) (n : Name) : List (Cls × Ty × Mem) :=
 def lookupFlat (l : List (Cls × Ty × Mem)) : Option Ty :=
   l.head?.map fun e => Ty.subst e.2.1 e.2.2.ty
 
+/-- The erasure of the member found: its declared type, where the type parameter erases to
+`Object`. A client's descriptor and its unboxing depend on both. -/
+def erasedFlat (l : List (Cls × Ty × Mem)) : Option Ty :=
+  l.head?.map fun e => e.2.2.ty
+
+/-- A whole-class observation: every member, resolved and erased. -/
+def allFlat (I : Cls → Iface) (c : Cls) : List (Option Ty × Option Ty) :=
+  names.map fun n => (lookupFlat (flatOf I c n), erasedFlat (flatOf I c n))
+
 /-! ## Queries -/
+
+/-- Why a class asks for `V`'s underlying type: to erase a selection's type, a mixin
+forwarder's, a static forwarder's, or an overridden member's (for bridges). -/
+inductive UCtx | sel | fwd | mir | ovr
+  deriving DecidableEq, Repr
 
 inductive Q
   | parents
@@ -149,12 +188,20 @@ inductive Q
   | fhas (n : Name)
   /-- Static forwarders: the declarations of an ancestor of an object. -/
   | mirror
+  /-- A direct parent named in the extends clause: its header and stored linearization. -/
+  | ext
+  /-- A whole-class observation (a macro): every member of the addressed class. -/
+  | all
+  /-- The addressed value class's underlying type, which erasure reads. -/
+  | under (ctx : UCtx)
   deriving DecidableEq, Repr
 
 inductive AnsV
   | ps (l : List (Cls × Ty))
   | ty (t : Option Ty)
-  | sel (k : CKind) (t : Option Ty)
+  | sel (k : CKind) (t : Option Ty) (e : Option Ty)
+  | ex (k : CKind) (f : Bool) (ps : List (Cls × Ty)) (l : Lin)
+  | obs (k : CKind) (l : List (Option Ty × Option Ty))
   | mem (m : Option Mem)
   | b (x : Bool)
   | ob (x : Option Bool)
@@ -164,7 +211,7 @@ inductive AnsV
 
 def answer (I : Cls → Iface) : Cls × Q → AnsV
   | (c, .parents) => .ps (I c).decl.parents
-  | (c, .member n) => .sel (I c).decl.kind (lookupFlat (flatOf I c n))
+  | (c, .member n) => .sel (I c).decl.kind (lookupFlat (flatOf I c n)) (erasedFlat (flatOf I c n))
   | (c, .ovr n) => .mem (own (I c) n)
   | (c, .cfl n) => .mem (own (I c) n)
   | (c, .has n) => .b (own (I c) n).isSome
@@ -173,6 +220,9 @@ def answer (I : Cls → Iface) : Cls × Q → AnsV
   | (c, .fwd) => .ds (I c).decl.decls
   | (c, .fhas n) => .b (own (I c) n).isSome
   | (c, .mirror) => .ds (I c).decl.decls
+  | (c, .ext) => .ex (I c).decl.kind (I c).decl.final (I c).decl.parents (I c).lin
+  | (c, .all) => .obs (I c).decl.kind (allFlat I c)
+  | (c, .under _) => .ty (I c).decl.under
 
 abbrev T := Task (Cls × Q) (fun _ => AnsV)
 
@@ -211,29 +261,78 @@ def depth : ℕ := 6
 
 /-! ## Per-unit task -/
 
-def selects : List (Cls × Name) → T (List (CKind × Option Ty))
+/-- Erasure: `V` erases to its underlying type if it is a value class; the type parameter
+erases to `Object` (`param`). -/
+def erase (ctx : UCtx) (t : Ty) : T Ty :=
+  if t == .v then do
+    match ← askQ V (.under ctx) with
+    | .ty (some u) => pure u
+    | _ => pure .v
+  else pure t
+
+def eraseO (ctx : UCtx) : Option Ty → T (Option Ty)
+  | some t => do pure (some (← erase ctx t))
+  | none => pure none
+
+def selects : List (Cls × Name) → T (List (CKind × Option Ty × Option Ty))
   | [] => pure []
   | (c, n) :: rest => do
     let r ← askQ c (.member n)
+    let d ← match r with
+      | .sel k t e => do pure (k, t, ← eraseO .sel e)
+      | _ => pure (.cls, none, none)
     let ts ← selects rest
-    pure ((match r with | .sel k t => (k, t) | _ => (.cls, none)) :: ts)
+    pure (d :: ts)
+
+/-- Whole-class observations (macros). -/
+def observe : List Cls → T (List (List (Option Ty × Option Ty)))
+  | [] => pure []
+  | c :: rest => do
+    let r ← askQ c .all
+    let os ← observe rest
+    pure ((match r with | .obs _ l => l | _ => []) :: os)
+
+/-- The extends clause: each direct parent's header and stored linearization. Zinc records it
+as a `memberRef` dependency of the descendant on its parent's name. -/
+def extendsClause : List (Cls × Ty) → T Unit
+  | [] => pure ()
+  | (p, _) :: rest => do
+    let _ ← askQ p .ext
+    extendsClause rest
 
 /-! ## Refchecks
 
 A class's own compilation reads its ancestors (talk §10a, "When a descendant must recompile
 anyway"). Each check is a query to the ancestor, recorded like a client's. -/
 
-def names : List Name := [m, g]
+/-- May a member of kind `k` override `m'`? A `var` cannot be overridden, a `val` only by a
+`val`, and a `lazy val` only by a `lazy val` and only overrides a `lazy val` or a method. -/
+def modOk (k : Mod) (m' : Mem) : Bool :=
+  match m'.mod, k with
+  | .var, _ => m'.deferred
+  | .val, .val => true
+  | .val, _ => false
+  | .lzy, .lzy => true
+  | .lzy, _ => false
+  | .dfn, _ => true
 
-/-- Override conformance: each own member against every ancestor's member of that name. -/
-def checkOverrides (ds : List (Name × Mem)) (L : Lin) : T (List Err) := do
+/-- Override conformance of each own (public) member against every ancestor's member of that
+name, and the bridges it needs: one per erasure of an overridden member that differs from its
+own (the type parameter erases to `Object`). -/
+def checkOverrides (ds : List (Name × Mem)) (L : Lin) : T (List Err × List (Name × Ty)) := do
   let mut errs := []
-  for (n, mm) in ds do
+  let mut brs := []
+  for (n, mm) in ds.filter (fun e => !e.2.priv) do
     for (p, a) in L do
       match ← askQ p (.ovr n) with
-      | .mem (some m') => if Ty.subst a m'.ty != mm.ty then errs := errs ++ [Err.override n]
+      | .mem (some m') =>
+        if Ty.subst a m'.ty != mm.ty || !modOk mm.mod m' then errs := errs ++ [Err.override n]
+        let e' ← erase .ovr m'.ty
+        let e ← erase .ovr mm.ty
+        if !mm.deferred && e' != e && !brs.contains (n, e') then
+          brs := brs ++ [(n, e')]
       | _ => pure ()
-  pure errs
+  pure (errs, brs)
 
 /-- Both in the linearization of one parent: the pair was checked when that parent compiled
 (scalac's `OverridingPairs` skips it). -/
@@ -246,7 +345,7 @@ the types (as seen from the class) must agree. -/
 def checkConflicts (d : Decl) (pls : List Lin) (L : Lin) : T (List Err) := do
   let mut errs := []
   for n in names do
-    if (d.decls.lookup n).isNone then
+    if ((pub d).lookup n).isNone then
       let mut decl : Lin := []
       for (q, a) in L do
         if (← askQ q (.has n)) == .b true then decl := decl ++ [(q, a)]
@@ -270,7 +369,7 @@ def checkAbstract (d : Decl) (L : Lin) : T (List Err) := do
   if d.abstract then return []
   let mut errs := []
   for n in names do
-    match d.decls.lookup n with
+    match (pub d).lookup n with
     | some mm => if mm.deferred then errs := errs ++ [Err.abstract n]
     | none =>
       let mut conc : List Cls := []
@@ -322,42 +421,56 @@ def mixins (d : Decl) (pls : List Lin) (L : Lin) (hs : List (Cls × CKind × Boo
     | _, _ => []
   L.filter fun e => isTrait hs e.1 && !sup.contains e.1
 
+/-- Mixin forwarders for the public concrete members of the traits mixed in directly, and the
+fields of their `val`s, `var`s and `lazy val`s, private ones included. -/
 def mixinFwds (d : Decl) (pls : List Lin) (L : Lin) (hs : List (Cls × CKind × Bool)) :
-    T (List (Name × Ty)) := do
-  if d.kind == .trt then return []
+    T (List (Name × Ty × Ty) × List (Name × Ty × Mod × Bool)) := do
+  if d.kind == .trt then return ([], [])
   let mut fs := []
+  let mut fl := []
   for (t, a) in mixins d pls L hs do
     match ← askQ t .fwd with
     | .ds ds =>
       for (n, mm) in ds do
-        if !mm.deferred && (d.decls.lookup n).isNone then
-          if (← firstDecl n L) == some t then fs := fs ++ [(n, Ty.subst a mm.ty)]
+        if !mm.deferred && mm.priv && mm.mod != .dfn then
+          fl := fl ++ [(n, Ty.subst a mm.ty, mm.mod, true)]
+        if !mm.deferred && !mm.priv && ((pub d).lookup n).isNone then
+          if (← firstDecl n L) == some t then
+            fs := fs ++ [(n, Ty.subst a mm.ty, ← erase .fwd mm.ty)]
+            if mm.mod != .dfn then fl := fl ++ [(n, Ty.subst a mm.ty, mm.mod, false)]
     | _ => pure ()
-  pure fs
+  pure (fs, fl)
 
-def staticFwds (d : Decl) (L : Lin) : T (List (Name × Ty)) := do
+def staticFwds (d : Decl) (L : Lin) : T (List (Name × Ty × Ty)) := do
   if d.kind != .obj then return []
   let mut seen : List (Cls × Ty × List (Name × Mem)) := []
   for (q, a) in L do
     match ← askQ q .mirror with
-    | .ds ds => seen := seen ++ [(q, a, ds)]
+    | .ds ds => seen := seen ++ [(q, a, ds.filter fun e => !e.2.priv)]
     | _ => pure ()
-  pure <| names.filterMap fun n =>
-    match d.decls.lookup n with
-    | some mm => some (n, mm.ty)
-    | none => (seen.findSome? fun (_, a, ds) => (ds.lookup n).map fun mm => (n, Ty.subst a mm.ty))
+  let found := names.filterMap fun n =>
+    match (pub d).lookup n with
+    | some mm => some (n, mm.ty, mm.ty)
+    | none => (seen.findSome? fun (_, a, ds) =>
+        (ds.lookup n).map fun mm => (n, Ty.subst a mm.ty, mm.ty))
+  let mut out := []
+  for (n, t, dt) in found do
+    out := out ++ [(n, t, ← erase .mir dt)]
+  pure out
 
 def unitF (s : Src) : T Out := do
   let pls ← parentLins (ancestors depth) s.decl.parents
   let L := merge pls
   let hs ← headers L
-  let e₁ ← checkOverrides s.decl.decls L
+  extendsClause s.decl.parents
+  let (e₁, brs) ← checkOverrides s.decl.decls L
   let e₂ ← checkConflicts s.decl pls L
   let e₃ ← checkAbstract s.decl L
   let ts ← selects s.body
-  let fs ← mixinFwds s.decl pls L hs
+  let (fs, fl) ← mixinFwds s.decl pls L hs
   let ss ← staticFwds s.decl L
-  pure ⟨⟨s.decl, L⟩, checkFinal s.decl hs ++ e₁ ++ e₂ ++ e₃, ts, fs, ss⟩
+  let os ← observe s.observes
+  pure ⟨⟨s.decl, L⟩, checkFinal s.decl hs ++ e₁ ++ e₂ ++ e₃, ts, fs, ss, fl, brs, os⟩
 
 /-! ## Keys and hashes -/
 
@@ -373,6 +486,12 @@ inductive K
   | dfr (n : Name)
   /-- The ancestor's declarations: a trait's for forwarders, any ancestor's for a mirror. -/
   | decls
+  /-- A direct parent, as named in an extends clause: header and stored linearization. -/
+  | ext
+  /-- Every member of the class, as a macro observes it: non-local, like `name`. -/
+  | all
+  /-- A value class's underlying type. -/
+  | under
   deriving DecidableEq, Repr
 
 inductive H
@@ -382,6 +501,9 @@ inductive H
   | own (m : Option Mem)
   | has (b : Bool)
   | dfr (o : Option Bool)
+  | ex (k : CKind) (f : Bool) (ps : List (Cls × Ty)) (l : Lin)
+  | all (k : CKind) (l : List (List (Cls × Ty × Mem)))
+  | under (o : Option Ty)
   deriving DecidableEq, Repr
 
 def π (I : Cls → Iface) (c : Cls) : K → H
@@ -391,6 +513,9 @@ def π (I : Cls → Iface) (c : Cls) : K → H
   | .own n => .own (own (I c) n)
   | .has n => .has (own (I c) n).isSome
   | .dfr n => .dfr ((own (I c) n).map (·.deferred))
+  | .ext => .ex (I c).decl.kind (I c).decl.final (I c).decl.parents (I c).lin
+  | .all => .all (I c).decl.kind (names.map (flatOf I c))
+  | .under => .under (I c).decl.under
 
 /-- The key covering a query. -/
 def keyOf : Q → K
@@ -404,9 +529,19 @@ def keyOf : Q → K
   | .fwd => .decls
   | .fhas n => .has n
   | .mirror => .decls
+  | .ext => .ext
+  | .all => .all
+  | .under _ => .under
 
 /-- Which rule of the PoC's table a recorded key stands for. -/
-inductive Kind | client | uses | header | overrides | conflicts | abstract | «trait» | mirror
+inductive Kind
+  | client | uses | header | overrides | conflicts | abstract | «trait» | mirror
+  /-- The descendant's extends clause: Zinc's `memberRef` on the parent's name. -/
+  | «extends»
+  /-- A macro's observation: Zinc's macro-expansion dependency. -/
+  | «macro»
+  /-- Codegen's erasure of a value class it never names: forwarders and bridges. -/
+  | erasure
   deriving DecidableEq, Repr
 
 def kindOf (d : Cls) : Cls × Q → Kind
@@ -420,6 +555,10 @@ def kindOf (d : Cls) : Cls × Q → Kind
   | (_, .fwd) => .trait
   | (_, .fhas _) => .trait
   | (_, .mirror) => .mirror
+  | (_, .ext) => .extends
+  | (_, .all) => .macro
+  | (_, .under .sel) => .client
+  | (_, .under _) => .erasure
 
 /-- The extractor, recording the keys of the enabled kinds only. -/
 def keys (E : Kind → Bool) (d : Cls) (tr : List (Cls × Q)) : Finset (Cls × K) :=
@@ -581,6 +720,22 @@ theorem Fl_obligations : (Fl full).Obligations where
     | mirror =>
       simp only [keyOf, π, H.ds.injEq] at h
       simp [Fl, answer, h]
+    | ext =>
+      simp only [keyOf, π, H.ex.injEq] at h
+      obtain ⟨h₁, h₂, h₃, h₄⟩ := h
+      simp [Fl, answer, h₁, h₂, h₃, h₄]
+    | all =>
+      simp only [keyOf, π, H.all.injEq] at h
+      obtain ⟨h₁, h₂⟩ := h
+      have he : ∀ n ∈ names, flatOf I c n = flatOf I' c n := by
+        intro n hn
+        have := List.map_inj_left.1 h₂ n hn
+        exact this
+      simp only [Fl, answer, allFlat, h₁]
+      rw [List.map_congr_left (fun n hn => by rw [he n hn])]
+    | under ctx =>
+      simp only [keyOf, π, H.under.injEq] at h
+      simp [Fl, answer, h]
   locality := by
     intro I I' c h k
     have hc : I c = I' c := h c (Finset.mem_insert_self _ _)
@@ -591,6 +746,14 @@ theorem Fl_obligations : (Fl full).Obligations where
     | has n => simp only [Fl, π, hc]
     | dfr n => simp only [Fl, π, hc]
     | decls => simp only [Fl, π, hc]
+    | ext => simp only [Fl, π, hc]
+    | under => simp only [Fl, π, hc]
+    | all =>
+      simp only [Fl, π, hc]
+      congr 1
+      apply List.map_congr_left
+      intro n _
+      exact flatOf_congr I I' c n h
 
 /-- **Decision 1 is sound**: with every key kind recorded, any sound policy, and `Δ` over the
 classes whose stored linearization meets the recompiled set, a terminating run leaves no class
@@ -635,7 +798,7 @@ structure Run where
 
 /-- The loop, with the policy applied *before* the stop test, as Zinc does with its inheritance
 invalidation (`NCompiler.zinc` applies it after; for a sound policy this only stops later). -/
-def all : List Cls := [A, B, M, C, X, Y, Z]
+def all : List Cls := [A, B, M, C, X, Y, Z, V]
 
 /-- Tabulate a state, so later rounds do not recompute it through the closures of earlier ones.
 Extensionally the identity. -/
@@ -665,7 +828,7 @@ def headerPolicy (transitive : Bool) : Policy Cls Out K := fun _ R s s' I =>
   let Hd := R.filter (headerChanged s s' · = true)
   I ∪ if transitive then descendants s' Hd else children s' Hd
 
-def dummy : St := { out := fun _ => ⟨⟨{}, []⟩, [], [], [], []⟩, U := fun _ => ∅ }
+def dummy : St := { out := fun _ => { iface := ⟨{}, []⟩, errs := [], descs := [] }, U := fun _ => ∅ }
 
 def init (E : Kind → Bool) (src : Cls → Src) : St := memo ((Fl E).round src Finset.univ dummy)
 
@@ -704,6 +867,7 @@ def base : Cls → Src
   | X => { decl := { kind := .obj }, body := [(B, m)] }
   | Y => { decl := { kind := .obj }, body := [(C, m)] }
   | Z => { decl := { kind := .obj }, body := [(B, g)] }
+  | V => { decl := {} }
 
 /-- Edit 1: `A.m: Int → String`. -/
 def edit1 : Cls → Src
@@ -735,6 +899,7 @@ def base4 : Cls → Src
   | X => { decl := { kind := .obj }, body := [(B, g)] }
   | Y => { decl := { kind := .obj }, body := [(C, g)] }
   | Z => { decl := { kind := .obj }, body := [(B, m)] }
+  | V => { decl := {} }
 
 /-- Edit 4: `A extends M[Int]` → `M[String]`. `B`'s and `C`'s stored linearizations now say
 `M[Int]`. -/
@@ -742,7 +907,14 @@ def edit4 : Cls → Src
   | A => { decl := { parents := [(M, .string)], decls := [(m, int)], abstract := true } }
   | c => base4 c
 
+/-- Neither header keys nor the extends clause: the header rule's job is left undone. -/
 def noHeader : Kind → Bool
+  | .header => false
+  | .extends => false
+  | _ => true
+
+/-- No header keys, but the descendant's dependency on the parent named in its extends clause. -/
+def extOnly : Kind → Bool
   | .header => false
   | _ => true
 
@@ -844,7 +1016,7 @@ def without (k : Kind) : Kind → Bool := fun k' => k' != k
 example : report (without .client) .zinc plain base edit1 {A} = some ⟨[], 1, false⟩ := by native_decide
 example : report (without .uses) .zinc plain baseU editU {A} = some ⟨[X, Y], 2, false⟩ := by
   native_decide
-example : report (without .header) .zinc plain base4 edit4 {A} = some ⟨[], 1, false⟩ := by
+example : report noHeader .zinc plain base4 edit4 {A} = some ⟨[], 1, false⟩ := by
   native_decide
 example : report (without .overrides) .zinc plain baseO editO {A} = some ⟨[X, Y], 2, false⟩ := by
   native_decide
@@ -870,6 +1042,7 @@ def baseF : Cls → Src
   | X => { decl := { kind := .obj, parents := [(C, .int)] } }
   | Y => { decl := { kind := .obj }, body := [(C, m)] }
   | Z => { decl := { kind := .obj } }
+  | V => { decl := {} }
 
 /-- `M.g: Int → String`: both forwarders change, and no presence or client key sees it. -/
 def editF : Cls → Src
@@ -887,7 +1060,107 @@ example : report (without .trait) .zinc plain baseF editF {M} = some ⟨[X], 2, 
 example : report (without .mirror) .zinc plain baseF editF {M} = some ⟨[C], 2, false⟩ := by
   native_decide
 example : report full .zinc plain baseF editFinal {B} = some ⟨[C, X], 2, true⟩ := by native_decide
-example : report (without .header) .zinc plain baseF editFinal {B} = some ⟨[], 1, false⟩ := by
+example : report noHeader .zinc plain baseF editFinal {B} = some ⟨[], 1, false⟩ := by
+  native_decide
+
+/-! ### The extends clause subsumes the header keys
+
+A descendant depends on the parent its extends clause names (`ext`, Zinc's `memberRef` on the
+parent's name), hashed by the parent's header *and stored linearization*. A header change then
+recompiles the direct children; their linearizations change, which recompiles theirs, and so on:
+the header rule's transitive closure, one round per level. -/
+
+example : report extOnly .zinc plain base4 edit4 {A} = some ⟨[B, C, X, Y], 4, true⟩ := by
+  native_decide
+example : report extOnly .zinc plain base2 edit2 {B} = some ⟨[C, X, Y, Z], 3, true⟩ := by
+  native_decide
+example : report extOnly .zinc plain baseF editFinal {B} = some ⟨[C], 2, true⟩ := by
+  native_decide
+
+/-! ### Trait fields, erasure and whole-class observation -/
+
+/-- `trait M { private val g: Int }` mixed into `C`; the client `Y` selects `C.m`, and `Z`
+observes all of `C` (a macro). -/
+def baseP : Cls → Src
+  | M => { decl := { decls := [(g, { ty := .int, mod := .val, priv := true })], abstract := true,
+                     kind := .trt } }
+  | C => { decl := { parents := [(B, .int), (M, .int)] } }
+  | B => { decl := { parents := [(A, .int)] } }
+  | A => { decl := { decls := [(m, int)], abstract := true } }
+  | Y => { decl := { kind := .obj }, body := [(C, m)] }
+  | Z => { decl := { kind := .obj }, observes := [C] }
+  | _ => { decl := { kind := .obj } }
+
+/-- The private field changes type: no name moves, but `C` implements the field. -/
+def editP : Cls → Src
+  | M => { decl := { decls := [(g, { ty := .string, mod := .val, priv := true })],
+                     abstract := true, kind := .trt } }
+  | c => baseP c
+
+example : ((clean editP) C).fields = [(g, .string, .val, true)] := by native_decide
+example : report full .zinc plain baseP editP {M} = some ⟨[C], 2, true⟩ := by native_decide
+example : report (without .trait) .zinc plain baseP editP {M} = some ⟨[], 1, false⟩ := by
+  native_decide
+
+/-- `A` gains `g`, which nobody selects; the macro in `Z` sees it through `C`. -/
+def editW : Cls → Src
+  | A => { decl := { decls := [(m, int), (g, str)], abstract := true } }
+  | c => baseP c
+
+example : report full .zinc plain baseP editW {A} = some ⟨[B, C, Z], 2, true⟩ := by native_decide
+example : report (without .macro) .zinc plain baseP editW {A} = some ⟨[B, C], 2, false⟩ := by
+  native_decide
+
+/-- `trait M[T] { def m: Int }`, `A extends M[Int]`, `B extends A { def m: Int }`. -/
+def baseBr : Cls → Src
+  | M => { decl := { decls := [(m, int)], abstract := true, kind := .trt } }
+  | A => { decl := { parents := [(M, .int)], abstract := true } }
+  | B => { decl := { parents := [(A, .int)], decls := [(m, int)] } }
+  | _ => { decl := { kind := .obj } }
+
+/-- `M.m: T`: as seen from `A` still `Int`, but `B` now needs a bridge `m(): Object`. This is
+the baseline's undercompilation (`erasure-bridge-upstream-grandparent`): the materialised design
+hashes `m` as seen from `A`, which did not move. -/
+def editBr : Cls → Src
+  | M => { decl := { decls := [(m, par)], abstract := true, kind := .trt } }
+  | c => baseBr c
+
+example : ((clean editBr) B).bridges = [(m, .param)] := by native_decide
+example : report full .zinc plain baseBr editBr {M} = some ⟨[A, B], 2, true⟩ := by native_decide
+example : report (without .overrides) .zinc plain baseBr editBr {M} = some ⟨[A], 2, false⟩ := by
+  native_decide
+
+/-! ### Value classes: erasure through a class nobody names
+
+`V` is a value class over `Int`; `A.m` and the trait `M.g` are typed `V`; `C extends B with M`
+gets a mixin forwarder for `g`, and `object X extends C` a mirror class with static forwarders
+for `m` and `g`. Neither `C` nor `X` names `V`, but their bytecode erases it. -/
+
+def vt : Mem := { ty := .v }
+
+def baseV : Cls → Src
+  | V => { decl := { under := some .int } }
+  | A => { decl := { decls := [(m, vt)], abstract := true } }
+  | B => { decl := { parents := [(A, .int)] } }
+  | M => { decl := { decls := [(g, vt)], abstract := true, kind := .trt } }
+  | C => { decl := { parents := [(B, .int), (M, .int)] } }
+  | X => { decl := { kind := .obj, parents := [(C, .int)] } }
+  | Y => { decl := { kind := .obj }, body := [(C, m)] }
+  | Z => { decl := { kind := .obj } }
+
+/-- `V` now wraps a `String`. -/
+def editV : Cls → Src
+  | V => { decl := { under := some .string } }
+  | c => baseV c
+
+example : ((clean editV) C).fwds = [(g, .v, .string)] := by native_decide
+example : ((clean editV) X).statics = [(m, .v, .string), (g, .v, .string)] := by native_decide
+example : report full .zinc plain baseV editV {V} = some ⟨[C, X, Y], 2, true⟩ := by native_decide
+
+/-- Without the erasure keys only the client `Y` recompiles: `C`'s forwarder and `X`'s static
+forwarders keep the old erasure. These are the baseline's and the PoC's
+`value-class-mixin-forwarder` and `value-class-mirror-forwarder`. -/
+example : report (without .erasure) .zinc plain baseV editV {V} = some ⟨[Y], 2, false⟩ := by
   native_decide
 
 end Zinc.Flat
