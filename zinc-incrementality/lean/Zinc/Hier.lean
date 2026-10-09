@@ -22,6 +22,11 @@ Three ways to hash an inherited member, as three `Compiler` instances over the s
 
 Zinc's hierarchy walk at invalidation time (`invalidateByInheritance` + `memberRef` of every
 inheritor) is a `Policy` for `W` (`walkPolicy`).
+`W` renders members *as seen from* the class, as the Scala 2 bridge does. Scala 3 renders them
+*as declared* in their owner and keeps the type arguments only in `parents` (the class-name key).
+On the `asSeenFrom` edit below, Scala 3's per-name hashes don't move; the class-name key moves
+every client of `B`, as `D`'s `(B, parents)` key does. `Erasure.lean` compares the two renderings
+and shows that only the declared one determines erasure.
 -/
 
 namespace Zinc.Hier

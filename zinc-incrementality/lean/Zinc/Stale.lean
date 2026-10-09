@@ -13,6 +13,11 @@ records a key owned by `P`, nothing is invalidated, and `C` keeps a stale output
 (`stale_unsound`). This is the trap in the bridge's TODO about "using parent hashes instead":
 memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled,
 which is what Zinc's transitive inheritance walk does at invalidation time.
+
+The same applies to an erasure witness (`Erasure.lean`). Computed from the current interfaces
+(as there, a non-local hash over the ancestor chain and `V`), it must be diffed over `affected`.
+Stored at the owner's compile instead, it is a local hash, and freshness comes from the owner
+recompiling when the value class changes.
 -/
 
 namespace Zinc.Stale
