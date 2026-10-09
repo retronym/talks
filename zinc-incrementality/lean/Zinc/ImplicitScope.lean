@@ -64,8 +64,9 @@ keys count (`plain`).
 2. `is_obligations`: the recomputed fix meets `NCompiler.Obligations` if it is published for
    objects too, so `is_sound` (T3a″) holds with the plain policy: no in-project rule is needed.
 3. `stored_eq_recomputed`: where every class's published interface is its own compile against the
-   current ones (in particular after a terminating run), the stored summary is the recomputed
-   one. Without the `apiHash` fold it goes stale across projects (checked example).
+   current ones (`Consistent`; `consistent_of_upToDate`: every class up to date), the stored
+   hashes are the recomputed ones. Without the `apiHash` fold an edit leaves a descendant in another
+   project stale (checked example).
 4. Counterexamples: `object O extends B` (only `NameKind.Type` sources reach `typeParents`), and,
    only if inherited members were missing from name hashes, `object C extends L`.
 5. `lake exe exhaustive implicit`: stored = recomputed run for run, and the fix across projects
@@ -155,7 +156,9 @@ inductive AnsV
   | pub (p : Pub)
   deriving DecidableEq, Repr
 
-def depth : ℕ := 4
+@[irreducible] def depth : ℕ := 4
+
+theorem depth_eq : depth = 3 + 1 := by unfold depth; rfl
 
 /-- The class side, inherited members included. -/
 def clsP (I : Cls → Pub) : ℕ → Cls → List Imp
@@ -367,6 +370,343 @@ def Is (x : Ext) : NCompiler Cls Src Out Pub K H Q (fun _ => AnsV) where
   hashDeps := fun _ _ => Finset.univ
   keys := keys
   covers := fun I q k => k = keyOf q ∧ scope I q
+
+/-! ## The recomputed fix meets the bridge spec -/
+
+section obligations
+
+open Zinc.Task
+
+abbrev Env := Task.Env (Cls × Q) (fun _ => AnsV)
+
+theorem run_chainT (I : Cls → Pub) (t : Cls) :
+    ∀ f c, (chainT t f c).run (answer I) = (chainP I f c).map fun e => (e, (I e).decl.obj) := by
+  intro f
+  induction f with
+  | zero => intro c; rfl
+  | succ f ih =>
+    intro c
+    simp only [chainT, chainP, bind_eq, Task.run_bind, run_askQ, answer]
+    cases (I c).decl.parent with
+    | none => rfl
+    | some p => simp [ih]
+
+theorem trace_chainT (I : Cls → Pub) (t : Cls) :
+    ∀ f c, (chainT t f c).trace (answer I) = (chainP I f c).map fun e => (e, Q.parents (.srch t)) := by
+  intro f
+  induction f with
+  | zero => intro c; rfl
+  | succ f ih =>
+    intro c
+    simp only [chainT, chainP, bind_eq, Task.trace_bind, trace_askQ, run_askQ, answer]
+    cases (I c).decl.parent with
+    | none => rfl
+    | some p => simp [ih]
+
+theorem trace_cscT (I : Cls → Pub) (t : Cls) :
+    ∀ es, (cscT t es).trace (answer I) = es.map fun e => (e, Q.cscope (.srch t)) := by
+  intro es
+  induction es with
+  | nil => rfl
+  | cons e es ih => simp [cscT, ih]
+
+theorem mem_bases {e : Cls} : ∀ {l : List (Cls × Bool)}, e ∈ bases l → e ∈ l.map (·.1)
+  | [], h => h
+  | (_, true) :: _, h => List.mem_cons_of_mem _ h
+  | (_, false) :: _, h => h
+
+theorem scope_searchT (I : Cls → Pub) (g : Cls × Bool) :
+    ∀ q ∈ (searchT g).trace (answer I), scope I q := by
+  intro q hq
+  unfold searchT at hq
+  rw [bind_eq, trace_bind, trace_chainT, run_chainT, List.mem_append] at hq
+  rcases hq with hq | hq
+  · obtain ⟨e, he, rfl⟩ := List.mem_map.1 hq
+    exact he
+  rw [bind_eq, trace_bind, trace_cscT, List.mem_append] at hq
+  rcases hq with hq | hq
+  · obtain ⟨e, he, rfl⟩ := List.mem_map.1 hq
+    have := mem_bases he
+    rw [List.map_map] at this
+    show e ∈ chainP I depth g.1
+    simpa using this
+  split at hq
+  · rw [bind_eq, trace_bind, trace_askQ, List.mem_append, List.mem_singleton] at hq
+    rcases hq with rfl | hq
+    · trivial
+    · simp at hq
+  · simp at hq
+
+theorem scope_goalsT (I : Cls → Pub) :
+    ∀ gs, ∀ q ∈ (goalsT gs).trace (answer I), scope I q := by
+  intro gs
+  induction gs with
+  | nil => intro q hq; simp [goalsT] at hq
+  | cons g gs ih =>
+    intro q hq
+    simp only [goalsT, bind_eq, trace_bind, pure_eq, trace_pure, List.append_nil, List.mem_append] at hq
+    rcases hq with hq | hq
+    · exact scope_searchT I g q hq
+    · exact ih q hq
+
+theorem scope_askPub (I : Cls → Pub) :
+    ∀ o, ∀ q ∈ (askPub o).trace (answer I), scope I q := by
+  intro o q hq
+  cases o with
+  | none => simp [askPub] at hq
+  | some p =>
+    simp only [askPub, bind_eq, trace_bind, trace_askQ, pure_eq, trace_pure, List.append_nil,
+      List.mem_singleton] at hq
+    subst hq
+    trivial
+
+theorem scope_unitF (x : Ext) (I : Cls → Pub) (s : Src) :
+    ∀ q ∈ (unitF x s).trace (answer I), scope I q := by
+  intro q hq
+  simp only [unitF, bind_eq, trace_bind, pure_eq, trace_pure, List.append_nil, List.mem_append] at hq
+  rcases hq with hq | hq
+  · cases hs : x.sto
+    · simp [pubT, hs] at hq
+    · simp only [pubT, hs, ite_true, bind_eq, trace_bind, pure_eq, trace_pure, List.append_nil,
+        List.mem_append] at hq
+      rcases hq with hq | hq
+      · exact scope_askPub I _ q hq
+      · exact scope_askPub I _ q hq
+  · exact scope_goalsT I _ q hq
+
+theorem mem_of_map_pair {α β : Type} {l l' : List α} {f g : α → β}
+    (h : l.map (fun e => (e, f e)) = l'.map (fun e => (e, g e))) {e : α} (he : e ∈ l) :
+    e ∈ l' ∧ f e = g e := by
+  have : (e, f e) ∈ l'.map (fun e => (e, g e)) := h ▸ List.mem_map.2 ⟨e, he, rfl⟩
+  obtain ⟨e', he', hee⟩ := List.mem_map.1 this
+  simp only [Prod.mk.injEq] at hee
+  obtain ⟨rfl, hfg⟩ := hee
+  exact ⟨he', hfg.symm⟩
+
+theorem run_askPub (I : Cls → Pub) (o : Option Cls) : (askPub o).run (answer I) = o.map I := by
+  cases o <;> rfl
+
+theorem pub_unitF (x : Ext) (s : Src) (e : Env) :
+    ((unitF x s).run e).pub = (pubT x s.me s.decl).run e := by
+  simp [unitF]
+
+theorem iface_unitF (x : Ext) (hx : x.sto = false) (s : Src) (e : Env) :
+    ((unitF x s).run e).pub = { decl := s.decl } := by
+  rw [pub_unitF]; simp [pubT, hx]
+
+theorem Is_comp (x : Ext) (hx : x.sto = false) :
+    ∀ (G : Finset Cls) (src : Cls → Src) (I : Cls → Pub), ∀ d ∈ G,
+      (Is x).group G src I d = ((Is x).unit (src d)).run
+        ((Is x).answer (NCompiler.override I G ((Is x).iface ∘ (Is x).group G src I))) := by
+  intro G src I d _
+  show group x G src I d =
+    (unitF x (src d)).run (answer (NCompiler.override I G (Out.pub ∘ group x G src I)))
+  simp only [group, hx, Bool.false_eq_true, ite_false]
+  congr 2
+  funext v
+  simp only [NCompiler.override, Function.comp, iface_unitF x hx]
+
+theorem mem_chainP_self (I : Cls → Pub) (c : Cls) : c ∈ chainP I depth c := by
+  rw [depth_eq, chainP]; exact List.mem_cons_self
+
+/-- The recomputed fix with faithful name hashes, published for every class (objects too). -/
+def recAll : Ext := { objects := true }
+
+/-- **Soundness of the fix.** The recomputed fix, published for objects too and with inherited
+members in the name hashes, meets `NCompiler.Obligations`. The search's reads of every base's
+companion are covered by the one key `(t, imp)` a memberRef client of `t` records. -/
+theorem is_obligations : (Is recAll).Obligations where
+  comp := Is_comp recAll rfl
+  coverage := by
+    intro I d s q hq
+    exact ⟨keyOf q, List.mem_toFinset.2 (List.mem_map.2 ⟨q, hq, rfl⟩), rfl,
+      scope_unitF recAll I s q hq⟩
+  abstraction := by
+    intro I I' k hk q hc
+    obtain ⟨rfl, hs⟩ := hc
+    obtain ⟨e, q⟩ := q
+    change π recAll I _ _ = π recAll I' _ _ at hk
+    suffices answer I (e, q) = answer I' (e, q) ∧ scope I' (e, q) from ⟨this.1, rfl, this.2⟩
+    have hsum : ∀ t, π recAll I t .imp = π recAll I' t .imp → ∀ e ∈ chainP I depth t,
+        e ∈ chainP I' depth t ∧ cscopeP I e = cscopeP I' e := by
+      intro t h e he
+      simp only [π, recAll, fixes, Bool.or_true, Bool.and_self, ite_true, Bool.false_eq_true,
+        ite_false, H.imp.injEq, sumP] at h
+      have := mem_of_map_pair h he
+      refine ⟨this.1, ?_⟩
+      have h2 := congrArg Names.comp this.2
+      simpa only [namesP, ite_true, cscopeP] using h2
+    cases q with
+    | parents y =>
+      cases y with
+      | srch t =>
+        simp only [keyOf, π, recAll, Bool.false_eq_true, ite_false, H.cl.injEq, clP] at hk
+        have := mem_of_map_pair (f := fun e => ((I e).decl.obj, (I e).decl.parent))
+          (g := fun e => ((I' e).decl.obj, (I' e).decl.parent)) hk hs
+        simp only [Prod.mk.injEq] at this
+        exact ⟨by simp only [answer, this.2.1, this.2.2], this.1⟩
+      | sel => exact absurd hs (by simp [scope])
+      | inh => exact absurd hs (by simp [scope])
+    | cscope y =>
+      cases y with
+      | srch t =>
+        obtain ⟨h1, h2⟩ := hsum t hk e hs
+        exact ⟨by simp only [answer, h2], h1⟩
+      | sel =>
+        obtain ⟨_, h2⟩ := hsum e hk e (mem_chainP_self I e)
+        exact ⟨by simp only [answer, h2], trivial⟩
+      | inh => exact absurd hs (by simp [scope])
+    | api y =>
+      cases y with
+      | inh =>
+        simp only [keyOf, π, recAll, Bool.false_eq_true, Bool.false_and, ite_false,
+          H.api.injEq] at hk
+        exact ⟨by simp only [answer, hk], trivial⟩
+      | srch t => exact absurd hs (by simp [scope])
+      | sel => exact absurd hs (by simp [scope])
+  locality := by
+    intro I I' c h k
+    have : I = I' := funext fun d => h d (Finset.mem_univ d)
+    rw [this]
+
+/-- …so a terminating run with the plain policy (no in-project rule at all) leaves no class
+dirty (T3a″): every downstream client of every descendant is reached. -/
+theorem is_sound (S : Finset Cls) (src : Cls → Src) (P : Compiler.Policy Cls Out K)
+    (hP : P.Sound S) (fuel n : ℕ) (R : Finset Cls) (s : Compiler.State Cls Out K) (D : Finset Cls)
+    (hD : D ⊆ R) (hInv : (Is recAll).Inv S src s D) (s' : Compiler.State Cls Out K)
+    (h : (Is recAll).zinc S src P fuel n R s = some s') : (Is recAll).Inv S src s' ∅ :=
+  (Is recAll).zinc_sound is_obligations S src P hP fuel n R s D hD hInv s' h
+
+end obligations
+
+/-! ## Cold vs warm: the stored summary is the recomputed one
+
+Zinc takes the summary of a parent that was not recompiled from the previous analysis, and of an
+external parent from the inheritance dependency. Both are values stored when the parent was
+compiled. Where every published interface is its own compile against the current ones
+(`Consistent`: a clean build, or a state in which every class is up to date), the stored
+linearization, names and summary are the recomputed ones, so the stored `π` is the recomputed `π`.
+What keeps a state consistent across an edit is the inheritance key on the parent, which covers
+the summary only because it is folded into `apiHash` (the `up₀`/`up₁` example). -/
+
+section stale
+
+/-- Every published interface is what its class's compile computes from the current ones. -/
+def Consistent (x : Ext) (I : Cls → Pub) : Prop :=
+  ∀ c, I c = store x c (I c).decl ((I c).decl.parent.map I) ((I c).decl.cpar.map I)
+
+variable (x : Ext) (I : Cls → Pub) (hc : Consistent x I)
+
+include hc in
+theorem hc_cl (c : Cls) :
+    (I c).cl = (c, (I c).decl.obj, (I c).decl.parent) :: ((((I c).decl.parent.map I).map (·.cl)).getD []) := by
+  have h := congrArg Pub.cl (hc c)
+  simpa only [store] using h
+
+include hc in
+theorem hc_names (c : Cls) : (I c).names =
+    { cls := (I c).decl.cimps ++ ((((I c).decl.parent.map I).map (·.names.cls)).getD [])
+      comp := (I c).decl.comp ++
+        (if x.inhNames then (((I c).decl.cpar.map I).map (·.names.cls)).getD [] else []) } := by
+  have h := congrArg Pub.names (hc c)
+  simpa only [store] using h
+
+include hc in
+theorem hc_sum (c : Cls) :
+    (I c).sum = (c, (I c).names) :: ((((I c).decl.parent.map I).map (·.sum)).getD []) := by
+  have h := congrArg Pub.sum (hc c)
+  have hn := hc_names x I hc c
+  simp only [store] at h
+  rw [h, hn]
+
+variable (r : Cls → ℕ) (hp : ∀ c p, (I c).decl.parent = some p → r p < r c)
+include hc hp
+
+theorem cls_eq : ∀ f c, r c < f → (I c).names.cls = clsP I f c := by
+  intro f
+  induction f with
+  | zero => intro c h; omega
+  | succ f ih =>
+    intro c h
+    rw [hc_names x I hc c, clsP]
+    cases hpar : (I c).decl.parent with
+    | none => simp
+    | some p =>
+      simp only [Option.map_some, Option.getD_some]
+      rw [ih p (by have := hp c p hpar; omega)]
+
+theorem cl_eq : ∀ f c, r c < f →
+    (I c).cl = (chainP I f c).map fun e => (e, (I e).decl.obj, (I e).decl.parent) := by
+  intro f
+  induction f with
+  | zero => intro c h; omega
+  | succ f ih =>
+    intro c h
+    rw [hc_cl x I hc c, chainP, List.map_cons]
+    cases hpar : (I c).decl.parent with
+    | none => simp
+    | some p =>
+      simp only [Option.map_some, Option.getD_some]
+      rw [ih p (by have := hp c p hpar; omega)]
+
+theorem names_eq (hr : ∀ c, r c < depth) : ∀ c, (I c).names = namesP x I c := by
+  intro c
+  rw [hc_names x I hc c, namesP, ← cls_eq x I hc r hp depth c (hr c), hc_names x I hc c, cparP]
+  congr 2
+  cases hl : (I c).decl.cpar with
+  | none => simp
+  | some l =>
+    simp only [Option.map_some, Option.getD_some]
+    rw [cls_eq x I hc r hp depth l (hr l)]
+
+theorem sum_eq (hr : ∀ c, r c < depth) : ∀ f c, r c < f →
+    (I c).sum = (chainP I f c).map fun e => (e, namesP x I e) := by
+  intro f
+  induction f with
+  | zero => intro c h; omega
+  | succ f ih =>
+    intro c h
+    rw [hc_sum x I hc c, chainP, List.map_cons, names_eq x I hc r hp hr c]
+    cases hpar : (I c).decl.parent with
+    | none => simp
+    | some p =>
+      simp only [Option.map_some, Option.getD_some]
+      rw [ih p (by have := hp c p hpar; omega)]
+
+/-- **Cold vs warm.** In a consistent state over an acyclic hierarchy of height below `depth`, the
+stored hashes are the recomputed ones. -/
+theorem stored_eq_recomputed (hr : ∀ c, r c < depth) (c : Cls) (k : K) (hk : k ≠ .inh) :
+    π { x with sto := true } I c k = π { x with sto := false } I c k := by
+  cases k with
+  | cls =>
+    simp only [π, ite_true, Bool.false_eq_true, ite_false, H.cl.injEq, clP]
+    exact cl_eq x I hc r hp depth c (hr c)
+  | imp =>
+    simp only [π, ite_true, Bool.false_eq_true, ite_false, fixes, sumP]
+    rw [sum_eq x I hc r hp hr depth c (hr c), names_eq x I hc r hp hr c]
+    rfl
+  | inh => exact absurd rfl hk
+
+end stale
+
+/-- A state in which every class is up to date is consistent. -/
+theorem consistent_of_upToDate (x : Ext) (hx : x.sto = true) (src : Cls → Src)
+    (hme : ∀ c, (src c).me = c) (s : Compiler.State Cls Out K)
+    (h : ∀ c, (Is x).UpToDate src s c) : Consistent x ((Is x).ifaces s) := by
+  have hpub : ∀ c, (Is x).ifaces s c =
+      store x c (src c).decl ((src c).decl.parent.map ((Is x).ifaces s))
+        ((src c).decl.cpar.map ((Is x).ifaces s)) := by
+    intro c
+    show (s.out c).pub = _
+    rw [(h c).1]
+    show ((unitF x (src c)).run (answer ((Is x).ifaces s))).pub = _
+    rw [pub_unitF, hme c]
+    simp only [pubT, hx, ite_true, Task.bind_eq, Task.run_bind, Task.pure_eq, Task.run_pure,
+      run_askPub]
+  intro c
+  have hd : ((Is x).ifaces s c).decl = (src c).decl := by rw [hpub c]; rfl
+  rw [hd]
+  exact hpub c
 
 /-! ## Runs -/
 
