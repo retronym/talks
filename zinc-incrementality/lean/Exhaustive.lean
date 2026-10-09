@@ -1,5 +1,6 @@
 import Zinc.FlatRules
 import Zinc.Erasure
+import Zinc.ImplicitScope
 
 /-! Runs the bounded exhaustive checks as native code.
 
@@ -8,7 +9,9 @@ import Zinc.Erasure
   parallel.
 * `exhaustive v`: the value-class space of `Zinc/FlatRules.lean`.
 * `exhaustive erasure [N]`: `Zinc/Erasure.lean`, for every rendering the unclean runs and the
-  wasted recompiles, per class. -/
+  wasted recompiles, per class.
+* `exhaustive implicit`: `Zinc/ImplicitScope.lean`, for every variant the unclean runs, the
+  wasted recompiles, and the client recompiles against the in-project fallback. -/
 
 section rules
 open Zinc.Flat
@@ -196,8 +199,92 @@ def mainErasure (args : List String) : IO Unit := do
 
 end erasure
 
+section implicit
+open Zinc.ImplicitScope
+
+structure ITally where
+  unclean : ℕ := 0
+  noRun : ℕ := 0
+  wrong : List (Cls × ℕ) := allCls.map (·, 0)
+  wasted : List (Cls × ℕ) := allCls.map (·, 0)
+  recompiled : List (Cls × ℕ) := allCls.map (·, 0)
+  byEdit : List (Cls × ℕ) := allCls.map (·, 0)
+  /-- Runs recompiling a client the baseline does not, and the reverse. -/
+  moreClients : ℕ := 0
+  fewerClients : ℕ := 0
+  smallest : Option (Cfg × Cfg × Cls) := none
+  smallestMore : Option (Cfg × Cfg × Cls) := none
+  deriving Inhabited
+
+def ibump (l : List (Cls × ℕ)) (cs : List Cls) : List (Cls × ℕ) :=
+  l.map fun (c, n) => (c, if cs.contains c then n + 1 else n)
+
+def smaller (k k' : Cfg) (e : Cls) : Option (Cfg × Cfg × Cls) → Option (Cfg × Cfg × Cls)
+  | none => some (k, k', e)
+  | some (b, b', e') =>
+    if k.size < b.size || (k.size == b.size && k'.size < b'.size) then some (k, k', e)
+    else some (b, b', e')
+
+def ITally.add (t : ITally) (k k' : Cfg) (e : Cls) (base : Option Report) :
+    Option Report → ITally
+  | none => { t with noRun := t.noRun + 1 }
+  | some r =>
+    let bad := !r.wrong.isEmpty
+    let cl := r.recompiled.filter isClient
+    let bcl := ((base.map (·.recompiled)).getD []).filter isClient
+    let more := cl.any (!bcl.contains ·)
+    let fewer := bcl.any (!cl.contains ·)
+    { t with
+      unclean := t.unclean + (if bad then 1 else 0)
+      wrong := ibump t.wrong r.wrong
+      wasted := ibump t.wasted r.wasted
+      recompiled := ibump t.recompiled r.recompiled
+      byEdit := if bad then ibump t.byEdit [e] else t.byEdit
+      moreClients := t.moreClients + (if more then 1 else 0)
+      fewerClients := t.fewerClients + (if fewer then 1 else 0)
+      smallest := if bad then smaller k k' e t.smallest else t.smallest
+      smallestMore := if more then smaller k k' e t.smallestMore else t.smallestMore }
+
+def icfgStr (k : Cfg) : String :=
+  (toString (repr k)).replace "\n" " " |>.replace "Zinc.ImplicitScope." ""
+
+def ishowCounts (l : List (Cls × ℕ)) : String :=
+  ", ".intercalate ((l.filter (·.2 != 0)).map fun (c, n) =>
+    s!"{(toString (repr c)).replace "Zinc.ImplicitScope.Cls." ""} {n}")
+
+def mainImplicit : IO Unit := do
+  IO.println s!"{cfgs.length} bases, {(cfgs.flatMap edits).length} edits"
+  let mut ts : Array ITally := variants.toArray.map fun _ => {}
+  for k in cfgs do
+    for (k', e) in edits k do
+      let rs := variants.map fun v => runVariant v k k' e
+      let base := rs.head?.join
+      let mut j := 0
+      for r in rs do
+        ts := ts.modify j (·.add k k' e base r)
+        j := j + 1
+  let mut j := 0
+  for v in variants do
+    let t := ts[j]!
+    IO.println s!"{v.name}: {t.unclean} unclean, {t.noRun} out of fuel"
+    IO.println s!"  wrong: {ishowCounts t.wrong}"
+    IO.println s!"  unclean by edited class: {ishowCounts t.byEdit}"
+    IO.println s!"  recompiled: {ishowCounts t.recompiled}"
+    IO.println s!"  wasted: {ishowCounts t.wasted}"
+    IO.println s!"  vs baseline: {t.moreClients} runs recompile a client it does not, {t.fewerClients} miss one it recompiles"
+    match t.smallest with
+    | some (k, k', e) => IO.println s!"  smallest unclean: base {icfgStr k}\n    edit {(toString (repr e)).replace "Zinc.ImplicitScope.Cls." ""} → {icfgStr k'}"
+    | none => pure ()
+    match t.smallestMore with
+    | some (k, k', e) => IO.println s!"  smallest extra client: base {icfgStr k}\n    edit {(toString (repr e)).replace "Zinc.ImplicitScope.Cls." ""} → {icfgStr k'}"
+    | none => pure ()
+    j := j + 1
+
+end implicit
+
 def main (args : List String) : IO Unit :=
   match args with
   | "erasure" :: rest => mainErasure rest
+  | "implicit" :: _ => mainImplicit
   | "v" :: _ => mainV
   | _ => mainRules args
