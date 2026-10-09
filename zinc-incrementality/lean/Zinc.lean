@@ -13,3 +13,4 @@ import Zinc.NonLocalAns
 import Zinc.Flat
 import Zinc.FlatRules
 import Zinc.Erasure
+import Zinc.ImplicitScope
