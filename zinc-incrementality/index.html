@@ -1036,14 +1036,18 @@ class B extends A { override def m: Int = 2 }   // app
 | `value-class-mirror-forwarder`, `value-class-mixin-forwarder` (`m: V`, `V`'s underlying changes) | missing forwarder change | same | same |
 
 - The third row is the price: an ancestor edit that as-seen-from hides recompiles the descendant, here needlessly. It is the same mechanism that catches the first row.
-- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. The model confirms it (§22, `Erasure.lean`), but also shows it is more than either half needs.
+- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. The model confirms it for these two cases (§22, `Erasure.lean`).
 
 <!-- break -->
 
-**The two halves need different fixes, and neither needs a new hash.**
+**Erasure has more inputs than value classes.** An erasure-only change reaches a descendant in two hops: the declaring class must notice that its own erasure moved, and the descendant must notice that the declaration's erasure moved. Each input fails at a different hop.
 
-- **Generic erasure** is a function of the owner's declaration (`T` erases to `Object`, or to its bound, which is also declared there). Rendering inherited members as declared determines it, as Scala 3 already does. Only Scala 2 needs a change, and that change is the rendering.
-- **Value-class erasure** is a function of *another class's* contents. That is a missing dependency, not missing hash input: `V`'s own name hash already covers its underlying type. The fix is for a class that emits a bridge or forwarder for an inherited member whose signature mentions a value class to record that value class's name. In the model this dependency edge gives exactly the witness's results, closing every value-class undercompilation under either rendering, with no change to any member hash. That means no analysis-wide hash churn and no format change, and invalidation fires only on edits to the value class. The PoC model's erasure keys (`Flat.lean`) are the same edge.
+- **Generic erasure** is a function of the owner's declaration (`T` erases to `Object`, or to its bound, which is also declared there). The declarer always notices, and as declared rendering carries it to descendants, as Scala 3 already does. Scala 2 fails at the second hop, and the fix there is the rendering (retronym/zinc#26).
+- **Value classes:** `V`'s own name hash covers its underlying type (sbt/zinc#444), so the declarer notices. Descendants notice either through a witness in the declarer's API or through a dependency on `V` recorded where codegen erases the inherited signature. In the model these give the same results; `Flat.lean`'s erasure keys are that edge.
+- **Intersections** (pending tests on sbt/zinc#1844): `def m: X with Y` erases to `X` while both are traits, and to `Y` once `trait Y` becomes `abstract class Y`, or once `Y extends X`. The trait-to-class edit moves only `Y;init;`, not the name `Y`, so even the declarer may not notice. A dependency edge on `Y` can't fix that. A witness (the erased signature hashed at the definition, sbt/zinc#1844's preferred direction) fixes the second hop only if the first hop holds.
+- **Other inputs:** union erasure depends on the class hierarchy, and an opaque type erases to its right-hand side. Both are likely Scala 3 analogues.
+
+So "a dependency edge, not a hash change" holds for value classes alone. sbt/zinc#1844 was closed for exactly this reason, as a point patch for a wider problem. §22 compares the alternatives in the model.
 
 #### 15c. Macros: the expansion depends on whatever the macro looked at
 
