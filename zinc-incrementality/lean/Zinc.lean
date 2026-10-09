@@ -19,3 +19,4 @@ import Zinc.Snapshot
 import Zinc.Pipelining
 import Zinc.Tree
 import Zinc.TreeToy
+import Zinc.Inline
