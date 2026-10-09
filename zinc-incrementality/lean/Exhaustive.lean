@@ -1,9 +1,16 @@
 import Zinc.FlatRules
+import Zinc.Erasure
 
-/-! Runs the bounded exhaustive check of `Zinc/FlatRules.lean` as native code: for every rule set,
-the number of unclean (base, edit) pairs and the smallest one. `exhaustive N` checks the first
-`N` bases only. Chunks of bases are checked in parallel. -/
+/-! Runs the bounded exhaustive checks as native code.
 
+* `exhaustive [N]`: `Zinc/FlatRules.lean`, for every rule set the number of unclean (base, edit)
+  pairs and the smallest one. `N` checks the first `N` bases only. Chunks of bases are checked in
+  parallel.
+* `exhaustive v`: the value-class space of `Zinc/FlatRules.lean`.
+* `exhaustive erasure [N]`: `Zinc/Erasure.lean`, for every rendering the unclean runs and the
+  wasted recompiles, per class. -/
+
+section rules
 open Zinc.Flat
 
 /-- The rule sets checked: name, recorded key kinds, `abstractAll`, rules. -/
@@ -77,8 +84,7 @@ def mainV : IO Unit := do
     | none => pure ()
     j := j + 1
 
-def main (args : List String) : IO Unit := do
-  if args.head? == some "v" then return (← mainV)
+def mainRules (args : List String) : IO Unit := do
   let n := (args.head? >>= String.toNat?).getD cfgs.length
   let bases := cfgs.take n
   IO.println s!"{bases.length} bases, {(bases.flatMap edits).length} edits"
@@ -93,3 +99,80 @@ def main (args : List String) : IO Unit := do
     | some (k, k', e) => IO.println s!"  base {repr k}\n  edit {repr e} → {repr k'}"
     | none => pure ()
     j := j + 1
+
+end rules
+
+section erasure
+open Zinc.Erasure
+
+structure Tally where
+  unclean : ℕ := 0
+  noRun : ℕ := 0
+  wrong : List (Cls × ℕ) := allCls.map (·, 0)
+  wasted : List (Cls × ℕ) := allCls.map (·, 0)
+  recompiled : ℕ := 0
+  /-- Unclean runs by the class edited. -/
+  byEdit : List (Cls × ℕ) := allCls.map (·, 0)
+  smallest : Option (Cfg × Cfg × Cls) := none
+  deriving Inhabited
+
+def bump (l : List (Cls × ℕ)) (cs : List Cls) : List (Cls × ℕ) :=
+  l.map fun (c, n) => (c, if cs.contains c then n + 1 else n)
+
+def Tally.add (t : Tally) (k k' : Cfg) (e : Cls) : Option Report → Tally
+  | none => { t with noRun := t.noRun + 1 }
+  | some r =>
+    let bad := !r.wrong.isEmpty
+    { t with
+      unclean := t.unclean + (if bad then 1 else 0)
+      wrong := bump t.wrong r.wrong
+      wasted := bump t.wasted r.wasted
+      byEdit := if bad then bump t.byEdit [e] else t.byEdit
+      recompiled := t.recompiled + r.recompiled.length
+      smallest := if !bad then t.smallest else match t.smallest with
+        | none => some (k, k', e)
+        | some (b, b', _) =>
+          if k.size < b.size || (k.size == b.size && k'.size < b'.size) then some (k, k', e)
+          else t.smallest }
+
+def cfgStr (k : Cfg) : String := (toString (repr k)).replace "\n" " " |>.replace "Zinc.Erasure." ""
+
+def showCounts (l : List (Cls × ℕ)) : String :=
+  ", ".intercalate ((l.filter (·.2 != 0)).map fun (c, n) => s!"{(toString (repr c)).replace "Zinc.Erasure.Cls." ""} {n}")
+
+def mainErasure (args : List String) : IO Unit := do
+  let n := (args.head? >>= String.toNat?).getD cfgs.length
+  let bases := cfgs.take n
+  IO.println s!"{bases.length} bases, {(bases.flatMap edits).length} edits"
+  let mut ts : Array Tally := variants.toArray.map fun _ => {}
+  let mut i := 0
+  let mut skipped := 0
+  for k in bases do
+    for (k', e) in edits k do
+      if !k.legal || !k'.legal then skipped := skipped + 1; continue
+      let mut j := 0
+      for v in variants do
+        ts := ts.modify j (·.add k k' e (runVariant v k k' e))
+        j := j + 1
+    i := i + 1
+    if i % 1000 == 0 then IO.println s!"... {i}"; (← IO.getStdout).flush
+  IO.println s!"{skipped} pairs skipped: base or edit does not compile"
+  let mut j := 0
+  for v in variants do
+    let t := ts[j]!
+    IO.println s!"{v.name}: {t.unclean} unclean, {t.noRun} out of fuel, {t.recompiled} recompiles"
+    IO.println s!"  wrong: {showCounts t.wrong}"
+    IO.println s!"  unclean by edited class: {showCounts t.byEdit}"
+    IO.println s!"  wasted: {showCounts t.wasted}"
+    match t.smallest with
+    | some (k, k', e) => IO.println s!"  smallest: base {cfgStr k}\n    edit {repr e} → {cfgStr k'}"
+    | none => pure ()
+    j := j + 1
+
+end erasure
+
+def main (args : List String) : IO Unit :=
+  match args with
+  | "erasure" :: rest => mainErasure rest
+  | "v" :: _ => mainV
+  | _ => mainRules args
