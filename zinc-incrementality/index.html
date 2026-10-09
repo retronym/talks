@@ -506,20 +506,28 @@ The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/
 
 ### 7. What ExtractAPI actually records
 
-- A class's `Structure` (`xsbti.api.Structure`) has three parts, all rendered *as seen from* $C$:
-  - `parents`: the *linearized* ancestor types;
+- A class's `Structure` (`xsbti.api.Structure`) has three parts:
+  - `parents`: the *linearized* ancestor types, with their type arguments *as seen from* $C$ (plus a value class's underlying type);
   - `declared`;
-  - `inherited` $= \mathrm{nonPrivateMembers} \setminus \mathrm{decls}$.
+  - `inherited`: the members of every ancestor.
+- The two bridges render members differently:
 
-  Scala 2: `internal/compiler-bridge/.../ExtractAPI.scala` `mkStructureWithInherited`; Scala 3: `ExtractAPI.apiClassStructure`.
+| | `parents` | `declared`, `inherited` | which inherited members |
+|---|---|---|---|
+| Scala 2 (`mkStructureWithInherited`) | as seen from $C$ | as seen from $C$ (`memberInfo`) | $\mathrm{nonPrivateMembers} \setminus \mathrm{decls}$: overrides resolved |
+| Scala 3 (`apiClassStructure`) | as seen from $C$ (`baseType`) | **as declared** in the owner (`sym.info`) | non-private decls of every ancestor: no override dedup, and none from Scala-2-compiled ancestors |
+
+- So in `class B extends A[Int]`, Scala 2 stores `A`'s `m: T` as `m: Int`, and Scala 3 stores `m: T`. Scala 3 keeps `Int` only in `parents`.
 - Both the class's API hash (`HashAPI.hashStructure0`) and its name hashes cover `inherited`.
 - It has been this way since 2009 (Mark Harrah, "linearization instead of parents and add inherited members for structure", [42c5d47b](https://github.com/scala/scala/commit/42c5d47b99f6d4ed215957d784934c3580c36968)).
 - The bridge's doc comment says so: the class hash includes parents only by *name*, "so we must ensure changes propagate somehow", followed by a TODO asking whether parent hashes could be used instead.
+- Scala 3 made the as-declared choice deliberately in 2016 ([lampepfl/dotty#1244](https://github.com/scala/scala3/pull/1244), Martres). The `ExtractAPI` doc comment gives two reasons: asSeenFrom for every inherited member is slow, and the set of prefixes explodes (`Outer#A#B#C…`). A change *as seen from* a prefix is caught on the client side instead: `ExtractDependencies` walks the *typed* use-site types (use-site expansion, contrasted with sbt 0.13's inheritance expansion in [sbt/zinc#174](https://github.com/sbt/zinc/issues/174)). The same function carries a 2016 TODO: "We shouldn't have to compute inherited members. Instead, `Structure` should have a lazy `parentStructures` field."
 
 ### 8. Why it's done (what it buys)
 
 - **Locality of dependencies:** a client of `c.m`, where `m` is inherited from `A`, depends on `C`'s API. A change to `A.m` shows up as a change to `C`, so no hierarchy walk is needed at invalidation time. (In practice Zinc records a `memberRef` on the owner `A` as well, and walks anyway; §10.)
-- **`asSeenFrom`:** in `class B extends A[Int]`, `def f: T` is observed as `f: Int`. Changing only `B`'s extends clause changes the members clients see, with no change to any decl.
+- **`asSeenFrom`:** in `class B extends A[Int]`, `def f: T` is observed as `f: Int`. Changing only `B`'s extends clause changes the members clients see, with no change to any decl. (Scala 2 only. In Scala 3 the name hash of `f` does not move; the class-name hash of `B`, which covers `parents`, does, §10a Edit 2.)
+- **But asSeenFrom hides erasure.** A method's JVM descriptor is computed from its *declared* signature in the owner, not from the signature as seen from a subclass. A rendering that substitutes type arguments can hide an erasure change a subclass's bridge depends on (§15b).
 - **Linearization:** adding an override in a mixin changes *which* member wins for `C`. A member-level view captures that; a decls-only view would have to recompute the linearization.
 
 ### 9. What it costs (what makes it non-local)
@@ -545,15 +553,16 @@ flowchart BT
 
 - **Size:** state grows with $\sum_c \lvert\mathrm{members}(c)\rvert$, not $\sum_c \lvert\mathrm{decls}(c)\rvert$. Deep or wide hierarchies make this large: collections, cake pattern, big framework traits, anything extending `java.util.AbstractList`. Analysis size, hashing and extraction time all scale with it. Measured with the PoC (§10): on Spark 4.0.1's `sql/catalyst`, not storing members inherited from classes in the same build cuts the stored name hashes from 212,389 to 90,711 and the analysis on disk from 1.88 MB to 1.43 MB.
   - `inherited` is `lazy` in the schema for this reason; laziness was removed and then reverted ([371b374d](https://github.com/scala/scala/commit/371b374db34ade9ef3af927e9b95094995202cf0) / [b9bd9ecb](https://github.com/scala/scala/commit/b9bd9ecb53fbb7209d0bddc033c8dc8cefdca6ec)).
-- **Extraction cost on every run:** `members` plus `asSeenFrom` for each compiled class, including members from library parents that can only change when the library jar changes.
-- **Overcompilation amplifier:** any nondeterminism in rendering an inherited member (unstable owners, refinement type params: [sbt/zinc#1782](https://github.com/sbt/zinc/pull/1782), [scala/bug#6596](https://github.com/scala/bug/issues/6596)) is multiplied across every subclass.
+- **Extraction cost on every run:** in Scala 2, `members` plus `asSeenFrom` for each compiled class, including members from library parents that can only change when the library jar changes. Scala 3 skips asSeenFrom: an inherited member's `sym.info` is the same `Type` object in every subclass, so rendering it is a type-cache hit. Storage and hashing still scale with $\sum_c \lvert\mathrm{members}(c)\rvert$.
+- **Overcompilation amplifier:** any nondeterminism in rendering an inherited member (unstable owners, refinement type params: [sbt/zinc#1782](https://github.com/sbt/zinc/pull/1782), [scala/bug#6596](https://github.com/scala/bug/issues/6596)) is multiplied across every subclass. Scala 2 recomputes the rendering in each subclass, so the result can differ per subclass. Scala 3 renders a member identically in every subclass, but an unstable *declared* type is still re-hashed in every one: [scala/scala3#27189](https://github.com/scala/scala3/issues/27189), where a `P#T` reference gets a different info depending on whether typer or the unpickler resolved it first.
 - Traits make it worse in a different way: trait bodies leak into subclasses (fields, super accessors, mixin forwarders), so there is a separate `extraHash` / "trait breakers" channel for subclasses.
 
 ### 10. Alternatives
 
 - **Merkle composition** (worked out in §5): $h'_C(n) = h(\mathrm{decl}_C(n), \langle (P_i, \bar{T}_i, h'_{P_i}(n)) \rangle)$.
-  - The hash stays non-local, but the *storage* and *computation* become local and memoised. This is what the bridge's TODO suggests.
+  - The hash stays non-local, but the *storage* and *computation* become local and memoised. This is what the bridge's TODO suggests, and Scala 3's 2016 `parentStructures` TODO (§7).
   - It is a sound over-approximation of today's materialised resolution.
+  - **Scala 3 already stores its ingredients.** Scala 3's `inherited` is the ancestors' own decls, rendered as declared, and its `parents` are each ancestor as seen from $C$. For Scala 3, composing instead of materialising refactors information already stored. For Scala 2 it also changes what is rendered, from as-seen-from to as-declared plus type arguments, and that change fixes the erasure bug in §15b.
   - Open questions: self-types and refinements as parents; library parents (treat their hash as a constant keyed by the jar stamp); whether per-name composition is precise enough for `asSeenFrom`-heavy code (type-argument changes now move every inherited name).
 - **Decls-only + hierarchy-aware invalidation:** record each `memberRef` against the *declaring* owner and the *receiver* type. When `A.m` changes, walk subclasses at invalidation time. Zinc already does this walk (§9); what changes is that the client records the classes its lookup *visited*, misses included, instead of relying on the receiver's materialised hash. This moves `asSeenFrom` and linearization concerns from extraction into the recorded keys.
 - **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module. The PoC below splits the other way: ancestors in the same subproject or in another analysed subproject are decls-only, and only members of plain library classes stay materialised. A change in an upstream subproject filters this subproject's descendants by the same rules as a local one.
@@ -594,6 +603,7 @@ flowchart BT
 - **Soundness requirement or convenience?** Convenience. Any of the three works; what is *required* is either a non-local hash kept fresh (by recompiling the hierarchy, or by recomputing hashes over the inheritance closure, `affected` in the model) or local keys that name every ancestor visited.
 - **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles (`Stale.lean`, T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
 - **Precision comes from the hash function.** On an `asSeenFrom` edit (`B extends A[Int]` → `A[String]`), the model's materialised hash moves only the names whose rendering changed (in Zinc, the name hash of `B` itself also moves, so every client that mentions `B` recompiles; §10a); the decls design moves every client of `B` through `(B, parents)`; the §5 Merkle formula moves every inherited name of `B`. A Merkle hash of the *resolved* member would be as precise as materialised, with the same freshness obligation.
+- **Precision for clients, soundness for descendants.** As-declared members plus the parents' type arguments determine the as-seen-from rendering, but not the other way round: the as-seen-from rendering loses erasure (§15b). So the resolved-member hash can only be a precision key for `memberRef` clients. The descendant rules (overrides, bridges, forwarders) must key on the declared member.
 
 **Discussion questions:**
 
@@ -676,6 +686,7 @@ flowchart LR
 
 - *Materialised, in the model (`Hier.lean`):* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
 - *Materialised, in today's Zinc:* **`C X Y Z`**, pinned by the PoC's `merkle-as-seen-from` test on its baseline commit. `Z` mentions the type `B`, so the name `B` is in $U(Z)$, and the name hash of `B` itself covers `B`'s header, parents included. The model has no key for a class's own name.
+- *Scala 3's bridge:* the modified names are **`B`** only, against `B, m` with the Scala 2 bridge. Scala 3 renders `m: T` as declared, so only the class-name key moves. That is the decls design's `(B, parents)` key, and no client was missed: every client that selects through a `B` records `B` as a used name (scripted cases `asf-typearg-*`, directly, via a grandparent and via an alias, all three bridges clean).
 - *Merkle (§5 formula):* the parent and its type argument are inside *every* $h_B(n)$, so $h_B(g)$ changes too. Result: **`X Y Z`**; `Z` is recompiled although nothing it uses changed.
 - So the materialised design is more precise here in the model, not in Zinc: the class-name key already moves every client that mentions `B`. The PoC also recompiles `C X Y Z`. A Merkle hash of the *resolved* member, $h(\mathrm{res}_B(n))$ computed by a memoised walk, would be as precise as the model's materialised design while keeping local storage, but it must be recomputed for the same set of classes, and it buys nothing until the class-name key stops covering parents.
 
@@ -709,10 +720,10 @@ and, for concrete $D$, if $N$ contains a name deferred in any ancestor of $D$. T
 
 | | materialised (today) | Merkle chain |
 |---|---|---|
-| state per class | every member, own and inherited, as seen from the class | own declarations plus parent references |
+| state per class | every member, own and inherited, as seen from the class (Scala 2) or as declared (Scala 3) | own declarations plus parent references |
 | total state | $\sum_c \lvert\mathrm{members}(c)\rvert$ | $\sum_c \lvert\mathrm{decls}(c)\rvert$ plus memoised hashes |
 | ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own compilation reads the change |
-| `asSeenFrom` edit | in the model, only the names whose rendering changed; in Zinc, also every client that mentions the class | every name inherited through that parent |
+| `asSeenFrom` edit | in the model, only the names whose rendering changed; in Zinc, also every client that mentions the class (Scala 3's bridge moves only the class-name key) | every name inherited through that parent |
 | linearization edit | recompile the class (needed anyway: conflict check, mixin forwarder) | the recorded miss changes the hash; the class still recompiles for its own reasons |
 | freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
 | rounds | 2 with Zinc's walk | 2 |
@@ -868,7 +879,7 @@ Three lanes moved at different speeds: what Zinc computes, where the bridge live
 |---|---|---|---|
 | 2009 | API extraction, member-level `Structure` (Harrah) | compiled from source per Scala version | text format |
 | 2013 | name hashing (Kossakowski) | | interned format (Pants) |
-| 2016 | class-based dependency tracking | | |
+| 2016 | class-based dependency tracking; Dotty: as-declared API + use-site expansion ([lampepfl/dotty#1244](https://github.com/scala/scala3/pull/1244)) | | |
 | 2017 | Zinc 1.0 | `compiler-interface` as a Java API | protobuf, relocatable |
 | 2020 | pipelining (early output) | Dotty owns its bridge | `VirtualFile` |
 | 2023 | | Scala 2 bridge in-tree (2.13.12) | |
@@ -1000,6 +1011,30 @@ $$E(\mathrm{sig}_B(\mathit{foo})) = E(A) = E(\mathrm{underlying}(A))$$
 - `source-dependencies/value-class`: toggling `extends AnyVal` on/off changes erased signatures of every method mentioning `A`. One case flips `null` from legal to illegal (`-> compile` expected); another is a pure binary change that must recompile to *run*.
 - **General lesson:** $\pi$ is a *Scala-level* summary, but clients link against *JVM-level* descriptors. Anything that changes erasure without changing the Scala signature needs a hook: value classes, opaque types (open question), `@specialized`, SAM vs non-SAM, varargs, Java generic signatures.
 
+<!-- break -->
+
+*Erasure through a type argument* (`erasure-bridge-upstream-grandparent`, found by the conformance harness, [retronym/zinc#25](https://github.com/retronym/zinc/pull/25)):
+
+```scala
+trait M[T] { def m: Int = 1 }           // → def m: T = null.asInstanceOf[T]
+abstract class A extends M[Int]         // lib
+class B extends A { override def m: Int = 2 }   // app
+```
+
+- `M.m` now erases to `m()Object`, so `B` needs a bridge from `m()Object` to `m()I`. As seen from `A`, `m` is still `Int`, so the Scala 2 bridge leaves `A`'s API unchanged and `B` is not recompiled. A call through `M[Int]` then runs `M`'s body.
+- The Scala 3 bridge renders `A`'s inherited `m` as declared (`m: T`, §7). `A`'s API changes, so `B` is recompiled through inheritance.
+- **asSeenFrom is the wrong input for erasure:** the descriptor of `M.m` is computed from `M`'s own declaration.
+
+| case (`asf-*` scripted tests, lib → app) | 2.13.x (Zinc bridge) | 2.13.y (scala2-sbt-bridge) | 3.x |
+|---|---|---|---|
+| `erasure-bridge-upstream-grandparent` | missing bridge | missing bridge | clean |
+| same, one subproject | clean | clean | clean |
+| `M[T,U].m: T` → `m: U`, `A extends M[Int,Int]`, `B` overrides `m` (erasure unchanged) | recompiles `Main` | `Main` | `B Main` |
+| `value-class-mirror-forwarder`, `value-class-mixin-forwarder` (`m: V`, `V`'s underlying changes) | missing forwarder change | same | same |
+
+- The third row is the price: an ancestor edit that as-seen-from hides recompiles the descendant, here needlessly. It is the same mechanism that catches the first row.
+- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. (Proposed, not yet run.)
+
 #### 15c. Macros: the expansion depends on whatever the macro looked at
 
 *Macro inspects a type argument* (`macros/macro-type-change`):
@@ -1077,7 +1112,7 @@ object Client { Provider.printTree(Foo.str) }  // remove Foo.str → Client must
 
 - Context-bound evidence names ([scala/scala3#19132](https://github.com/scala/scala3/pull/19132)), refinement owners ([sbt/zinc#1782](https://github.com/sbt/zinc/pull/1782)), [scala/scala3#26434](https://github.com/scala/scala3/issues/26434), [#25520](https://github.com/scala/scala3/issues/25520), whitespace changing line numbers ([sbt/zinc#718](https://github.com/sbt/zinc/issues/718)).
 
-**(e′) Erasure and representation.** The JVM descriptor changes while the Scala signature doesn't: value classes (§15b), `@specialized`, varargs, Java generic signatures.
+**(e′) Erasure and representation.** The JVM descriptor changes while the Scala signature doesn't: value classes (§15b), type arguments hidden by asSeenFrom (§15b), `@specialized`, varargs, Java generic signatures.
 
 **(f) Cross-language and pipelining.** The two Java front ends (§6); Java sources invalidated every cycle ([#918](https://github.com/sbt/zinc/issues/918), [#867](https://github.com/sbt/zinc/issues/867), [#1819](https://github.com/sbt/zinc/issues/1819)).
 
