@@ -1,4 +1,5 @@
 import Zinc.FlatRules
+import Zinc.Names
 
 /-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
 with all of its single-class edits, for the Zinc conformance harness (`Conformance` in Zinc's
@@ -9,6 +10,9 @@ The programs are data in a generic shape (classes with a kind, parents with type
 declared members, selections), so a later program space only has to supply its `Cls → Src`.
 Each edit carries the model's verdict under the widened default rules: the classes the policy
 recompiles besides the edited one, and whether the run equals the clean build.
+
+`conformance names 2|3`: the name-resolution space of `Zinc/Names.lean`, as source files, with the
+model's resolution before and after each edit and its verdict for that Scala version.
 
 `conformance [all]`: bases whose model build has no errors, resolves every selection and
 inherits one instance of each ancestor, or every base with `all`. -/
@@ -140,7 +144,49 @@ def mainV (everything : Bool) : IO Unit := do
           editJsonSrc k.src k'.src (cfgVStr k') (factorsV k') e true) ++ "}")
     i := i + 1
 
+section names
+open Zinc.Names
+
+def jfiles (fs : List (String × Option String)) : String :=
+  "{" ++ ",".intercalate (fs.map fun (f, s) =>
+    jstr f ++ ":" ++ match s with
+      | some s => "\"" ++ (s.replace "\n" "\\n").replace "\"" "\\\"" ++ "\""
+      | none => "null") ++ "}"
+
+def stStr : Zinc.Names.St → String | .none => "-" | .foo => "Foo" | .bar => "Bar"
+
+def namesFactors (p : Prog) : List (String × String) :=
+  let c := p.cl
+  [("pkg", c.pkg.str), ("blk", toString c.blk), ("inh", toString c.inh), ("expl", toString c.expl),
+   ("wild", toString c.wild), ("wpkg", toString c.wpkg), ("first", toString c.first),
+   ("opt", toString c.opt)] ++
+  [Slot.blk, .inh, .expl, .wild, .wpkg, .inner, .pobj, .outer].map fun s => ("s." ++ s.str, stStr (p.st s))
+
+def jfactors (fs : List (String × String)) : String :=
+  "{" ++ ",".intercalate (fs.map fun (n, v) => jstr n ++ ":" ++ jstr v) ++ "}"
+
+def namesCfg (p : Prog) : String := " ".intercalate ((namesFactors p).map (·.2))
+
+def mainNames (v : Ver) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in bases do
+    let es := (edits p).map fun (e, p') =>
+      let r := verdict .today v p p'
+      "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
+        ",\"factors\":" ++ jfactors (namesFactors p') ++ ",\"files\":" ++ jfiles (fileEdits p p') ++
+        ",\"modelRecompiled\":" ++ (if r.recompiled then "[\"Client\"]" else "[]") ++
+        ",\"modelClean\":" ++ toString r.clean ++
+        ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
+    out.putStrLn ("{\"space\":\"names\",\"id\":\"n" ++ toString i ++ "\",\"cfg\":" ++ jstr (namesCfg p) ++
+      ",\"factors\":" ++ jfactors (namesFactors p) ++
+      ",\"probe\":" ++ jstr (clientClass p) ++ ",\"files\":" ++ jfiles ((files p).map fun (f, s) => (f, some s)) ++ ",\"edits\":" ++ jarr es ++ "}")
+    i := i + 1
+
+end names
+
 def main (args : List String) : IO Unit := do
+  if args.contains "names" then return (← mainNames (if args.contains "3" then .s3 else .s2))
   let everything := args.contains "all"
   if args.contains "v" then return (← mainV everything)
   let out ← IO.getStdout

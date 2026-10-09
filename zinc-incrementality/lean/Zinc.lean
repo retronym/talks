@@ -24,3 +24,4 @@ import Zinc.PingPong
 import Zinc.Embed
 import Zinc.Added
 import Zinc.Sealed
+import Zinc.Names
