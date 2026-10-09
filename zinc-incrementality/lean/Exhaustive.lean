@@ -140,26 +140,51 @@ def cfgStr (k : Cfg) : String := (toString (repr k)).replace "\n" " " |>.replace
 def showCounts (l : List (Cls × ℕ)) : String :=
   ", ".intercalate ((l.filter (·.2 != 0)).map fun (c, n) => s!"{(toString (repr c)).replace "Zinc.Erasure.Cls." ""} {n}")
 
-def mainErasure (args : List String) : IO Unit := do
-  let n := (args.head? >>= String.toNat?).getD cfgs.length
-  let bases := cfgs.take n
-  IO.println s!"{bases.length} bases, {(bases.flatMap edits).length} edits"
+def mergeCounts (l l' : List (Cls × ℕ)) : List (Cls × ℕ) :=
+  l.map fun (c, n) => (c, n + ((l'.lookup c).getD 0))
+
+def Tally.merge (t u : Tally) : Tally :=
+  { unclean := t.unclean + u.unclean, noRun := t.noRun + u.noRun,
+    wrong := mergeCounts t.wrong u.wrong, wasted := mergeCounts t.wasted u.wasted,
+    recompiled := t.recompiled + u.recompiled, byEdit := mergeCounts t.byEdit u.byEdit,
+    smallest := match t.smallest, u.smallest with
+      | none, s => s
+      | s, none => s
+      | some (b, b', e), some (c, c', f) =>
+        if c.size < b.size || (c.size == b.size && c'.size < b'.size) then some (c, c', f)
+        else some (b, b', e) }
+
+/-- Tallies per variant, and the number of skipped pairs, for a chunk of bases. -/
+def checkChunkE (bases : List Cfg) : Array Tally × ℕ := Id.run do
   let mut ts : Array Tally := variants.toArray.map fun _ => {}
-  let mut i := 0
   let mut skipped := 0
   for k in bases do
+    if !k.legal then skipped := skipped + (edits k).length; continue
     for (k', e) in edits k do
-      if !k.legal || !k'.legal then skipped := skipped + 1; continue
+      if !k'.legal then skipped := skipped + 1; continue
       let mut j := 0
       for v in variants do
         ts := ts.modify j (·.add k k' e (runVariant v k k' e))
         j := j + 1
-    i := i + 1
-    if i % 1000 == 0 then IO.println s!"... {i}"; (← IO.getStdout).flush
+  return (ts, skipped)
+
+def chunksE (n : ℕ) : List Cfg → ℕ → List (List Cfg)
+  | [], _ => []
+  | l, 0 => [l]
+  | l, fuel + 1 => l.take n :: chunksE n (l.drop n) fuel
+
+def mainErasure (args : List String) : IO Unit := do
+  let n := (args.head? >>= String.toNat?).getD cfgs.length
+  let bases := cfgs.take n
+  IO.println s!"{bases.length} bases, {(bases.flatMap edits).length} edits"
+  (← IO.getStdout).flush
+  let tasks := (chunksE 200 bases bases.length).map fun ch => Task.spawn fun _ => checkChunkE ch
+  let results := tasks.map Task.get
+  let skipped := (results.map (·.2)).sum
   IO.println s!"{skipped} pairs skipped: base or edit does not compile"
   let mut j := 0
   for v in variants do
-    let t := ts[j]!
+    let t := results.foldl (fun acc r => acc.merge r.1[j]!) ({} : Tally)
     IO.println s!"{v.name}: {t.unclean} unclean, {t.noRun} out of fuel, {t.recompiled} recompiles"
     IO.println s!"  wrong: {showCounts t.wrong}"
     IO.println s!"  unclean by edited class: {showCounts t.byEdit}"
