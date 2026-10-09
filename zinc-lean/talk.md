@@ -20,7 +20,7 @@ All Lean and tool output is shown as screenshots.
 
 <!-- break -->
 
-**Contents (~63 min):**
+**Contents (~64 min):**
 
 | part | sections | min |
 |---|---|---|
@@ -32,7 +32,7 @@ All Lean and tool output is shown as screenshots.
 | VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 the first counterexample | 9.5 |
 | VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §18a the PoC · §19 subprojects | 7.5 |
 | VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23 trait fields · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree · §23d not covered yet | 11.5 |
-| IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §28 limits | 7 |
+| IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §27a verifying on Spark · §28 limits | 8.5 |
 | Close | §29 next steps | 2 |
 
 Over budget: cut §18a, §23, §23d and §26's table first, then one of §23a–c.
@@ -108,13 +108,16 @@ flowchart LR
 
 - Round $n$ compiles $R_n$ from source and everything else from classfiles or TASTy.
 - So "incremental = clean" assumes that compiling against classfiles gives the same bytes as compiling jointly from source.
-- That is a property of the compiler, and it still fails in new ways: in 2026, forwarder generic signatures in scalac turned out to depend on which classes were in the batch (`compose[A]` vs `compose[A$]`).
+- That is a property of the compiler, and it still fails in new ways. Verifying incremental builds of Spark's catalyst against clean builds (§27a) found three in scalac 2.13 in 2026:
+  - forwarder generic signatures depend on the batch (`compose[A]` vs `compose[A$]`);
+  - a Java `static final` initialised by an expression is folded from the classfile, not from the source;
+  - an inferred lub orders base types by symbol id, which depends on what was loaded first.
 
 <div class="fn">
 
-Notes: 1 min. This becomes the axiom `comp` in §12. Evidence: `zinc-incrementality` §6, §6a; the catalyst differential. A second 2026 instance: a sort keyed on `Symbol.id`, whose order differs between symbols from source and symbols from a JAR (found in a sibling session; add the link). Keep this slide short: joint ≡ separate is planned as its own talk (Notes for Jason, T).
+Notes: 1 min. This becomes the axiom `comp` in §12. Evidence: `zinc-incrementality` §6, §6a; the catalyst verification (retronym/zinc#31). The lub case: two anonymous `PartialFunction`s get a different erased superclass depending on whether stale copies of the batch's own classes are on the classpath. With the three fixes merged into a local scalac, incremental and clean catalyst builds are byte-identical except one forwarder's type-variable name, still being chased. Keep this slide short: joint ≡ separate is planned as its own talk (Notes for Jason, T).
 
-Bugs of note: [scala/scala#11289](https://github.com/scala/scala/pull/11289) (forwarder signatures and the batch) · [scala/scala3#7661](https://github.com/scala/scala3/issues/7661) (deterministic compilation, open since 2019) · [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405)
+Bugs of note: [scala/scala#11289](https://github.com/scala/scala/pull/11289) (forwarder signatures and the batch) · [scala/scala#11290](https://github.com/scala/scala/pull/11290) (Java constant expressions, scala/bug#10410) · [scala/scala#11291](https://github.com/scala/scala/pull/11291) (base types ordered by name, not symbol id) · [scala/scala3#7661](https://github.com/scala/scala3/issues/7661) (deterministic compilation, open since 2019) · [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405)
 
 </div>
 
@@ -569,7 +572,7 @@ cycle 7  A B C    error: recursive method x needs result type
 
 <div class="fn">
 
-Notes: 2 min. `Zinc/PingPong.lean` (`zincPolicy`, `zinc_diverges`, `transitiveStep_stops`), `lake exe exhaustive pingpong` (9 s). Zinc scripted test `inferred-type-cycle-rounds` (retronym/zinc branch `claude/inferred-type-cycle-rounds`); the cycle listing is from its invalidation log, `[diff] def …` lines. Not a soundness bug: the cost is rounds, and the final error is right. It does say `transitiveStep` is load-bearing: set it high enough and the rounds never end.
+Notes: 2 min. `Zinc/PingPong.lean` (`zincPolicy`, `zinc_diverges`, `transitiveStep_stops`), `lake exe exhaustive pingpong` (9 s). Zinc scripted test `inferred-type-cycle-rounds` ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33)); the cycle listing is from its invalidation log, `[diff] def …` lines. Not a soundness bug: the cost is rounds, and the final error is right. It does say `transitiveStep` is load-bearing: set it high enough and the rounds never end.
 
 </div>
 
@@ -741,11 +744,16 @@ flowchart BT
 
 - The PoC (retronym/zinc#24) hashes each class's own declarations and composes along the linearization, so an ancestor edit no longer recompiles every subclass just to refresh its hashes.
 - Descendants that must recompile are chosen by six rules: header, overrides, conflicts, abstract, trait, mirror. Most of Part IX's findings are about these rules.
-- On Spark's catalyst, adding a member to `TreeNode` recompiles 1,371 classes today and 420 with the PoC.
+- On Spark: adding an unused member to `TreeNode` recompiles 1,371 classes in catalyst today and 420 with the PoC; downstream, in `sql/core`, 518 today and 44 with the PoC.
+
+| edit (in catalyst) | catalyst today | PoC | `sql/core` today | PoC |
+|---|---|---|---|---|
+| `TreeNode`: add unused member | 1,371 / 3 rounds | 420 / 2 | 518 / 2 | 44 / 2 |
+| `LogicalPlan`: add unused member | 389 / 3 | 47 / 2 | 148 / 1 | 2 / 1 |
 
 <div class="fn">
 
-Notes: 1 min. Backup slide: the computed 3×5 table from `zinc-incrementality` §22 (decls + walk, materialised, materialised + walk, Merkle, Merkle with stale Δ).
+Notes: 1 min. Backup slide: the computed 3×5 table from `zinc-incrementality` §22 (decls + walk, materialised, materialised + walk, Merkle, Merkle with stale Δ). Cross-module numbers: retronym/zinc#30 (catalyst → core, Spark 4.0.1, Scala 2.13.16, pipelining off). Measuring across the module boundary found a PoC precision bug: the `traitDirect` rule fired downstream for every class mixing in a trait that extends a class (`LeafNode extends LogicalPlan`), because the trait's composed hash moves with its class ancestors, whose members get no forwarders; fixed by hashing the trait-only contributions (`merkle-x-trait-class-ancestor`, guarded by `merkle-x-trait-move`).
 
 </div>
 
@@ -953,7 +961,7 @@ object Client { def v: Int = Foo.v }  // add a.b.Foo with v: String
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` on retronym/zinc branch `claude/added-class-inner-package`, probed on `develop`. The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
+Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32)), probed on `develop`. The fix for Scala 3 records `_N+1` (scala/scala3#26262); the draft fix for Scala 2 records `op=` from the source position (retronym/zinc#15).
 
 Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors)
 
@@ -1016,7 +1024,8 @@ Notes: 1 min. Files: `Zinc/Toy.lean`, `Zinc/HierSound.lean`, `Zinc/Flat.lean`, `
 | implicit summary must be in the API hash; objects are a gap | `ImplicitScope.lean` | sbt/zinc#1845 |
 | refreshing only referenced snapshots is unsound for non-local hashes | `Snapshot.stale_after_revert` | PoC refreshes every changed upstream class (`9904df698`) |
 | a failed upstream must roll back its early output | `Pipelining.lean` | pending `pipelining-failed-upstream-revert` |
-| a class added in an inner package scope is missed | `Added.lean` | pending scripted test `added-class-inner-package`, confirmed on develop |
+| an added class that shadows a resolved name is missed (inner package, wildcard import; 2.13 and 3) | `Added.lean` | pending scripted tests, [retronym/zinc#32](https://github.com/retronym/zinc/pull/32) |
+| without `transitiveStep`, three mutually inferred classes alternate forever | `PingPong.zinc_diverges` | scripted test, [retronym/zinc#33](https://github.com/retronym/zinc/pull/33) |
 | Zinc's loop formula; fixed points need not be unique | the T3/T4 proofs | `zinc-incrementality` §3–4 |
 
 <!-- break -->
@@ -1088,6 +1097,26 @@ Found in the model: a deferred declaration hides a concrete one in its own ances
 <div class="fn">
 
 Notes: 2 min. `Conformance.lean`; the harness is `sbt.internal.inc.bench.Conformance` in retronym/zinc#25. It orders cases by a covering array over the program's factors and finds each known bug family within 7–436 cases. Also found: a pipelining revert after a failed upstream compile (`pipelining-failed-upstream-revert`, pending).
+
+</div>
+
+### 27a. Verifying on real code: Spark's catalyst
+
+The conformance harness checks generated programs. On real code the check is the same, classfile digests of each incremental build against a clean build of the same sources (`IncBench --verify`).
+
+- 146 edits to catalyst (2,527 classes, Scala and Java): unused members, overloads, body changes and a new parent, on the 28 most-inherited traits and classes and the 10 most-used leaves; each edit and its revert verified, for develop and for the PoC.
+- **No undercompilation on either side.** Every digest difference traced to scalac compiling the same source differently depending on what else was in the batch: the three bugs of §3.
+- The PoC recompiles 58,695 classes over the 146 edits, develop 71,334; 669 s against 1,218 s.
+
+| edit to an ancestor | develop (median / max) | PoC |
+|---|---|---|
+| add a member | 531 / 1,372 | 290 / 751 |
+| add an overload | 716 / 1,514 | 544 / 1,514 |
+| body only | 8 / 520 | 8 / 531 |
+
+<div class="fn">
+
+Notes: 1.5 min. retronym/zinc#31. Verdicts separate batch dependence from staleness: `signature` (type-variable names only), `java-context` (matches a clean build that reads the module's Java classes as classfiles), `fresh-mismatch`, `bytecode` (stale, missing or extra: what undercompilation produces). With a scalac carrying scala/scala#11289, #11290 and #11291, the noisiest edits verify byte-identical but for one forwarder type variable. Machine shared, so times are noisy.
 
 </div>
 
