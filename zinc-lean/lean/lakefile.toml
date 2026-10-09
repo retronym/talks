@@ -1,0 +1,17 @@
+name = "zincLeanTalk"
+version = "0.1.0"
+defaultTargets = ["Primer", "V1", "V2"]
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.34.1"
+
+[[lean_lib]]
+name = "Primer"
+
+[[lean_lib]]
+name = "V1"
+
+[[lean_lib]]
+name = "V2"
