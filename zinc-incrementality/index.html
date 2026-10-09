@@ -215,6 +215,8 @@ $$E(A) = A$$
 
 $$E(A) = E(\mathrm{underlying}(A))$$
 
+- For an inherited member, erasure is a function of the member's signature *as declared in its owner*, not as seen from the class that inherits it. A bridge in `B` for `M.m` has the descriptor $E(\mathrm{sig}_M(m))$, so $\pi$ must render $m$ as declared (§7, §15b).
+
 ### 3. The algorithm: a fixed point over a dependency graph
 
 $$R_0 = \mathit{changed} \cup \mathrm{dependents}(\mathit{deleted}) \qquad R_{n+1} = \mathrm{inv}(\Delta\mathrm{API}_n) \qquad \text{stop when } \mathrm{inv}(\Delta\mathrm{API}_n) \subseteq R_n$$
@@ -971,6 +973,7 @@ object User { implicitly[Pretty[A]].show(new D) }
 **What Zinc does:** implicit members get their own name hashes (`UseScope.Implicit`), and **any** change to an implicit member invalidates **all** `memberRef` clients of that class, with no name filtering (`MemberRefInvalidator`).
 
 - That is sound only for classes the client already depends on. The *negative* case is open: a client whose resolution would change because a *new, better* candidate appears somewhere it never referenced. Removing `implicit` was reported as not noticed ([sbt/zinc#945](https://github.com/sbt/zinc/issues/945), still open), though a 2.13.y probe of the inherited-trait shape found no bug ([retronym/zinc#14](https://github.com/retronym/zinc/pull/14), "tried, no bug found"); Scala 3 constructor implicits ([scala/scala3#18309](https://github.com/scala/scala3/issues/18309)).
+- A confirmed instance of the negative case, on 2.13.x, 2.13.y and 3.x alike: `implicit-scope-grandparent-companion`, where a grandparent `B` of the type the client resolves for gains a companion object with an implicit, which changes the resolution. It is independent of how inherited members are rendered (§7).
 - Scala 3 `given`s, `using` clauses, and `given` imports (`import A.given`) make implicit scope larger and more structured, so the same problem applies to more constructs.
 
 #### 15b. Value classes: erasure makes representation observable
@@ -1033,7 +1036,14 @@ class B extends A { override def m: Int = 2 }   // app
 | `value-class-mirror-forwarder`, `value-class-mixin-forwarder` (`m: V`, `V`'s underlying changes) | missing forwarder change | same | same |
 
 - The third row is the price: an ancestor edit that as-seen-from hides recompiles the descendant, here needlessly. It is the same mechanism that catches the first row.
-- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. (Proposed, not yet run.)
+- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. The model confirms it (§22, `Erasure.lean`), but also shows it is more than either half needs.
+
+<!-- break -->
+
+**The two halves need different fixes, and neither needs a new hash.**
+
+- **Generic erasure** is a function of the owner's declaration (`T` erases to `Object`, or to its bound, which is also declared there). Rendering inherited members as declared determines it, as Scala 3 already does. Only Scala 2 needs a change, and that change is the rendering.
+- **Value-class erasure** is a function of *another class's* contents. That is a missing dependency, not missing hash input: `V`'s own name hash already covers its underlying type. The fix is for a class that emits a bridge or forwarder for an inherited member whose signature mentions a value class to record that value class's name. In the model this dependency edge gives exactly the witness's results, closing every value-class undercompilation under either rendering, with no change to any member hash. That means no analysis-wide hash churn and no format change, and invalidation fires only on edits to the value class. The PoC model's erasure keys (`Flat.lean`) are the same edge.
 
 #### 15c. Macros: the expansion depends on whatever the macro looked at
 
@@ -1415,12 +1425,37 @@ Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligat
 
 <!-- break -->
 
+**Rendering inherited members, computed** (`Erasure.lean`): two type parameters, a value class `V` referenced by name, and descendants whose bytecode depends on their ancestors' erasure (bridges for overridden members, mixin or mirror forwarders for inherited ones). A descendant records only the inheritance key on its direct parent, as Zinc does across subprojects. Clients record the name and the class-name key. Three renderings of the inheritance and name keys:
+
+- **As seen from** (Scala 2): undercompiles the missing bridge of `erasure-bridge-upstream-grandparent`. With transitive inheritance invalidation (one subproject) it is clean, as the scripted runs found.
+- **As declared** (Scala 3): `asf_of_decl` proves the as-seen-from hashes are a function of the as-declared ones plus the class-name key, so it is a sound over-approximation for the type-level observables. It is strictly coarser: on the precision case it recompiles `B` (and in the model `X`) for nothing.
+- **As declared + erasure witness:** proved to meet the bridge spec once a macro's reads are recorded faithfully.
+- **As declared + a dependency on the value class** (no witness): proved to meet the bridge spec too (`Er_obligations` covers both).
+
+Over 25,120 legal (base, edit) pairs of a bounded program space:
+
+| rendering | unclean runs | of which value class | of which macro | wasted recompiles |
+|---|---|---|---|---|
+| as seen from, across subprojects | 1,716 | 852 | 0 | 16,960 |
+| as seen from, one subproject | 0 | | | 22,328 |
+| as declared | 1,204 | 852 | 352 | 32,224 |
+| as declared + witness | 352 | 0 | 352 | 33,336 |
+| as declared + witness, macro reads recorded | **0** | | | 38,776 |
+| as seen from + dependency on `V` | 864 | 0 | 0 | 18,072 |
+| as declared + dependency on `V`, macro reads recorded | **0** | | | 38,776 |
+
+- The macro escape: Scala 3's per-name hash of `m` in `B` doesn't move when `B extends A[Int]` becomes `A[Long]`. Only the class-name key moves, so a reader that sees `B.m` as seen from `B` without recording the name `B` keeps a stale type. No recorded client shape escapes.
+- The witness, and equally the dependency edge, cost recompiles of descendants that mention `V` but emit nothing for it. In the model a descendant erases every inherited signature; a bridge that records `V` only for the members it actually forwards or bridges would waste less. As declared costs recompiles of clients too: a per-name hash lists every declaration on the chain, overridden ones included.
+
+<!-- break -->
+
 **Future work: questions the model could answer with modest refinement.**
 
 - **Mutual recursion without the acyclic hypothesis.** Model #1284's SCC-closed initial invalidation: if every round is closed under mutual dependency, the group result is the joint fixed point and T3 should follow without acyclicity. That would say whether reverting #1284 traded soundness or only precision, and in which programs.
 - **Precision as a theorem.** Minimality relative to $\pi$: no unit outside $\mathrm{inv}(\Delta)$ has a covered key with a changed hash. With it, the rungs of §12 become comparable: prove rung $k+1$ invalidates a subset of rung $k$ given the extra coverage (recorded misses), and measure the gap on the §12 question of `size`/`apply` collisions.
 - **Class vs companion (#1796).** A key type with a namespace component; the precision theorem then quantifies what separating the hashes buys.
 - **Precision of the three hierarchy designs as a theorem.** The computed table suggests materialised ⊆ Merkle-chain and materialised ⊆ decls on `asSeenFrom` edits, and equality when member types mention no type parameter. State it over all programs of the toy, and add the "resolved-member" Merkle hash as a fourth design to show it matches materialised precision with local storage.
+- **Erasure through inheritance** (done: `Erasure.lean`). Remaining: owner `memberRef`s for clients (Zinc records them, so the model overstates Scala 3's client imprecision); a witness stored at the owner's compile rather than recomputed; opaque types and `inline` as Scala 3 erasure sources; multiple inheritance (the erasure model is a chain).
 - **Descendants' own checks** (done: `Flat.lean`, `FlatRules.lean`). Override, conflict and abstract-member checks are queries from a descendant to its ancestors; recorded as keys, T2″ covers the name-filtered inheritance edge, and dropping any key kind undercompiles some scenario. As an invalidation *policy* over all single-class edits of a small program space, the rule set is clean only if `abstract` fires for names deferred in any ancestor of the descendant, not only in the changed class. On catalyst, adding an unused member to `TreeNode` recompiles 1,371 classes today and 420 with the rules, so about 950 of today's recompiles are refresh-only (assuming the PoC's result is sound, which a differential check would confirm).
 - **Inheritance edges as a measure.** In the materialised design every subclass recompiles on every ancestor edit. Count, on a real analysis, how many of those recompiles change the subclass's own output; the rest is the price of freshness, and the decls or Merkle designs would skip it.
 - **Macros and inline.** Add `inlineBody(m)` and `macroObserve(sym)` queries. Then: Scala 3 `inline` needs the *body* in $\pi$, not the signature; the macro-downstream policy is the coarsest sound answer when observation is not recorded, and recording `Quotes` reflection ([sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)) is the precise one. The cross-project case (behaviour does not flow through the API) is a stated non-coverage.
