@@ -1,5 +1,6 @@
 import Zinc.FlatRules
 import Zinc.Names
+import Zinc.Givens
 
 /-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
 with all of its single-class edits, for the Zinc conformance harness (`Conformance` in Zinc's
@@ -159,7 +160,7 @@ def namesFactors (p : Prog) : List (String × String) :=
   let c := p.cl
   [("pkg", c.pkg.str), ("blk", toString c.blk), ("inh", toString c.inh), ("expl", toString c.expl),
    ("wild", toString c.wild), ("wpkg", toString c.wpkg), ("first", toString c.first),
-   ("opt", toString c.opt)] ++
+   ("opt", toString c.opt), ("exp", toString c.exp)] ++
   [Slot.blk, .inh, .expl, .wild, .wpkg, .inner, .pobj, .outer].map fun s => ("s." ++ s.str, stStr (p.st s))
 
 def jfactors (fs : List (String × String)) : String :=
@@ -170,7 +171,7 @@ def namesCfg (p : Prog) : String := " ".intercalate ((namesFactors p).map (·.2)
 def mainNames (v : Ver) : IO Unit := do
   let out ← IO.getStdout
   let mut i := 0
-  for p in bases do
+  for p in bases.filter (fun p => v == .s3 || !p.cl.exp) do
     let es := (edits p).map fun (e, p') =>
       let r := verdict .today v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
@@ -185,8 +186,38 @@ def mainNames (v : Ver) : IO Unit := do
 
 end names
 
+section givens
+open Zinc.Givens
+
+def givensFactors (v : Zinc.Names.Ver) (p : Prog) : List (String × String) :=
+  let c := p.cl
+  [("pkg", c.pkg.str), ("blk", toString c.blk), ("inh", toString c.inh), ("wild", toString c.wild),
+   ("first", toString c.first)] ++
+  Slot.all.map fun s => ("s." ++ s.str, if (present v c).contains s then toString (p.has s) else "-")
+
+def mainGivens (v : Zinc.Names.Ver) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in bases v do
+    let es := (edits v p).map fun (e, p') =>
+      let r := verdict .today v p p'
+      "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
+        ",\"factors\":" ++ jfactors (givensFactors v p') ++ ",\"files\":" ++ jfiles (fileEdits v p p') ++
+        ",\"modelRecompiled\":" ++ (if r.recompiled then "[\"Client\"]" else "[]") ++
+        ",\"modelClean\":" ++ toString r.clean ++
+        ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
+    out.putStrLn ("{\"space\":\"givens\",\"id\":\"g" ++ toString i ++ "\",\"cfg\":" ++
+      jstr (" ".intercalate ((givensFactors v p).map (·.2))) ++
+      ",\"factors\":" ++ jfactors (givensFactors v p) ++
+      ",\"probe\":" ++ jstr (if p.cl.pkg == .top then "a/Client$" else "a/b/Client$") ++
+      ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++ ",\"edits\":" ++ jarr es ++ "}")
+    i := i + 1
+
+end givens
+
 def main (args : List String) : IO Unit := do
   if args.contains "names" then return (← mainNames (if args.contains "3" then .s3 else .s2))
+  if args.contains "givens" then return (← mainGivens (if args.contains "3" then .s3 else .s2))
   let everything := args.contains "all"
   if args.contains "v" then return (← mainV everything)
   let out ← IO.getStdout

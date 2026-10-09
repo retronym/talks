@@ -25,3 +25,4 @@ import Zinc.Embed
 import Zinc.Added
 import Zinc.Sealed
 import Zinc.Names
+import Zinc.Givens

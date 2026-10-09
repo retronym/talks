@@ -87,6 +87,10 @@ structure Client where
   first : Bool
   /-- The name is `Option`, so `scala.Option` binds it when nothing else does. -/
   opt : Bool
+  /-- Scala 3 only: `W` and package `a.b` get their member through a wildcard `export` of another
+  object (`object W { export a.U.* }`, and `export a.U2.*` at the top level of `a.b`), whose
+  member the edit adds or removes. -/
+  exp : Bool := false
   deriving DecidableEq, Repr
 
 /-- What a slot holds: nothing, the name, or (top-level slots) a class `Bar`, to rename. -/
@@ -127,8 +131,7 @@ def Res.str : Res → String
 exceptions are the ambiguities, which both compilers report:
 
 * the block import against an inherited member (an import does not shadow an outer definition);
-* the block's wildcard import against the explicit import outside it, in Scala 3 only (Scala 2
-  compares imports at one depth only);
+* the block's wildcard import against the explicit import outside it;
 * two wildcard imports at one level.
 
 An import beats a package member from another file in both (Scala 2's `lookupSymbol`:
@@ -141,7 +144,7 @@ def resolve (v : Ver) (p : Prog) : Res :=
   if v == .s3 && p.st .inner == .foo && p.st .pobj == .foo then .clash
   else if p.cl.expl && !b .expl then .err "import"
   else if b .blk && b .inh then .err "ambiguous"
-  else if v == .s3 && b .blk && b .expl then .err "ambiguous"
+  else if b .blk && b .expl then .err "ambiguous"
   else if !b .blk && !b .inh && !b .expl && b .wild && b .wpkg then .err "ambiguous"
   else
     -- Scala 2 looks in the package object before the package's own classes
@@ -202,11 +205,17 @@ structure Verdict where
   clean : Bool
   deriving DecidableEq, Repr
 
+/-- Scala 2 lets `package object b` hold an `object Foo` beside a class `a.b.Foo`, and the class's
+mirror (`a/b/Foo.class`, its static forwarders) comes out differently when the package object's
+member is compiled with it. Adding the member leaves the class's file alone, and its old mirror. -/
+def staleMirror (v : Ver) (p p' : Prog) : Bool :=
+  v == .s2 && p.st .pobj != .foo && p'.st .pobj == .foo && p.st .inner == .foo && p'.st .inner == .foo
+
 def verdict (m : Mode) (v : Ver) (p p' : Prog) : Verdict :=
   let r := resolve v p
   let r' := resolve v p'
   let rc := recompiles m v p p'
-  ⟨r, r', rc, rc || r == r' || r' == .clash⟩
+  ⟨r, r', rc, (rc || r == r' || r' == .clash) && !staleMirror v p p'⟩
 
 /-! ## The program space -/
 
@@ -228,7 +237,10 @@ def clients : List Client := Id.run do
                 for opt in [false, true] do
                   -- `First` matters only for the wildcard import's edge
                   if !first || wild then
-                    out := out ++ [⟨pkg, blk, inh, expl, wild, wpkg, first, opt⟩]
+                    for exp in [false, true] do
+                      -- the export matters only where `W` or package `a.b` is in scope
+                      if !exp || wild || pkg != .top then
+                        out := out ++ [⟨pkg, blk, inh, expl, wild, wpkg, first, opt, exp⟩]
   return out
 
 /-- Assignments of states to the given slots, with at most `k` slots holding the name. -/
@@ -285,7 +297,7 @@ def edits (p : Prog) : List (Edit × Prog) :=
 
 /-! ## Families, as checked examples -/
 
-def cl0 : Client := ⟨.nested, false, false, false, false, false, false, false⟩
+def cl0 : Client := ⟨.nested, false, false, false, false, false, false, false, false⟩
 
 /-- **Inner package** (retronym/zinc#32): `a.b.Foo` added over `a.Foo`. -/
 def innerBase : Prog := mkProg cl0 [(.outer, .foo)]
@@ -303,6 +315,15 @@ theorem pobj_added_today :
     verdict .today .s3 innerBase (innerBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
+/-- **Top-level export** (Scala 3): `export a.U2.*` in package `a.b`, and `a.U2` gains `Foo`. Zinc
+recompiles the exporting file (the wildcard export records an inheritance edge), whose new
+forwarder shadows `a.Foo`, but the client has no edge to it: the package object's case. -/
+def expBase : Prog := mkProg { cl0 with exp := true } [(.outer, .foo)]
+
+theorem export_added_today :
+    verdict .today .s3 expBase (expBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
+  native_decide
+
 /-- **Wildcard import, second class**: `Foo` added to `object W` over `a.Foo`, the import charged to
 `First`, which does not use `Foo`. -/
 def wildBase : Prog := mkProg { cl0 with wild := true, first := true } [(.outer, .foo)]
@@ -318,12 +339,15 @@ theorem wild_client_today :
   native_decide
 
 /-- Every edit of the space, both versions, is clean when the lookup's misses are recorded, and
-when the users of a name are invalidated on every added or removed binding. -/
+when the users of a name are invalidated on every added or removed binding; the stale mirror is
+not about resolution, and neither fix touches it. -/
 theorem searched_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean) = true := by native_decide
+    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean || staleMirror v p p') = true := by
+  native_decide
 
 theorem names_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean) = true := by native_decide
+    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean || staleMirror v p p') = true := by
+  native_decide
 
 end Zinc.Names
 
@@ -334,9 +358,12 @@ namespace Zinc.Names
 def Prog.name (p : Prog) : String := if p.cl.opt then "Option" else "Foo"
 
 /-- The file of each slot, and its source; `none` when the file does not exist. -/
-def slotFile : Slot → String
-  | .blk => "V.scala" | .inh => "P.scala" | .expl => "X.scala" | .wild => "W.scala"
-  | .wpkg => "Q.scala" | .inner => "Inner.scala" | .pobj => "PObj.scala" | .outer => "Outer.scala"
+def slotFile (p : Prog) : Slot → String
+  | .blk => "V.scala" | .inh => "P.scala" | .expl => "X.scala"
+  | .wild => if p.cl.exp then "U.scala" else "W.scala"
+  | .wpkg => "Q.scala" | .inner => "Inner.scala"
+  | .pobj => if p.cl.exp then "U2.scala" else "PObj.scala"
+  | .outer => "Outer.scala"
   | .lib => ""
 
 def member (p : Prog) (s : Slot) : String :=
@@ -352,8 +379,9 @@ def slotSrc (p : Prog) : Slot → Option String
   | .blk => some ("package a\n\nobject V" ++ member p .blk)
   | .inh => some ("package a\n\ntrait P" ++ member p .inh)
   | .expl => some ("package a\n\nobject X" ++ member p .expl)
-  | .wild => some ("package a\n\nobject W" ++ member p .wild)
-  | .pobj => some ("package a\n\npackage object b" ++ member p .pobj)
+  | .wild => some ((if p.cl.exp then "package a\n\nobject U" else "package a\n\nobject W") ++ member p .wild)
+  | .pobj => some ((if p.cl.exp then "package a\n\nobject U2" else "package a\n\npackage object b") ++
+      member p .pobj)
   | .wpkg => topClass p .wpkg "a.q"
   | .inner => topClass p .inner "a.b"
   | .outer => topClass p .outer "a"
@@ -378,11 +406,13 @@ def clientClass (p : Prog) : String := if p.cl.pkg == .top then "a/Client$" else
 def files (p : Prog) : List (String × String) :=
   [("Client.scala", clientSrc p)] ++
   (if p.cl.wpkg then [("Other.scala", "package a.q\n\nobject Other\n")] else []) ++
-  ((present p.cl).filter (· != .lib)).filterMap fun s => (slotSrc p s).map (slotFile s, ·)
+  (if p.cl.exp && p.cl.wild then [("W.scala", "package a\n\nobject W {\n  export a.U.*\n}\n")] else []) ++
+  (if p.cl.exp && p.cl.pkg != .top then [("PObj.scala", "package a.b\n\nexport a.U2.*\n")] else []) ++
+  ((present p.cl).filter (· != .lib)).filterMap fun s => (slotSrc p s).map (slotFile p s, ·)
 
 /-- The files an edit changes: a new source, or `none` to delete it. -/
 def fileEdits (p p' : Prog) : List (String × Option String) :=
   ((present p.cl).filter (· != .lib)).filterMap fun s =>
-    if slotSrc p s == slotSrc p' s then none else some (slotFile s, slotSrc p' s)
+    if slotSrc p s == slotSrc p' s then none else some (slotFile p s, slotSrc p' s)
 
 end Zinc.Names

@@ -1,4 +1,5 @@
-"""Reads a conformance run of the names space (`--out` of the harness) and reports:
+"""Reads a conformance run of the names space (`--out` of the harness; optionally a fresh dump to
+take the model's verdicts from) and reports:
 * where the model's resolution disagrees with the compiler's (read off the client's classfile);
 * where the model's verdict disagrees with the harness's;
 * the divergences (incremental differs from clean), grouped by edit and resolution change."""
@@ -9,7 +10,7 @@ def slot_of(probe, name):
     toks |= {t[1:] for t in toks if t.startswith('L')}
     m = {f'a/V${name}$': 'blk', f'a/P${name}$': 'inh', f'a/X${name}$': 'expl', f'a/W${name}$': 'wild',
          f'a/q/{name}$': 'wpkg', f'a/b/{name}$': 'inner', f'a/b/package${name}$': 'pobj',
-         f'a/{name}$': 'outer', 'scala/Option$': 'lib'}
+         f'a/{name}$': 'outer', 'scala/Option$': 'lib', f'a/U${name}$': 'wild', f'a/U2${name}$': 'pobj'}
     hits = [s for k, s in m.items() if k in toks]
     return '+'.join(hits) if hits else '?'
 
@@ -18,6 +19,22 @@ def model_res(cfg):
     return b, a
 
 rs = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+# A fresh dump (optional) supplies the current model's verdicts, matched by base cfg and edit.
+if len(sys.argv) > 2:
+    fresh = {}
+    for line in open(sys.argv[2]):
+        b = json.loads(line)
+        for e in b['edits']:
+            fresh[(b['cfg'], e['cls'])] = e
+    def norm(cfg):
+        t = cfg.split()
+        return ' '.join(t[:8] + t[9:]) if len(t) == 17 and t[8] == 'false' else cfg
+    fresh = {(norm(c), e): v for (c, e), v in fresh.items()}
+    for r in rs:
+        e = fresh.get((norm(r['cfg']), r.get('edit')))
+        if e:
+            r['modelClean'] = e['modelClean']
+            r['edited'] = e['cfg']
 res_mis = collections.Counter()
 verd_mis = collections.Counter()
 div = collections.defaultdict(list)
@@ -27,6 +44,7 @@ for r in rs:
         res_mis[('base-error', r['cfg'], tuple(r['errors'][:1]))] += 1
         continue
     name = 'Option' if r['cfg'].split()[7] == 'true' else 'Foo'
+    # with `exp`, the factor list has one more field before the slots
     mb, ma = model_res(r['edited'])
     rb = slot_of(r.get('baseProbe', []), name)
     ra = slot_of(r.get('cleanProbe', []), name) if r['cleanOk'] else 'error'

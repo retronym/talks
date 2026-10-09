@@ -9,7 +9,7 @@ bases = [json.loads(line) for line in open(src)]
 
 def sig(b, e):
     f = b['factors']
-    return (e['cfg'], f['first'] if f['wild'] == 'true' else '-', f['pkg'], f['opt'], f['inh'], f['blk'])
+    return (e['cfg'], f['first'] if f['wild'] == 'true' else '-', f['pkg'], f['opt'], f['inh'], f['blk'], f.get('exp'))
 
 sigs = [{sig(b, e) for e in b['edits']} for b in bases]
 uncovered = set().union(*sigs)
