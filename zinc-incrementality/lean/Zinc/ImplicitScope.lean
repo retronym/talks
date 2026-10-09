@@ -802,6 +802,74 @@ def report (x : Ext) (P : Pol) (src₀ src₁ : Cls → Src) (R₀ : Finset Cls)
       wrong := allCls.filter fun c => res.state.out c != cl c
       wasted := rec_.filter fun c => res.state.out c == s₀.out c }
 
+/-! ### Composed builds: one loop per project, upstream first
+
+The runs above put every project in one loop and let Zinc's in-project rules act only within the
+owner's project. Zinc runs one loop per project, upstream first; a downstream project starts from
+its changed sources and its *external* invalidations (`invalidateClassesExternally`): the holders
+of keys whose hash moved since the stored snapshot, and, for each changed upstream class `e`, the
+project's transitive inheritors of `e` and, when `e`'s implicit names changed, the classes with a
+key on one of those inheritors. The snapshot here is the previous build's interfaces (fresh). -/
+
+def keysAll : List K := [.cls, .imp, .inh]
+
+/-- Zinc's external invalidation for project `p`, between the snapshot `snap` and the state `s`
+after the upstream projects' runs. An upstream class counts as modified only if its `apiHash`
+moved (`detectAPIChanges`); then, as in `invalidateClassesExternally`:
+* the classes of `p` whose direct parent (or companion's parent) is modified, the dependency
+  `Dependency.scala` records, and their transitive inheritors in `p`;
+* name-filtered clients: classes holding a changed key on a modified class, or a key of the same
+  kind on one of those inheritors (an implicit change reaches every memberRef client). -/
+def extInv (x : Ext) (lay : Layout) (p : ℕ) (snap s : St) : Finset Cls :=
+  let C := Is x
+  let I₀ := C.ifaces snap
+  let I := C.ifaces s
+  let chg := fun e k => decide (π x I₀ e k ≠ π x I e k)
+  let modified := fun e => decide (lay e < p) && chg e .inh
+  let direct := fun d => allCls.any fun e => modified e &&
+    ((I d).decl.parent == some e || (I d).decl.cpar == some e)
+  let inheritor := fun d => lay d == p &&
+    (direct d || allCls.any fun d₁ => lay d₁ == p && direct d₁ && inhRel I d d₁)
+  Finset.univ.filter fun d => lay d == p && (inheritor d ||
+    (allCls.any fun e => modified e && keysAll.any fun k => decide ((e, k) ∈ s.U d) && chg e k) ||
+    (allCls.any fun e => modified e && allCls.any fun c => inheritor c &&
+      [K.cls, K.imp].any fun k => decide ((c, k) ∈ s.U d) && (chg e k || chg e .imp)))
+
+/-- One project's loop: invalidations and Zinc's rules restricted to the project. -/
+def runP (x : Ext) (src : Cls → Src) (lay : Layout) (p : ℕ) :
+    ℕ → ℕ → Finset Cls → Finset Cls → St → Option Run
+  | 0, _, _, _, _ => none
+  | fuel + 1, n, acc, R, s =>
+    let C := Is x
+    let Sp := Finset.univ.filter fun c => lay c == p
+    let s' := memo (C.round src R s)
+    let I := (C.invalidated Sp (C.affected R s) s s' ∪ projExtra x lay R s s') ∩ Sp
+    if I ⊆ R then some ⟨s', n + 1, acc ∪ R⟩
+    else runP x src lay p fuel (n + 1) (acc ∪ R) I s'
+
+/-- Projects `0 … nP - 1` in order. -/
+def runComposed (x : Ext) (src : Cls → Src) (lay : Layout) (snap : St) (R₀ : Finset Cls) :
+    ℕ → ℕ → Run → Option Run
+  | 0, _, r => some r
+  | k + 1, p, r =>
+    let R := (R₀.filter fun c => lay c == p) ∪ extInv x lay p snap r.state
+    if R = ∅ then runComposed x src lay snap R₀ k (p + 1) r
+    else match runP x src lay p 8 0 ∅ R r.state with
+      | none => none
+      | some r' => runComposed x src lay snap R₀ k (p + 1)
+          ⟨r'.state, r.rounds + r'.rounds, r.compiled ∪ r'.compiled⟩
+
+def reportComposed (x : Ext) (lay : Layout) (nP : ℕ) (src₀ src₁ : Cls → Src) (R₀ : Finset Cls) :
+    Option Report :=
+  let s₀ := init x src₀
+  (runComposed x src₁ lay s₀ R₀ nP 0 ⟨s₀, 0, ∅⟩).map fun res =>
+    let cl := clean x src₁
+    let rec_ := allCls.filter fun c => c ∈ res.compiled ∧ c ∉ R₀
+    { recompiled := rec_
+      rounds := res.rounds
+      wrong := allCls.filter fun c => res.state.out c != cl c
+      wasted := rec_.filter fun c => res.state.out c == s₀.out c }
+
 /-- What a client resolved in a clean build. -/
 def picks (src : Cls → Src) (c : Cls) : List (Option (Cls × Imp)) := (clean {} src c).picks
 
@@ -876,6 +944,10 @@ example : picks ta₀ W = [some (A, { sa with list := true })] ∧
     picks ta₁ W = [some (B, { sb with list := true })] := by native_decide
 example : report develop (.proj twoP) ta₀ ta₁ {B} = some ⟨[C], 2, [W], []⟩ := by native_decide
 example : report stored (.proj twoP) ta₀ ta₁ {B} = some ⟨[C, W], 3, [], []⟩ := by native_decide
+
+/-- Composed builds give the same verdicts on the grandparent scenario. -/
+example : (reportComposed develop twoP 2 gp₀ gp₁ {B}).map (·.wrong) = some [X] := by native_decide
+example : (reportComposed stored twoP 2 gp₀ gp₁ {B}).map (·.wrong) = some [] := by native_decide
 
 /-! ### `implicit-scope-ancestor-in-upstream-project`: `lib (A, B) → mid (C) → app (X)`
 

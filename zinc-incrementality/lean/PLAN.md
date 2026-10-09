@@ -334,3 +334,61 @@ Findings for the talk:
 ### Not modelled
 
 Show's own companion and `List`'s companion (constant across edits); type-parameter bounds beyond "subclass of"; given priorities in Scala 3; hash collisions (hashes are modelled injectively, as elsewhere).
+
+## Phase 8 — the classpath, pipelining, and keys from the tree (design, for review)
+
+The model compiles a fixed set `S` from source against a constant environment, and represents subprojects as a policy on one loop. Zinc has three kinds of dependency with different state and different invalidation, and many recent bugs sit at the boundaries between them (talk `zinc-lean` §2a). Pipelining adds a fourth interface, the early output. Separately, Zinc's extractor reads the typed tree, not a trace, which is where the post-typer and desugaring bugs come from. This phase brings these into the model.
+
+### What Zinc does, read off the code (`merkle-baseline`)
+
+- **Libraries.** A classpath entry with no Analysis. The stamp is a content hash (FarmHash, `Stamper.forHashInRootPaths`; mtime only caches it); a class inside the output JAR is stamped by the whole JAR. A changed stamp invalidates every source that uses the library, with no name filter (`IncrementalCommon.scala` `byLibraryDep`, `usesLibrary`).
+- **Upstream subprojects.** A class whose name resolves to an upstream Analysis through `Lookup` (jar or directory alike). The downstream Analysis stores a snapshot of each external `AnalyzedClass` (`apis.external`). Every run diffs every stored snapshot against the upstream's current API (`detectAPIChanges`) and invalidates with `invalidateClassesExternally`: inheritance transitively, then name-filtered memberRef clients of every class reached, then direct name-filtered memberRef and macro-expansion dependents. This runs only for the initial invalidation.
+- **Snapshot refresh.** A snapshot is refreshed when a recompiled source references the class (`Analysis.addSource` → `markExternalAPI`), or, when nothing compiles, for every changed external. Reading the code, a run that compiles something but no source referencing a changed external leaves its snapshot stale. To confirm with a scripted test before modelling it as a finding.
+- **Pipelining.** Upstream writes an early pickle JAR and an early Analysis (internal APIs and `productClassName` only) after the dependency phase, unless the project has a macro. Downstream's choice of early vs final outputs is the build tool's. No rollback of the early JAR or early Analysis if the upstream compile then fails. With `-Ypickle-java`, downstream sees Java through its source, not its classfile.
+
+### Model changes
+
+1. **Projects and external units.** A build is a DAG of projects, each with its own loop and `State`. A project's state gains, per external unit it used, the snapshot of the hashes it compared against (upstream) or the stamp (library). A build of the DAG runs the loops in topological order.
+2. **Initial invalidation as a step of its own.** `R₀ = changed sources ∪ users of changed libraries ∪ inv(Δ_external)`, with `Δ_external` the upstream keys whose snapshot differs from the upstream's current hash, closed by Zinc's external walk. Today the loop starts from a given `R₀` and a previous clean build.
+3. **Libraries** are external units with a single key, `(lib, whole)`, which covers every query and whose hash is the stamp.
+4. **Pipelining.** An upstream output has two interfaces, `early` and `final`. Downstream compiles against `early` when pipelining is on. An upstream run may fail after `early` was published.
+5. **Keys from the tree.** `keys` becomes a function of the typed tree (part of `Out`), and the per-unit task has two phases: typer (trace₁), then the phases after extraction (trace₂: pattern matcher, erasure, mixin). The trace stays the ground truth; coverage relates the two.
+
+### Obligations and theorems
+
+- **Stamp abstraction:** equal stamps give equal answers. Holds for a content hash under injective hashing; a whole-JAR stamp is coarser and still sound.
+- **Snapshot freshness** (a run invariant, not a compiler obligation): for every up-to-date downstream unit, the stored snapshot of each external key it recorded is the hash of the interface it was compiled against. Check whether Zinc's refresh rule preserves it; expected counterexample: the stale snapshot above (and `macro-upstream-member-removed`, fixed in the PoC); expected fix: refresh every external whose snapshot changed.
+- **T5, composition:** if the upstream loop ends up to date (T3a″) and the downstream's initial invalidation uses fresh snapshots, the downstream loop ends up to date against the upstream's final interfaces. Corollary for a DAG. Then relate it to today's encoding: on the `Erasure` and `ImplicitScope` spaces, does the composed run equal the single loop with the cross-project policy? A difference is a finding about one of them.
+- **Early agreement (pipelining):** for every query a downstream can ask, the early answer equals the final one. Instances that fail: Scala 2 optimizer inlining across projects reads bytecode, which has no early answer; Java through `-Ypickle-java` (source view) vs classfile view, e.g. `static final` constants not folded from source (scala/bug#5333), so downstream bytes differ between pipelined and non-pipelined builds.
+- **Failure after early output:** with no rollback, a downstream compiled against the early interface of a failed upstream stays wrong after the upstream is reverted (`pipelining-failed-upstream-revert`, pending in Zinc). Expected theorem: sound if a failed upstream run invalidates the downstream snapshots it published.
+- **Coverage from the tree:** every query in trace₁ ++ trace₂ is covered by a key of the tree. Counterexamples: an extractor pattern's `_N` asked by the pattern matcher (scala/scala3#26231), `x += y` falling back to `+` (`assign-op-member-added`), `Dynamic`. Fixes as keys: anticipatory keys for names a later phase may ask (`_N+1`, `C;init;`, scala/scala3#26262), and failed lookups recorded by the typer.
+
+### More language features, in order
+
+1. **Source files with several classes, and sealed hierarchies.** Recompilation is per file. The sealed-children query is non-local and negative, and Scala's same-file rule is what makes a local key enough; Java `permits` across files breaks it (retronym/zinc#21).
+2. **Inline bodies.** A query for a method's body; the key hashes the body. Interacts with early agreement: Scala 3 `inline` bodies are in TASTy (early), Scala 2 optimizer inlining is not.
+
+### Program spaces and conformance
+
+Each step adds a layout or a dimension that the harness (retronym/zinc#25) already has or can add: `split` exists; add a `library` layout (the upstream published as a JAR without an Analysis) and pipelining on/off, which the harness already runs.
+
+### Results
+
+- **P8.1, T5** (`Classpath.lean`). External units, a stored snapshot per downstream, Zinc's initial external invalidation (`extInvalidated`). `inv_external` (T5a): from an up-to-date downstream with fresh snapshots, the new classpath leaves dirty only the changed sources and the holders of keys whose hash moved; `downstream_sound` (T5) composes it with T3a″. A library is the instance whose every key hashes the stamp: coarse, sound by the abstraction obligation alone.
+- **P8.2, snapshot refresh** (`Classpath.lean`, `Snapshot.lean`). `fresh_refreshAll`: refreshing every upstream class keeps snapshots fresh. `fresh_refreshRef_local`: with local hashes, Zinc's rule (refresh the classes a recompiled unit references) is enough, and needs no freshness before the build. With a non-local hash (a key on `C` reading its ancestor `A`), it is not: `stale_after_revert` (edit `A`, `X` recompiles, `A`'s record is not refreshed, revert `A`, nothing is seen). Zinc today stores local APIs (materialised members), so its rule is sound; the Merkle PoC composes across subprojects, which made `macro-upstream-member-removed` possible, and its fix `9904df698` refreshes every changed upstream class (`refreshAll`). P8.0 (a scripted test for the gap on develop) is dropped: on develop the gap only re-detects a change, it cannot hide one.
+- **P8.3, composed vs single loop** (`ImplicitScope.lean` `reportComposed`, `lake exe exhaustive composed`). One loop per project, upstream first, starting from Zinc's external walk as the bridge records it: direct parents only (`Dependency.scala` records `parents`), then transitive inheritors in the project, name-filtered clients, and nothing unless the upstream class's `apiHash` moved (`detectAPIChanges`). Over 1,080 runs per layout: develop and the fix agree with the single-loop encoding run for run (wrong sets and client recompiles), in `lib → app` and `lib → mid → app`. Without the `apiHash` fold they differ: 384 unclean composed against 312 in the single loop, which compares every key's hash across projects and so sees a summary change that Zinc's `apiHash` gate hides (smallest: `A` gains an implicit, `Z`, a client of `D extends A`, stays stale). The single-loop encoding is sound to use for the designs that publish everything through `apiHash`; ablations that move a name hash without `apiHash` need the composed run.
+- **P8.4, pipelining** (`Pipelining.lean`, `Inline.lean`). `early_agreement` (T1 restated). `stale_after_failed_upstream`: an upstream fails after writing its early output, the downstream compiles against it, the upstream is reverted and sees no change against its last successful build, and the downstream keeps the failed output; `rollback_after_failed_upstream`: rolling the early output back with the rest fixes it (Zinc's pending `pipelining-failed-upstream-revert`). `pipelined_ne_final`: with a Scala 2 `@inline` body or a Java constant, a pipelined clean build differs from a non-pipelined one; Scala 3 `inline` agrees.
+- **P8.5, keys from the tree** (`Tree.lean`, `TreeToy.lean`). `TCompiler`: `keysOf : Out → Keys`; T2 and T3a with the same proofs. Toy with `x += 1` (desugared through a failed lookup of `+=`) and a two-binder extractor pattern (the pattern matcher's `_1`, `_2` and an arity check on `_3` after extraction). Zinc's extractor (`today`) fails coverage (`not_obligations_today`) and misses all three edits; recording the selectors fixes the field-type edit only; recording the failed lookup and the `_3` sentinel (`fixed`) meets the obligations (`obligations_fixed`) and is clean on all three.
+- **P8.7, bodies as API** (`Inline.lean`). Today's hash leaves a Scala 2 `@inline` body out (`not_obligations_today`, sbt/zinc#537): a body-only edit leaves `C` with the old inlined value, and is hidden whenever another hashed body changes too. Hashing every body meets the obligations in either view (`obligations_withBodies`).
+
+### Steps
+
+- [x] P8.0 Dropped (see P8.2).
+- [x] P8.1 Projects, external units, snapshots, initial invalidation; stamp abstraction; T5 and the DAG corollary.
+- [x] P8.2 Snapshot freshness: Zinc's refresh rule as a checked example (counterexample or proof).
+- [x] P8.3 Composed run vs single loop with the cross-project policy, on the `Erasure` and `ImplicitScope` spaces.
+- [x] P8.4 Pipelining: early and final interfaces, early agreement, failure after early output.
+- [x] P8.5 Keys from the tree, two-phase tasks, anticipatory keys.
+- [ ] P8.6 Source files and sealed hierarchies. Not started: the same-file rule makes the children query local to the parent's file, so the model's interest is in making units files; Java `permits` (retronym/zinc#21) is an abstraction failure (the hash omitted the clause), not a non-local query.
+- [x] P8.7 Inline bodies.
+- [ ] P8.8 `library` layout and pipelining in the conformance dump. Not started; needs the harness (retronym/zinc#25).

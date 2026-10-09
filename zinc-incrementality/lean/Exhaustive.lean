@@ -280,11 +280,47 @@ def mainImplicit : IO Unit := do
     | none => pure ()
     j := j + 1
 
+/-- Single loop with in-project rules vs one loop per project: do they agree run for run? -/
+def mainComposed : IO Unit := do
+  let cases : List (String × Ext × Layout × ℕ) :=
+    [("develop, lib → app", develop, twoP, 2), ("develop, lib → mid → app", develop, threeP, 3),
+     ("fix (stored), lib → app", stored, twoP, 2), ("fix (stored), lib → mid → app", stored, threeP, 3),
+     ("fix (stored) without the fold, lib → mid → app", { stored with fold := false }, threeP, 3),
+     ("develop, one project", develop, oneP, 1)]
+  for (name, x, lay, nP) in cases do
+    let mut runs := 0
+    let mut wrongDiff := 0
+    let mut clientDiff := 0
+    let mut uncleanSingle := 0
+    let mut uncleanComposed := 0
+    let mut first : Option String := none
+    for k in cfgs do
+      for (k', e) in edits k do
+        runs := runs + 1
+        let a := report x (.proj lay) k.src k'.src {e}
+        let b := reportComposed x lay nP k.src k'.src {e}
+        let wa := (a.map (·.wrong)).getD []
+        let wb := (b.map (·.wrong)).getD []
+        if !wa.isEmpty then uncleanSingle := uncleanSingle + 1
+        if !wb.isEmpty then uncleanComposed := uncleanComposed + 1
+        let ca := ((a.map (·.recompiled)).getD []).filter isClient
+        let cb := ((b.map (·.recompiled)).getD []).filter isClient
+        if wa != wb then
+          wrongDiff := wrongDiff + 1
+          if first.isNone then
+            first := some s!"base {icfgStr k}\n    edit {repr e} → {icfgStr k'}\n    single {repr wa}, composed {repr wb}"
+        if ca != cb then clientDiff := clientDiff + 1
+    IO.println s!"{name}: {runs} runs, unclean single {uncleanSingle} / composed {uncleanComposed}, wrong sets differ {wrongDiff}, client recompiles differ {clientDiff}"
+    match first with
+    | some str => IO.println s!"  first difference: {str}"
+    | none => pure ()
+
 end implicit
 
 def main (args : List String) : IO Unit :=
   match args with
   | "erasure" :: rest => mainErasure rest
   | "implicit" :: _ => mainImplicit
+  | "composed" :: _ => mainComposed
   | "v" :: _ => mainV
   | _ => mainRules args
