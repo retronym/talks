@@ -154,9 +154,12 @@ structure ClassOut where
   record : Option (List (String × String)) := none
   deriving DecidableEq, Repr
 
+/-- The class's linkage view. JDK supertypes (`Object`, `Enum`, `Record`) are outside the class
+table, so a class extending one is a root. -/
 def ClassOut.toJvm (c : ClassOut) : Jvm.Classfile String String String where
   header := { isInterface := c.itf, isAbstract := c.abs, isFinal := c.final,
-              super := if c.itf then none else some c.super, ifaces := c.ifaces, isPublic := c.pub }
+              super := if c.itf || c.super.startsWith "java/" then none else some c.super,
+              ifaces := c.ifaces, isPublic := c.pub }
   methods := c.methods.map fun m =>
     (m.name, m.desc, { isStatic := m.static, isAbstract := m.abs, isFinal := m.final,
                        access := match m.acc with | .pub => .pub | .priv => .priv | .pkg => .pkg })
@@ -182,7 +185,7 @@ def reads : ℕ → Expr → M (List Insn)
       let d ← need o
       match d.fields.find? (·.name == n) with
       | some f => pure [⟨"getstatic", o, n, erase f.ty⟩]
-      | none => pure []
+      | none => throw s!"not found: {o}.{n}"
     | .add a b | .shl a b => pure ((← reads k a) ++ (← reads k b))
     | _ => pure []
 

@@ -12,7 +12,8 @@ package-private (they share the file, which is how `permits` is inferred).
 
 namespace Java
 
-/-- javac's `--release`. The probe has found no difference between 17, 21 and 25 on the space. -/
+/-- javac's `--release`. The probe has found no difference between 17, 21 and 25 on the space, so
+lowering does not take it yet. -/
 inductive Release | r17 | r21 | r25
   deriving DecidableEq, Repr
 
