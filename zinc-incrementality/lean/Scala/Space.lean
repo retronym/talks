@@ -302,6 +302,26 @@ def sealedSpace : List Program :=
      { name := "Red", obj := some { name := "Red", kind := .obj, isCase := true, traits := [("Color", [])] } },
      { name := "Green", obj := some { name := "Green", kind := .obj, isCase := true, traits := [("Color", [])] } }] ]
 
+/-! ## Scala 3 inline methods and opaque types -/
+
+def inlineSpace : List Program :=
+  let i (n : String) (ps : List Ty := []) (ov : Bool := false) : Mem :=
+    { name := n, params := ps, res := .int, inline := true, nullary := ps.isEmpty, ov := some ov }
+  let plain (n : String) : Mem := { name := n, res := .int, nullary := true }
+  let id : Ty := .opq "Id" .int
+  [ [{ name := "O", obj := some { name := "O", kind := .obj, members := [i "h" [.int], plain "use"] } }],
+    [{ name := "T", cls := some { name := "T", kind := .trt, members := [{ plain "f" with abs := true }] } },
+     { name := "C", cls := some { name := "C", traits := [("T", [])], members := [i "f"] } }],
+    [{ name := "B", cls := some { name := "B", abs := true, members := [plain "g"] } },
+     { name := "D", cls := some { name := "D", super := some ("B", []), members := [i "g" [] true] } }],
+    [{ name := "E", cls := some { name := "E", members := [i "e", plain "x"] } }],
+    [{ name := "O", obj := some { name := "O", kind := .obj, opaques := [("Id", .int)],
+                                  members := [{ name := "mk", params := [.int], res := id }] } },
+     { name := "O$Id", outer := some "O", inObj := true,
+       obj := some { name := "O$Id", kind := .obj,
+                     members := [{ name := "apply", params := [.int], res := id },
+                                 { name := "value", res := .int, ext := some id, nullary := true }] } }] ]
+
 structure Case where
   fam : String
   prog : Program
@@ -315,7 +335,8 @@ def space : List Case :=
   (vclsSpace.map ({ fam := "vcls", prog := · })) ++ (traitCompanionSpace.map ({ fam := "tcomp", prog := · })) ++
   (miscSpace.map ({ fam := "misc", prog := · })) ++ (caseSpace.map ({ fam := "case", prog := · })) ++
   (nestSpace.map ({ fam := "nest", prog := · })) ++ (sealedSpace.map ({ fam := "sealed", prog := · })) ++
-  (enumSpace.map ({ fam := "enum", prog := ·, only3 := true })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
+  (enumSpace.map ({ fam := "enum", prog := ·, only3 := true })) ++
+  (inlineSpace.map ({ fam := "inline", prog := ·, only3 := true })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
   ([0, 1, 2].map fun k => { fam := "init", prog := initProgram k }) ++
   ([0, 1, 2].map fun k => { fam := "initSep", prog := initProgram k, lib := ["T"] }) ++
   [{ fam := "init", prog := initProgram 3, only3 := true },

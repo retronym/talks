@@ -136,6 +136,11 @@ def winner (g : List Hit) : Option Hit := (g.find? (!·.2.abs)).or g.head?
 def lookupSig (self : String) (l : List Anc) (h : Hit) : Option Hit :=
   ((sigGroups self l).find? fun g => g.any (Hit.same h)).bind winner
 
+/-- Is a member in the classfile? A Scala 3 `inline def` is not, unless it overrides or implements
+an inherited member (then it is *retained*). -/
+def retained (self : String) (l : List Anc) (h : Hit) : Bool :=
+  !h.2.inline || (hitsAbove l h.2.name).any (overridesIn self l h)
+
 /-- Traits mixed in by `d` itself: those before the superclass's linearization. -/
 def mixins (d : Decl) (l : List Anc) : M (List Anc) := do
   match d.super with
@@ -158,6 +163,7 @@ def erase : Ty → M String
   | .obj | .any | .tp .. => pure "Ljava/lang/Object;"
   | .this c => pure (jname (c.headD ""))
   | .arr d => pure s!"[{jname d}"
+  | .opq _ r => erase r
   | .ref n => do
     -- a library class outside the prelude erases to itself
     let some v ← askDecl n false | pure (jname n)
@@ -314,6 +320,7 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   let mut fs : List FOut := []
   for m in d.members do
     if m.static then continue
+    if !retained d.name l ((d, []), m) then continue
     if m.fieldOnly then
       fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := true, priv := m.priv }]
       continue
@@ -324,7 +331,8 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   let mx ← mixins d l
   for (t, _) in mx do
     for m in t.members do
-      if m.lzy then continue
+      -- (a trait's retained inline method is not mixed in here: not in the spaces)
+      if m.lzy || m.inline then continue
       let some ((o, _), w) := lookupSig d.name l ((t, []), m) | continue
       if o.name != t.name || w.abs then continue
       let e ← m.desc
@@ -353,7 +361,9 @@ def lowerTrait (dl : Dialect) (d : Decl) (outer : Option String := none) : M Cla
   -- an inner trait declares its outer accessor, which implementing classes define
   let mut ms : List MOut :=
     (outer.toList.map fun o => { name := outerAccessor d.name, desc := s!"(){jname o}", abs := true })
+  let l ← lin fuel d
   for m in d.members do
+    if !retained d.name l ((d, []), m) then continue
     let e ← m.desc
     if m.isVal && !m.lzy then
       ms := ms ++ [{ name := m.name, desc := e, abs := true }]
@@ -478,7 +488,8 @@ def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String
     let some ((w, _), m) := winner g | continue
     let n := m.name
     let e ← m.desc
-    if m.abs || m.static || m.priv || cands.any (fun c => c.name == n && c.desc == e) then continue
+    if m.abs || m.static || m.priv || !retained w.name l ((w, []), m) ||
+       cands.any (fun c => c.name == n && c.desc == e) then continue
     cands := cands ++ [{ name := n, desc := e }]
     if dl == .s3 && m.isVal && !m.lzy then
       cands := cands ++ [{ name := setterName w.name n, desc := s!"({← erase m.res})V" }]

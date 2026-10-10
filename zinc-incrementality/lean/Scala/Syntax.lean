@@ -23,6 +23,8 @@ inductive Ty
   | ref (d : String)
   /-- `Array[d]`, of a definition. -/
   | arr (d : String)
+  /-- A Scala 3 opaque type alias `n` of `rep`, as seen outside its defining scope. -/
+  | opq (n : String) (rep : Ty)
   | this (c : List String)
   | tp (c : List String) (i : Nat)
   deriving DecidableEq, Repr
@@ -76,6 +78,8 @@ structure Mem where
   rhs : Option String := none
   /-- A field without accessors (an enum case in its companion), private if `priv`. -/
   fieldOnly : Bool := false
+  /-- Scala 3 `inline def`. -/
+  inline : Bool := false
   deriving DecidableEq, Repr
 
 def Mem.allParams (m : Mem) : List Ty := m.ext.toList ++ m.params
@@ -111,6 +115,8 @@ structure Decl where
   /-- A Scala 3 `enum`'s cases (the definition is the enum class). -/
   cases : List EnumCase := []
   sealed : Bool := false
+  /-- Scala 3 opaque type aliases declared here: name and representation. -/
+  opaques : List (String × Ty) := []
   deriving DecidableEq, Repr
 
 def Decl.parents (d : Decl) : List Parent := d.super.toList ++ d.traits
@@ -151,6 +157,7 @@ def Ty.show : Ty → String
   | .this c => s!"{c.headD ""}.this.type"
   | .ref d => d
   | .arr d => s!"Array[{d}]"
+  | .opq n _ => n
 
 def Parent.show : Parent → String
   | (p, []) => p
@@ -166,12 +173,13 @@ def body : Ty → String
   | .tp _ _ => "null.asInstanceOf[X]"
   | .this _ => "this"
   | .ref _ | .arr _ => "???"
+  | .opq _ r => body r
 
 def Mem.show (ov : Bool) (m : Mem) : String :=
   let mods := (match m.ext with | some t => s!"extension (self: {t.show}) " | none => "") ++
     (if m.static then "@static " else "") ++ (if m.ov.getD ov then "override " else "") ++
     (if m.priv then "private " else "") ++
-    (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "")
+    (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "") ++ (if m.inline then "inline " else "")
   let kw := if m.isVal then "val" else "def"
   let ps := if m.params.isEmpty && (m.isVal || m.nullary) then ""
     else "(" ++ ", ".intercalate ((m.params.zipIdx.map fun (t, i) => s!"x{i}: {t.show}")) ++ ")"
@@ -201,7 +209,8 @@ def Decl.show (ov : String → Bool) (d : Decl) (name : String := d.name) (inner
       "(" ++ ", ".intercalate (c.fields.map fun (p : String × Ty) => s!"{p.1}: {p.2.show}") ++ ")"
     let ext := if c.args.isEmpty then "" else s!" extends {name}(" ++ ", ".intercalate c.args ++ ")"
     s!"  case {c.name}{fs}{ext}\n"
-  let ms := caseLines ++ d.members.map fun m => "  " ++ m.show (ov m.name) ++ "\n"
+  let opqLines := d.opaques.map fun (p : String × Ty) => s!"  opaque type {p.1} = {p.2.show}\n"
+  let ms := caseLines ++ opqLines ++ d.members.map fun m => "  " ++ m.show (ov m.name) ++ "\n"
   s!"{mods}{kw} {name}{tps}{ctor}{ext} \{\n{String.join ms}{inner}}\n"
 
 end Scala
