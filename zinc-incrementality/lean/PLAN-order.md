@@ -51,9 +51,26 @@ Reuse `JavaSpec.lean`'s instance and add the second view, not a new compiler.
 
 The conformance harness writes `build.json` and `incOptions.properties` per layout. It needs per-base `compileOrder` (scripted's `build.json` already accepts `compileOrder` per project), per-base `pipelining` (today a run-wide `--inc-option`), and per-base `javacOptions` (scripted passes `javacOptions = Array()`; needed for `--release`, `-parameters`, preview features). The dump gains these fields; no other harness code.
 
+## Results (`JavaOrder.lean`)
+
+`JavaSpec`'s instance with a second view: a Java class `java sv cv` has the member types `sv` in scalac's source view and `cv` in javac's classfile view; a query that tells them apart stands for whichever detail the parsers disagree on (the `Object` parent of scala/scala#11292, the `throws` clauses and constant expressions of scala/scala3#27264). Scala clients run the same lookup task, compiled by scalac. `group` per order is the two-stage composition above (`stageEnv`: the round's units answered from a chosen view where a predicate holds, the rest from the state); keys and hashes are `JavaSpec`'s fix. Pipelining's cycles are `Mixed` with every Java source in the round, so the early-output statement is the pipelining-specific one.
+
+| Result | Status |
+|---|---|
+| `obligations_mixed`, `mixed_sound`: `Mixed` meets the obligations, and T3a holds, on sources whose two views agree (a subtype of the sources) | proved, every program |
+| **V1** `mixed_not_comp`: a Java class whose views differ breaks `comp` under `Mixed`: the Scala client compiled in the class's batch reads the source view, a round that recompiles it alone reads the classfile (the clean build is the first, the incremental the second) | proved, one witness |
+| `early_view`: a downstream unit compiled against the upstream Java classes' source views (pickles, pipelining's early output) equals one compiled against their classfiles when the views agree on what it asks | proved, every task |
+| **V2** `early_view_differs`: otherwise it differs | proved, one witness |
+| **O1** `scalaThenJava_not_comp`, **O2** `javaThenScala_not_comp`: under a fixed order a unit of the first stage that asks a unit of the second stage of the same round reads last round's classfile; this fails even with agreeing views | proved, one witness each |
+
+So the two views are an obligation on the compilers, not on Zinc: view agreement is what `Mixed`, and pipelining's early output, need, and each parser difference fixed in scalac or dotc (scala/scala#11292, scala/scala3#27264) discharges an instance of it. On Zinc's side, the options are those under "Policies": a check of view agreement after a `Mixed` round (compare a recompiled Java class's source view with its classfile, and recompile its Scala readers on a difference) would turn V1 into a further round; the fixed orders need the direction hypothesis or a rejection.
+
+Not yet modelled: pipelining's hash flip across runs (the bridge's source-view API during cycles, `ClassToAPI` after `compileAllJava`) and Zinc's exclusion of the passed-in Java classes from change detection; that is the next step, and the one where a harness run may be predicted to diverge.
+
 ## Steps
 
-- [ ] P13.1 This design, reviewed.
-- [ ] P13.2 `JavaSpec.lean`: two views per Java unit, Scala clients, `group` per strategy; view agreement as a hypothesis; `Obligations` for `Mixed` and the fixed orders.
-- [ ] P13.3 Counterexamples per known parser difference; pipelining's view flip and Zinc's exclusion policy.
+- [x] P13.1 This design (approved by the coordinating session).
+- [x] P13.2 `JavaOrder.lean`: two views per Java class, Scala clients, `group` per order; `Obligations` and T3a for `Mixed` under view agreement; counterexamples V1, O1, O2.
+- [x] P13.3a Pipelining's early output: `early_view`, V2.
+- [ ] P13.3b Pipelining's hash flip across runs and Zinc's exclusion policy.
 - [ ] P13.4 Probe the differences with scalac and javac (no sbt); harness only for a predicted divergence, with the per-base fields above.
