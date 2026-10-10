@@ -385,8 +385,9 @@ def instantiate (cur : Cur C) (c : C) : M C N D Unit := do
 /-- The verifier's rule for `invokespecial` from `x` to `c` (HotSpot's `verify_invoke_instructions`):
 `x` itself, its direct superclass or a direct superinterface pass by name; otherwise `x` must be
 assignable to `c`, and `c` must not be an interface (an indirect superinterface). Calibrated on
-HotSpot: what matters is whether `c` is an interface, not the constant's tag; an
-`InterfaceMethodref` to a class passes here and fails in resolution. -/
+HotSpot 25+: what matters is whether `c` is an interface, not the constant's tag; an
+`InterfaceMethodref` to a class passes here and fails in resolution. HotSpot 21 checked the tag
+instead (JDK-8350029, fixed in 25). -/
 def verifySpecial (x c : C) : M C N D Unit := do
   let h ← hdr x
   if c = x || h.super = some c || h.ifaces.contains c then return

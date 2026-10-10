@@ -39,7 +39,9 @@ public class Run {
       for (String w : List.of("v0", "v1")) {
         String model = expected(Json.obj(k.get(w.equals("v0") ? "before" : "after")));
         String[] jvm = run(out.resolve(name), w, k);
-        String verdict = model.equals(jvm[0]) ? "agree" : known(model, jvm) ? "known JDK-8356942" : "DISAGREE";
+        String verdict = model.equals(jvm[0]) ? "agree"
+            : known(model, jvm) ? "known JDK-8356942"
+            : knownSpecial(model, jvm, k) ? "known JDK-8350029" : "DISAGREE";
         if (verdict.equals("DISAGREE")) disagree++;
         System.out.println(name + "\t" + w + "\t" + model + "\t" + jvm[0] + "\t" + verdict + "\t" + jvm[1]);
       }
@@ -56,6 +58,21 @@ public class Run {
   static boolean known(String model, String[] jvm) {
     return Runtime.version().feature() < 25 && model.equals("java.lang.IncompatibleClassChangeError")
         && jvm[0].equals("java.lang.AbstractMethodError");
+  }
+
+  /**
+   * JDK-8350029 (fixed in 25): before 25 the verifier checked a non-`<init>` `invokespecial` by the
+   * constant's tag (an `InterfaceMethodref` must name a direct superinterface; a `Methodref` only
+   * needs subtyping), so forms javac never emits fail in verification where 25+ fails in resolution,
+   * and the reverse.
+   */
+  static boolean knownSpecial(String model, String[] jvm, Map<String, Object> k) {
+    Set<String> both = Set.of(model, jvm[0]);
+    if (Runtime.version().feature() >= 25 || !both.equals(Set.of("java.lang.VerifyError", "java.lang.IncompatibleClassChangeError"))) return false;
+    for (Map<String, Object> s : Json.objs(k.get("sites"))) {
+      if (s.get("op").equals("at") && Json.obj(s.get("site")).get("op").equals("invokespecial")) return true;
+    }
+    return false;
   }
 
   static String expected(Map<String, Object> o) {
