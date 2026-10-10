@@ -37,12 +37,13 @@ structure Case where
   loads : List String := []
   sites : List S := []
 
-/-- Lower the library alone, and the client against the library. -/
+/-- Lower the library alone, and the client against the library; both link against the standard
+library (the prelude's classfiles). -/
 def build (dl : Dialect) (lib client : Program) : Except String (List ClassOut) := do
   let l ← lowerProgram dl lib
   let env := (prelude dl ++ (lib ++ client).desugar dl).env
   let c ← (client.desugar dl).mapM fun s => lower dl s env
-  pure (c.flatten ++ l)
+  pure (c.flatten ++ l ++ (← preludeClasses dl))
 
 def Case.prog (k : Case) : Jvm.Program String String String := { loads := k.loads, sites := k.sites }
 
@@ -54,7 +55,7 @@ def Case.before (k : Case) := run (build k.dl k.v0 k.client) k.prog
 
 def Case.after (k : Case) := run (do
   let c ← build k.dl k.v0 k.client
-  let l1 ← lowerProgram k.dl k.v1
+  let l1 := (← lowerProgram k.dl k.v1) ++ (← preludeClasses k.dl)
   let l0 ← lowerProgram k.dl k.v0
   -- the client's classfiles, compiled against v0, next to v1's library
   pure ((c.filter fun x => !l0.any (·.name == x.name)) ++ l1)) k.prog
@@ -144,9 +145,26 @@ def widenedToValueClass : Case where
          cls "W" [{ name := "use", params := [.ref "V"], res := .int }]]
   sites := [invokevirtual "W" "use" "(LV;)I" "W"]
 
+def caseClass (ps : List Ty) : Src :=
+  { name := "P", cls := some { name := "P", isCase := true, cparams := ps.zipIdx.map fun (t, i) => (s!"x{i}", t) } }
+
+/-- A field added to a case class: the accessor of the old field still links, but the constructor,
+`apply` (the companion's and its static forwarder) and `copy` change descriptor, so a client
+that builds or copies values breaks (and MiMa reports each). -/
+def caseFieldAdded : Case where
+  name := "caseFieldAdded"
+  mima := some "DirectMissingMethodProblem"
+  v0 := [caseClass [.int]]
+  v1 := [caseClass [.int, .int]]
+  sites := [invokevirtual "P" "x0" "()I" "P", invokevirtual "P" "copy" "(I)LP;" "P",
+            invokestatic "P" "apply" "(I)LP;"]
+
 def all : List Case :=
   [concreteAddedToTrait, abstractAddedToTrait, valAddedToTrait, classBecomesTrait,
-   paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass]
+   paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass, caseFieldAdded]
+
+example : caseFieldAdded.before = .ok (.ok ["P", "P", "P"]) ∧
+    caseFieldAdded.after = .ok (.error .noSuchMethod) := by decide +kernel
 
 example : concreteAddedToTrait.after = .ok (.ok ["X", "X", "T"]) := by decide +kernel
 example : abstractAddedToTrait.after = .ok (.error .abstractMethod) := by decide +kernel

@@ -525,6 +525,11 @@ def lowerProgram (dl : Dialect) (p : Program) : Except String (List ClassOut) :=
   let cs ← q.mapM fun s => lower dl s env
   pure cs.flatten
 
+/-- The prelude's own classfiles: the standard library a client links against. -/
+def preludeClasses (dl : Dialect) : Except String (List ClassOut) := do
+  let cs ← (prelude dl).mapM fun s => lower dl s (prelude dl).env
+  pure cs.flatten
+
 /-- Separate compilation: the units `lib` in one run, then the rest in a second run that reads
 `lib` from the classpath. -/
 def lowerSeparately (dl : Dialect) (p : Program) (lib : List String) : Except String (List ClassOut) := do
