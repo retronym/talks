@@ -36,7 +36,7 @@ filter): the key `cls` with the whole interface as hash. A Java class records no
 retronym/zinc#34's rule (invalidate the users of an added class's simple name) adds no key: `cheap`
 and `today` are the same key set. The fix (retronym/zinc#43) adds the used name, read as #34 uses it,
 as an existence key on every unit with that simple name; and an edge (`cls`) to the class of every
-import (#43 records static imports; the single-type import edge is the refinement `J4` asks for).
+import, static or single-type (#43).
 
 **Results.** `today` fails coverage, with one witness per family (`J1` to `J4`), and so does
 `names` (#34 reaching Java clients, without import edges) for `J2` to `J4`. `fix` meets the
