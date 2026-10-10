@@ -2,6 +2,7 @@ import Zinc.FlatRules
 import ZincNames.Names
 import ZincNames.Givens
 import Zinc.InlineOpaque
+import Zinc.Split
 
 /-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
 with all of its single-class edits, for the Zinc conformance harness (`Conformance` in Zinc's
@@ -27,6 +28,9 @@ beyond the necessary, as a markdown table.
 `conformance inline|opaque [mode]`: the Scala 3 spaces of `Zinc/InlineOpaque.lean`, as source files
 with tiers (the client and descendants downstream), with the classes the model recompiles under
 `today` or the named fix.
+With `split`, the verdicts of `Zinc/Split.lean` with every binding upstream and the client
+downstream (each file's `tiers`, for the harness's `split` layout); `upstream` is #34 extended
+across subprojects, `proposed` the rule of `Zinc/SplitProof.lean`.
 
 `conformance [all]`: bases whose model build has no errors, resolves every selection and
 inherits one instance of each ancestor, or every base with `all`. -/
@@ -182,12 +186,17 @@ def jfactors (fs : List (String × String)) : String :=
 
 def namesCfg (p : Prog) : String := " ".intercalate ((namesFactors p).map (·.2))
 
-def mainNames (m : Mode) (v : Ver) : IO Unit := do
+def jtiers (ts : List (String × Nat)) : String :=
+  "{" ++ ",".intercalate (ts.map fun (f, t) => jstr f ++ ":" ++ jstr (toString t)) ++ "}"
+
+def mainNames (m : Mode) (v : Ver) (split : Option Zinc.Split.Mode := none) : IO Unit := do
   let out ← IO.getStdout
   let mut i := 0
   for p in bases.filter (fun p => v == .s3 || !p.cl.exp) do
     let es := (edits p).map fun (e, p') =>
-      let r := verdict m v p p'
+      let r := match split with
+        | some sm => Zinc.Split.verdict sm .split v p p'
+        | none => verdict m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (namesFactors p') ++ ",\"files\":" ++ jfiles (fileEdits p p') ++
         ",\"modelRecompiled\":" ++ jarr (((if r.recompiled then ["Client"] else []) ++
@@ -197,7 +206,8 @@ def mainNames (m : Mode) (v : Ver) : IO Unit := do
         ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
     out.putStrLn ("{\"space\":\"names\",\"id\":\"n" ++ toString i ++ "\",\"cfg\":" ++ jstr (namesCfg p) ++
       ",\"factors\":" ++ jfactors (namesFactors p) ++
-      ",\"probe\":" ++ jstr (clientClass p) ++ ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++ ",\"edits\":" ++ jarr es ++ "}")
+      ",\"probe\":" ++ jstr (clientClass p) ++ ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++
+      (if split.isSome then ",\"tiers\":" ++ jtiers Zinc.Split.namesTiers else "") ++ ",\"edits\":" ++ jarr es ++ "}")
     i := i + 1
 
 end names
@@ -211,12 +221,15 @@ def givensFactors (v : Zinc.Names.Ver) (p : Prog) : List (String × String) :=
    ("first", toString c.first), ("pinh", toString c.pinh), ("wpkg", toString c.wpkg)] ++
   Slot.all.map fun s => ("s." ++ s.str, if (present v c).contains s then toString (p.has s) else "-")
 
-def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) : IO Unit := do
+def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) (split : Option Zinc.Split.Mode := none) :
+    IO Unit := do
   let out ← IO.getStdout
   let mut i := 0
   for p in bases v do
     let es := (edits v p).map fun (e, p') =>
-      let r := verdict m v p p'
+      let r := match split with
+        | some sm => Zinc.Split.givensVerdict sm .split v p p'
+        | none => verdict m v p p'
       let (near, mid, far) := bystanders m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (givensFactors v p') ++ ",\"files\":" ++ jfiles (fileEdits v p p') ++
@@ -230,7 +243,8 @@ def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) : IO Unit := do
       jstr (" ".intercalate ((givensFactors v p).map (·.2))) ++
       ",\"factors\":" ++ jfactors (givensFactors v p) ++
       ",\"probe\":" ++ jstr (if p.cl.pkg == .top then "a/Client$" else "a/b/Client$") ++
-      ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++ ",\"edits\":" ++ jarr es ++ "}")
+      ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++
+      (if split.isSome then ",\"tiers\":" ++ jtiers Zinc.Split.givensTiers else "") ++ ",\"edits\":" ++ jarr es ++ "}")
     i := i + 1
 
 end givens
@@ -307,8 +321,11 @@ def main (args : List String) : IO Unit := do
     return (← mainOpaque (if args.contains "dep" then .dep else if args.contains "refine" then .refine
       else .today))
   let m : Zinc.Names.Mode := ((args.drop 2).head?.bind Zinc.Names.Mode.parse).getD .today
-  if args.contains "names" then return (← mainNames m (if args.contains "3" then .s3 else .s2))
-  if args.contains "givens" then return (← mainGivens m (if args.contains "3" then .s3 else .s2))
+  let split : Option Zinc.Split.Mode := if !args.contains "split" then none
+    else some (if args.contains "proposed" then .names else if args.contains "upstream" then .upstream
+      else if args.contains "cheap" then .cheap else .today)
+  if args.contains "names" then return (← mainNames m (if args.contains "3" then .s3 else .s2) split)
+  if args.contains "givens" then return (← mainGivens m (if args.contains "3" then .s3 else .s2) split)
   let everything := args.contains "all"
   if args.contains "v" then return (← mainV everything)
   let out ← IO.getStdout
