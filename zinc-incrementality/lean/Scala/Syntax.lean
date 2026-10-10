@@ -65,6 +65,13 @@ structure Mem where
   static : Bool := false
   /-- Scala 3 `extension (x: T) def …`: the receiver, an extra first parameter. -/
   ext : Option Ty := none
+  /-- The `override` modifier, when written explicitly; `none`: printed iff it overrides. -/
+  ov : Option Bool := none
+  priv : Bool := false
+  /-- A `def` without parameters is written `def m: T`, not `def m(): T`. -/
+  nullary : Bool := false
+  /-- The body, when the source must say which definition ran. -/
+  rhs : Option String := none
   deriving DecidableEq, Repr
 
 def Mem.allParams (m : Mem) : List Ty := m.ext.toList ++ m.params
@@ -127,12 +134,13 @@ def body : Ty → String
 
 def Mem.show (ov : Bool) (m : Mem) : String :=
   let mods := (match m.ext with | some t => s!"extension (self: {t.show}) " | none => "") ++
-    (if m.static then "@static " else "") ++ (if ov then "override " else "") ++
+    (if m.static then "@static " else "") ++ (if m.ov.getD ov then "override " else "") ++
+    (if m.priv then "private " else "") ++
     (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "")
   let kw := if m.isVal then "val" else "def"
-  let ps := if m.params.isEmpty && m.isVal then ""
+  let ps := if m.params.isEmpty && (m.isVal || m.nullary) then ""
     else "(" ++ ", ".intercalate ((m.params.zipIdx.map fun (t, i) => s!"x{i}: {t.show}")) ++ ")"
-  let rhs := if m.abs then "" else s!" = {body m.res}"
+  let rhs := if m.abs then "" else s!" = {m.rhs.getD (body m.res)}"
   s!"{mods}{kw} {m.name}{ps}: {m.res.show}{rhs}"
 
 /-- Print a definition; `ov n` says whether member `n` overrides an inherited one. -/
