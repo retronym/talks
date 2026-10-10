@@ -273,9 +273,6 @@ def mainCost : IO Unit := do
 section inlineOpaque
 open Zinc.InlineOpaque
 
-def jtiers (ts : List (String × ℕ)) : String :=
-  "{" ++ ",".intercalate (ts.map fun (f, t) => jstr f ++ ":" ++ jstr (toString t)) ++ "}"
-
 def ioEdit (cls cfg : String) (fs : List (String × String)) (files : List (String × Option String))
     (v : Verdict) : String :=
   "{\"cls\":" ++ jstr cls ++ ",\"cfg\":" ++ jstr cfg ++ ",\"factors\":" ++ jfactors fs ++
