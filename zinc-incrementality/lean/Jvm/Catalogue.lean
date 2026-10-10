@@ -215,7 +215,8 @@ def overrideCutByPackage : Case where
   client := [(.X, { header := { super := some .A }, methods := [(.m, .v, inst)] }), (.B, { header := p1 })]
   prog := { sites := [within .B (invokevirtual .A .m .v .X)] }
 
-/-- An override becomes private: a private method does not override, so `A.m` runs. -/
+/-- An override becomes private: a private method does not override, so `A.m` runs. A client
+calling `B.m` itself breaks instead (`Jvm.Clients`): resolution finds the private `B.m` first. -/
 def overrideBecomesPrivate : Case where
   name := "overrideBecomesPrivate"
   mima := none
@@ -333,7 +334,7 @@ def fieldShadowed : Case where
   prog := { sites := [getfield .B .m .s .B] }
 
 /-- An interface of `B` gains a static field: field resolution searches superinterfaces before the
-superclass. -/
+superclass. A client writing `B.m` breaks (`Jvm.Clients`): interface fields are final. -/
 def fieldIfaceBeforeSuper : Case where
   name := "fieldIfaceBeforeSuper"
   mima := none

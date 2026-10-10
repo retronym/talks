@@ -58,9 +58,35 @@ def space : List Client :=
   (sites.map fun s => ([], { sites := [s] })) ++
   (xClasses.flatMap fun x => sites.map fun s => ([(.X, x)], { loads := [.X], sites := [s] }))
 
+/-- The J3 space: `X` in the unnamed package, superclass none, `A` or `B`, implementing `I` or not,
+declaring nothing or a public `m()V`; one site of any kind (methods `m()V`, fields `m:String`), run
+from a class of its own or from `X` (`invokespecial` only from `X`). -/
+def xClasses3 : List (Classfile C N D) := do
+  let s ← [none, some .A, some .B]
+  let is ← [[], [.I]]
+  let ms ← [[], [(.m, .v, inst)]]
+  pure { header := { super := s, ifaces := is }, methods := ms }
+
+def sites3 : List (Site C N D) :=
+  let rs : List C := [.A, .B, .X]
+  let direct : List (Site C N D) :=
+    (allC.flatMap fun c => rs.flatMap fun r =>
+      [.invokevirtual c .m .v r, .invokeinterface c .m .v r, .getfield c .m .s r, .putfield c .m .s r]) ++
+    (allC.flatMap fun c =>
+      [.invokestatic c .m .v, .invokestaticIface c .m .v, .getstatic c .m .s, .putstatic c .m .s, .new c])
+  direct ++ direct.map (.within .X) ++
+    (allC.flatMap fun c => [true, false].map fun i => .within .X (.invokespecial c .m .v i))
+
+def space3 : List Client :=
+  (sites3.map fun s => ([], { sites := [s] })) ++
+  (xClasses3.flatMap fun x => sites3.map fun s => ([(.X, x)], { loads := [.X], sites := [s] }))
+
 def recvOf : Site C N D → Option (C × C)
   | .invokevirtual c _ _ r => some (r, c)
   | .invokeinterface c _ _ r => some (r, c)
+  | .getfield c _ _ r => some (r, c)
+  | .putfield c _ _ r => some (r, c)
+  | .within _ s => recvOf s
   | _ => none
 
 /-- The client is one a compiler could emit against `w₀`: each receiver's class is a subtype of the
@@ -75,20 +101,20 @@ def _root_.Jvm.Catalogue.Case.withClient (k : Case) (cl : Client) : Case := { k 
 def links (w : W) (p : P) : Bool := (outcome w p).toBool
 
 /-- The first client in the space that links on `v0` and fails on `v1`. -/
-def breaking (k : Case) : Option Client :=
-  space.find? fun (cl, p) =>
+def breaking (k : Case) (sp : List Client := space) : Option Client :=
+  sp.find? fun (cl, p) =>
     let k' := k.withClient (cl, p)
     wellTyped k'.w0 p && links k'.w0 p && !links k'.w1 p
 
-def breaksSomeClient (k : Case) : Bool := (breaking k).isSome
+def breaksSomeClient (k : Case) (sp : List Client := space) : Bool := (breaking k sp).isSome
 
 /-- The first client that links on both and runs a different method. -/
-def changing (k : Case) : Option Client :=
-  space.find? fun (cl, p) =>
+def changing (k : Case) (sp : List Client := space) : Option Client :=
+  sp.find? fun (cl, p) =>
     let k' := k.withClient (cl, p)
     wellTyped k'.w0 p && links k'.w0 p && links k'.w1 p && k'.before != k'.after
 
-def changesSomeClient (k : Case) : Bool := (changing k).isSome
+def changesSomeClient (k : Case) (sp : List Client := space) : Bool := (changing k sp).isSome
 
 /-! ## Verdicts per catalogue case -/
 
@@ -105,5 +131,34 @@ example : breaksSomeClient defaultConflict = true := by decide +kernel
 example : breaksSomeClient overrideAdded = false ∧ changesSomeClient overrideAdded = true := by
   decide +kernel
 example : breaksSomeClient pulledUp = false ∧ changesSomeClient pulledUp = true := by decide +kernel
+
+/-! ## J3 verdicts, over `space3` -/
+
+example : breaksSomeClient methodBecomesPrivate space3 = true := by decide +kernel
+example : breaksSomeClient methodBecomesPackagePrivate space3 = true := by decide +kernel
+example : breaksSomeClient classBecomesPackagePrivate space3 = true := by decide +kernel
+example : breaksSomeClient methodBecomesProtected space3 = true := by decide +kernel
+/-- Breaks `invokevirtual B.m`: resolution finds the private `B.m` before the inherited `A.m`. -/
+example : breaksSomeClient overrideBecomesPrivate space3 = true ∧
+    changesSomeClient overrideBecomesPrivate space3 = true := by decide +kernel
+example : breaksSomeClient superCallPulledUp space3 = false ∧
+    changesSomeClient superCallPulledUp space3 = true := by decide +kernel
+example : breaksSomeClient superCallRemoved space3 = true := by decide +kernel
+example : breaksSomeClient superCallAbstract space3 = true := by decide +kernel
+example : breaksSomeClient defaultSuperCallAbstract space3 = true := by decide +kernel
+example : breaksSomeClient staticIfaceMethodRemoved space3 = true := by decide +kernel
+example : breaksSomeClient staticMovedToIface space3 = true := by decide +kernel
+example : breaksSomeClient defaultBecomesStatic space3 = true := by decide +kernel
+example : breaksSomeClient defaultBecomesPrivate space3 = true := by decide +kernel
+example : breaksSomeClient fieldRemoved space3 = true := by decide +kernel
+example : breaksSomeClient fieldBecomesStatic space3 = true := by decide +kernel
+example : breaksSomeClient fieldBecomesFinal space3 = true := by decide +kernel
+example : breaksSomeClient fieldBecomesPrivate space3 = true := by decide +kernel
+example : breaksSomeClient fieldShadowed space3 = false ∧
+    changesSomeClient fieldShadowed space3 = true := by decide +kernel
+/-- Breaks `putstatic B.m`: it now resolves to the interface's field, which is final. -/
+example : breaksSomeClient fieldIfaceBeforeSuper space3 = true ∧
+    changesSomeClient fieldIfaceBeforeSuper space3 = true := by decide +kernel
+example : breaksSomeClient putstaticBecomesFinal space3 = true := by decide +kernel
 
 end Jvm.Clients

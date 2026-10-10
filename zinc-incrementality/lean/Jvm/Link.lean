@@ -6,9 +6,10 @@ import Mathlib.Data.List.Dedup
 
 A client links against a class table: loading checks a class's supertypes, and each call site
 resolves a symbolic reference (JVMS §5.4.3.3 for a class, §5.4.3.4 for an interface) and then
-selects a method on the receiver's class (§5.4.6). The model writes linking as a `Task` whose
-queries are the class table's entries: a class's header, and whether it declares a method of a
-name and descriptor. So linking has a trace, the *linkage footprint*, and T1 applies to it
+selects a method on the receiver's class (§5.4.6); fields resolve by §5.4.3.2, and access is
+checked by §5.4.4 and the verifier's rules for receivers, `invokespecial` and protected members. The
+model writes linking as a `Task` whose queries are the class table's entries: a class's header,
+and whether it declares a method or field of a name and descriptor. So linking has a trace, the *linkage footprint*, and T1 applies to it
 unchanged: a library edit that agrees with the old library on a client's footprint links that
 client the same way (`link_congr`).
 
@@ -16,16 +17,16 @@ That is the bridge to Zinc. Zinc asks whether a source must be *recompiled*; bin
 compatibility asks whether its old classfile still *links* (and selects the same methods) against
 the new library. Both are questions about a task's trace against an edited environment.
 
-The model is generic in class, method-name and descriptor types. Not modelled: access control,
-private methods and `invokespecial`, fields, signature-polymorphic methods, `Object`'s methods in
-interface resolution, static interface methods. Linking is lazy, as on the JVM: an error is raised by
+The model is generic in class, method-name and descriptor types. Calibrated against HotSpot 21, 25
+and 27 by `probes/jvm`. Not modelled: nestmates (private access is same-class only), method bodies
+(a library method's own calls), signature-polymorphic methods, `Object`'s methods in interface
+resolution, loader constraints, class initialisation, and transitive overriding through an
+intermediate package-private method (§5.4.5's second case). Linking is lazy, as on the JVM: an error is raised by
 the first site that hits it; a class is loaded, with its loading checks, when it is first referred
 to, and each site is verified just before it runs (as if each site were its own method).
 -/
 
 namespace Jvm
-
-
 
 variable {C N D : Type} [DecidableEq C] [DecidableEq N] [DecidableEq D]
 
@@ -212,7 +213,7 @@ def chainOver (n : N) (d : D) (a : C) (ma : MethodInfo) :
 
 /-- Load a class, and first its superinterfaces and superclass (HotSpot's class file parser resolves
 them in that order): each superinterface must be an interface, the superclass a non-final class,
-and none of the class's instance methods may override a final one. The JVM loads a class when a
+both accessible from the class, and none of the class's instance methods may override a final one. The JVM loads a class when a
 site, the verifier or a subclass first refers to it; the model loads it at each such reference,
 which repeats queries but not answers. -/
 def loadK : ℕ → C → M C N D Unit
@@ -229,6 +230,10 @@ def loadK : ℕ → C → M C N D Unit
       let hs ← hdr s
       if hs.isInterface then throw .incompatibleClassChange
       if hs.isFinal then throw .finalSuper
+      if !hs.isPublic && hs.pkg != h.pkg then throw .illegalAccess
+      for i in h.ifaces do
+        let hi ← hdr i
+        if !hi.isPublic && hi.pkg != h.pkg then throw .illegalAccess
       for (n, d, mi) in ← askDeclared x do
         if let some (a, si) ← chain true n d depth s then
           if si.isFinal && (← overrides x mi a si) then throw .finalOverride
@@ -379,12 +384,14 @@ def instantiate (cur : Cur C) (c : C) : M C N D Unit := do
 
 /-- The verifier's rule for `invokespecial` from `x` to `c` (HotSpot's `verify_invoke_instructions`):
 `x` itself, its direct superclass or a direct superinterface pass by name; otherwise `x` must be
-assignable to `c`, and an interface method reference must not be to an indirect superinterface. -/
-def verifySpecial (x c : C) (iface : Bool) : M C N D Unit := do
+assignable to `c`, and `c` must not be an interface (an indirect superinterface). Calibrated on
+HotSpot: what matters is whether `c` is an interface, not the constant's tag; an
+`InterfaceMethodref` to a class passes here and fails in resolution. -/
+def verifySpecial (x c : C) : M C N D Unit := do
   let h ← hdr x
   if c = x || h.super = some c || h.ifaces.contains c then return
   assignable x c
-  if iface then throw .verify
+  if (← hdr c).isInterface then throw .verify
 
 /-- The verifier's protected check (§4.10.1.8, HotSpot's `verify_protected_access`): from `x`, a
 reference through a proper superclass `c` of `x` to a protected member declared in another package
@@ -434,7 +441,7 @@ def runSiteK (cur : Cur C) : Site C N D → M C N D C
     let x ← match cur with
       | some x => pure x
       | none => throw .verify
-    verifySpecial x c iface
+    verifySpecial x c
     instantiate cur x
     let (a, i) ← if iface then resolveIface cur c n d else resolveClass cur c n d
     if i.isStatic then throw .incompatibleClassChange
