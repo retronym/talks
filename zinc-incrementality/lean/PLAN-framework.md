@@ -15,7 +15,7 @@ Each restates `envOf`, `override`, `round`, `changed`, `invalidated`, `zinc`, `U
 
 The real cost is that an instance needing two features has nowhere to go. Implicit search needs keys from the output, because the resolved scope is in the output and not the trace's last query. It also needs non-local answers, to live on the shared names instance `SplitProof.Spec` with its `Up`/`S` split. So implicit search sits apart in `GivensSpec.lean`. Phase 14 and the upstream cases will hit the same wall.
 
-## Decision (approved; step 1 built)
+## Decision (approved; merged in talks#37, #46, #47)
 
 **One general structure, `XCompiler` (`General.lean`).** It has `NCompiler`'s fields, except that the extractor also reads the output: `keys : CUnit → Out → List (CUnit × Q) → Finset (CUnit × K)`. `round` records `keys d (out' d) (trace …)`.
 
@@ -43,7 +43,7 @@ Not moved: T4's explicit-interface and acyclic regimes (`zinc_some_of_explicit`,
 
 **`Model.lean` stays the first page.** Its docstring introduces the variants and the general form they lift into. DESIGN-spec.md and the README point there first.
 
-**Step 2** (next PR): `SplitProof.Spec` builds on `XCompiler` directly. Its lookup gains levels (every probe of a level asked, the first level with a hit decides) and its keys read the output's resolved scope, so `GivensSpec` folds into it and is removed.
+**Step 2** (merged, talks#46): implicit search on `SplitProof.Spec`'s scopes as an `XCompiler` (`SpecGivens.lean`). Its search asks the whole level of its hit, its keys read the resolved scope from the output, and `GivensSpec.lean` (the separate `TCompiler` over `Pkg × N`) is gone. Names stay on `Spec`'s `NCompiler`: it already lifts into `XCompiler`, and moving it would change only its declaration, against an open PR's file.
 
 ## Rejected
 
@@ -54,5 +54,6 @@ Not moved: T4's explicit-interface and acyclic regimes (`zinc_some_of_explicit`,
 ## Steps
 
 - [x] 1. `XCompiler` (`General.lean`) with T2, T3a, T4 (monotone), T5 and the snapshot results; lifts and corollaries for `Compiler`, `TCompiler`, `GCompiler` and `NCompiler`; `TCompiler.toCompiler` with T3; `Policy.InS` and `Policy.MonotoneFrom` moved to `Model.lean`. No instance file changed.
-- [ ] 2. `Spec` on `XCompiler` with a level-wise lookup and keys from the output; `GivensSpec` folded in and removed.
-- [ ] Once talks#36 is in: `scripts/Axioms.lean` checks the `XCompiler` theorems too.
+- [x] 2. Implicit search on `Spec`'s scopes as an `XCompiler` (`SpecGivens.lean`): a level-wise search and keys read from the output; `GivensSpec.lean` removed. Names stay on `Spec`'s `NCompiler`, which lifts into `XCompiler`: moving it would only change its declaration.
+- [x] `scripts/Axioms.lean` checks the `XCompiler` theorems and every instance's soundness theorem (talks#36, #37).
+- [x] 3. T5a needs only the abstraction obligation (`XCompiler.Abstraction`), and `TCompiler.downstream_sound` is a corollary through the lift (talks#47). Both are from the split-layout session's `External.lean` (talks#45), which was closed as redundant: a `View` structure would have been a fifth copy of `Inv`, `Fresh` and the external invalidation.

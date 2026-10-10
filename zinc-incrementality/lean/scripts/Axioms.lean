@@ -50,4 +50,7 @@ import Zinc
 #print axioms Zinc.XCompiler.downstream_sound
 -- T3 for keys from the tree, through the forgetful map
 #print axioms Zinc.TCompiler.zinc_eq_clean_of_explicit
+#print axioms Zinc.SplitProof.Spec.g_global_obligations
+#print axioms Zinc.SplitProof.Spec.g_narrowed_obligations
+#print axioms Zinc.SplitProof.Spec.g12_today
 #print axioms Zinc.TCompiler.downstream_sound
