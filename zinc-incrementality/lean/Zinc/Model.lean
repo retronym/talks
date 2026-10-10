@@ -12,6 +12,12 @@ import Zinc.Task
   pluggable invalidation `Policy`.
 
 All queries and keys are addressed to a unit: `Query := CUnit × Q`, `Key := CUnit × K`.
+
+This is the specification's first page. Instances that need more use one of its variants: keys read
+from the output (`TCompiler`, `Tree.lean`), a hash that reads several units (`GCompiler`,
+`NonLocal.lean`), answers that read several units and an upstream (`NCompiler`, `NonLocalAns.lean`,
+`Classpath.lean`). Each lifts into the general form `XCompiler` (`General.lean`), where T2, T3a,
+T5 and the monotone regimes of T4 are proved once; every variant's theorems are corollaries.
 -/
 
 namespace Zinc
@@ -110,6 +116,14 @@ abbrev Policy (CUnit Out K : Type) :=
 the round just compiled. -/
 def Policy.Sound (S : Finset CUnit) (P : Policy CUnit Out K) : Prop :=
   ∀ n R s s' I, I ⊆ S → I \ R ⊆ P n R s s' I
+
+/-- Policies that stay inside the project. -/
+def Policy.InS (S : Finset CUnit) (P : Policy CUnit Out K) : Prop :=
+  ∀ n R s s' I, I ⊆ S → P n R s s' I ⊆ S
+
+/-- A policy that, from round `k` on, keeps the round just compiled and the invalidations. -/
+def Policy.MonotoneFrom (S : Finset CUnit) (k : ℕ) (P : Policy CUnit Out K) : Prop :=
+  ∀ n R s s' I, k ≤ n → R ⊆ S → I ⊆ S → R ⊆ P n R s s' I ∧ I ⊆ P n R s s' I
 
 /-- Zinc's loop, fuelled. Stops when every invalidated unit was in the round just compiled
 (`IncrementalCommon.invalidateAfterInternalCompilation`: `newInvalidations.isEmpty`). -/

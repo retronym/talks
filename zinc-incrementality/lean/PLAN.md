@@ -2,6 +2,37 @@
 
 A small Lean 4 + Mathlib model of §22 of `talk.md`: Zinc's invalidation loop is sound *relative to stated obligations on the compiler bridge*. Nothing here verifies scalac; the hypotheses of the theorems are the deliverable. They are the written spec for `ExtractAPI` / `ExtractUsedNames`.
 
+## Status: proved generally, and checked on a space
+
+The model is a specification (`DESIGN-spec.md`). A compiler is an instance of the framework: its algorithm is a task whose trace is what compilation read, and its bridge is `keys`, `π` and `covers`. Zinc's soundness (T3a, and T5 across subprojects) follows from three obligations on that instance. A family of incremental-compilation bugs is a failed obligation with a witness; a fix is a key with the obligations proved.
+
+Enumerations over bounded program spaces (`native_decide`) and the Zinc conformance harness check the instances against scalac, dotc, javac and Zinc, and measure costs. They are checks, not theorems. `REVIEW-2026-10-11.md` reviews the framework and lists what to do next.
+
+| Phase | Topic | Proved, for every program | Checked on a space, or by the harness |
+|---|---|---|---|
+| 1 | The framework | T1 `Task.run_eq_of_trace`; T2, T3a, T4 (monotone) and T5 once for the general form `XCompiler` (`General.lean`), every variant's as corollaries through its lift (`PLAN-framework.md`); T2 and T3a (`Soundness`); T3b, incremental equals clean under acyclic dependencies or source-determined interfaces (`Uniqueness`); T4, termination per regime (`Termination`); the toy's obligations (`Toy`) | §15a/§15b counterexamples (`Examples`) |
+| 2 | Members, declarations, Merkle | `NonLocal` (T2′, non-local hash); `Stale.obligations`; `HierSound`: `D_obligations`, `W_obligations`, `Mk_obligations` | scenarios 1–3 (`Hier`); `Stale.stale_unsound` |
+| 3 | The Merkle PoC's design | `NonLocalAns` (T2″, T3a″); `Flat`: `Fl_obligations`, `flat_sound` | the rule table over 7,500 programs (`FlatRules`, `lake exe exhaustive`); the conformance harness |
+| 6 | Erasure through inheritance | `Erasure`: `asf_of_decl`, `Er_obligations`, `dep_obligations`, `dep_sound` | `lake exe exhaustive erasure`; the scripted cases |
+| 7 | Implicit scope across projects (sbt/zinc#1845) | `ImplicitScope`: `is_obligations`, `is_sound`, `stored_eq_recomputed` | `lake exe exhaustive implicit` |
+| 8 | Classpath, pipelining, keys from the tree | T5 `Classpath.downstream_sound`; `Tree` (T2, T3a for keys from the output); `Snapshot.obligations`; `Pipelining.early_agreement`; `Inline.obligations_withBodies`, `not_obligations_today` | refresh after revert (`Snapshot`), failed upstream (`Pipelining`), `pipelined_ne_final` (`Inline`) |
+| 9 | Termination, additions, sealed | `PingPong.zinc_diverges` (no `transitiveStep`: Zinc's loop need not terminate); `Embed.lift_obligations`, `zinc_lift`; `Added.obligations_fixed`, `not_obligations_today`; `Sealed.obligations_withChildren`, `not_obligations_noChildren` | `transitiveStep_stops` and the run (`PingPong`); `Added`, `Sealed` scenarios |
+| 10 | Name resolution and implicits (`PLAN-names.md`) | `SplitProof.Spec`: `rules_obligations`, `global_obligations`, `narrowed_obligations` (given recorded package imports); witnesses F2, F3, narrowed without imports; precision (`necessary_invalidated`, `searched_exact`, `narrowed_le_global`, `rules_over`); F4/F5 as `joint_not_comp`. `SpecGivens`: the G rule's obligations, witnesses G1/G2 (`g12_today`), `g_narrowed_without_imports`, `g_decls_not_abstraction` | resolution per version, F6, F7, recompiled sets, cost (`Names`, `Givens`, `NamesRules`); the harness on develop and #34 |
+| 11 | Scala 3 `inline` and opaque types (`PLAN-inline.md`) | `InlineOpaqueSpec` (a `TCompiler`): `faithful`, `obligations_fix`, `fix_sound`, `obligations_refine`, `refine_sound`, witnesses I1–I3, O1 (coverage); precision `keys_traced`, `name_exact`, `cls_coarse`. `InlineOpaqueSound` (`NCompiler`): `obligations_denot`, `denot_sound` (fresh denotation hash), `recompiles_or_unchanged`, `I1_abstraction` | counts and recompiled sets (`InlineOpaque.check_*`); which reads dotc folds (probes); the harness, both layouts |
+| 12 | Java in mixed builds (`PLAN-java.md`) | `JavaSpec`: `obligations_fix`, `fix_sound`, witnesses J1–J4; `JavaSealedSpec` | `JavaNames`, `JavaSealed`; the harness |
+| 13 | The split layout (`PLAN-split.md`) | `SplitProof`: `proposed_sound`, `cheap_sound_of_local`; `Spec`: `today_not_obligations`, `cheap_not_obligations`, `cross_obligations`, `cross_downstream_sound` (T5) | `Split.check_*` (the slot language matches the concrete model on the bases); the harness |
+| 14 | Compile order and pipelining (`PLAN-order.md`) | `JavaOrder`: `obligations_mixed`, `mixed_sound`, `exclusion_exact`, `flip_spurious`; witnesses V1, V2, O1, O2 | none needed so far |
+| 15 | Inferred types in a cycle (`PLAN-cycles.md`, talks#31) | `Cycles`: `obligations`; `zinc_ne_clean` (Zinc stops at a per-unit fixed point that is not the clean build, C1, C2), `two_fixpoints`; `annotated_eq_clean` (T3 with every member annotated) | sbt/zinc#1284's and #1780's rules on Zinc's real loop; the harness (36 edits) |
+| 22 | Scala 3 macro dependencies (`PLAN-macros.md`) | `MacroDeps` (a `TCompiler`): `faithful`, `obligations_fix`, `fix_sound`; witnesses `gen_pre24969` (#23852), `targ_pre23900`, `private_today` (abstraction), `annot_today` (#22999), `crossProject_today` (sbt/zinc#1478), `early_violates` (#27125); cost `bytecode_coarse`, `private_coarse` | the `today` rules against dotc 3.9 and Zinc `develop` (sources, not the harness) |
+
+Phases 4 and 5 are design notes; their results are in phases 6 to 8.
+
+Against Zinc's bug tracker (`BUG-MAP.md`): of 145 catalogued bugs, 18 are covered by an instance, 42 partially, and 84 are gaps, which fall into 15 candidate phases. Had the instances existed, 14 would have been predicted before they were filed, and 29 partially. 17 pending and 3 disabled scripted tests are mapped the same way.
+
+No `theorem` is proved by `native_decide`: the enumerated facts are `example`s. CI (`.github/workflows/lean.yml`) lints this (`scripts/lint_native_decide.py`) and checks that the core theorems T1–T5, per framework variant, use only `propext`, `Classical.choice` and `Quot.sound` (`scripts/Axioms.lean`, `scripts/check_axioms.py`). `PingPong.zinc_diverges` had leaned on `native_decide` through its step lemmas; they are now kernel `decide`.
+
+Every witness and obligation in the table uses kernel `decide` or a proof.
+
 ## Two findings from working out the proof (for the talk)
 
 1. **Zinc's loop formula in §3/§4 is slightly off.** In `IncrementalCommon.invalidateAfterInternalCompilation`, the subtraction `-- recompiledClasses` is only in the *stop test*. The next round is the full `inv(ΔAPI_n)` (plus macro/collision extras), so:
@@ -401,85 +432,32 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 - [x] P9.4 `Sealed.lean`: exhaustivity reads a sealed parent's children; the same-file rule (and Java's `permits`) keeps the query local to the parent, and a hash covering the children meets the obligations. A hash without them (Zinc's `ClassToAPI` for Java before retronym/zinc#21) fails abstraction; adding a permitted subclass leaves the client without its warning (`java_permits_wrong`).
 - [ ] Future: files as recompilation units (Zinc recompiles every class of an invalidated file); a scripted variant of P9.3 under Scala 3 and with an explicit import (precedence rules differ); class vs companion keys (sbt/zinc#1796).
 
-## Phase 10 — name resolution, mechanically (`Names.lean`, `Givens.lean`)
-
-P9.3 found one way an edit changes what a name resolves to without Zinc noticing. This phase searches the family mechanically: a program space over Scala's scopes, the model's verdict per edit, the conformance harness on Zinc `develop`, and a pending scripted test per family.
-
-### Model
-
-`Names.lean`: the client's simple name `Foo` (or `Option`, with `scala.Option` as the last resort) can be bound by a block's wildcard import, an inherited member, an explicit import, a wildcard import of an object or of a package, a class of the inner package, the inner package's package object, a class of the outer package, and `scala._`. Client factors: the package clause (`package a; package b`, `package a.b`, `package a`), which imports and `extends` are present, another class in the client's file, and (Scala 3) whether `W` and package `a.b` get their member through a wildcard `export`. Edits: add or delete a binding, rename a top-level class to or from `Bar`, move a class between packages. Resolution follows each compiler; the rules were probed with `scala-cli` and then checked on every case the harness ran (the client's classfile shows what it resolved to). Zinc's side is the edges its extractors record and the rules of `IncrementalCommon`: an import's edge goes to one class of the file (the first in Scala 2; the *last* in Scala 3, whose `responsibleForImports` keeps the last `TypeDef` it folds over), a package records nothing, an added source invalidates nothing.
-
-`Givens.lean`: the same with an instance found by type (`implicitly`/`summon`). Scala 2 calls any two instances in the lexical scope ambiguous and searches the companion only when there is none; Scala 3 prefers the innermost nesting level, with the file's imports and the client's own package at one level. A changed implicit invalidates every member-ref dependent of its class, so an import's edge to any class of the file is enough; what is left is the scopes with no edge at all.
-
-Fixes, checked on the whole space (`searched_clean`, `names_clean`): recording every scope the lookup searched, misses included, or invalidating the users of a name whenever a binding of it is added or removed. Neither touches F4, F5 and F6, which are not about the client's resolution. F6's fix belongs in dotc: decide whether a class calls a trait's initialiser the same way from source and from TASTy (or always call it).
-
-### Harness
-
-retronym/zinc branch `claude/names-conformance` (develop + the harness of retronym/zinc#25): base programs as source files, a probe of the client's constant pool, and two fixes for Scala 3 that the earlier spaces never needed. Scripted's `IncHandler` did not register `TastyFiles` as auxiliary class files (sbt does), so a deleted or restored classfile left its `.tasty` behind and later builds read it ("out of sync with its TASTy file"); and TASTy records source paths relative to the working directory, so the work and clean builds, in different directories, never had equal classfiles. `scripts/select.py` picks bases greedily until every signature (the edit, the model's resolution before and after, the package clause, `first`, and more) has a case.
-
-### Families
-
-Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` (on top of P9.3's `claude/added-class-inner-package`); each was checked to fail only at its last step (the incremental build succeeds) and its edited sources to fail a clean compile.
-
-| | Family | Lean | Scripted (pending) |
-|---|---|---|---|
-| F1 | A top-level class added (or renamed to, or moved) into a scope searched earlier: an inner package, a wildcard-imported package, the client's package over `scala._`. Zinc compiles only the added source. | `inner_added_today` (`Added.lean`: `added_today_wrong`) | `added-class-*` (P9.3) |
-| F2 | A member added to a package object over an outer binding; in Scala 3 also a top-level `export` gaining a forwarder. The client reached the package object through no symbol. | `pobj_added_today`, `export_added_today` | `added-member-package-object`, `-scala3`, `added-member-top-level-export-scala3` |
-| F3 | A member added to a wildcard-imported object, the import charged to another class of the file (Scala 2: the first; Scala 3: the last) that does not use the name. | `wild_first_today` | `added-member-wildcard-import-second-class`, `added-member-wildcard-import-last-class-scala3` |
-| F4 | Scala 2 only: a package object member added beside a class of the same name; scalac's joint compilation leaves the class's mirror without its `ScalaSignature`, the incremental one keeps it. Classfile bytes only: downstream resolution is the same either way, and it is scalac's joint/separate difference, not an invalidation Zinc misses. | `staleMirror` | none (not observable in scripted) |
-| F5 | Scala 3 only: a class and a package object member (or top-level export) of one name in one package; the double definition is reported only when both files compile together, and nothing connects them in Zinc (the member is `a.b.package$.Foo`). | `missedClash` | `package-object-member-clashes-with-class-scala3` |
-| G1 | An implicit or given added to a package object (Scala 2: `package object a` too), over the companion or making the search ambiguous. | `pobj_added_today_s2` | `added-implicit-package-object`, `added-given-package-object-scala3` |
-| G2 | Scala 3: a top-level given added in a new file. | `inner_added_today_s3` | `added-given-top-level-scala3` |
-| F6, G3 | Scala 3 only: a client extending a trait whose members are all lazy (`object Foo`, a given alias) compiles without the call to the trait's `$init$` when compiled apart from it (the trait read from TASTy has no initialiser); Zinc recompiles the client in a later round than the trait or without it. In the space the `$init$` is empty, so only bytes differ; but it is a separate compilation bug in dotc: once a client has been compiled apart, a statement later added to the trait (not API, so Zinc recompiles the trait alone) never runs for it, where a clean build runs it. | `Names.separateInit`, `Givens.separateInit` | `trait-initialiser-skipped-scala3` (behavioural: `run` fails) |
-
-### Counts
-
-| Space | Edits | Model unclean (F1/F2/F3/F4/F5 or G) | Harness cases | Model vs harness disagree | Divergences (F1/F2/F3/F4/F5 or G) |
-|---|---|---|---|---|---|
-| names, 2.13 | 61,812 | 5,892 (3,228/936/864/864/0) | 11,506 | 0 | 1,532 (844/252/260/176/0) |
-| names, 3 | 122,528 | 25,312 (6,400/1,008/1,728/0/8,256; F6 7,920) | 3,876 | 0 | 796 (256/42/78/0/270; F6 150) |
-| givens, 2.13 | 1,076 | 256 (G1: package object `b` 128, package object `a` 128) | 1,076 | 0 | 256 |
-| givens, 3 | 2,355 | 645 (G1 148, G2 208, G3 289) | 2,355 | 0 | 645 |
-
-Model unclean counts are over the whole space; the harness ran every edit of the givens spaces and a greedy selection of bases for the names spaces. Resolution agreed with the compiler on every case run.
-
-### The cheap fix (retronym/zinc#34)
-
-#34 invalidates, after each cycle, the users of the simple name of every top-level class the cycle added (`invalidateByAddedClasses`). The model's `Mode.cheap` mirrors it: Zinc today, plus the client whenever an edit adds a top-level class named as the client's name (`add`, `unrename` or `move` into `wpkg`, `inner` or `outer`); in `Givens.lean` the only classes added are `Inner$package` and `Outer$package`, which no client names, so the mode is today's (`cheap_is_today`). `cheap_added_clean`: every edit that adds a class is clean under it, but for the divergences beside resolution and the trait initialiser. `lake exe conformance names|givens 2|3 cheap` dumps its verdicts.
-
-The harness ran the same cases as on develop (the same base selection, identical sources) on a scratch branch of retronym/zinc: `claude/names-conformance` with #34 cherry-picked. Model and harness agree on every case, and resolution on every case.
-
-| Space | Family | develop | #34 | Model on the space, today → cheap |
-|---|---|---|---|---|
-| names, 2.13 | F1 | 844 | 0 | 3,228 → 0 |
-| | F2 / F3 / F4 | 252 / 260 / 176 | 252 / 260 / 176 | unchanged |
-| names, 3 | F1 | 256 | 0 | 6,400 → 0 |
-| | F2 / F3 / F5 | 42 / 78 / 270 | 42 / 78 / 270 | unchanged |
-| | F6 | 150 | 450 | 7,920 → 15,672 |
-| givens, 2.13 | G1 (both package objects) | 256 | 256 | unchanged |
-| givens, 3 | G1 / G2 / G3 | 148 / 208 / 289 | 148 / 208 / 289 | unchanged |
-
-F1 is gone, as predicted; F2, F3, G1 and G2 stay, because none adds a class: the binding is a member of an existing package object, object or `$package` class (G2's added class is `Inner$package`, not a name the client uses). In Scala 3 the fix turns 300 of the harness's F1 cases into F6: a client extending `P`, whose resolution an added class does not change (the inherited member wins), is now recompiled, apart from `P`, and loses the `P.$init$` call (`Client$.class` bytes only; the model counts 7,752 such edits). The revert column moves the same way: names 2.13 988 → 148 (an added class is the revert of a delete, rename or move), names 3 430 → 618 (F6 again).
-
-Extending #34 to the remaining families:
-
-* F2 (package object member, Scala 3 top-level export): the same rule on names instead of classes. After each cycle, diff the member names of each recompiled package object (`a.b.package`; in Scala 3 also the `F$package` class holding top-level definitions and export forwarders) against the previous API, and invalidate the users of each added name. Zinc's name hashes already give the added names (a name with no previous hash).
-* F3 (member added to a wildcard-imported object, the import charged to another class): not a scope Zinc misses but a used-name check on the wrong class. Checking the used names of every class in the dependent's file (or charging an import to every class of its file) fixes it; or apply the F2 rule to every class whose API gains a name, which covers F1–F3 at once (the model's `names` mode restricted to additions) at the cost of invalidating every user of a common name.
-* G1, G2 (implicit added to a package object or as a top-level given): a name does not help, since the client never named the new instance. When a package object or `$package` class gains or loses an implicit member (or a new `$package` class has one), invalidate the classes of that package and the packages nested in it; Zinc can enumerate them by class name. The alternative is in the extractor: record an edge from every implicit search to the package objects of the enclosing packages.
-* F4, F5, F6/G3 are not about the client's resolution; #34 does not touch them, and F6 grows with every extra recompilation.
-
-### Steps
-
-- [x] P10.1 `Names.lean`: scopes, resolution per version, Zinc's edges, verdict; families as checked examples; `searched_clean`, `names_clean`.
-- [x] P10.2 `Givens.lean`: instances by type.
-- [x] P10.3 `conformance names|givens 2|3`; harness: source-file bases, a classfile probe, Scala 3's TASTy files and source paths.
-- [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the explicit selector's name charged to the import's class, the missed clash, the trait initialiser).
-- [x] P10.5 Pending scripted tests per family.
-- [x] P10.6 The cheap fix (retronym/zinc#34) in the model (`Mode.cheap`) and the harness: F1 gone, F6 grows, the rest unchanged.
-- [ ] Future: extend #34 to names added to package objects and imported objects, and to implicits (above); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
+## Phase 10 — name resolution and implicits: see `PLAN-names.md`
 
 ## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
 
 ## Phase 12 — Java in mixed builds, name resolution and sealed hierarchies: see `PLAN-java.md`
 
+## Phase 13 — name resolution and givens across subprojects (the `split` layout): see `PLAN-split.md`
+
 ## Phase 14 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`
+
+## Phase 15 — inferred types in a cycle, T3a without T3: see `PLAN-cycles.md`
+
+## Phase 16 — class-name agreement between the bridge and Zinc: see `PLAN-naming.md`
+
+## Phase 17 — hash stability across source, pickle and classfile forms: see `PLAN-hash.md`
+
+## Phase 18 — annotations as API and as dependencies: see `PLAN-annotations.md`
+
+## Phase 19 — pipelining's early-output lifecycle: see `PLAN-pipelining.md`
+
+## Phase 20 — constructors and synthetic case-class members: see `PLAN-synthetic.md`
+
+## Phase 21 — derived API, export forwarders and used types' supertypes: see `PLAN-derived.md`
+
+## Phase 22 — Scala 3 macro dependencies: see `PLAN-macros.md`
+
+## Phase 23 — the extraHash lineage and the companion namespace: see `PLAN-extrahash.md`
+
+## Phase 24 — member selection through extensions: see `PLAN-extensions.md`

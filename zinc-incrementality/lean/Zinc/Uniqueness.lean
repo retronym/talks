@@ -1,4 +1,5 @@
 import Zinc.Soundness
+import Zinc.Tree
 
 /-!
 # T3b: fixed points of separate compilation are unique (under a hypothesis), hence T3
@@ -39,11 +40,14 @@ theorem cleanFrom_outside (S : Finset CUnit) (src : CUnit → Src) (s : State CU
     (u : CUnit) (hu : u ∉ S) : C.cleanFrom S src s u = s.out u := by
   simp [cleanFrom, hu]
 
-/-- The clean build is a fixed point: compositionality with `G = S`. -/
-theorem cleanFrom_fixpoint (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
+/-- The clean build is a fixed point: compositionality with `G = S` (no other obligation). -/
+theorem cleanFrom_fixpoint_of_comp
+    (hcomp : ∀ (G : Finset CUnit) (src : CUnit → Src) (e : Env (CUnit := CUnit) (Q := Q) (A := A)),
+      ∀ d ∈ G, C.group G src e d = (C.unit (src d)).run (C.override e G (C.iface ∘ C.group G src e)))
+    (S : Finset CUnit) (src : CUnit → Src)
     (s : State CUnit Out K) : C.Fixpoint S src (C.cleanFrom S src s) := by
   intro u hu
-  have h := ob.comp S src (C.env s) u hu
+  have h := hcomp S src (C.env s) u hu
   have hout : C.cleanFrom S src s u = C.group S src (C.env s) u := by simp [cleanFrom, hu]
   rw [hout, h]
   congr 1
@@ -52,6 +56,10 @@ theorem cleanFrom_fixpoint (ob : C.Obligations) (S : Finset CUnit) (src : CUnit 
   funext v
   simp only [cleanFrom, Function.comp]
   split <;> rfl
+
+theorem cleanFrom_fixpoint (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
+    (s : State CUnit Out K) : C.Fixpoint S src (C.cleanFrom S src s) :=
+  C.cleanFrom_fixpoint_of_comp ob.comp S src s
 
 /-- **Uniqueness under acyclicity.** -/
 theorem fixpoint_unique_of_wf (S : Finset CUnit) (src : CUnit → Src)
@@ -88,10 +96,6 @@ theorem fixpoint_unique_of_explicit (S : Finset CUnit) (src : CUnit → Src)
   · exact hext u hu
 
 variable [DecidableEq K] [DecidableEq Hash]
-
-/-- Policies that stay inside the project. -/
-def Policy.InS (S : Finset CUnit) (P : Policy CUnit Out K) : Prop :=
-  ∀ n R s s' I, I ⊆ S → P n R s s' I ⊆ S
 
 omit [DecidableEq K] [DecidableEq Hash] in
 theorem round_out_outside (src : CUnit → Src) (R : Finset CUnit) (s : State CUnit Out K)
@@ -144,3 +148,95 @@ theorem zinc_eq_clean_of_explicit (ob : C.Obligations) (S : Finset CUnit) (src :
     rw [C.zinc_out_outside S src P hPS fuel n R s hR s' h u hu, C.cleanFrom_outside S src s u hu]
 
 end Zinc.Compiler
+
+/-! ## Keys from the tree
+
+A per-unit fixed point and the clean build do not mention keys, so a `TCompiler` reaches T3b
+through `toCompiler`, which forgets them; with its own T3a, that gives T3. -/
+
+namespace Zinc.TCompiler
+
+open Compiler (State Policy)
+
+variable {CUnit Src Out Iface K Hash Q : Type} {A : Q → Type}
+variable (C : TCompiler CUnit Src Out Iface K Hash Q A)
+variable [DecidableEq CUnit]
+
+/-- The same compiler, its keys forgotten: what T3b reads. -/
+def toCompiler : Compiler CUnit Src Out Iface K Hash Q A where
+  unit := C.unit
+  group := C.group
+  iface := C.iface
+  answer := C.answer
+  π := C.π
+  keys := fun _ => ∅
+  covers := C.covers
+
+theorem fixpoint_of_inv (S : Finset CUnit) (src : CUnit → Src) (s : State CUnit Out K)
+    (h : C.Inv S src s ∅) : C.toCompiler.Fixpoint S src s.out :=
+  fun u hu => (h u hu (Finset.notMem_empty u)).1
+
+variable [DecidableEq K] [DecidableEq Hash]
+
+theorem zinc_out_outside (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K)
+    (hP : P.InS S) : ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K), R ⊆ S →
+      ∀ s', C.zinc S src P fuel n R s = some s' → ∀ u ∉ S, s'.out u = s.out u := by
+  intro fuel n R s hR s' h
+  rw [← zinc_toX] at h
+  exact C.toX.zinc_out_outside S src P hP fuel n R s hR s' h
+
+/-- **T3 (explicit interfaces), keys from the tree.** -/
+theorem zinc_eq_clean_of_explicit (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
+    (P : Policy CUnit Out K) (hP : P.Sound S) (hPS : P.InS S)
+    (ifaceSrc : Src → Iface)
+    (hex : ∀ (sr : Src) (e : Env (CUnit := CUnit) (Q := Q) (A := A)), C.iface ((C.unit sr).run e) = ifaceSrc sr)
+    (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K) (D : Finset CUnit)
+    (hD : D ⊆ R) (hR : R ⊆ S) (hInv : C.Inv S src s D)
+    (s' : State CUnit Out K) (h : C.zinc S src P fuel n R s = some s') :
+    s'.out = C.toCompiler.cleanFrom S src s := by
+  apply C.toCompiler.fixpoint_unique_of_explicit S src ifaceSrc hex
+  · exact C.fixpoint_of_inv S src s' (C.zinc_sound ob S src P hP fuel n R s D hD hInv s' h)
+  · exact C.toCompiler.cleanFrom_fixpoint_of_comp ob.comp S src s
+  · intro u hu
+    rw [C.zinc_out_outside S src P hPS fuel n R s hR s' h u hu, Compiler.cleanFrom_outside _ S src s u hu]
+
+/-- **T3 (acyclic), keys from the tree.** -/
+theorem zinc_eq_clean_of_wf (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
+    (P : Policy CUnit Out K) (hP : P.Sound S) (hPS : P.InS S)
+    (r : CUnit → CUnit → Prop) (hwf : WellFounded r)
+    (hdep : ∀ u ∈ S, ∀ e, ∀ q ∈ (C.unit (src u)).trace e, r q.1 u)
+    (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K) (D : Finset CUnit)
+    (hD : D ⊆ R) (hR : R ⊆ S) (hInv : C.Inv S src s D)
+    (s' : State CUnit Out K) (h : C.zinc S src P fuel n R s = some s') :
+    s'.out = C.toCompiler.cleanFrom S src s := by
+  apply C.toCompiler.fixpoint_unique_of_wf S src r hwf hdep
+  · exact C.fixpoint_of_inv S src s' (C.zinc_sound ob S src P hP fuel n R s D hD hInv s' h)
+  · exact C.toCompiler.cleanFrom_fixpoint_of_comp ob.comp S src s
+  · intro u hu
+    rw [C.zinc_out_outside S src P hPS fuel n R s hR s' h u hu, Compiler.cleanFrom_outside _ S src s u hu]
+
+/-- **T5, keys from the tree**: a downstream of upstream subprojects is up to date against the new
+upstream when its loop stops (`XCompiler.downstream_sound` on the lift; the snapshot, `Fresh` and
+the external invalidations are the general form's). -/
+theorem downstream_sound (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Disjoint Up S)
+    (src₀ src : CUnit → Src) (s : State CUnit Out K) (snap : CUnit → Iface) (o : CUnit → Out)
+    (D : Finset CUnit) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
+    (hInv : C.Inv S src₀ s ∅) (hFresh : C.toX.Fresh Up S s snap ∅)
+    (P : Policy CUnit Out K) (hP : P.Sound S) (fuel : ℕ) (R₀ : Finset CUnit)
+    (hR₀ : D ∪ C.toX.extInvalidated Up S s snap (XCompiler.withUpstream Up s o) ⊆ R₀)
+    (s' : State CUnit Out K) (h : C.zinc S src P fuel 0 R₀ (XCompiler.withUpstream Up s o) = some s') :
+    C.Inv S src s' ∅ := by
+  rw [← zinc_toX] at h
+  exact C.toX.downstream_sound (C.toX_obligations ob) Up S hdisj src₀ src s snap o D hD hInv hFresh
+    P hP fuel R₀ hR₀ s' h
+
+/-- **T4, monotone policies, keys from the tree.** -/
+theorem zinc_some_of_monotoneFrom (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K)
+    (hPS : P.InS S) (k : ℕ) (hM : P.MonotoneFrom S k) :
+    ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K), R ⊆ S →
+      (k - n) + S.card + 1 ≤ fuel → (C.zinc S src P fuel n R s).isSome := by
+  intro fuel n R s hR hfuel
+  rw [← zinc_toX]
+  exact C.toX.zinc_some_of_monotoneFrom S src P hPS k hM fuel n R s hR hfuel
+
+end Zinc.TCompiler
