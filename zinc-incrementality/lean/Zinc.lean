@@ -27,3 +27,4 @@ import Zinc.Sealed
 import Zinc.Names
 import Zinc.Givens
 import Zinc.InlineOpaque
+import Zinc.InlineOpaqueSound

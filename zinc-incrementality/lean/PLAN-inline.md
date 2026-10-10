@@ -36,17 +36,17 @@ The harness ran every edit of both spaces in both layouts (336 inline cases, 216
 
 | | Family | Lean | Scripted (pending, retronym/zinc#40) |
 |---|---|---|---|
-| I1 | Inline body reads a constant through a path (`D.K`, the owner's own `L.K`, `conf.K`); edit the constant. Folded by the inliner, hashed by name. | `dConst_today`, `pathK_today` | `inline-constant-path-scala3` |
-| I2 | Inline body reads a type alias at the type level (`constValue[D.N]`, inline match on `erasedValue[D.N]`); edit the alias. | `today_stale` | `inline-constvalue-alias-scala3` |
-| I3 | `transparent inline` called directly or from a plain def; edit the type of a member its body calls, or an unqualified constant. Typer's dependency phase records only the call. | `today_stale` | `inline-transparent-reference-scala3` (`NoSuchMethodError`) |
-| O1 | Opaque type in an inherited signature: `K extends Tr` with `Tr.h(t: O.T)` (mixin forwarder), or `K extends Tr2`, `Tr2 extends Base[O.T]` implementing `g` (forwarder and bridge); edit the right-hand side. The value-class forwarder of P6.5. | `fwd_today` | `opaque-type-mixin-forwarder-scala3` |
+| I1 | Inline body reads a constant through a path (`D.K`, the owner's own `L.K`, `conf.K`); edit the constant. Folded by the inliner, hashed by name. | `check_dConst_today`, `check_pathK_today` | `inline-constant-path-scala3` |
+| I2 | Inline body reads a type alias at the type level (`constValue[D.N]`, inline match on `erasedValue[D.N]`); edit the alias. | `check_today_stale` | `inline-constvalue-alias-scala3` |
+| I3 | `transparent inline` called directly or from a plain def; edit the type of a member its body calls, or an unqualified constant. Typer's dependency phase records only the call. | `check_today_stale` | `inline-transparent-reference-scala3` (`NoSuchMethodError`) |
+| O1 | Opaque type in an inherited signature: `K extends Tr` with `Tr.h(t: O.T)` (mixin forwarder), or `K extends Tr2`, `Tr2 extends Base[O.T]` implementing `g` (forwarder and bridge); edit the right-hand side. The value-class forwarder of P6.5. | `check_fwd_today` | `opaque-type-mixin-forwarder-scala3` |
 
 | Space | Edits | Unclean today (I1/I2/I3 or O1 forwarder/bridge) | Harness divergences per layout | Recompiles today → `hashConsts` / `bodyDeps` or `dep` / `refine` |
 |---|---|---|---|---|
 | inline | 168 | 64 (24/24/16) | 64 + pickling (4 single, 2 split) | 320 → 416 / 384 |
 | opaque | 108 | 24 (12/12) | 24 + pickling (6 single) | 228 → 252 / 216 |
 
-Clean today: plain inline bodies, helpers (a helper's body edit recompiles only `L`: the client is never recompiled for nothing in any mode, `precise`), private members through their accessors, unqualified constants, `inline val`, inline-to-inline chains through another file, transparent calls through an inline def; every opaque client that names the type, calls a member returning it, uses an extension, inlines a member, goes through an alias, or overrides with it, in both layouts. The opaque right-hand side is hashed under the owner's name, so every user of the owner recompiles (a client of `O.other` too: `other_wasted`); `refine` (the right-hand side in `T`'s hash and in the hashes of the members whose signatures mention `T`) saves those 12 recompiles and is otherwise today's.
+Clean today: plain inline bodies, helpers (a helper's body edit recompiles only `L`: the client is never recompiled for nothing in any mode, `check_precise`), private members through their accessors, unqualified constants, `inline val`, inline-to-inline chains through another file, transparent calls through an inline def; every opaque client that names the type, calls a member returning it, uses an extension, inlines a member, goes through an alias, or overrides with it, in both layouts. The opaque right-hand side is hashed under the owner's name, so every user of the owner recompiles (a client of `O.other` too: `check_other_wasted`); `refine` (the right-hand side in `T`'s hash and in the hashes of the members whose signatures mention `T`) saves those 12 recompiles and is otherwise today's.
 
 Fixes, checked on the space: I1–I3 by `hashConsts` (`treeHash` mixes the constant and the type each reference or `TypeTree` denotes: the owner recompiles anyway, and its API then moves) or `bodyDeps` (record the references of the body before folding, for transparent expansions too: the client is invalidated one cycle earlier and fewer intermediates recompile). O1 by `dep`: a class that erases an inherited signature (forwarder, bridge) records the types the erasure reads, as P6.8 for value classes; a witness of erased signatures in the declarer's hash (P6.9) is the Zinc-side alternative. Costs: +30% / +20% recompiles over today on the inline space, +10% on the opaque space; none of them recompiles a client that reads nothing changed. Write-ups for dotc (not filed): `dotc-inline-opaque-issues.md` in the session notes.
 
@@ -56,10 +56,32 @@ Artefact (dotc, not Zinc): when an object is compiled apart from what it referen
 
 Macros, briefly: a macro implementation edited in the same subproject as the inline def that splices it recompiles the clients (Zinc's transitive bytecode hash of classes with macros); in a separate subproject the harness cannot run it (the macro is loaded from the upstream's early output). Not modelled.
 
-### Steps
+### Proved vs checked (`InlineOpaqueSound.lean`)
+
+The first round of this phase (`InlineOpaque.lean`) is an executable spec: its `check_` theorems are `native_decide` over bounded factor spaces, the same verdicts the conformance dump hands the harness. The second round proves the fixes in general, through the Phase 1 framework.
+
+**The instance.** A slot language of any finite set of units: members with signatures (primitive or opaque), constants, `inline` and `transparent inline` defs whose bodies are lists of items (literals, calls, constants through `this` or a path, signatures, nested inline calls up to a depth), opaque types, trait methods that descendants forward. A unit's compilation is a `Task`; an inline call asks for the callee's body and then issues the body's queries itself, so "what the inliner read" is the client's trace, and the framework needs no new concept. The one change is in the *queries*: each carries its context (own code, plain or transparent expansion, forwarder erasure), which the answer ignores and the bridge reads when it records keys. It is an `NCompiler` (`NonLocalAns.lean`, T2″/T3a″), unchanged; the non-local answers and hashes are what the hash-what-references-denote fix needs.
+
+**Proved, for every program, every edit, every depth:**
+
+| Statement | Lean |
+|---|---|
+| Recording the expansion's references before folding, transparent ones too, and the types a forwarder's erasure reads (`bodyDeps` + `dep`) meets the obligations | `obligations_record` |
+| Hashing what an inline def's references denote (`hashDenot`: the def's key hashes every query of its expansion with its current answer, a fresh verifying-trace hash) + `dep` meets them | `obligations_denot`, with `trace_code` (every query in an expansion belongs to the expansion of a body the unit's own code asked for, whose key is recorded) |
+| Hence T3a″: if Zinc's loop stops, every unit is a per-unit fixed point | `record_sound`, `denot_sound` |
+| Per edit (T2″ for one round): after any edit of units `D`, each unit outside `D` is invalidated or its untouched output is already its compilation against the new interfaces: the client recompiles or its inlined and erased results are unchanged | `recompiles_or_unchanged`, `record_recompiles_or_unchanged`, `denot_recompiles_or_unchanged` |
+| Today's bridge (Scala 3.9.0's recording) fails coverage | `not_obligations_today` |
+| One concrete program pair per family where every key the client recorded hashes the same and its output differs | `I1_today`, `I2_today`, `I3_today`, `O1_today` (kernel `decide`), and the same pairs not stale under the fixes |
+
+**Only checked (bounded enumeration or harness):** the exact counts and recompiled sets of the factor spaces, precision (no client recompiled for nothing; `refine` saving the users of the owner's other members), and that the language's `today` rules are dotc's (reconciled against the harness on 552 cases). The language abstracts dotc: which reads are folded and which contexts lose their dependencies are inputs from the probes, not derived.
+
+**Not an instance.** dotc would *store* a hash of what the references denote in the owner's API at the owner's compilation. That is P6.9's stored witness: sound only as a run invariant (the owner recompiles in the cycle after what it reads changed, then the client a cycle later), which the framework's per-round invariant cannot state. The proved `hashDenot` is the fresh variant (recomputed from the current interfaces, Δ over `affected`), so for the dotc fix as it would be implemented, the per-edit theorem holds only for `bodyDeps`.
+
+## Steps
 
 - [x] P11.1 Probes (hand-written cases through the harness) to establish the rules above.
 - [x] P11.2 `InlineOpaque.lean`: the loop, the two spaces, families as checked examples, the fixes clean on the space.
 - [x] P11.3 `conformance inline|opaque [mode]`; harness runs on develop, model and harness reconciled (transparent expansions record nothing; an unqualified top-level constant is recorded; the pickling artefact).
 - [x] P11.4 Pending scripted tests per family (retronym/zinc#40, each failing only at its last step, its edited sources passing a clean build); dotc write-ups.
+- [x] P11.5 Proofs (`InlineOpaqueSound.lean`): the fixes as `NCompiler` instances over every program of a slot language (T2″/T3a″), today's failure of coverage, one counterexample term per family; the enumerated theorems of `InlineOpaque.lean` renamed `check_`.
 - [ ] Future: macros across subprojects (needs the harness to load a macro from final classes); `-Ypickle-java`/Java constants read by inline bodies; the pickling artefact as a dotc reproducibility issue; implementing `bodyDeps` in dotc and re-running the space.

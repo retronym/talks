@@ -30,21 +30,26 @@ recompiled. What each class records and hashes follows dotc 3.9.0 (read from `Ex
   owner's own name (`O`, or `O$package` at the top level): every user of the owner is
   invalidated, and nobody else.
 
+Everything below is *checked*, not proved: the `check_` theorems are `native_decide` over the
+bounded spaces (`Inl.bases`, `Opq.bases`) of this executable spec, the same verdicts the conformance
+dump hands the harness. The general statements, over every program of a slot language and through
+the Phase 1 framework, are in `InlineOpaqueSound.lean`.
+
 Results (checked below, and against the harness on Zinc `develop`, `lake exe conformance inline` and
 `opaque`):
 
-1. **Inline constants and aliases** (`dConst_today`): an inline body that reads `D.K`
+1. **Inline constants and aliases** (`check_dConst_today`): an inline body that reads `D.K`
    (`final val`), `L.K` (its own owner, through the path), `constValue[D.N]` or matches on
    `erasedValue[D.N]` leaves the client with the old value when `K` or `N` changes. The owner `L`
    recompiles (it uses `K`), its API does not move (the reference hashes as a name), and the
    client recorded no name. An unqualified `K` survives inlining and is recorded; an `inline val`
    is an inline symbol, so the body hash covers it.
-2. **Transparent references** (`today_stale`): a transparent `inl` called directly (or from a
+2. **Transparent references** (`check_today_stale`): a transparent `inl` called directly (or from a
    plain `M.w`) leaves its caller stale when the type of a member its body calls changes (a helper,
    a private member's accessor, `D.v`) or an unqualified constant changes: the caller recorded
    only `inl`, whose hash covers names. Through an inline `M.w` it is clean: the expansion is in
    `w`'s body, and the client's `Inlining` phase records it.
-3. **Opaque forwarders** (`fwd_today`): `class K extends Tr`, `Tr.h(t: O.T)`: an edit to `T`'s
+3. **Opaque forwarders** (`check_fwd_today`): `class K extends Tr`, `Tr.h(t: O.T)`: an edit to `T`'s
    right-hand side recompiles `Tr` (it uses `O`), whose API does not move (`h` renders `O.T` by
    name), and leaves `K`'s mixin forwarder with the old erasure; the same for a bridge `K` inherits
    from a trait (`Tr2 extends Base[O.T]`). This is the value-class forwarder of `Erasure.lean`
@@ -307,41 +312,41 @@ def b0 : Prog := { owner := .obj, trans := false, via := .direct, ref := .dConst
 
 /-- **Inline constant**: `inline def inl: Any = D.K`, `D.K` edited from `1` to `2`: `D` and `L`
 recompile, the client keeps `1`. -/
-theorem dConst_today :
+theorem check_dConst_today :
     check .today b0 { b0 with val := 2 } = ⟨["D", "L"], ["Client"], ["L"]⟩ := by native_decide
 
 /-- Through `this`, the reference survives inlining and the client records `K`. -/
-theorem thisK_today :
+theorem check_thisK_today :
     (check .today { b0 with ref := .thisK } { b0 with ref := .thisK, val := 2 }).clean = true := by
   native_decide
 
 /-- The owner's own constant through its path is folded like another object's. -/
-theorem pathK_today :
+theorem check_pathK_today :
     (check .today { b0 with ref := .pathK } { b0 with ref := .pathK, val := 2 }).stale = ["Client"] := by
   native_decide
 
 /-- A helper's body is not the client's business: nothing but `L` recompiles. -/
-theorem helper_body_precise :
+theorem check_helper_body_precise :
     check .today { b0 with ref := .helper } { b0 with ref := .helper, val := 2 } = ⟨["L"], [], []⟩ := by
   native_decide
 
 /-- The stale cases today: constants through a path and type-level reads of an alias; and for a
 transparent `inl` expanded in typer, every reference whose hash moves without moving `inl`'s. -/
-theorem today_stale : (bases.all fun p => (edits p).all fun (e, p') =>
+theorem check_today_stale : (bases.all fun p => (edits p).all fun (e, p') =>
     (check .today p p').clean ||
       [Ref.pathK, .dConst, .constValue, .matchN].contains p.ref ||
       p.trans && p.via != .inl && (p.ref == .thisK || e == .ty)) = true := by
   native_decide
 
-theorem hashConsts_clean : (bases.all fun p => (edits p).all fun (_, p') =>
+theorem check_hashConsts_clean : (bases.all fun p => (edits p).all fun (_, p') =>
     (check .hashConsts p p').clean) = true := by native_decide
 
-theorem bodyDeps_clean : (bases.all fun p => (edits p).all fun (_, p') =>
+theorem check_bodyDeps_clean : (bases.all fun p => (edits p).all fun (_, p') =>
     (check .bodyDeps p p').clean) = true := by native_decide
 
 /-- No mode recompiles a client that reads nothing the edit changed (`L` and `M` may recompile for
 nothing: they use the names their bodies read). -/
-theorem precise : ([Mode.today, .hashConsts, .bodyDeps].all fun m => bases.all fun p =>
+theorem check_precise : ([Mode.today, .hashConsts, .bodyDeps].all fun m => bases.all fun p =>
     (edits p).all fun (_, p') => !(check m p p').wasted.contains "Client") = true := by native_decide
 
 /-! ### Rendering -/
@@ -505,21 +510,21 @@ def b0 : Prog := { site := .obj, use := .fwd, rhs := .int }
 
 /-- **Opaque forwarder**: `class K extends Tr`, `Tr.h(t: O.T)`; `T = Int` to `T = Any`: `O` and
 `Tr` recompile, `K` keeps the forwarder `h(I)I`. -/
-theorem fwd_today : check .today b0 { b0 with rhs := .any } = ⟨["O", "Tr"], ["K"], []⟩ := by
+theorem check_fwd_today : check .today b0 { b0 with rhs := .any } = ⟨["O", "Tr"], ["K"], []⟩ := by
   native_decide
 
-theorem today_stale : (bases.all fun p => (edits p).all fun (_, p') =>
+theorem check_today_stale : (bases.all fun p => (edits p).all fun (_, p') =>
     (check .today p p').clean || [Use.fwd, .inhBridge].contains p.use) = true := by native_decide
 
-theorem dep_clean : (bases.all fun p => (edits p).all fun (_, p') => (check .dep p p').clean) = true := by
+theorem check_dep_clean : (bases.all fun p => (edits p).all fun (_, p') => (check .dep p p').clean) = true := by
   native_decide
 
-theorem refine_clean_with_dep_gap : (bases.all fun p => (edits p).all fun (_, p') =>
+theorem check_refine_clean_with_dep_gap : (bases.all fun p => (edits p).all fun (_, p') =>
     (check .refine p p').clean || [Use.fwd, .inhBridge].contains p.use) = true := by native_decide
 
 /-- Today an edit of the right-hand side recompiles a client that uses only another member of the
 owner; `refine` does not. -/
-theorem other_wasted :
+theorem check_other_wasted :
     (check .today { b0 with use := .other } { b0 with use := .other, rhs := .any }).wasted = ["Client"] ∧
     (check .refine { b0 with use := .other } { b0 with use := .other, rhs := .any }).wasted = [] := by
   native_decide
