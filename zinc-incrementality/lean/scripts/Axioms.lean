@@ -1,5 +1,8 @@
 import Zinc
 import Scala
+import BinCompat.ZincBridgeScala3
+import BinCompat.ZincBridgeKeys
+import BinCompat.ZincBridgeLibs
 
 /-! The core theorems' axioms, checked by `scripts/check_axioms.py`: only `propext`,
 `Classical.choice` and `Quot.sound` are allowed (no `sorryAx`, no `Lean.ofReduceBool` from
@@ -59,3 +62,11 @@ import Scala
 #print axioms AsSeenFrom.compose
 #print axioms AsSeenFrom.chain_is_single
 #print axioms Scala.lower_congr
+-- B4 and its extensions
+#print axioms Zinc.XCompiler.untouched_eq_clean
+#print axioms BinCompat.ZincBridge.gap_witness
+#print axioms BinCompat.ZincBridgeScala3.not_comp
+#print axioms BinCompat.ZincBridgeScala3.after_eq_fresh_fix
+#print axioms BinCompat.ZincBridgeKeys.coverage_fails
+#print axioms BinCompat.ZincBridgeKeys.loop_witness
+#print axioms BinCompat.ZincBridgeLibs.library_client
