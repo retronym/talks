@@ -81,7 +81,7 @@ theorem inv_external (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Disjoin
     (hInv : C.Inv S src₀ s ∅) (hFresh : C.Fresh Up S s snap ∅) :
     C.Inv S src (withUpstream Up s o)
       (D ∪ C.extInvalidated Up S s snap (withUpstream Up s o)) :=
-  C.toX.inv_external (C.toX_obligations ob) Up S hdisj src₀ src s snap o D hD hInv hFresh
+  C.toX.inv_external (C.toX_obligations ob).abstraction Up S hdisj src₀ src s snap o D hD hInv hFresh
 
 variable [Fintype CUnit]
 

@@ -52,6 +52,12 @@ structure Obligations : Prop where
   locality : ∀ (I I' : CUnit → Iface) (c : CUnit), (∀ d ∈ C.hashDeps I c, I d = I' d) →
     ∀ k, C.π I c k = C.π I' c k
 
+/-- The abstraction obligation alone: T5a (`inv_external`) needs nothing else (an observation of
+the split-layout session's `External.lean`). -/
+def Abstraction : Prop :=
+  ∀ (I I' : CUnit → Iface) (k : CUnit × K), C.π I k.1 k.2 = C.π I' k.1 k.2 →
+    ∀ q, C.covers I q k → C.answer I q = C.answer I' q ∧ C.covers I' q k
+
 open Compiler (State Policy)
 
 def ifaces (s : State CUnit Out K) : CUnit → Iface := C.iface ∘ s.out
@@ -272,7 +278,7 @@ theorem withUpstream_out_of_not_mem (Up : Finset CUnit) (s : State CUnit Out K) 
 omit [DecidableEq K] in
 /-- **T5a.** From an up-to-date downstream with fresh snapshots, the new classpath leaves dirty
 only the changed sources and the holders of keys whose hash moved. -/
-theorem inv_external (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Disjoint Up S)
+theorem inv_external (hab : C.Abstraction) (Up S : Finset CUnit) (hdisj : Disjoint Up S)
     (src₀ src : CUnit → Src) (s : State CUnit Out K) (snap : CUnit → Iface) (o : CUnit → Out)
     (D : Finset CUnit) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
     (hInv : C.Inv S src₀ s ∅) (hFresh : C.Fresh Up S s snap ∅) :
@@ -294,7 +300,7 @@ theorem inv_external (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Disjoin
       C.answer (C.ifaces s) q = C.answer (C.ifaces s₁) q := by
     intro q hq
     obtain ⟨k, hk, hc⟩ := hcov q hq
-    exact (ob.abstraction _ _ k (hhash k hk) q hc).1
+    exact (hab _ _ k (hhash k hk) q hc).1
   obtain ⟨hrun, htrace⟩ := Task.run_eq_of_trace _ _ _ hagree
   have huUp : u ∉ Up := fun h => Finset.disjoint_left.1 hdisj h huS
   refine ⟨?_, ?_⟩
@@ -303,7 +309,7 @@ theorem inv_external (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Disjoin
   · rw [← htrace]
     intro q hq
     obtain ⟨k, hk, hc⟩ := hcov q hq
-    exact ⟨k, hk, (ob.abstraction _ _ k (hhash k hk) q hc).2⟩
+    exact ⟨k, hk, (hab _ _ k (hhash k hk) q hc).2⟩
 
 /-- **T5.** If the downstream loop, started from the changed sources and the external
 invalidations, stops, every downstream unit is up to date against the new classpath. -/
@@ -316,7 +322,7 @@ theorem downstream_sound (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Dis
     (s' : State CUnit Out K) (h : C.zinc S src P fuel 0 R₀ (withUpstream Up s o) = some s') :
     C.Inv S src s' ∅ :=
   C.zinc_sound ob S src P hP fuel 0 R₀ _ _ hR₀
-    (C.inv_external ob Up S hdisj src₀ src s snap o D hD hInv hFresh) s' h
+    (C.inv_external ob.abstraction Up S hdisj src₀ src s snap o D hD hInv hFresh) s' h
 
 /-! ## Refreshing the snapshot -/
 
