@@ -143,40 +143,56 @@ def template (o n : Lib) (c : C) (ho hn : Header C) : Option Problem :=
 def lessVisible (n o : Access) : Bool :=
   (n != .pub && o == .pub) || (n == .priv && o == .prot)
 
-def fieldProblems (o n : Lib) (c : C) : List Problem :=
-  (flds o c).filterMap fun (fn, fd, fi) =>
-    if fi.access != .pub then none
-    else match lookupClassFields n c fn with
-      | [] => some .missingField
-      | (_, d', fi') :: _ =>
-        if fi'.access != .pub then some .inaccessibleField
-        else if d' != fd then some .incompatibleFieldType
-        else if fi.isStatic && !fi'.isStatic then some .staticVirtualMember
-        else if !fi.isStatic && fi'.isStatic then some .virtualStaticMember
-        else none
+/-- MiMa's keys: what it compares, per class public in the old library. -/
+inductive Key
+  /-- The class's own facts and its supertypes (`TemplateChecker`). -/
+  | template (c : C)
+  /-- A public field declared in `c`, looked up by name from `c` (`FieldChecker`). -/
+  | field (c : C) (n : N) (d : D)
+  /-- A public method declared in `c`, looked up by name from `c` (`checkExisting`). -/
+  | method (c : C) (n : N) (d : D)
+  /-- The abstract methods of the new `c` and of the supertypes it gained (`checkNew`). -/
+  | newMethods (c : C)
+  deriving DecidableEq, Repr
 
-def existingMethodProblems (o n : Lib) (c : C) (ho hn : Header C) : List Problem :=
-  (meths o c).filterMap fun (mn, md, mi) =>
-    if mi.access != .pub then none
-    else
-      let lookup (l : Lib) : List (C × D × MethodInfo) :=
-        if !hn.isInterface then
-          if mi.isAbstract then lookupMethods l c mn mi.isStatic
-          else lookupClassMethods l c mn mi.isStatic ++ lookupConcreteIfaceMethods l c mn mi.isStatic
-        else lookupMethods l c mn mi.isStatic
-      let news := lookup n
-      match news.find? (·.2.1 = md) with
-      | some (_, _, mi') =>
-        if lessVisible mi'.access mi.access then some .inaccessibleMethod
-        else if !mi.isFinal && mi'.isFinal && !ho.isFinal then some .finalMethod
-        else if !mi.isAbstract && mi'.isAbstract then some .directAbstractMethod
-        else if mi.isStatic && !mi'.isStatic then some .staticVirtualMember
-        else if !mi.isStatic && mi'.isStatic then some .virtualStaticMember
-        else none
-      | none =>
-        let olds := (lookup o).map (·.2.1)
-        if news.all (fun m => olds.contains m.2.1) then some .directMissingMethod
-        else some .incompatibleResultType
+def keys (o : Lib) : List Key :=
+  o.flatMap fun (c, cf) =>
+    if !cf.header.isPublic then []
+    else [.template c] ++
+      ((flds o c).filter (·.2.2.access == .pub)).map (fun f => .field c f.1 f.2.1) ++
+      ((meths o c).filter (·.2.2.access == .pub)).map (fun m => .method c m.1 m.2.1) ++
+      [.newMethods c]
+
+def fieldCheck (n : Lib) (c : C) (fn : N) (fd : D) (fi : FieldInfo) : Option Problem :=
+  match lookupClassFields n c fn with
+  | [] => some .missingField
+  | (_, d', fi') :: _ =>
+    if fi'.access != .pub then some .inaccessibleField
+    else if d' != fd then some .incompatibleFieldType
+    else if fi.isStatic && !fi'.isStatic then some .staticVirtualMember
+    else if !fi.isStatic && fi'.isStatic then some .virtualStaticMember
+    else none
+
+def methodCheck (o n : Lib) (c : C) (ho hn : Header C) (mn : N) (md : D) (mi : MethodInfo) :
+    Option Problem :=
+  let lookup (l : Lib) : List (C × D × MethodInfo) :=
+    if !hn.isInterface then
+      if mi.isAbstract then lookupMethods l c mn mi.isStatic
+      else lookupClassMethods l c mn mi.isStatic ++ lookupConcreteIfaceMethods l c mn mi.isStatic
+    else lookupMethods l c mn mi.isStatic
+  let news := lookup n
+  match news.find? (·.2.1 = md) with
+  | some (_, _, mi') =>
+    if lessVisible mi'.access mi.access then some .inaccessibleMethod
+    else if !mi.isFinal && mi'.isFinal && !ho.isFinal then some .finalMethod
+    else if !mi.isAbstract && mi'.isAbstract then some .directAbstractMethod
+    else if mi.isStatic && !mi'.isStatic then some .staticVirtualMember
+    else if !mi.isStatic && mi'.isStatic then some .virtualStaticMember
+    else none
+  | none =>
+    let olds := (lookup o).map (·.2.1)
+    if news.all (fun m => olds.contains m.2.1) then some .directMissingMethod
+    else some .incompatibleResultType
 
 def newMethodProblems (o n : Lib) (c : C) (hn : Header C) : List Problem :=
   let deferred := (meths n c).filterMap fun (mn, md, mi) =>
@@ -193,18 +209,36 @@ def newMethodProblems (o n : Lib) (c : C) (hn : Header C) : List Problem :=
       else some .inheritedNewAbstractMethod
   deferred ++ inherited
 
-def classProblems (o n : Lib) (c : C) (ho : Header C) : List Problem :=
-  match get n c with
-  | none => [.missingClass]
-  | some cn =>
-    let hn := cn.header
-    match template o n c ho hn with
-    | some .incompatibleTemplateDef => [.incompatibleTemplateDef]
-    | t => t.toList ++ fieldProblems o n c ++ existingMethodProblems o n c ho hn ++
-        newMethodProblems o n c hn
+/-- The headers of `c` in both libraries, unless MiMa stops at `c`: missing in the new one, or
+interface ↔ class (`Analyzer.analyze` checks nothing further then). -/
+def bothChecked (o n : Lib) (c : C) : Option (Header C × Header C) :=
+  match get o c, get n c with
+  | some co, some cn =>
+    if template o n c co.header cn.header = some .incompatibleTemplateDef then none
+    else some (co.header, cn.header)
+  | _, _ => none
 
-/-- MiMa's problems for a library edit `o` → `n`: per class public in `o`. -/
-def mima (o n : Lib) : List Problem :=
-  o.flatMap fun (c, cf) => if cf.header.isPublic then classProblems o n c cf.header else []
+/-- What MiMa reports for one key. -/
+def check (o n : Lib) : Key → List Problem
+  | .template c =>
+    match get o c, get n c with
+    | some co, some cn => (template o n c co.header cn.header).toList
+    | some _, none => [.missingClass]
+    | none, _ => []
+  | .field c fn fd =>
+    match bothChecked o n c, (flds o c).find? (fun f => f.1 = fn ∧ f.2.1 = fd) with
+    | some _, some (_, _, fi) => (fieldCheck n c fn fd fi).toList
+    | _, _ => []
+  | .method c mn md =>
+    match bothChecked o n c, (meths o c).find? (fun m => m.1 = mn ∧ m.2.1 = md) with
+    | some (ho, hn), some (_, _, mi) => (methodCheck o n c ho hn mn md mi).toList
+    | _, _ => []
+  | .newMethods c =>
+    match bothChecked o n c with
+    | some (_, hn) => newMethodProblems o n c hn
+    | none => []
+
+/-- MiMa's problems for a library edit `o` → `n`: every key's. -/
+def mima (o n : Lib) : List Problem := (keys o).flatMap (check o n)
 
 end BinCompat
