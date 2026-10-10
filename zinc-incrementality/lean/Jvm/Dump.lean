@@ -25,8 +25,8 @@ def pkgIn (l : List (C × Classfile C N D)) (c : C) : ℕ :=
 /-- The binary name: package `n > 0` is `p<n>`. -/
 def qual (pk : C → ℕ) (c : C) : String :=
   if pk c = 0 then cBase c else s!"p{pk c}.{cBase c}"
-def nName : N → String | .m => "m"
-def dName : D → String | .v => "()V" | .i => "()I" | .s => "Ljava/lang/String;"
+def nName : N → String | .m => "m" | .init => "<init>"
+def dName : D → String | .v => "()V" | .i => "()I" | .s => "Ljava/lang/String;" | .iv => "(I)V"
 
 def accName : Access → String | .pub => "public" | .prot => "protected" | .pkg => "package" | .priv => "private"
 
@@ -63,6 +63,7 @@ def classJson (c : C × Classfile C N D) : String :=
   ",\"public\":" ++ jbool h.isPublic ++
   ",\"super\":" ++ (match h.super with | some s => jstr (cName s) | none => "null") ++
   ",\"ifaces\":" ++ jarr (h.ifaces.map (jstr ∘ cName)) ++
+  ",\"permits\":" ++ (match h.permitted with | some ps => jarr (ps.map (jstr ∘ cName)) | none => "null") ++
   ",\"methods\":" ++ jarr (c.2.methods.map methodJson) ++
   ",\"fields\":" ++ jarr (c.2.fields.map fieldJson) ++ "}"
 
@@ -83,6 +84,7 @@ def siteJson : Site C N D → String
   | .putstatic c n d => member pk "putstatic" c n d ++ "}"
   | .invokespecial c n d i => member pk "invokespecial" c n d ++ ",\"iface\":" ++ jbool i ++ "}"
   | .new c => "{\"op\":\"new\",\"owner\":" ++ jstr (qual pk c) ++ "}"
+  | .construct c n d => member pk "construct" c n d ++ "}"
   | .within x s => "{\"op\":\"at\",\"cls\":" ++ jstr (qual pk x) ++ ",\"site\":" ++ siteJson s ++ "}"
 
 def outcomeJson : Except LinkError (List C) → String

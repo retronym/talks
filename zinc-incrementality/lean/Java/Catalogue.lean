@@ -261,9 +261,8 @@ def recordComponentRemoved : Case where
   v1 := [rec [("x", .int)]]
   sites := [invokevirtual "R" "x" "()I" "R", invokevirtual "R" "y" "()I" "R"]
 
-/-- A record component added: the old accessor links, by footprint. The canonical constructor's
-descriptor changes too, so `new R(1)` compiled against `v0` would not link; `Jvm` has no site for
-a constructor invocation (`invokespecial` is a super call there), so that half is not checked. -/
+/-- A record component added: the old accessor still links, by footprint, but the canonical
+constructor's descriptor changes, so `new R(1)` compiled against `v0` does not. -/
 def recordComponentAdded : Case where
   name := "recordComponentAdded"
   mima := some "DirectMissingMethodProblem"
@@ -271,11 +270,18 @@ def recordComponentAdded : Case where
   v1 := [rec [("x", .int), ("y", .int)]]
   sites := [invokevirtual "R" "x" "()I" "R"]
 
+/-- The same edit, constructing the record. -/
+def recordComponentAddedNew : Case where
+  name := "recordComponentAddedNew"
+  mima := some "DirectMissingMethodProblem"
+  v0 := [rec [("x", .int)]]
+  v1 := [rec [("x", .int), ("y", .int)]]
+  sites := [construct "R" "<init>" "(I)V", invokevirtual "R" "x" "()I" "R"]
+
 /-! ## Sealed classes (§13.4.2.1) -/
 
-/-- A class becomes sealed without permitting the client's subclass. HotSpot rejects loading the
-subclass (`IncompatibleClassChangeError`, JVMS §5.3.5); `Jvm` does not model
-`PermittedSubclasses`, so the model links it. -/
+/-- A class becomes sealed without permitting the client's subclass: loading the subclass fails
+with `IncompatibleClassChangeError` (JVMS §5.3.5). The client no longer compiles either. -/
 def classBecomesSealed : Case where
   name := "classBecomesSealed"
   mima := none
@@ -288,6 +294,7 @@ def all : List Case :=
   [constantValueChanged, constantThroughInterface, constantBecomesNonConstant, nonConstantRemoved,
    constantRemoved, abstractAddedToInterface, defaultAddedToInterface, privateAddedToInterface,
    narrowedOverrideRemoved, narrowedOverrideRemovedViaP, narrowedOverrideAdded, enumConstantAdded,
-   enumConstantRemoved, recordComponentRemoved, recordComponentAdded, classBecomesSealed]
+   enumConstantRemoved, recordComponentRemoved, recordComponentAdded, recordComponentAddedNew,
+   classBecomesSealed]
 
 end Java.Catalogue

@@ -83,6 +83,12 @@ No track edits `Zinc/`; talks#21 and the PRs stacked on it own that directory. I
     - The protected-receiver check (§4.10.1.8), predicted by `methodBecomesProtectedOther`.
   - TODO: nestmates. Private access is same-class only. A nest change can only break a client through a library method's own calls, which needs method bodies (J4).
   - TODO: `Object`'s methods in interface resolution; transitive overriding through an intermediate package-private method (§5.4.5); clients in the library's package; a space over two client classes.
+- **J5. Sealed classes and constructor calls.** DONE. 10 catalogue cases, from the Java cases of §V.
+  - `Header.permitted : Option (List C)` is the `PermittedSubclasses` attribute. Loading a class checks it against the superclass and each superinterface (JVMS §5.3.5): the class must be listed and, unless it is public, in the sealed type's run-time package. Otherwise `incompatibleClassChange`. It is checked after the final-superclass check and before the access check, as HotSpot's class file parser does. HotSpot 21 says "class X cannot inherit from sealed class A" (or "cannot implement sealed interface I"); 25 and 27 say "Failed listed permitted subclass check: class X is not a permitted subclass of A".
+  - `Site.construct c n d` is `new c(…)`: `new c; dup; invokespecial c.n d`, with `n` the caller's name for `<init>`. `new` resolves the class and requires it to be concrete. The constructor then resolves as any method, walking the superclasses with an access check; HotSpot then requires it to be declared by `c` itself, so an inherited match is `noSuchMethod` (`ctorPulledUp`).
+  - `space5`, for the J5 cases: `space3`'s clients, each `X` declaring a `()V` constructor, plus `new c(…)` of each library class with `()V` and `(I)V`, direct and from `X`. 14,256 programs. The probe agrees on all of them on JDK 21, 25 and 27, apart from the JDK-8350029 deviation on JDK 21 (4 programs, all `invokespecial` super calls). The full space run (58,400 programs) has no other disagreement.
+  - The probe renders a class's declared constructors (each calling the superclass's `()V` and logging its class), and a default public `()V` only for a class that declares none.
+  - Not covered: protected constructors (the verifier's rule for `invokespecial <init>` across packages) and constructor chaining between library classes.
 - **J4. Behaviour.** TODO. Constants folded into the client. Method bodies, so that a library method's own calls link too. Which method runs is already observed by the probe and is part of the outcome; `changesSomeClient` is the first form of the "links, but runs different code" verdict.
 
 The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is expected to report, to be confirmed by track B. "HotSpot" is the result on `v1`; "same" means it links and runs the method the model predicts. The breaks and changes columns are counts over the clients that link on `v0`.
@@ -124,6 +130,16 @@ The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is ex
 | `fieldShadowed` | — | links, runs `B` | same | no | yes (42/165) |
 | `fieldIfaceBeforeSuper` | — | links, runs `I` | same | yes (37/224) | yes (37/224) |
 | `putstaticBecomesFinal` | — | `illegalAccess` | `IllegalAccessError` | yes (13/49) | no |
+| `classBecomesSealed` | — | `incompatibleClassChange` | `IncompatibleClassChangeError` | yes (15/32) | no |
+| `classBecomesSealedPermitting` | — | links | same | no | no |
+| `ifaceBecomesSealed` | — | `incompatibleClassChange` | `IncompatibleClassChangeError` | yes (7/14) | no |
+| `sealedPermitsNonPublicElsewhere` | — | `incompatibleClassChange` | `IncompatibleClassChangeError` | no (0/32) | no |
+| `sealedPermitsPublicElsewhere` | — | links | same | no | no |
+| `ctorRemoved` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (9/41) | no |
+| `ctorBecomesPrivate` | DirectMissingMethodProblem | `illegalAccess` | `IllegalAccessError` | yes (9/41) | no |
+| `ctorBecomesPackagePrivate` | InaccessibleMethodProblem | `illegalAccess` | `IllegalAccessError` | yes (9/41) | no |
+| `ctorPulledUp` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (13/86) | no |
+| `ctorClassBecomesAbstract` | AbstractClassProblem | `instantiation` | `InstantiationError` | yes (27/41) | no |
 
 For track B, three cases are candidate MiMa false negatives:
 - `defaultConflict` (no problem expected).
@@ -314,11 +330,11 @@ Not compared: the rest of the bytecode, `Signature`, `InnerClasses`, `NestHost`/
 
 **JLS chapter 13 (`Java/Jls13.lean`, 19 examples) over `Java/Catalogue.lean` (16 cases).** Constants (§13.1, §13.4.9): a changed constant links before and after, by `compatible_of_footprint` (the client never touches `A`), yet the client's classfile changes, and its lowering trace has `decl A`, also when the client names only an interface constant that folds `A.K`; a deleted constant still links (the client has its copy) and no longer compiles; a non-constant field deleted gives `NoSuchFieldError`. Generics (§13.4.15): removing a narrowing override breaks a call through the subclass (`get()String` is gone; erasure leaves `get()Object`) but not one through the superclass (it selected the bridge, now the inherited method); adding one moves selection to the new bridge. Interfaces (§13.5.3, §13.5.6): an abstract method added gives `AbstractMethodError`, a default method added links, a private one is compatible by footprint. Enums (§13.4.26) and records (§13.4.27): adding a constant or a component is compatible by footprint; removing one gives `NoSuchFieldError` / `NoSuchMethodError`.
 
-**Gaps in `Jvm` that the Java cases reach** (for track J; `Jvm/` is not edited here):
+**Gaps in `Jvm` that the Java cases reached.** Two are closed by J5, and the Java cases now state HotSpot's result:
 
-- `PermittedSubclasses` is not checked at loading, so making a class `sealed` without permitting an existing subclass links in the model; HotSpot throws `IncompatibleClassChangeError` (JVMS §5.3.5). `classBecomesSealed` states the model's answer and says so.
-- No site invokes a constructor (`invokespecial` is a super call), so a record's canonical constructor changing descriptor when a component is added is not checked; only the accessors are.
-- Nestmates (`NestHost`/`NestMembers`, private access between them) are not modelled; the subset has no nested types, so nothing here needs them yet.
+- `PermittedSubclasses` is checked at loading, so making a class `sealed` without permitting an existing subclass gives `IncompatibleClassChangeError` (`classBecomesSealed`).
+- `Site.construct` invokes a constructor, so a record component added breaks `new R(1)` compiled before it (`recordComponentAddedNew`), while the old accessors still link.
+- Still open: nestmates (`NestHost`/`NestMembers`, private access between them) are not modelled; the subset has no nested types, so nothing here needs them yet.
 
 ### B — Binary compatibility (`BinCompat/`, plus a scala-cli harness outside Lean)
 
@@ -363,5 +379,5 @@ J, S and V can start at once; they share only the `Jvm` types. B1 can start as s
   - resolution (§5.4.3.3, §5.4.3.4) and selection (§5.4.6) as a `Task` over the class table;
   - loading checks;
   - `link_congr` (T1 for linkage), `Compatible`, `compatible_of_footprint`.
-- `Jvm/Catalogue.lean`: 35 edits, each with MiMa's expected problem name, checked before and after by kernel `decide` and on HotSpot (§J).
+- `Jvm/Catalogue.lean`: 45 edits, each with MiMa's expected problem name, checked before and after by kernel `decide` and on HotSpot (§J).
 - `Jvm/Clients.lean`: the J2 verdicts over two client spaces, checked on HotSpot (§J).

@@ -1,5 +1,6 @@
 import java.lang.classfile.*;
 import java.lang.classfile.attribute.ConstantValueAttribute;
+import java.lang.classfile.attribute.PermittedSubclassesAttribute;
 import java.lang.constant.*;
 import java.nio.file.*;
 import java.util.*;
@@ -13,6 +14,9 @@ import static java.lang.classfile.ClassFile.*;
  * `Site<k>` per call site, with `static void run()` as javac compiles `C c = new R(); c.m();`.
  * A site `at X` is rendered as `static void site$k()` in the client class `X`, which `Site<k>`
  * calls.
+ *
+ * A class gets a public `()V` constructor unless it declares constructors (`<init>`); a declared
+ * one calls the superclass's `()V`. `new C(…)` (`construct`) passes zeros and nulls.
  *
  * Methods log their owner to `ProbeLog`. A `String` field holds its owner's name (instance fields
  * set by the constructor, static ones by `ConstantValue`), and a get logs it; a put stores "put"
@@ -92,6 +96,11 @@ public class Render {
       List<ClassDesc> is = new ArrayList<>();
       for (Object i : Json.arr(c.get("ifaces"))) is.add(ClassDesc.of((String) i));
       cb.withInterfaceSymbols(is);
+      if (c.get("permits") != null) {
+        List<ClassDesc> ps = new ArrayList<>();
+        for (Object p : Json.arr(c.get("permits"))) ps.add(ClassDesc.of((String) p));
+        cb.with(PermittedSubclassesAttribute.ofSymbols(ps));
+      }
       for (Map<String, Object> f : fields) {
         boolean st = bool(f, "static");
         int ff = access(f) | (st ? ACC_STATIC : 0) | (bool(f, "final") ? ACC_FINAL : 0);
@@ -101,7 +110,9 @@ public class Render {
           if (st) fb.with(ConstantValueAttribute.of(name));
         });
       }
-      if (!itf) {
+      List<Map<String, Object>> ctors = new ArrayList<>();
+      for (Map<String, Object> m : Json.objs(c.get("methods"))) if (m.get("name").equals(ConstantDescs.INIT_NAME)) ctors.add(m);
+      if (!itf && ctors.isEmpty()) {
         cb.withMethodBody(ConstantDescs.INIT_NAME, VOID, ACC_PUBLIC, b -> {
           b.aload(0).invokespecial(superDesc, ConstantDescs.INIT_NAME, VOID);
           for (Map<String, Object> f : fields) {
@@ -110,7 +121,18 @@ public class Render {
           b.return_();
         });
       }
+      for (Map<String, Object> m : ctors) {
+        cb.withMethodBody(ConstantDescs.INIT_NAME, MethodTypeDesc.ofDescriptor((String) m.get("desc")), access(m), b -> {
+          b.aload(0).invokespecial(superDesc, ConstantDescs.INIT_NAME, VOID);
+          for (Map<String, Object> f : fields) {
+            if (!bool(f, "static")) b.aload(0).ldc(name).putfield(self, (String) f.get("name"), ClassDesc.ofDescriptor((String) f.get("desc")));
+          }
+          b.ldc(name).invokestatic(LOG, "ran", RAN);
+          b.return_();
+        });
+      }
       for (Map<String, Object> m : Json.objs(c.get("methods"))) {
+        if (m.get("name").equals(ConstantDescs.INIT_NAME)) continue;
         MethodTypeDesc d = MethodTypeDesc.ofDescriptor((String) m.get("desc"));
         int mf = access(m);
         if (bool(m, "static")) mf |= ACC_STATIC;
@@ -169,6 +191,14 @@ public class Render {
         popResult(b, d);
       }
       case "new" -> newObj(b, owner).pop();
+      case "construct" -> {
+        MethodTypeDesc d = MethodTypeDesc.ofDescriptor(desc);
+        b.new_(owner).dup();
+        for (ClassDesc p : d.parameterList()) {
+          if (p.isPrimitive()) b.iconst_0(); else b.aconst_null();
+        }
+        b.invokespecial(owner, ConstantDescs.INIT_NAME, d).pop();
+      }
       case "getfield" -> newObj(b, recv).getfield(owner, n, ClassDesc.ofDescriptor(desc)).invokestatic(LOG, "ran", RAN);
       case "putfield" -> newObj(b, recv).dup().putstatic(LOG, "obj", OBJECT).ldc("put").putfield(owner, n, ClassDesc.ofDescriptor(desc));
       case "getstatic" -> b.getstatic(owner, n, ClassDesc.ofDescriptor(desc)).invokestatic(LOG, "ran", RAN);

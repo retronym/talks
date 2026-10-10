@@ -17,11 +17,12 @@ namespace Jvm.Catalogue
 inductive C | A | B | I | J | X
   deriving DecidableEq, Repr
 
-inductive N | m
+/-- `init` is `<init>`, a constructor. -/
+inductive N | m | init
   deriving DecidableEq, Repr
 
-/-- `v` is `()V`, `i` is `()I`; `s` is a field of type `String`. -/
-inductive D | v | i | s
+/-- `v` is `()V`, `i` is `()I`; `s` is a field of type `String`; `iv` is `(I)V`. -/
+inductive D | v | i | s | iv
   deriving DecidableEq, Repr
 
 abbrev W := World C N D
@@ -361,6 +362,105 @@ def j3 : List Case :=
    fieldBecomesFinal, fieldBecomesPrivate, fieldShadowed, fieldIfaceBeforeSuper,
    putstaticBecomesFinal]
 
+/-! ## J5: sealed classes and constructors
+
+Every class here declares its constructors, so `probes/jvm` renders exactly those (and no default
+`()V`); each keeps a public `()V`, which `new` and subclasses' constructors call. -/
+
+def ctor0 : N × D × MethodInfo := (.init, .v, inst)
+def ctorI (acc : Access := .pub) : N × D × MethodInfo := (.init, .iv, { access := acc })
+
+/-- A class becomes sealed without permitting the client's subclass: loading the subclass fails
+(JVMS §5.3.5), with HotSpot's "cannot inherit from sealed class". -/
+def classBecomesSealed : Case where
+  name := "classBecomesSealed"
+  mima := none
+  v0 := [(.A, { methods := [ctor0] })]
+  v1 := [(.A, { header := { permitted := some [.B] }, methods := [ctor0] })]
+  client := [(.X, { header := { super := some .A }, methods := [ctor0] })]
+  prog := { loads := [.X] }
+
+/-- The same, permitting the client's subclass: it loads. -/
+def classBecomesSealedPermitting : Case where
+  name := "classBecomesSealedPermitting"
+  mima := none
+  v0 := [(.A, { methods := [ctor0] })]
+  v1 := [(.A, { header := { permitted := some [.B, .X] }, methods := [ctor0] })]
+  client := [(.X, { header := { super := some .A }, methods := [ctor0] })]
+  prog := { loads := [.X] }
+
+/-- An interface becomes sealed without permitting the client's implementation. -/
+def ifaceBecomesSealed : Case where
+  name := "ifaceBecomesSealed"
+  mima := none
+  v0 := [(.I, { header := iface })]
+  v1 := [(.I, { header := { iface with permitted := some [.B] } })]
+  client := [(.X, { header := { ifaces := [.I] }, methods := [ctor0] })]
+  prog := { loads := [.X] }
+
+/-- A sealed class in another package permits the client's subclass, but the subclass is not
+public: §5.3.5 requires the same run-time package then. -/
+def sealedPermitsNonPublicElsewhere : Case where
+  name := "sealedPermitsNonPublicElsewhere"
+  mima := none
+  v0 := [(.A, { header := p1, methods := [ctor0] })]
+  v1 := [(.A, { header := { p1 with permitted := some [.X] }, methods := [ctor0] })]
+  client := [(.X, { header := { super := some .A, isPublic := false }, methods := [ctor0] })]
+  prog := { loads := [.X] }
+
+/-- The same with a public subclass: it loads. -/
+def sealedPermitsPublicElsewhere : Case where
+  name := "sealedPermitsPublicElsewhere"
+  mima := none
+  v0 := [(.A, { header := p1, methods := [ctor0] })]
+  v1 := [(.A, { header := { p1 with permitted := some [.X] }, methods := [ctor0] })]
+  client := [(.X, { header := { super := some .A }, methods := [ctor0] })]
+  prog := { loads := [.X] }
+
+/-- A constructor removed: `new A(0)` does not link. -/
+def ctorRemoved : Case where
+  name := "ctorRemoved"
+  mima := some "DirectMissingMethodProblem"
+  v0 := [(.A, { methods := [ctor0, ctorI] })]
+  v1 := [(.A, { methods := [ctor0] })]
+  prog := { sites := [construct .A .init .iv] }
+
+def ctorBecomesPrivate : Case where
+  name := "ctorBecomesPrivate"
+  mima := some "DirectMissingMethodProblem"
+  v0 := [(.A, { methods := [ctor0, ctorI] })]
+  v1 := [(.A, { methods := [ctor0, ctorI .priv] })]
+  prog := { sites := [construct .A .init .iv] }
+
+def ctorBecomesPackagePrivate : Case where
+  name := "ctorBecomesPackagePrivate"
+  mima := some "InaccessibleMethodProblem"
+  v0 := [(.A, { header := p1, methods := [ctor0, ctorI] })]
+  v1 := [(.A, { header := p1, methods := [ctor0, ctorI .pkg] })]
+  prog := { sites := [construct .A .init .iv] }
+
+/-- A constructor moved to the superclass: constructors are not inherited, so `new B(0)` does not
+link, although resolution finds `A.<init>(I)V`. -/
+def ctorPulledUp : Case where
+  name := "ctorPulledUp"
+  mima := some "DirectMissingMethodProblem"
+  v0 := [(.A, { methods := [ctor0] }), (.B, { header := { super := some .A }, methods := [ctor0, ctorI] })]
+  v1 := [(.A, { methods := [ctor0, ctorI] }), (.B, { header := { super := some .A }, methods := [ctor0] })]
+  prog := { sites := [construct .B .init .iv] }
+
+/-- The class becomes abstract: `new` fails before the constructor resolves. -/
+def ctorClassBecomesAbstract : Case where
+  name := "ctorClassBecomesAbstract"
+  mima := some "AbstractClassProblem"
+  v0 := [(.A, { methods := [ctor0, ctorI] })]
+  v1 := [(.A, { header := { isAbstract := true }, methods := [ctor0, ctorI] })]
+  prog := { sites := [construct .A .init .iv] }
+
+def j5 : List Case :=
+  [classBecomesSealed, classBecomesSealedPermitting, ifaceBecomesSealed,
+   sealedPermitsNonPublicElsewhere, sealedPermitsPublicElsewhere, ctorRemoved, ctorBecomesPrivate,
+   ctorBecomesPackagePrivate, ctorPulledUp, ctorClassBecomesAbstract]
+
 def all : List Case :=
   [methodRemoved, resultTypeChanged, classBecomesInterface, becomesStatic, becomesAbstract,
    becomesFinal, methodBecomesFinal, superclassRemoved, defaultRemoved, defaultConflict,
@@ -413,5 +513,16 @@ example : fieldBecomesPrivate.before = .ok [.A] ∧ fieldBecomesPrivate.after = 
 example : fieldShadowed.before = .ok [.A] ∧ fieldShadowed.after = .ok [.B] := by decide
 example : fieldIfaceBeforeSuper.before = .ok [.A] ∧ fieldIfaceBeforeSuper.after = .ok [.I] := by decide
 example : putstaticBecomesFinal.before = .ok [.A] ∧ putstaticBecomesFinal.after = .error .illegalAccess := by decide
+
+example : classBecomesSealed.before = .ok [] ∧ classBecomesSealed.after = .error .incompatibleClassChange := by decide
+example : classBecomesSealedPermitting.after = .ok [] := by decide
+example : ifaceBecomesSealed.before = .ok [] ∧ ifaceBecomesSealed.after = .error .incompatibleClassChange := by decide
+example : sealedPermitsNonPublicElsewhere.after = .error .incompatibleClassChange := by decide
+example : sealedPermitsPublicElsewhere.after = .ok [] := by decide
+example : ctorRemoved.before = .ok [.A] ∧ ctorRemoved.after = .error .noSuchMethod := by decide
+example : ctorBecomesPrivate.before = .ok [.A] ∧ ctorBecomesPrivate.after = .error .illegalAccess := by decide
+example : ctorBecomesPackagePrivate.before = .ok [.A] ∧ ctorBecomesPackagePrivate.after = .error .illegalAccess := by decide
+example : ctorPulledUp.before = .ok [.B] ∧ ctorPulledUp.after = .error .noSuchMethod := by decide
+example : ctorClassBecomesAbstract.before = .ok [.A] ∧ ctorClassBecomesAbstract.after = .error .instantiation := by decide
 
 end Jvm.Catalogue

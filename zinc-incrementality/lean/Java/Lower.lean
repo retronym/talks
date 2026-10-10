@@ -159,7 +159,8 @@ table, so a class extending one is a root. -/
 def ClassOut.toJvm (c : ClassOut) : Jvm.Classfile String String String where
   header := { isInterface := c.itf, isAbstract := c.abs, isFinal := c.final,
               super := if c.itf || c.super.startsWith "java/" then none else some c.super,
-              ifaces := c.ifaces, isPublic := c.pub }
+              ifaces := c.ifaces, isPublic := c.pub,
+              permitted := if c.permitted.isEmpty then none else some c.permitted }
   methods := c.methods.map fun m =>
     (m.name, m.desc, { isStatic := m.static, isAbstract := m.abs, isFinal := m.final,
                        access := match m.acc with | .pub => .pub | .priv => .priv | .pkg => .pkg })

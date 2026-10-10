@@ -4,7 +4,7 @@ import Jvm.Clients
 /-! `lake exe jvmcases`: the catalogue (`Jvm/Catalogue.lean`) as JSON lines for `probes/jvm`.
 
 `lake exe jvmcases space`: every catalogue edit with every well-typed client of `Jvm/Clients.lean`'s
-space (`space3` for the J3 cases), named `<case>/<n>`, so the probe checks the model's outcome for each client, not only the
+space (`space3` for the J3 cases, `space5` for J5), named `<case>/<n>`, so the probe checks the model's outcome for each client, not only the
 catalogue's own.
 
 `lake exe jvmcases verdicts`: per edit, MiMa's problem, the J2 verdicts and the number of clients in
@@ -18,8 +18,8 @@ def main (args : List String) : IO Unit := do
       IO.println s!"{k.name}\t{repr k.before}\t{repr k.after}"
     return
   let cases := if args.contains "space" || args.contains "verdicts" then
-      all.map (·, space) ++ j3.map (·, space3)
-    else (all ++ j3).map (·, space)
+      all.map (·, space) ++ j3.map (·, space3) ++ j5.map (·, space5)
+    else (all ++ j3 ++ j5).map (·, space)
   for (k, space) in cases do
     if args.contains "verdicts" then
       let ok := space.filter fun cl => let k' := k.withClient cl; wellTyped k'.w0 cl.2 && links k'.w0 cl.2
