@@ -277,12 +277,13 @@ example :
       ⟨.ok .comp, .ok .pobj, false, false⟩ := by native_decide
 
 /-- The family of an unclean edit: G3 the trait initialiser; G1 an instance in a package object
-(Scala 2's `package object a` included); G2 a top-level given (Scala 3). -/
+(Scala 2's `package object a` and the imported `package object q` included); G2 a top-level given
+(Scala 3, the imported package's included). -/
 def family (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : String :=
   if (verdict m v p p').clean then "-"
   else if separateInit v p p' (recompiles m v p p') then "G3"
   else if (changed v p p').any (fun s => s.topLevel v) then "G2"
-  else if (changed v p p').any (fun s => s == .pobj || s == .outer) then "G1" else "?"
+  else if (changed v p p').any (fun s => s == .pobj || s == .outer || s == .wpkg) then "G1" else "?"
 
 /-! ## Cost
 

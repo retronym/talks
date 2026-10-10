@@ -3,15 +3,15 @@ take the model's verdicts from) and reports:
 * where the model's resolution disagrees with the compiler's (read off the client's classfile);
 * where the model's verdict disagrees with the harness's;
 * where the classes the model recompiles beyond the edited files (the client, the bystanders
-  `User`, `Near`, `Mid`) differ from Zinc's, and the cost: the client recompiled though not
+  `User`, `Near`, `Mid`, `Far`) differ from Zinc's, and the cost: the client recompiled though not
   necessary, and the bystanders recompiled;
 * the divergences (incremental differs from clean), grouped by edit and resolution change."""
 import collections, json, re, sys
 
 from families import family, givens_family
 
-GIVENS = {'gBlk': 'blk', 'gInh': 'inh', 'gWild': 'wild', 'gInner': 'inner', 'gPobj': 'pobj',
-          'gOuter': 'outer', 'gComp': 'comp'}
+GIVENS = {'gBlk': 'blk', 'gInh': 'inh', 'gWild': 'wild', 'gWpkg': 'wpkg', 'gInner': 'inner',
+          'gPobj': 'pobj', 'gOuter': 'outer', 'gComp': 'comp'}
 
 def slot_of(probe, name):
     toks = set(re.findall(r'[A-Za-z0-9_/$]+', ' '.join(probe)))
@@ -53,7 +53,7 @@ if len(sys.argv) > 2:
             for k in ('modelRecompiled', 'modelNecessary', 'modelFamily'):
                 if k in e:
                     r[k] = e[k]
-BYSTANDERS = {'c.User': 'User', 'a.b.Near': 'Near', 'a.Mid': 'Mid'}
+BYSTANDERS = {'c.User': 'User', 'a.b.Near': 'Near', 'a.Mid': 'Mid', 'c.Far': 'Far'}
 
 def harness_recompiled(r):
     """The classes the harness saw recompiled, among those the model predicts: the client's file
@@ -98,7 +98,7 @@ for r in rs:
             rec_mis[(r['edited'], tuple(sorted(model)), tuple(sorted(zinc)))] += 1
         cost['edits'] += 1
         if 'Client' in zinc and not r.get('modelNecessary', True):
-            cost['client, not necessary'] += 1
+            cost['client, resolution unchanged'] += 1
         for b in zinc - {'Client'}:
             cost[b] += 1
     if ok != r.get('modelClean'):

@@ -462,59 +462,101 @@ The harness ran the same cases as on develop (the same base selection, identical
 
 F1 is gone, as predicted; F2, F3, G1 and G2 stay, because none adds a class: the binding is a member of an existing package object, object or `$package` class (G2's added class is `Inner$package`, not a name the client uses). In Scala 3 the fix turns 300 of the harness's F1 cases into F6: a client extending `P`, whose resolution an added class does not change (the inherited member wins), is now recompiled, apart from `P`, and loses the `P.$init$` call (`Client$.class` bytes only; the model counts 7,752 such edits). The revert column moves the same way: names 2.13 988 → 148 (an added class is the revert of a delete, rename or move), names 3 430 → 618 (F6 again).
 
-### Extending #34: a rule per family (P10.7)
+### Extending #34: a rule per family, as a specification (P10.7, P10.9)
 
-Each remaining family gets a rule run after every cycle, as #34's is, and the model checks each rule alone, all together, and on the API #24 stores. Two new factors make the binding inherited rather than declared: `package object b extends a.PT` (`pinh`) and `object W extends a.WT` (`winh`), with the edit adding or removing `Foo` in the trait (Scala 3's `export` was already there); `Givens.lean` gets `pinh` too. The rules (`Rules`, `Mode.rules`):
+Each remaining family gets a rule, run after every cycle as #34's is. `NamesSpec.lean` states the rules as keys of a `TCompiler` instance (DESIGN-spec.md) and proves what they guarantee for every program. `Names.lean`/`Givens.lean` check the same rules on the bounded spaces, against the harness, and measure their cost.
 
-* **F2**: after each cycle, the users of every name a package object (`a.b.package`, Scala 3's `F$package`) gained since *before the run*. A new `$package` class counts as gaining all its names.
+The rules:
+
+* **#34** (F1): the users of the simple name of an added top-level class.
+* **F2**: the users of a name that a package object (`a.b.package`, Scala 3's `F$package`) gained. On develop the package object's stored API includes inherited members, so diffing each cycle against the merged analysis sees an inherited member appear in the cycle that recompiles the package object.
 * **F3**: an import's change is checked against the used names of every class of the importing file, not only the class it is charged to.
-* **G**: when a package object or `$package` class gains or loses an implicit (or is a new class with one), the classes of its package and the packages nested in it. A name does not help: the client never names the instance.
+* **G** (G1, G2): when a package object or `$package` class gains or loses an implicit (or is a new class with one), invalidate classes. The client never names the instance, so a name cannot narrow it.
 
-What they close (`Zinc/NamesRules.lean`, every edit of both spaces, both versions; the divergences beside resolution, F4–F7 and G3, excluded):
+Each comes in two reaches. `global` covers every user of the name, or every class for G, which is what #34 does today. `narrowed` covers only the classes of the package where the binding changed and of its nested packages, plus classes that record a wildcard import of that package (`imports`). Recording that import is a bridge change; today the bridge records nothing for a package qualifier.
 
-* `today_families`: today every wrong edit is F1, F2 or F3, inherited bindings included.
-* `f2_leaves`, `f3_leaves`: each rule closes its family and nothing else.
-* `all_clean` (names and givens): #34 with the F2, F3 and G rules is clean on develop's API.
-* `all_cycle_clean`: on develop the baseline does not matter in this space. A package object's stored API includes inherited members but changes only when it is recompiled, which is in the cycle after its parent, so the per-cycle diff sees the name appear.
-* #24 stores declarations only. `pobj_inherited_decls`: the F2 rule sees no new name when `PT` gains `Foo`. `composed_clean`: with names composed from the ancestors (`MerkleHashes.composed`) and diffed against the run's baseline, clean. `decls_leaves`, `composed_cycle_leaves`: without composition, or composed but diffed against the previous cycle, exactly the inherited package-object member is left (names and givens). Composed per cycle fails because the name appears when `PT` is recompiled, before the package object is, so the package object's own recompilation shows nothing new. A rule that looks only at *recompiled* package objects can also miss under #24, whose descendant rules may skip recompiling the package object; the composed rule should diff every package object.
+Two new factors make the binding inherited rather than declared: `package object b extends a.PT` (`pinh`) and `object W extends a.WT` (`winh`). The givens space gets `pinh` and `wpkg` (an instance in `package object q` or a top-level given in `a.q`, imported with `import a.q._` / `import a.q.given`).
+
+#### The specification (`NamesSpec.lean`)
+
+The instance reuses `JavaSpec`'s lookup. Units are top-level classes `Pkg × N` over arbitrary types. The client's task asks probes grouped in Scala's scope levels: block import and parents, explicit import, the file's wildcard imports (objects; packages' classes and package objects), then each enclosing package's package object and class. The first level with a hit decides. Implicit search does the same with the instance of `T` as the member, every `$package` file class of a package, and the companion last.
+
+Bridge designs are `keysOf` functions:
+
+* today: the owner of the resolved symbol with the used name, import qualifiers charged to one class, and inheritance as whole-API;
+* `searched`: a key per probe;
+* the rules: `present` keys on classes named `n` (#34), `has n` on package objects (F2), the wildcard qualifier with every used name in the file (F3), and `has imp` on package-level containers (G), each with a reach.
+
+#24's declarations-only API is a `π`.
+
+Because the oracle is arbitrary, every proved result holds for any number of bindings in the searched scopes. Because T3a starts from any state satisfying the invariant, it covers edits of several files and sequences of edits. That answers the bound of the enumeration (at most two bindings, single edits).
+
+| Result | Status |
+|---|---|
+| The lookup reads only its probes (`mem_trace_client`); compositionality (`obligations_comp`) and abstraction on develop's API (`obligations_abstraction`) | proved, every program |
+| `obligations_rules_global`: #34 + F2 + F3 (global) meet the obligations, so T3a (`sound_of`) | proved, every program, edit sequence and sound policy |
+| `obligations_rules_narrowed`: the same narrowed, **given** recorded package imports | proved, every program |
+| `obligations_g_global`, `obligations_g_narrowed` (given recorded imports): the G rule | proved, every program |
+| `obligations_searched`: a key per probe, for names and implicits | proved, every program |
+| `f1_today`, `f2_cheap` (#34 + F3), `f3_cheap` (#34 + F2), `g1_cheap`, `g2_cheap`: today's keys and partial fixes fail coverage | proved, one witness each (kernel `decide`) |
+| `narrowed_without_imports`, `g_narrowed_without_imports`: the narrowed rules fail coverage without the recorded import | proved, one witness each |
+| `decls_violates_abstraction`: #24's declarations-only hash; composed from ancestors it is develop's `π` | proved |
+| `narrowed_tight`: every key of the narrowed rules is justified by a probe of the lookup; `global_not_tight`: the global ones record keys on packages never searched | proved; the witness by `decide` |
+| Resolution per version (Scala 2's precedence, ambiguities, the class-name alias), the stale mirror (F4), the clash (F5), the trait initialiser (F6), `writeReplace` (F7), the exact recompiled sets | checked, `Names.lean`/`Givens.lean` on the bounded space and on the harness |
+| Each rule closes its family and nothing else (`f2_leaves`, `f3_leaves`), today's families are F1–F3 (`today_families`), the rules together are clean (`all_clean`, `narrowed_clean`, `g_narrowed_clean`) | checked, `NamesRules.lean` `example`s by `native_decide` over the bounded spaces |
+
+The general results need no bound because coverage is per query and the rules' keys are defined by the probes. Ambiguity, precedence and the compiler bugs (F4–F7) change *which* hit wins or what bytes come out, not what the lookup reads. Those remain checked, not proved.
 
 #### Cost
 
-Correctness first, but a rule that invalidates the world on common edits is no use. `conformance cost` counts, per mode, the wrong edits (soundness) and two kinds of excess recompilation (precision): the client recompiled though its resolution did not change and it does not extend the edited trait, and bystanders that stand for every class of their kind in a real build. Names has `c.User`, a user of the name elsewhere (`a.Y.Foo`); givens has `a.b.Near` and `a.Mid`, which summon nothing. Edits are over the whole space: every edit in it touches a binding of the client's name, so the rates are worst cases, not frequencies.
+Correctness first, but a rule that invalidates the world on common edits is no use. Precision in the spec is tightness: the narrowed rules record only keys a probe of the lookup justifies, so they invalidate a client only when an answer its lookup can read changed (or through inheritance). The global rules record keys on every package. The magnitude comes from the enumeration (`conformance cost`):
 
-| Space | Mode | Edits | Wrong | Client, not necessary | `User` | `Near` | `Mid` |
-|---|---|---|---|---|---|---|---|
-| names, 2.13 | `today` | 209,552 | 19,008 | 14,432 | 0 | | |
-| | `cheap` (#34) | | 9,712 | 77,368 | 74,792 | | |
-| | `f2` | | 11,904 | 25,088 | 20,464 | | |
-| | `f3` | | 16,400 | 19,120 | 0 | | |
-| | `cheap+f2+f3` | | 0 | 92,712 | 95,256 | | |
-| | `searched` | | 0 | 102,808 | 0 | | |
-| | `names` | | 0 | 119,832 | 209,552 | | |
-| | `all+decls` (#24) | | 6,264 | 90,728 | 85,024 | | |
-| | `all+composed` (#24) | | 0 | 92,712 | 95,256 | | |
-| names, 3 | `today` | 270,268 | 19,628 | 15,096 | 0 | | |
-| | `cheap` | | 5,208 | 90,160 | 102,948 | | |
-| | `f2` | | 17,444 | 35,688 | 26,296 | | |
-| | `f3` | | 16,604 | 19,472 | 0 | | |
-| | `cheap+f2+f3` | | 0 | 115,128 | 129,244 | | |
-| | `searched` | | 0 | 125,176 | 0 | | |
-| | `names` | | 0 | 147,096 | 270,268 | | |
-| | `all+decls` | | 840 | 105,736 | 119,012 | | |
-| | `all+composed` | | 0 | 115,128 | 129,244 | | |
-| givens, 2.13 | `today` | 1,856 | 460 | 368 | | 0 | 0 |
-| | `g` | | 0 | 368 | | 628 | 276 |
-| | `all+decls` | | 128 | 368 | | 452 | 276 |
-| givens, 3 | `today` | 4,314 | 684 | 933 | | 0 | 0 |
-| | `g` | | 0 | 1,882 | | 2,041 | 689 |
-| | `all+decls` | | 148 | 1,752 | | 1,703 | 689 |
+* **Client, resolution unchanged**: the client recompiled although what its name (or summon) resolves to did not change.
+* **Bystanders**: classes that stand for the rest of a build, recompiled although their lookups never searched the edited scope. `c.User` uses the name elsewhere (`a.Y.Foo`); `a.b.Near`, `a.Mid` and `c.Far` summon nothing.
+
+Every edit in the space touches a binding of the client's name, so these are worst cases, not frequencies.
+
+| Space | Mode | Edits | Wrong | Client, resolution unchanged | `User` | `Near` | `Mid` | `Far` |
+|---|---|---|---|---|---|---|---|---|
+| names, 2.13 | `today` | 209,552 | 19,008 | 14,432 | 0 | | | |
+| | `cheap` (#34) | | 9,712 | 77,368 | 74,792 | | | |
+| | `f2` | | 11,904 | 25,088 | 20,464 | | | |
+| | `f3` | | 16,400 | 19,120 | 0 | | | |
+| | `cheap+f2+f3`, global | | 0 | 92,712 | 95,256 | | | |
+| | narrowed | | 6,896 | 78,376 | 0 | | | |
+| | narrowed + imports | | 0 | 92,712 | 0 | | | |
+| | `searched` | | 0 | 102,808 | 0 | | | |
+| | `names` | | 0 | 119,832 | 209,552 | | | |
+| | `all+decls` (#24) | | 6,264 | 90,728 | 85,024 | | | |
+| names, 3 | `today` | 270,268 | 19,628 | 15,096 | 0 | | | |
+| | `cheap` | | 5,208 | 90,160 | 102,948 | | | |
+| | `f2` | | 17,444 | 35,688 | 26,296 | | | |
+| | `f3` | | 16,604 | 19,472 | 0 | | | |
+| | `cheap+f2+f3`, global | | 0 | 115,128 | 129,244 | | | |
+| | narrowed | | 11,288 | 99,128 | 0 | | | |
+| | narrowed + imports | | 0 | 115,128 | 0 | | | |
+| | `searched` | | 0 | 125,176 | 0 | | | |
+| | `all+decls` | | 840 | 105,736 | 119,012 | | | |
+| givens, 2.13 | `today` | 4,748 | 1,516 | 856 | | 0 | 0 | 0 |
+| | `g`, global | | 0 | 856 | | 1,972 | 1,972 | 1,972 |
+| | narrowed | | 428 | 856 | | 1,424 | 624 | 0 |
+| | narrowed + imports | | 0 | 856 | | 1,424 | 624 | 0 |
+| | `all+decls` | | 304 | 856 | | 1,572 | 1,572 | 1,572 |
+| givens, 3 | `today` | 11,289 | 2,188 | 2,301 | | 0 | 0 | 0 |
+| | `g`, global | | 0 | 4,938 | | 6,169 | 6,169 | 6,169 |
+| | narrowed | | 468 | 4,571 | | 5,190 | 1,814 | 0 |
+| | narrowed + imports | | 0 | 4,938 | | 5,190 | 1,814 | 0 |
+| | `all+decls` | | 356 | 4,654 | | 5,409 | 5,409 | 5,409 |
 
 Reading it:
 
-* F3's rule is free: it recompiles nothing outside the client's file, and the client only when the import changed.
-* The name rules reach every user of the name. #34 is most of the cost (an added top-level class is common: every new file), and F2 adds a fifth more (a new package-object member is rarer). Precise alternatives exist: `searched` recompiles no bystander, at the price of recompiling the client on any change to a scope it searched; that needs the extractor change, not a rule.
-* G is the blunt one. It reaches every class of a package tree, and for `package object a` (Scala 2) or a top-level given in `a` (Scala 3) that is the whole of `a` (`Mid`). Implicits in a root package object are rare but not exotic. A tighter G would invalidate only classes that ran an implicit search for the instance's type; Zinc does not record that, so the cost here is the honest one until it does.
-* Every extra recompilation grows F6 in Scala 3, the dotc trait-initialiser bug (names 3: 24,980 today, 48,428 under `cheap+f2+f3`). That is dotc's to fix, but until then precision matters for correctness too.
+* **Narrowing with recorded package imports costs nothing in soundness and removes every bystander outside the searched packages.** `User` and `Far` drop to 0. The client's own count is unchanged, because the client searches those packages.
+* **Narrowing without the recorded import is unsound,** exactly on the wildcard-imported package. That is the spec's `narrowed_without_imports`; here it is 6,896 (2.13) and 11,288 (3) wrong edits.
+* **F3 is free.**
+* **#34 is most of the client's excess.** An added class named like the client's name recompiles it even when an inner scope still wins.
+* **G narrowed still reaches a whole package tree.** A tighter G would need the implicit searches each class ran (the type searched), which the bridge does not record.
+* **Every extra recompilation grows F6 in Scala 3** (the dotc trait-initialiser bug).
+* **The per-cycle baseline is dropped.** Zinc diffs each cycle against the merged analysis, which still holds a not-yet-recompiled package object's old API, so it is sound on develop. With #24's composition, names must be composed against that same analysis.
 
 #### Harness check of the new factors
 
@@ -526,7 +568,7 @@ On the #34 scratch build (`cheap` mode), 60-base subsets weighted to the new fac
 * Scala 3 records a dependency on an inherited package-object member that the lookup passed over for `a.b.Foo`.
 * Not modelled: under #34, classes that *declare* a member named as the added class (`a.Y`, `a.V`) are recompiled too. Real cost is higher than the `User` column.
 
-Case files for the Zinc sessions (develop: `all`; #24: `all+decls`, `all+composed`, `all+composed+cycle`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary` and `modelFamily`.
+Case files for the Zinc sessions (develop: `all`, `all+narrowed+imports`; #24: `all+decls`, `all+composed`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary` and `modelFamily`.
 
 ### Steps
 
@@ -536,8 +578,9 @@ Case files for the Zinc sessions (develop: `all`; #24: `all+decls`, `all+compose
 - [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the explicit selector's name charged to the import's class, the missed clash, the trait initialiser).
 - [x] P10.5 Pending scripted tests per family.
 - [x] P10.6 The cheap fix (retronym/zinc#34) in the model (`Mode.cheap`) and the harness: F1 gone, F6 grows, the rest unchanged.
-- [x] P10.7 #34's extensions as rules (F2, F3, G) with theorems per rule and combined; inherited bindings (`pinh`, `winh`); #24's declarations-only API, with and without composition, and the per-cycle baseline; the cost per mode (`conformance cost`); a harness check of the new factors on #34, model and harness reconciled (Scala 2's inherited package-object member and class-name alias, F4 observable, F6 on `W`, F7).
-- [ ] P10.8 Harness runs of the rules: develop (`all`) and #24 (`all+decls`, `all+composed`), by the Zinc sessions.
+- [x] P10.7 #34's extensions as rules (F2, F3, G) with theorems per rule and combined; inherited bindings (`pinh`, `winh`); #24's declarations-only API, with and without composition; the cost per mode (`conformance cost`); a harness check of the new factors on #34, model and harness reconciled (Scala 2's inherited package-object member and class-name alias, F4 observable, F6 on `W`, F7).
+- [ ] P10.8 Harness runs of the rules: develop (`all`, `all+narrowed+imports`) and #24 (`all+decls`, `all+composed`), by the Zinc sessions.
+- [x] P10.9 `NamesSpec.lean`: names and implicit search as `TCompiler` instances; today's keys fail coverage per family; the rules (global, and narrowed given recorded package imports) and `searched` meet the obligations and inherit T3a; #24's declarations-only hash fails abstraction; tightness. Enumerations relabelled as checks; the per-cycle baseline dropped; global vs narrowed rules; the givens `wpkg` slot.
 - [ ] Future: a pending scripted test for F7 (and a dotc issue); count the declaring classes the name rules reach; a G that reaches only classes whose implicit search could see the instance (needs the extractor); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
 
 ## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
