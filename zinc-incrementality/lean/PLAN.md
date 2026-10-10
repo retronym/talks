@@ -476,10 +476,12 @@ Extending #34 to the remaining families:
 - [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the explicit selector's name charged to the import's class, the missed clash, the trait initialiser).
 - [x] P10.5 Pending scripted tests per family.
 - [x] P10.6 The cheap fix (retronym/zinc#34) in the model (`Mode.cheap`) and the harness: F1 gone, F6 grows, the rest unchanged.
-- [ ] Future: extend #34 to names added to package objects and imported objects, and to implicits (above); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
+- [ ] Future: extend #34 to names added to package objects and imported objects, and to implicits (above); the `split` layout (Phase 13); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
 
 ## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
 
 ## Phase 12 — Java in mixed builds, name resolution and sealed hierarchies: see `PLAN-java.md`
+
+## Phase 13 — name resolution and givens across subprojects (the `split` layout): see `PLAN-split.md`
 
 ## Phase 14 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`

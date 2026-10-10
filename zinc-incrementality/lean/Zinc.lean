@@ -32,3 +32,4 @@ import Zinc.JavaSealed
 import Zinc.JavaSpec
 import Zinc.JavaSealedSpec
 import Zinc.JavaOrder
+import Zinc.Split
