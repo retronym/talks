@@ -452,3 +452,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 19 — pipelining's early-output lifecycle: see `PLAN-pipelining.md`
 
 ## Phase 20 — constructors and synthetic case-class members: see `PLAN-synthetic.md`
+
+## Phase 21 — derived API, export forwarders and used types' supertypes: see `PLAN-derived.md`
