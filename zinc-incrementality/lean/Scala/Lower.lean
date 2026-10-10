@@ -146,6 +146,8 @@ structure MOut where
   final : Bool := false
   priv : Bool := false
   bridge : Bool := false
+  /-- A trait field's setter, `T$_setter_$v_$eq`. -/
+  setter : Bool := false
   /-- The invokes of a synthesized body; `none` for a user body, which is not compared. For a
   constructor, only its `$init$` calls. -/
   calls : Option (List Insn) := none
@@ -253,7 +255,7 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
       if m.isVal then
         fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := dl == .s212 }]
         ms := addM ms { name := m.name, desc := e }
-        ms := addM ms { name := setterName t.name m.name, desc := s!"({← erase m.res})V" }
+        ms := addM ms { name := setterName t.name m.name, desc := s!"({← erase m.res})V", setter := true }
       else
         let sd ← descOf [jname t.name] m.allParams m.res
         let call : Insn := ⟨"invokestatic", t.name, m.name ++ "$", sd⟩
@@ -364,7 +366,7 @@ def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String
   let l ← lin fuel od none
   let mut cands := o.methods.filter fun m =>
     !m.static && !m.priv && !m.abs && !m.bridge && m.name != ctorName &&
-    !(dl != .s3 && (m.name.splitOn "$_setter_$").length > 1)
+    !(dl != .s3 && m.setter)
   -- Scala 3 forwards a bridge too, when the member of that erased signature found first along
   -- the linearization is concrete: dotc looks members up by signature, and skips deferred ones.
   if dl == .s3 then
