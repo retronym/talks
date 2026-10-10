@@ -195,24 +195,24 @@ example : [s₁, s₂, s₃, s₄, s₅, s₆, s₇, s₈, s₉, s₁₀].map (f
     [(2, 2, 0), (2, 0, 0), (0, 0, 0), (0, 0, 1), (0, 1, 1), (1, 1, 1), (1, 1, 0), (1, 0, 0),
      (0, 0, 0), (0, 0, 1)] := by native_decide
 
-theorem n₀ : next R₁ s₀ = some RBC := by native_decide
-theorem n₁ : next RBC s₁ = some RAB := by native_decide
-theorem n₂ : next RAB s₂ = some RAC := by native_decide
-theorem n₃ : next RAC s₃ = some RBC := by native_decide
-theorem n₄ : next RBC s₄ = some RAB := by native_decide
-theorem n₅ : next RAB s₅ = some RAC := by native_decide
-theorem n₆ : next RAC s₆ = some RBC := by native_decide
-theorem n₇ : next RBC s₇ = some RAB := by native_decide
-theorem n₈ : next RAB s₈ = some RAC := by native_decide
-theorem n₉ : next RAC s₉ = some RBC := by native_decide
+theorem n₀ : next R₁ s₀ = some RBC := by decide
+theorem n₁ : next RBC s₁ = some RAB := by decide
+theorem n₂ : next RAB s₂ = some RAC := by decide
+theorem n₃ : next RAC s₃ = some RBC := by decide
+theorem n₄ : next RBC s₄ = some RAB := by decide
+theorem n₅ : next RAB s₅ = some RAC := by decide
+theorem n₆ : next RAC s₆ = some RBC := by decide
+theorem n₇ : next RBC s₇ = some RAB := by decide
+theorem n₈ : next RAB s₈ = some RAC := by decide
+theorem n₉ : next RAC s₉ = some RBC := by decide
 
 theorem State.ext' (s t : State U Out K) (h₁ : s.out = t.out) (h₂ : s.U = t.U) : s = t := by
   cases s; cases t; simp_all
 
 /-- Round 10 is back at round 4. -/
 theorem s₁₀_eq_s₄ : s₁₀ = s₄ :=
-  State.ext' _ _ (funext fun u => by cases u <;> native_decide)
-    (funext fun u => by cases u <;> native_decide)
+  State.ext' _ _ (funext fun u => by cases u <;> decide)
+    (funext fun u => by cases u <;> decide)
 
 /-- **Zinc's loop without `transitiveStep` does not stop**, whatever the fuel. -/
 theorem zinc_diverges : ∀ fuel, compiler.zinc S src zincPolicy fuel 0 R₁ s₀ = none := by
@@ -261,9 +261,9 @@ theorem zinc_diverges : ∀ fuel, compiler.zinc S src zincPolicy fuel 0 R₁ s�
     rw [step k 3 _ _ _ n₃]
     exact (cycle k 4).1
 
-/-- **`transitiveStep` stops**: the brute-force round compiles all three together and the loop
+/-- `transitiveStep_stops`: **`transitiveStep` stops**: the brute-force round compiles all three together and the loop
 stops at the joint fixed point. -/
-theorem transitiveStep_stops :
+example :
     ((compiler.zinc S src (Policy.transitiveStep S 3) 8 0 R₁ s₀).map
       fun s => (s.out .A, s.out .B, s.out .C)) = some (3, 3, 3) := by native_decide
 

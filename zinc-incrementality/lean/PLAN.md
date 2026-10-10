@@ -28,9 +28,7 @@ Phases 4 and 5 are design notes; their results are in phases 6 to 8.
 
 Against Zinc's bug tracker (`BUG-MAP.md`): of 145 catalogued bugs, 18 are covered by an instance, 42 partially, and 84 are gaps, which fall into 15 candidate phases. Had the instances existed, 14 would have been predicted before they were filed, and 29 partially. 17 pending and 3 disabled scripted tests are mapped the same way.
 
-Still stated as `theorem … := by native_decide`, to relabel as checks or prove (review item 16):
-- `Added` (3), `Inline` (1), `PingPong` (12), `Pipelining` (2), `Sealed` (2), `Snapshot` (2), `Stale` (2);
-- `Split` (9, named `check_`).
+No `theorem` is proved by `native_decide`: the enumerated facts are `example`s. CI (`.github/workflows/lean.yml`) lints this (`scripts/lint_native_decide.py`) and checks that the core theorems T1–T5, per framework variant, use only `propext`, `Classical.choice` and `Quot.sound` (`scripts/Axioms.lean`, `scripts/check_axioms.py`). `PingPong.zinc_diverges` had leaned on `native_decide` through its step lemmas; they are now kernel `decide`.
 
 Every witness and obligation in the table uses kernel `decide` or a proof.
 
