@@ -1,5 +1,6 @@
 import Zinc.JavaNames
 import Zinc.JavaSealed
+import Zinc.Cycles
 
 /-! Dumps the Java spaces (`Zinc/JavaNames.lean`, `Zinc/JavaSealed.lean`) as JSON lines of source
 files for the Zinc conformance harness, as `conformance names` does for Scala.
@@ -87,7 +88,51 @@ def mainSealed (m : Mode) (pipe : Bool) (l : Lang) : IO Unit := do
 
 end sealed
 
+section cycles
+open Zinc.Cycles
+
+def tyStr : Ty → String | .int => "Int" | .long => "Long"
+
+def member (u : U) : String := match u with | .a => "x" | .b => "y"
+def obj (u : U) : String := match u with | .a => "A" | .b => "B"
+
+def srcText (p : Prog) (u : U) : String :=
+  let r := (p.src u).reads
+  let ann := match p.src u with | .ann t _ => ": " ++ tyStr t | .inf _ => ""
+  "object " ++ obj u ++ " {\n  def " ++ member u ++ ann ++ " = " ++ obj r ++ "." ++ member r ++ "\n}\n" ++
+    (if p.touched u then "// touched\n" else "")
+
+def cfiles (p : Prog) : List (String × String) := [U.a, U.b].map fun u => (obj u ++ ".scala", srcText p u)
+
+def srcCfg (p : Prog) : String :=
+  " ".intercalate ([U.a, U.b].map fun u => match p.src u with | .ann t _ => tyStr t | .inf _ => "inf")
+
+def resStr : Result → String
+  | .ok a b => "ok " ++ (a.map tyStr).getD "-" ++ " " ++ (b.map tyStr).getD "-"
+  | .error => "error"
+
+def mainCycles (m : Mode) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in bases do
+    let es := (edits p).map fun (name, p') =>
+      let v := verdict m p p'
+      let rc := ([U.a, U.b].filter fun u => v.rounds.any (u ∈ ·)).map obj
+      "{\"cls\":" ++ jstr name ++ ",\"cfg\":" ++ jstr (name ++ ": " ++ srcCfg p' ++ ": clean " ++ resStr v.clean ++ ", incremental " ++ resStr v.incr) ++
+        ",\"factors\":" ++ jfactors [("a", srcCfg p')] ++
+        ",\"files\":" ++ jfiles ((cfiles p').filter (fun f => !(cfiles p).contains f) |>.map fun (f, t) => (f, some t)) ++
+        ",\"modelRecompiled\":" ++ jarr (rc.map jstr) ++ ",\"modelClean\":" ++ toString v.same ++
+        ",\"modelErrs\":" ++ jarr (if v.clean == .error then [jstr "error"] else []) ++ "}"
+    out.putStrLn ("{\"space\":\"cycles\",\"id\":\"c" ++ toString i ++ "\",\"cfg\":" ++ jstr (srcCfg p) ++
+      ",\"factors\":" ++ jfactors [("src", srcCfg p)] ++ ",\"probe\":\"\"" ++
+      ",\"files\":" ++ jfiles ((cfiles p).map fun (f, t) => (f, some t)) ++ ",\"edits\":" ++ jarr es ++ "}")
+    i := i + 1
+
+end cycles
+
 def main (args : List String) : IO Unit := do
+  if args.contains "cycles" then
+    return (← mainCycles (if args.contains "mutual" then .mutual else if args.contains "precise" then .precise else .today))
   let pipe := args.contains "pipe"
   let l := langOf args
   if args.contains "sealed" then
