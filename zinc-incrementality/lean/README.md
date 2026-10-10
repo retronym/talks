@@ -8,7 +8,7 @@ lake exe cache get && lake build
 
 Lean `v4.34.1`, Mathlib tag `v4.34.1`. No `sorry`. The scripted examples use `native_decide`.
 
-**Start here.** `DESIGN-spec.md` says what the model is: a specification whose obligations a compiler bridge and Zinc's rules must meet. `PLAN.md` opens with a table of what is proved for every program and what is only checked on a space, phase by phase. The phase files (`PLAN-names.md`, `PLAN-inline.md`, `PLAN-java.md`, `PLAN-split.md`, `PLAN-order.md`) hold the details. `REVIEW-2026-10-11.md` is a review of the framework and its next steps. `BUGS-catalogue.md` and `TESTS-catalogue.md` list Zinc's incremental-compilation bugs and pending scripted tests; `BUG-MAP.md` maps each to the instance that covers it, or to a gap.
+**Start here.** `Zinc/Model.lean` is the specification's first page. `DESIGN-spec.md` says what the model is: a specification whose obligations a compiler bridge and Zinc's rules must meet. `PLAN.md` opens with a table of what is proved for every program and what is only checked on a space, phase by phase. The phase files (`PLAN-names.md`, `PLAN-inline.md`, `PLAN-java.md`, `PLAN-split.md`, `PLAN-order.md`) hold the details. `REVIEW-2026-10-11.md` is a review of the framework and its next steps. `BUGS-catalogue.md` and `TESTS-catalogue.md` list Zinc's incremental-compilation bugs and pending scripted tests; `BUG-MAP.md` maps each to the instance that covers it, or to a gap.
 
 ## Layout, by role
 
@@ -20,6 +20,7 @@ The compiler as a task with a trace, the bridge as keys, the obligations, and Zi
 |---|---|
 | `Zinc/Task.lean` | Free monad of query trees; `run`, `trace`; **T1** `run_eq_of_trace` (trace soundness) |
 | `Zinc/Model.lean` | `Compiler` (per-unit task, joint compiler, `iface`, `answer`, `π`, `keys`, `covers`), `Obligations` (compositionality, coverage, abstraction), `State`, `round`, `invalidated`, `Policy`, fuelled `zinc` loop |
+| `Zinc/General.lean` | `XCompiler`, the general form every variant lifts into: non-local answers and hashes (`hashDeps`), keys from the output and the trace; **T2** `round_preserves`, **T3a** `zinc_sound`, **T4** for monotone policies, **T5** `downstream_sound` and the snapshot results, proved once. `Compiler`, `TCompiler`, `GCompiler` and `NCompiler` each have a lift `toX` with `toX_obligations` (and `zinc_toX` where the variant has a loop), and their theorems are corollaries |
 | `Zinc/Soundness.lean` | `UpToDate`/`Inv`; **T2** `round_preserves`; **T3a** `zinc_sound` (termination ⇒ per-unit fixed point); `inv_of_changed` |
 | `Zinc/Uniqueness.lean` | **T3b** `fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`; **T3** `zinc_eq_clean_of_wf`, `zinc_eq_clean_of_explicit` |
 | `Zinc/Termination.lean` | **T4** `zinc_some_of_monotoneFrom` (`transitiveStep`), `zinc_some_of_explicit` (2 rounds), `zinc_some_of_wf` (height + 2 rounds) |

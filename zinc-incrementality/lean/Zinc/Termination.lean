@@ -23,51 +23,24 @@ variable [DecidableEq CUnit] [DecidableEq K] [DecidableEq Hash]
 
 /-! ## Monotone policies -/
 
-def Policy.MonotoneFrom (S : Finset CUnit) (k : ℕ) (P : Policy CUnit Out K) : Prop :=
-  ∀ n R s s' I, k ≤ n → R ⊆ S → I ⊆ S → R ⊆ P n R s s' I ∧ I ⊆ P n R s s' I
 
 theorem zinc_some_of_monotone (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K)
     (hPS : P.InS S) (k : ℕ) (hM : P.MonotoneFrom S k) :
     ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K), k ≤ n → R ⊆ S →
       S.card - R.card + 1 ≤ fuel → (C.zinc S src P fuel n R s).isSome := by
-  intro fuel
-  induction fuel with
-  | zero => intro n R s _ _ h; omega
-  | succ fuel ih =>
-    intro n R s hk hR hfuel
-    simp only [zinc]
-    split
-    · rfl
-    · rename_i hsub
-      obtain ⟨hR', hI'⟩ := hM n R s (C.round src R s) (C.invalidated S R s (C.round src R s)) hk hR (Finset.filter_subset _ _)
-      have hssub : R ⊂ P n R s (C.round src R s) (C.invalidated S R s (C.round src R s)) := by
-        refine Finset.ssubset_iff_subset_ne.2 ⟨hR', ?_⟩
-        intro heq
-        exact hsub (hI'.trans (le_of_eq heq.symm))
-      have hcard := Finset.card_lt_card hssub
-      have hR'S : P n R s (C.round src R s) (C.invalidated S R s (C.round src R s)) ⊆ S :=
-        hPS _ _ _ _ _ (Finset.filter_subset _ _)
-      have hcardS := Finset.card_le_card hR'S
-      exact ih (n + 1) _ _ (by omega) hR'S (by omega)
+  intro fuel n R s hk hR hfuel
+  rw [← zinc_toX]
+  exact C.toX.zinc_some_of_monotone S src P hPS k hM fuel n R s hk hR hfuel
 
 /-- Any policy that is monotone from round `k` on (e.g. `transitiveStep = k`) terminates within
-`k + |S| + 1` rounds. -/
+`k + |S| + 1` rounds (`XCompiler.zinc_some_of_monotoneFrom` on the lift). -/
 theorem zinc_some_of_monotoneFrom (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K)
     (hPS : P.InS S) (k : ℕ) (hM : P.MonotoneFrom S k) :
     ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K), R ⊆ S →
       (k - n) + S.card + 1 ≤ fuel → (C.zinc S src P fuel n R s).isSome := by
-  intro fuel
-  induction fuel with
-  | zero => intro n R s _ h; omega
-  | succ fuel ih =>
-    intro n R s hR hfuel
-    by_cases hk : k ≤ n
-    · exact C.zinc_some_of_monotone S src P hPS k hM (fuel + 1) n R s hk hR
-        (by have := Finset.card_le_card hR; omega)
-    · simp only [zinc]
-      split
-      · rfl
-      · exact ih (n + 1) _ _ (hPS _ _ _ _ _ (Finset.filter_subset _ _)) (by omega)
+  intro fuel n R s hR hfuel
+  rw [← zinc_toX]
+  exact C.toX.zinc_some_of_monotoneFrom S src P hPS k hM fuel n R s hR hfuel
 
 /-- Zinc's brute-force regime: the transitive dependents of the invalidations, plus the round just
 compiled. `deps s c` are the units of `S` holding a key of `c`. -/

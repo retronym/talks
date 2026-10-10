@@ -36,6 +36,9 @@ Results:
 
 namespace Zinc.NCompiler
 
+/-! The definitions and theorems are `XCompiler`'s (`General.lean`), stated here for `NCompiler`
+through its lift. -/
+
 open Compiler (State Policy)
 
 variable {CUnit Src Out Iface K Hash Q : Type} {A : Q → Type}
@@ -77,33 +80,8 @@ theorem inv_external (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Disjoin
     (D : Finset CUnit) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
     (hInv : C.Inv S src₀ s ∅) (hFresh : C.Fresh Up S s snap ∅) :
     C.Inv S src (withUpstream Up s o)
-      (D ∪ C.extInvalidated Up S s snap (withUpstream Up s o)) := by
-  intro u huS hu
-  set s₁ := withUpstream Up s o
-  have huD : u ∉ D := fun h => hu (Finset.mem_union_left _ h)
-  have huE : u ∉ C.extInvalidated Up S s snap s₁ := fun h => hu (Finset.mem_union_right _ h)
-  have hsrc : src₀ u = src u := by by_contra h; exact huD (hD u h)
-  obtain ⟨hout, hcov⟩ := hInv u huS (Finset.notMem_empty u)
-  rw [hsrc] at hout hcov
-  have hhash : ∀ k ∈ s.U u, C.π (C.ifaces s) k.1 k.2 = C.π (C.ifaces s₁) k.1 k.2 := by
-    intro k hk
-    rw [← hFresh u huS (Finset.notMem_empty u) k hk]
-    by_contra hne
-    exact huE (Finset.mem_filter.2 ⟨huS, k, hk, hne⟩)
-  have hagree : ∀ q ∈ (C.unit (src u)).trace (C.answer (C.ifaces s)),
-      C.answer (C.ifaces s) q = C.answer (C.ifaces s₁) q := by
-    intro q hq
-    obtain ⟨k, hk, hc⟩ := hcov q hq
-    exact (ob.abstraction _ _ k (hhash k hk) q hc).1
-  obtain ⟨hrun, htrace⟩ := Task.run_eq_of_trace _ _ _ hagree
-  have huUp : u ∉ Up := fun h => Finset.disjoint_left.1 hdisj h huS
-  refine ⟨?_, ?_⟩
-  · show s₁.out u = _
-    rw [withUpstream_out_of_not_mem Up s o u huUp, hout, hrun]
-  · rw [← htrace]
-    intro q hq
-    obtain ⟨k, hk, hc⟩ := hcov q hq
-    exact ⟨k, hk, (ob.abstraction _ _ k (hhash k hk) q hc).2⟩
+      (D ∪ C.extInvalidated Up S s snap (withUpstream Up s o)) :=
+  C.toX.inv_external (C.toX_obligations ob) Up S hdisj src₀ src s snap o D hD hInv hFresh
 
 variable [Fintype CUnit]
 
@@ -116,9 +94,10 @@ theorem downstream_sound (ob : C.Obligations) (Up S : Finset CUnit) (hdisj : Dis
     (P : Policy CUnit Out K) (hP : P.Sound S) (fuel : ℕ) (R₀ : Finset CUnit)
     (hR₀ : D ∪ C.extInvalidated Up S s snap (withUpstream Up s o) ⊆ R₀)
     (s' : State CUnit Out K) (h : C.zinc S src P fuel 0 R₀ (withUpstream Up s o) = some s') :
-    C.Inv S src s' ∅ :=
-  C.zinc_sound ob S src P hP fuel 0 R₀ _ _ hR₀
-    (C.inv_external ob Up S hdisj src₀ src s snap o D hD hInv hFresh) s' h
+    C.Inv S src s' ∅ := by
+  rw [← zinc_toX] at h
+  exact C.toX.downstream_sound (C.toX_obligations ob) Up S hdisj src₀ src s snap o D hD hInv hFresh
+    P hP fuel R₀ hR₀ s' h
 
 /-! ## Refreshing the snapshot -/
 
@@ -144,17 +123,9 @@ theorem fresh_refreshAll (Up S : Finset CUnit) (s' : State CUnit Out K) (snap : 
 theorem zinc_out_outside (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K)
     (hP : P.InS S) : ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K), R ⊆ S →
       ∀ s', C.zinc S src P fuel n R s = some s' → ∀ u ∉ S, s'.out u = s.out u := by
-  intro fuel
-  induction fuel with
-  | zero => intro n R s _ s' h; simp [zinc] at h
-  | succ fuel ih =>
-    intro n R s hR s' h u hu
-    simp only [zinc] at h
-    have hnot : u ∉ R := fun h' => hu (hR h')
-    have hr : (C.round src R s).out u = s.out u := by simp [round, hnot]
-    split at h
-    · cases h; exact hr
-    · rw [ih _ _ _ (hP _ _ _ _ _ (Finset.filter_subset _ _)) s' h u hu, hr]
+  intro fuel n R s hR s' h
+  rw [← zinc_toX] at h
+  exact C.toX.zinc_out_outside S src P hP fuel n R s hR s' h
 
 omit [DecidableEq K] [Fintype CUnit] in
 /-- **Zinc's refresh rule is enough for local hashes.** If every hash reads only its own unit,
@@ -168,33 +139,7 @@ theorem fresh_refreshRef_local (ob : C.Obligations) (hloc : ∀ I c, C.hashDeps 
     (hUp : ∀ u ∈ Up, s'.out u = (withUpstream Up s o).out u)
     (hext : C.extInvalidated Up S s snap (withUpstream Up s o) ⊆ Rc)
     (hRc : ∀ d ∈ S, d ∉ Rc → s'.U d = s.U d) :
-    C.Fresh Up S s' (C.refreshRef Up Rc s' snap) ∅ := by
-  intro d hd _ k hk
-  -- a hash depends on its own unit's interface only
-  have hpt : ∀ I I' : CUnit → Iface, I k.1 = I' k.1 → C.π I k.1 k.2 = C.π I' k.1 k.2 := by
-    intro I I' h
-    apply ob.locality I I' k.1 _ k.2
-    intro e he
-    rw [hloc, Finset.mem_singleton] at he
-    rw [he]; exact h
-  by_cases hkUp : k.1 ∈ Up
-  · by_cases href : ∃ d' ∈ Rc, ∃ k' ∈ s'.U d', k'.1 = k.1
-    · apply hpt
-      simp only [snapView, refreshRef, hkUp, href, and_self, ite_true]
-    · have hdRc : d ∉ Rc := fun h => href ⟨d, h, k, hk, rfl⟩
-      have hkU : k ∈ s.U d := by rw [← hRc d hd hdRc]; exact hk
-      have hnot : d ∉ C.extInvalidated Up S s snap (withUpstream Up s o) := fun h => hdRc (hext h)
-      have h2 : C.π (C.snapView Up s snap) k.1 k.2 = C.π (C.ifaces (withUpstream Up s o)) k.1 k.2 := by
-        by_contra hne; exact hnot (Finset.mem_filter.2 ⟨hd, k, hkU, hne⟩)
-      calc C.π (C.snapView Up s' (C.refreshRef Up Rc s' snap)) k.1 k.2
-          = C.π (C.snapView Up s snap) k.1 k.2 := by
-            apply hpt
-            simp only [snapView, refreshRef, hkUp, href, and_false, ite_false, ite_true]
-        _ = C.π (C.ifaces (withUpstream Up s o)) k.1 k.2 := h2
-        _ = C.π (C.ifaces s') k.1 k.2 := by
-            apply hpt
-            simp only [ifaces, Function.comp, hUp k.1 hkUp]
-  · apply hpt
-    simp only [snapView, hkUp, ite_false]
+    C.Fresh Up S s' (C.refreshRef Up Rc s' snap) ∅ :=
+  C.toX.fresh_refreshRef_local (C.toX_obligations ob) hloc Up S s snap o s' Rc hUp hext hRc
 
 end Zinc.NCompiler

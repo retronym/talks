@@ -43,3 +43,10 @@ import Zinc
 #print axioms Zinc.PipelineLifecycle.rollback_preserves
 #print axioms Zinc.Synthetic.sound_of_agree
 #print axioms Zinc.InlineOpaqueSpec.fix_sound
+-- the general form (General.lean), where T2, T3a, T4 (monotone) and T5 are proved once
+#print axioms Zinc.XCompiler.round_preserves
+#print axioms Zinc.XCompiler.zinc_sound
+#print axioms Zinc.XCompiler.zinc_some_of_monotoneFrom
+#print axioms Zinc.XCompiler.downstream_sound
+-- T3 for keys from the tree, through the forgetful map
+#print axioms Zinc.TCompiler.zinc_eq_clean_of_explicit
