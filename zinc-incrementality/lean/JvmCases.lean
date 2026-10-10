@@ -13,7 +13,11 @@ the space that break or change, as a markdown table. -/
 open Jvm.Catalogue Jvm.Clients
 
 def main (args : List String) : IO Unit := do
-  for k in all do
+  if args.contains "j3" then
+    for k in j3 do
+      IO.println s!"{k.name}\t{repr k.before}\t{repr k.after}"
+    return
+  for k in all ++ (if args.contains "space" || args.contains "verdicts" then [] else j3) do
     if args.contains "verdicts" then
       let ok := space.filter fun cl => let k' := k.withClient cl; wellTyped k'.w0 cl.2 && links k'.w0 cl.2
       let br := ok.filter fun cl => !links (k.withClient cl).w1 cl.2

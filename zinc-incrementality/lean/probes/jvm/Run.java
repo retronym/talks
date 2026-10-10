@@ -25,7 +25,9 @@ public class Run {
       // HotSpot's class file parser, on JDK 21, 25 and 27; not the VerifyError older JDKs threw.
       "finalSuper", "java.lang.IncompatibleClassChangeError",
       "finalOverride", "java.lang.IncompatibleClassChangeError",
-      "verify", "java.lang.VerifyError");
+      "verify", "java.lang.VerifyError",
+      "illegalAccess", "java.lang.IllegalAccessError",
+      "noSuchField", "java.lang.NoSuchFieldError");
 
   public static void main(String[] args) throws Exception {
     Path out = Path.of(args[1]);
@@ -71,14 +73,51 @@ public class Run {
         for (int i = 0; i < sites.size(); i++) {
           Map<String, Object> s = sites.get(i);
           ProbeLog.last = null;
+          ProbeLog.obj = null;
           call(l, "Site" + i);
-          ran.add(s.get("op").equals("new") ? (String) s.get("owner") : ProbeLog.last);
+          ran.add(result(s, l, k));
         }
         return new String[] { "ok " + ran, "" };
       } catch (Throwable t) {
         return new String[] { t.getClass().getName(), String.valueOf(t.getMessage()).lines().findFirst().orElse("") };
       }
     }
+  }
+
+  /** Which class ran, was instantiated, or had its field read or written. */
+  static String result(Map<String, Object> s, ClassLoader l, Map<String, Object> k) throws Exception {
+    if (s.get("op").equals("at")) s = Json.obj(s.get("site"));
+    switch ((String) s.get("op")) {
+      case "new": return (String) s.get("owner");
+      case "putfield":
+        for (Class<?> c = ProbeLog.obj.getClass(); c != null; c = c.getSuperclass()) {
+          if (written(c, s, ProbeLog.obj)) return c.getName();
+        }
+        return "?";
+      case "putstatic":
+        for (String t : List.of("v0", "v1", "client")) {
+          for (Map<String, Object> c : Json.objs(k.get(t))) {
+            try {
+              Class<?> x = Class.forName((String) c.get("name"), false, l);
+              if (x.getClassLoader() == l && written(x, s, null)) return x.getName();
+            } catch (LinkageError | ClassNotFoundException e) {
+              // not in this world
+            }
+          }
+        }
+        return "?";
+      default: return ProbeLog.last;
+    }
+  }
+
+  static boolean written(Class<?> c, Map<String, Object> s, Object o) throws Exception {
+    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+      if (f.getName().equals(s.get("name"))) {
+        f.setAccessible(true);
+        if ("put".equals(f.get(o))) return true;
+      }
+    }
+    return false;
   }
 
   static void call(ClassLoader l, String c) throws Throwable {
