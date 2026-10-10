@@ -172,6 +172,20 @@ For track B, three cases are candidate MiMa false negatives:
 
 **Out of scope:** existential capture of unstable prefixes, refinement classes, `baseType` itself (an input, as in the TCK).
 
+#### S5 design: membership and overriding
+
+**Problem.** Lowering resolves a member to the first concrete one in its signature group, and the probe's spaces avoid illegal programs with an ad hoc filter. Neither says which programs Scala accepts, or which member a selection runs. Java's rules (JLS 8.4.8) differ, and B3 needs both languages' verdicts on source edits.
+
+**Membership is refchecks, as a `Task`.** For a class `C` over its interfaces (`lin`, `sigGroups`, `memberType`), the verdict is either the compile errors scalac or dotc reports for `C`, or, per signature, the member a selection on `C` runs. The checks are scalac's `RefChecks.checkAllOverrides`, stated per *overriding pair* `(member, other)`:
+- both are in `C`'s base classes, `member`'s owner precedes `other`'s, and their types match as seen from `C`;
+- a pair is checked in the class where it first meets: it is skipped when some parent of `C` already has both owners as base classes.
+
+Per pair: `other` final; `member` private; a concrete `other` without `override` (in `C`: "needs `override`"; inherited: "inherits conflicting members"); `override` on a trait member that overrides a concrete member of a class it doesn't extend, with no third member overridden by both ("accidental override"); `def` over `val`; lazy against strict; result type conformance. Per class: `override` that overrides nothing, and an abstract member left in a concrete class. A concrete member is never overridden by an abstract one (concrete over deferred).
+
+**Calibration.** A space of small hierarchies (`T`, `U`, `B`, `C`) where each owner's `m` ranges over: none, abstract, concrete, `override`, `final`, `val`, `lazy val`, private. The probe compiles them in one batch per compiler, maps each error to its program, class and kind, and compares sets. scalac stops before refchecks when an earlier phase reports an error (dotc rejects `override private` in the namer). So the probe recompiles without the programs that already erred until a run is clean, and the model reports only the errors of the earliest phase. For accepted programs, a `main` calls `m` on each concrete class and prints which owner's body ran.
+
+**Java.** Not implemented (track V); a comparison of the rules goes in this section as the spec to diff `Java/` against.
+
 #### S status
 
 **Calibration.** `python3 probes/scala/probe.py OUT` (about a minute). Every program agrees with scalac on header, fields, methods with their flags, and the invokes of synthesized bodies:
