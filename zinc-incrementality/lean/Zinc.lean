@@ -32,7 +32,7 @@ import Zinc.JavaNames
 import Zinc.JavaSealed
 import Zinc.JavaSpec
 import Zinc.JavaSealedSpec
-import Zinc.GivensSpec
+import Zinc.SpecGivens
 import Zinc.JavaOrder
 import Zinc.Split
 import Zinc.Cycles

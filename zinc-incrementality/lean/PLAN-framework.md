@@ -43,7 +43,7 @@ Not moved: T4's explicit-interface and acyclic regimes (`zinc_some_of_explicit`,
 
 **`Model.lean` stays the first page.** Its docstring introduces the variants and the general form they lift into. DESIGN-spec.md and the README point there first.
 
-**Step 2** (next PR): `SplitProof.Spec` builds on `XCompiler` directly. Its lookup gains levels (every probe of a level asked, the first level with a hit decides) and its keys read the output's resolved scope, so `GivensSpec` folds into it and is removed.
+**Step 2** (built, stacked on step 1): implicit search on `SplitProof.Spec`'s scopes as an `XCompiler` (`SpecGivens.lean`). Its search asks the whole level of its hit, its keys read the resolved scope from the output, and `GivensSpec.lean` (the separate `TCompiler` over `Pkg × N`) is gone. Names stay on `Spec`'s `NCompiler`: it already lifts into `XCompiler`, and moving it would change only its declaration, against an open PR's file.
 
 ## Rejected
 
@@ -54,5 +54,5 @@ Not moved: T4's explicit-interface and acyclic regimes (`zinc_some_of_explicit`,
 ## Steps
 
 - [x] 1. `XCompiler` (`General.lean`) with T2, T3a, T4 (monotone), T5 and the snapshot results; lifts and corollaries for `Compiler`, `TCompiler`, `GCompiler` and `NCompiler`; `TCompiler.toCompiler` with T3; `Policy.InS` and `Policy.MonotoneFrom` moved to `Model.lean`. No instance file changed.
-- [ ] 2. `Spec` on `XCompiler` with a level-wise lookup and keys from the output; `GivensSpec` folded in and removed.
+- [x] 2. Implicit search on `Spec`'s scopes as an `XCompiler` (`SpecGivens.lean`): a level-wise search and keys read from the output; `GivensSpec.lean` removed. Names stay on `Spec`'s `NCompiler`, which lifts into `XCompiler`: moving it would only change its declaration.
 - [ ] Once talks#36 is in: `scripts/Axioms.lean` checks the `XCompiler` theorems too.
