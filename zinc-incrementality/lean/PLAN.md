@@ -449,3 +449,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 16 — class-name agreement between the bridge and Zinc: see `PLAN-naming.md`
 
 ## Phase 17 — hash stability across source, pickle and classfile forms: see `PLAN-hash.md`
+
+## Phase 18 — annotations as API and as dependencies: see `PLAN-annotations.md`
