@@ -67,7 +67,10 @@ def prelude (dl : Dialect) : Program :=
    trt "scala/Product" product [("scala/Equals", [])]] ++
   (if dl == .s212 then [trt "scala/Serializable" [] [("java/io/Serializable", [])]] else []) ++
   (if dl == .s3 then
-    [trt "scala/deriving/Mirror$Product" [abs "fromProduct" [lib "scala/Product"] .obj],
+    [trt "scala/reflect/Enum" [abs "ordinal" [] .int] [("scala/Product", []), ("java/io/Serializable", [])],
+     trt "scala/runtime/EnumValue" [],
+     trt "scala/deriving/Mirror$Sum" [abs "ordinal" [.tp ["scala/deriving/Mirror$Sum"] 0] .int] [] 1,
+     trt "scala/deriving/Mirror$Product" [abs "fromProduct" [lib "scala/Product"] .obj],
      trt "scala/deriving/Mirror$Singleton"
        [conc "fromProduct" [lib "scala/Product"] (lib "scala/deriving/Mirror$Singleton")]
        [("scala/deriving/Mirror$Product", [])]]
@@ -135,6 +138,64 @@ def caseObject (dl : Dialect) (o : Decl) : Decl :=
            traits := o.traits ++ [("scala/Product", []), (serializable dl, [])] ++
              (if dl == .s3 then [("scala/deriving/Mirror$Singleton", [])] else []) }
 
+/-! ## Scala 3 enums
+
+`enum E { case A, B; case C(x: Int) }` becomes:
+- the abstract class `E` implementing `scala.reflect.Enum`, with the enum's parameters as fields;
+- its companion implementing `Mirror.Sum[E]`: each singleton case a static field; `values`,
+  `valueOf` and the array `$values` when every case is a singleton; `$new` when singletons share
+  one class; `fromOrdinal` and `ordinal`;
+- an anonymous class for the singletons: one shared `E$$anon$1(name, ordinal)` for cases written
+  without arguments, else one per case (`case A extends E(1)`);
+- a nested case class `E$C extends E` for each case with fields, with an `ordinal`.
+-/
+
+def enumSrcs (s : Src) : List Src :=
+  match s.cls with
+  | none => [s]
+  | some d =>
+    if d.cases.isEmpty then [s] else
+    let e := d.name
+    let self : Ty := .ref e
+    let singles := d.cases.filter (·.fields.isEmpty)
+    let classCases := d.cases.filter (!·.fields.isEmpty)
+    let shared := singles.filter (·.args.isEmpty)
+    let perCase := singles.filter (!·.args.isEmpty)
+    let fieldVals : List Mem := d.cparams.map fun (x, t) => { name := x, res := t, isVal := true }
+    let enumTraits : List Parent := d.traits ++ [("scala/reflect/Enum", [])]
+    let cls : Decl := { d with cases := [], abs := true, cparams := [], ctor := d.cparams.map (·.2),
+                               members := fieldVals ++ d.members, traits := enumTraits }
+    let field (n : String) (t : Ty) (priv : Bool := false) : Mem := { name := n, res := t, fieldOnly := true, priv := priv }
+    let compMembers : List Mem :=
+      (singles.map fun c => field c.name self) ++
+      (if classCases.isEmpty then
+        [field "$values" (.arr e) true, conc "values" [] (.arr e), conc "valueOf" [.str] self] else []) ++
+      (if shared.isEmpty then [] else [{ conc "$new" [.int, .str] self with priv := true }]) ++
+      [conc "fromOrdinal" [.int] self, conc "ordinal" [self] .int]
+    let base : Decl := s.obj.getD { name := e, kind := .obj }
+    let compTraits : List Parent := base.traits ++ [("scala/deriving/Mirror$Sum", [self])]
+    let comp : Decl := { base with members := base.members ++ compMembers, traits := compTraits }
+    let anonMembers : List Mem :=
+      [conc "canEqual" [.any] .bool, conc "productArity" [] .int, conc "productElement" [.int] .obj,
+       conc "productElementName" [.int] .str, { conc "readResolve" [] .obj with priv := true },
+       conc "productPrefix" [] .str, conc "toString" [] .str, conc "ordinal" [] .int, conc "hashCode" [] .int]
+    let anon (k : Nat) (sharedFields : Bool) : Src :=
+      let n := s!"{e}$$anon${k}"
+      let ts : List Parent := [("scala/runtime/EnumValue", []), ("scala/deriving/Mirror$Singleton", [])]
+      let fs : List Mem := if sharedFields then [field "$name$1" .str true, field "_$ordinal$1" .int true] else []
+      let c : Decl := { name := n, final := true, super := some (e, []), traits := ts,
+                        ctor := (if sharedFields then [.str, .int] else []), members := fs ++ anonMembers }
+      { name := n, cls := some c, anonIn := some e }
+    let anons : List Src :=
+      (if shared.isEmpty then [] else [anon 1 true]) ++
+      (perCase.zipIdx.map fun (_, i) => anon (i + 1 + (if shared.isEmpty then 0 else 1)) false)
+    let caseClasses : List Src := classCases.map fun c =>
+      let n := s!"{e}${c.name}"
+      let cd : Decl := { name := n, isCase := true, final := true, cparams := c.fields, super := some (e, []),
+                         members := [conc "ordinal" [] .int] }
+      { name := n, outer := some e, inObj := true, cls := some cd }
+    [{ s with cls := some cls, obj := some comp }] ++ anons ++ caseClasses
+
 def desugarSrc (dl : Dialect) (p : Program) (s : Src) : Src :=
   match s.cls with
   | some d =>
@@ -150,6 +211,8 @@ def desugarSrc (dl : Dialect) (p : Program) (s : Src) : Src :=
     | none => s
 
 /-- The program the back end sees: desugared, after the prelude. -/
-def Program.desugar (dl : Dialect) (p : Program) : Program := p.map (desugarSrc dl p)
+def Program.desugar (dl : Dialect) (p : Program) : Program :=
+  let q := p.flatMap enumSrcs
+  q.map (desugarSrc dl q)
 
 end Scala

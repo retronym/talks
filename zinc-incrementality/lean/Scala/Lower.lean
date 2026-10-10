@@ -98,7 +98,7 @@ abbrev Hit := Anc × Mem
 member is not inherited: only the class's own private members are seen. -/
 def hits (l : List Anc) (n : String) : List Hit :=
   let self := (l.head?.map (·.1.name)).getD ""
-  l.filterMap fun (d, a) => ((d.members.find? (·.name == n)).filter fun m => !m.priv || d.name == self).map
+  l.filterMap fun (d, a) => ((d.members.find? fun m => m.name == n && !m.fieldOnly).filter fun m => !m.priv || d.name == self).map
     fun m => ((d, a), m)
 
 /-- The inherited members named `n`. -/
@@ -157,6 +157,7 @@ def erase : Ty → M String
   | .str => pure "Ljava/lang/String;"
   | .obj | .any | .tp .. => pure "Ljava/lang/Object;"
   | .this c => pure (jname (c.headD ""))
+  | .arr d => pure s!"[{jname d}"
   | .ref n => do
     -- a library class outside the prelude erases to itself
     let some v ← askDecl n false | pure (jname n)
@@ -310,10 +311,13 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   let mut fs : List FOut := []
   for m in d.members do
     if m.static then continue
+    if m.fieldOnly then
+      fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := true, priv := m.priv }]
+      continue
     let e ← m.desc
     if m.isVal && !m.abs then
       fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := true }]
-    ms := addM ms { name := m.name, desc := e, abs := m.abs, final := m.final }
+    ms := addM ms { name := m.name, desc := e, abs := m.abs, final := m.final, priv := m.priv }
   let mx ← mixins d l
   for (t, _) in mx do
     for m in t.members do
@@ -471,7 +475,7 @@ def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String
     let some ((w, _), m) := winner g | continue
     let n := m.name
     let e ← m.desc
-    if m.abs || m.static || cands.any (fun c => c.name == n && c.desc == e) then continue
+    if m.abs || m.static || m.priv || cands.any (fun c => c.name == n && c.desc == e) then continue
     cands := cands ++ [{ name := n, desc := e }]
     if dl == .s3 && m.isVal && !m.lzy then
       cands := cands ++ [{ name := setterName w.name n, desc := s!"({← erase m.res})V" }]
@@ -544,27 +548,30 @@ mirror class, and in Scala 3 also in the module class), and in Scala 3 a static 
 class for each object nested in it. -/
 def nesting (dl : Dialect) (q : Program) (cs : List ClassOut) : List ClassOut :=
   let entry (n : Src) : List (String × String × String × List String) :=
-    match n.outer with
-    | none => []
-    | some o =>
+    match n.outer, n.anonIn with
+    | none, some _ => [(n.name, "", "", ["public", "static", "final"])]
+    | none, none => []
+    | some o, _ =>
       let fl (obj : Bool) := ["public"] ++ (if n.inObj then ["static"] else []) ++
-        (if obj && dl == .s3 then ["final"] else []) ++
+        (if (obj && dl == .s3) || (!obj && (n.cls.map (·.final)).getD false) then ["final"] else []) ++
         (if (n.cls.map (·.kind == .trt)).getD false && !obj then ["interface", "abstract"] else [])
       (n.cls.toList.map fun _ => (n.name, o, n.simple, fl false)) ++
       (n.obj.toList.map fun _ => (n.name ++ "$", o, n.simple ++ "$", fl true))
   let membersOf (u : String) (inObjOnly : Bool) : List Src :=
     q.filter fun n => n.outer == some u && (n.inObj || !inObjOnly)
+  let anonsOf (u : String) : List Src := q.filter fun n => n.anonIn == some u
   cs.map fun c =>
     -- which unit is `c` the class part (or mirror) of, or the module class of?
     let asCls := q.find? fun u => u.name == c.name
     let asMod := q.find? fun u => u.name ++ "$" == c.name && u.obj.isSome
+    -- a nested class and its companion module list both their entries
     let own := match asCls, asMod with
-      | some u, _ => if u.cls.isSome || u.obj.isNone then (entry u).filter (·.1 == c.name) else []
-      | _, some u => (entry u).filter (·.1 == c.name)
+      | some u, _ => if u.cls.isSome || u.obj.isNone then entry u else []
+      | _, some u => entry u
       | _, _ => []
     let members := match asCls, asMod with
       | some u, _ => (membersOf u.name false).flatMap entry
-      | _, some u => if dl == .s3 then (membersOf u.name true).flatMap entry else []
+      | _, some u => if dl == .s3 then (membersOf u.name true ++ anonsOf u.name).flatMap entry else []
       | _, _ => []
     let fields := match asMod with
       | some u => if dl == .s3 then (membersOf u.name true).filter (·.obj.isSome) |>.map fun n =>

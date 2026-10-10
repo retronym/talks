@@ -286,6 +286,22 @@ def nestSpace : List Program :=
      { name := "C$N", cls := some (d "C$N" "n"), outer := some "C", inObj := true },
      { name := "C$I", cls := some (d "C$I" "i"), outer := some "C" }] ]
 
+/-! ## Enums (Scala 3), and a sealed trait with case objects -/
+
+def enumSpace : List Program :=
+  let e (n : String) (cs : List EnumCase) (ps : List (String × Ty) := []) (ms : List Mem := []) : Program :=
+    [{ name := n, cls := some { name := n, cases := cs, cparams := ps, members := ms } }]
+  [ e "Color" [{ name := "Red" }, { name := "Green" }],
+    e "Planet" [{ name := "Earth", args := ["1"] }, { name := "Mars", args := ["2"] }] [("mass", .int)]
+      [{ name := "heavy", res := .bool, nullary := true }],
+    e "E" [{ name := "A" }, { name := "B", fields := [("x0", .int)] }],
+    e "F" [{ name := "B", fields := [("x0", .int)] }, { name := "C", fields := [("x0", .str)] }] ]
+
+def sealedSpace : List Program :=
+  [ [{ name := "Color", cls := some { name := "Color", kind := .trt, sealed := true } },
+     { name := "Red", obj := some { name := "Red", kind := .obj, isCase := true, traits := [("Color", [])] } },
+     { name := "Green", obj := some { name := "Green", kind := .obj, isCase := true, traits := [("Color", [])] } }] ]
+
 structure Case where
   fam : String
   prog : Program
@@ -298,7 +314,8 @@ def space : List Case :=
   (mixinSpace.map ({ fam := "mixin", prog := · })) ++ (genericSpace.map ({ fam := "generic", prog := · })) ++
   (vclsSpace.map ({ fam := "vcls", prog := · })) ++ (traitCompanionSpace.map ({ fam := "tcomp", prog := · })) ++
   (miscSpace.map ({ fam := "misc", prog := · })) ++ (caseSpace.map ({ fam := "case", prog := · })) ++
-  (nestSpace.map ({ fam := "nest", prog := · })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
+  (nestSpace.map ({ fam := "nest", prog := · })) ++ (sealedSpace.map ({ fam := "sealed", prog := · })) ++
+  (enumSpace.map ({ fam := "enum", prog := ·, only3 := true })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
   ([0, 1, 2].map fun k => { fam := "init", prog := initProgram k }) ++
   ([0, 1, 2].map fun k => { fam := "initSep", prog := initProgram k, lib := ["T"] }) ++
   [{ fam := "init", prog := initProgram 3, only3 := true },
