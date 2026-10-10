@@ -481,3 +481,5 @@ Extending #34 to the remaining families:
 ## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
 
 ## Phase 12 — Java in mixed builds, name resolution and sealed hierarchies: see `PLAN-java.md`
+
+## Phase 13 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`
