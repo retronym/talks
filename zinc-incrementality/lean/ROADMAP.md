@@ -267,9 +267,9 @@ The rules the probe forced, beyond the textbook ("concrete over abstract; `overr
 - The TCK's dependency on the shared file (below).
 - `Zinc/Hier` and `Zinc/Erasure` on the shared map, in the single-writer port.
 
-### V — Java (`Java/`), deferred
+### V — Java (`Java/`)
 
-Not launched yet. Java name resolution, sealed hierarchies and compile order are already Phases 12 and 14 (`PLAN-java.md`, `PLAN-order.md`). Lowering javac's output to `Jvm.World` comes after J and S, and reuses those phases' probes.
+Java name resolution, sealed hierarchies and compile order are already Phases 12 and 14 (`PLAN-java.md`, `PLAN-order.md`). This track lowers javac's output to `Jvm.World`, calibrates it against javac, and states JLS chapter 13 against `Jvm` linkage.
 
 - **V1. Lowering for a javac subset:**
   - classes and interfaces;
@@ -279,6 +279,46 @@ Not launched yet. Java name resolution, sealed hierarchies and compile order are
   - enums, records, sealed / `permits`.
 - **V2. JLS ch. 13 as checked statements against `Jvm` linkage.** One example per rule. The theorem `compatible_of_footprint` applies where it can.
 - **V3. Calibrate against javac.**
+
+#### V design
+
+**Source.** A typed, already-attributed subset, since javac's back end (`Lower`, `TransTypes`, `Gen`) runs after attribution: top-level types in one package, each a class (abstract, final, sealed, non-sealed), an interface (sealed or not), an enum or a record. A type has at most one type parameter `T` and a superclass and interfaces applied to type arguments (`String`, `Object`, `T`). `permits` is explicit or inferred. Members are methods (abstract, concrete, `static`, `final`, `default` and `private` in interfaces, a result type that may narrow the overridden one), fields (instance, `static`, `static final` with a constant initialiser: a literal or a constant expression over other types' constants), enum constants and record components. A file's first type is public and the rest package-private (they share the file, which is how `permits` is inferred); members are public, except interface `private` methods. Method bodies are opaque, except two things lowering reads: the constants a body uses (folded into the client) and whether a field's initialiser is a constant expression. Out of scope: nested, local and anonymous classes (so no nestmates beyond what one type gets), overloading beyond what bridges create, varargs, annotations, generic `Signature` attributes, inner-class attributes, lambdas, switch on enums or patterns, `Object` methods beyond the ones records and enums synthesise, and `module-info`.
+
+**Lowering is a `Task` over other types' interfaces,** as `Scala/Lower.lean` is: lowering a type asks for the declarations (`decl n`: kind, parents, members with signatures, and the values of constant fields) of its supertypes (bridges, `ACC_ABSTRACT` of an inherited interface method, enum and record supertypes), and of every type whose constant it reads (`static final int L = A.K + 1` folds `A.K`; a client method that uses `A.K` gets the value, not a `getstatic`). That is what javac reads from other classfiles' `ConstantValue` attributes and signatures. The output is `Java.ClassOut`, a `Jvm.Classfile` (`toJvm`) plus what `Jvm` does not model: fields' `ConstantValue`, `ACC_BRIDGE`/`ACC_SYNTHETIC`/`ACC_ENUM`, `PermittedSubclasses`, the `Record` attribute, and the invokes of synthesised bodies (bridges, enum `values`/`valueOf`). T1 (`lower_congr`) says an environment that agrees on a type's trace lowers it the same: in particular, a client's classfile depends on the *values* of the constants it reads, so a constant edit changes the client's classfile although no signature changed (JLS §13.4.9).
+
+**javac's release would be a parameter** (`Release`: 17, 21, 25) read where the probe finds a difference. It finds none on the space, so lowering does not take it.
+
+**Calibration (V3).** As S3: a Lean exe enumerates a bounded space and prints each program as Java source and as the model's classfiles; `probes/java/probe.py` compiles them with javac 17, 21 and 25 (`--release` matching), reads the classfiles directly (header, access flags, fields with `ConstantValue`, methods with flags and synthesised invokes, `PermittedSubclasses`, `Record`), and diffs. Divergences are listed here.
+
+**JLS chapter 13 (V2).** `Java/Jls13.lean`: one example per rule of §13.4 and §13.5 that `Jvm` can observe: a library edit in Java source, lowered, an old client's classfile linked against the new library (`Jvm.outcome`), against the expectation the JLS states (compatible, or the `LinkageError`). `compatible_of_footprint` proves the compatible cases where the client's footprint is untouched. `Java/Catalogue.lean` lists the same edits as source-level cases with `before`, `after` and `fresh`, mirroring `Scala/Catalogue.lean`, for track B.
+
+#### V results
+
+**Calibration.** `probes/java/probe.py` over `Java/Space.lean`: 99 programs in six families, each compiled by javac 17.0.20, 21.0.12 and 25.0.4 (Temurin, `--release` matching). The comparison covers class flags, superclass, interfaces, `PermittedSubclasses` and the `Record` attribute; fields' access, flags (static, final, synthetic, enum) and `ConstantValue`; methods' access and flags (static, final, abstract, bridge, synthetic); and per method the `getstatic`s and invokes on classes outside `java/`, and the `int` and `String` constants pushed (where folded constants show up).
+
+| family | programs | agree (17 / 21 / 25) |
+|---|---|---|
+| interfaces: abstract, default, static, private methods, a constant; implemented by a class or abstract class | 32 | 32 / 32 / 32 |
+| bridges: class or interface supertype, generic or not, narrowed result, substituted parameter, a third level | 30 | 30 / 30 / 30 |
+| constants: literal, `1 << 3`, string concatenation, non-constant; through an interface; folded into a client | 8 | 8 / 8 / 8 |
+| enums: 0–2 constants, an interface, a constant | 12 | 12 / 12 / 12 |
+| records: 0–2 components, an interface the accessor implements | 5 | 5 / 5 / 5 |
+| sealed: interface or abstract class, `permits` explicit or inferred, final, non-sealed, record and sealed subtypes | 12 | 12 / 12 / 12 |
+
+The three javacs agree on everything compared. Divergences, all fixed in the model:
+
+- The implicit canonical constructor of a package-private record (a second type in a file) is package-private: it takes the record's access (JLS §8.10.4). The model had it public. Found by the probe (2 programs).
+- Before the probe, hand-compiled samples fixed the rest of the model's shape: an interface that narrows a generic interface method gets a *default* bridge (`invokeinterface` to itself); an enum gets a private static synthetic `$values()` that `<clinit>` calls after constructing the constants, and its constructor is private `(String, int)`; a record's `toString`/`hashCode`/`equals` are `final` and call no class method (they are `invokedynamic` to `ObjectMethods`); an interface constant whose initialiser reads a non-constant (`A.N + 1`) gives the interface a `<clinit>`.
+
+Not compared: the rest of the bytecode, `Signature`, `InnerClasses`, `NestHost`/`NestMembers` (no nested types in the subset), `MethodParameters`, annotations, `ACC_SUPER`, `invokedynamic` bootstrap arguments, `ldc` of class constants.
+
+**JLS chapter 13 (`Java/Jls13.lean`, 19 examples) over `Java/Catalogue.lean` (16 cases).** Constants (§13.1, §13.4.9): a changed constant links before and after, by `compatible_of_footprint` (the client never touches `A`), yet the client's classfile changes, and its lowering trace has `decl A`, also when the client names only an interface constant that folds `A.K`; a deleted constant still links (the client has its copy) and no longer compiles; a non-constant field deleted gives `NoSuchFieldError`. Generics (§13.4.15): removing a narrowing override breaks a call through the subclass (`get()String` is gone; erasure leaves `get()Object`) but not one through the superclass (it selected the bridge, now the inherited method); adding one moves selection to the new bridge. Interfaces (§13.5.3, §13.5.6): an abstract method added gives `AbstractMethodError`, a default method added links, a private one is compatible by footprint. Enums (§13.4.26) and records (§13.4.27): adding a constant or a component is compatible by footprint; removing one gives `NoSuchFieldError` / `NoSuchMethodError`.
+
+**Gaps in `Jvm` that the Java cases reach** (for track J; `Jvm/` is not edited here):
+
+- `PermittedSubclasses` is not checked at loading, so making a class `sealed` without permitting an existing subclass links in the model; HotSpot throws `IncompatibleClassChangeError` (JVMS §5.3.5). `classBecomesSealed` states the model's answer and says so.
+- No site invokes a constructor (`invokespecial` is a super call), so a record's canonical constructor changing descriptor when a component is added is not checked; only the accessors are.
+- Nestmates (`NestHost`/`NestMembers`, private access between them) are not modelled; the subset has no nested types, so nothing here needs them yet.
 
 ### B — Binary compatibility (`BinCompat/`, plus a scala-cli harness outside Lean)
 

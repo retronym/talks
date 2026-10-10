@@ -1,6 +1,6 @@
 name = "zinc"
 version = "0.1.0"
-defaultTargets = ["Zinc", "Jvm", "Scala", "BinCompat"]
+defaultTargets = ["Zinc", "Jvm", "Scala", "BinCompat", "Java"]
 
 [[require]]
 name = "mathlib"
@@ -46,3 +46,10 @@ root = "ScalaProbe"
 [[lean_lib]]
 name = "BinCompat"
 globs = ["BinCompat.+"]
+
+[[lean_lib]]
+name = "Java"
+
+[[lean_exe]]
+name = "javaprobe"
+root = "JavaProbe"
