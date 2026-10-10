@@ -73,11 +73,11 @@ def scenario (rollbackEarly : Bool) : Option (ℕ × ℕ) := do
 /-- After the failed edit, the downstream compiled against the early output. -/
 example : (upstreamRun false ⟨1, 1⟩ 2 true) = ⟨1, 2⟩ := by native_decide
 
-/-- **Stale after the revert**: the sources say `A = 1` and the upstream's last successful build
+/-- `stale_after_failed_upstream`: **Stale after the revert**: the sources say `A = 1` and the upstream's last successful build
 says 1, but `X` observes 2. -/
-theorem stale_after_failed_upstream : scenario false = some (2, 5) := by native_decide
+example : scenario false = some (2, 5) := by native_decide
 
-/-- Rolling back the early output with the rest: `X` observes 1. -/
-theorem rollback_after_failed_upstream : scenario true = some (1, 5) := by native_decide
+/-- `rollback_after_failed_upstream`: Rolling back the early output with the rest: `X` observes 1. -/
+example : scenario true = some (1, 5) := by native_decide
 
 end Zinc.Pipelining

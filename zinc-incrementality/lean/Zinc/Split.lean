@@ -122,41 +122,42 @@ def verdict (m : Mode) (l : Layout) (v : Ver) (p p' : Prog) : Zinc.Names.Verdict
 def toNames : Mode → Zinc.Names.Mode
   | .today => .today | .cheap => .cheap | .upstream => .cheap | .names => .names
 
-/-- In one subproject, this is `Names.verdict`. -/
-theorem check_single_is_names : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
+/-- `check_single_is_names`: In one subproject, this is `Names.verdict`. -/
+example : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v => [Mode.today, .cheap, .upstream].all fun m =>
       verdict m .single v p p' == Zinc.Names.verdict (toNames m) v p p') = true := by
   native_decide
 
-/-- The external rule is the internal one on every slot an edit changes. -/
-theorem check_ext_eq_internal : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
+/-- `check_ext_eq_internal`: The external rule is the internal one on every slot an edit changes. -/
+example : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v => (changed p p').all fun s =>
       extInvalidates v p (resolve v p) s == invalidates {} v p (resolve v p) s) = true := by
   native_decide
 
-/-- #34 changes nothing across subprojects. -/
-theorem check_split_cheap_is_today : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
+/-- `check_split_cheap_is_today`: #34 changes nothing across subprojects. -/
+example : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v => recompiles .cheap .split v p p' == recompiles .today .split v p p') = true := by
   native_decide
 
-/-- Extended across subprojects, it makes every edit that adds a class clean, but for the
+/-- `check_upstream_added_clean`: Extended across subprojects, it makes every edit that adds a class clean, but for the
 divergences beside resolution. -/
-theorem check_upstream_added_clean : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
+example : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v => !addsClass {} v p p' ||
       (verdict .upstream .split v p p').clean || besideResolution v p p') = true := by
   native_decide
 
-/-- **F1 across subprojects**: `a.b.Foo` added upstream over `a.Foo`, under #34. -/
-theorem check_inner_added_split_cheap :
+/-- `check_inner_added_split_cheap`: **F1 across subprojects**: `a.b.Foo` added upstream over `a.Foo`, under #34. -/
+example :
     verdict .cheap .split .s2 Zinc.Names.innerBase (Zinc.Names.innerBase.set .inner .foo) =
       ⟨.ok .outer, .ok .inner, false, false⟩ := by native_decide
 
-theorem check_inner_added_split_upstream :
+/-- `check_inner_added_split_upstream`. -/
+example :
     verdict .upstream .split .s2 Zinc.Names.innerBase (Zinc.Names.innerBase.set .inner .foo) =
       ⟨.ok .outer, .ok .inner, true, true⟩ := by native_decide
 
-/-- The proposal makes every edit clean, but for the divergences beside resolution. -/
-theorem check_names_clean : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
+/-- `check_names_clean`: The proposal makes every edit clean, but for the divergences beside resolution. -/
+example : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v => (verdict .names .split v p p').clean || besideResolution v p p') = true := by
   native_decide
 
@@ -194,10 +195,10 @@ def absBits (v : Ver) (q : Prog) (o : List Slot) (j : ℕ) : Bool :=
   | some s => q.binds s
   | none => false
 
-/-- On the bases, resolution is the first binding slot in `order`, today's rule and #34 are
+/-- `check_abstract`: On the bases, resolution is the first binding slot in `order`, today's rule and #34 are
 `SplitProof`'s, and the proposal fires whenever `SplitProof.Client.proposed` does (it also fires on
 a binding added outside the client's scopes, which `SplitProof` does not model: over-invalidation). -/
-theorem check_abstract : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
+example : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v =>
       -- outside the slot language: the edges that depend on the resolution of another slot
       -- (Scala 2's class-name alias, Scala 3's passed-over inherited member)
@@ -234,7 +235,8 @@ def givensVerdict (m : Mode) (l : Layout) (v : Ver) (p p' : Zinc.Givens.Prog) : 
   let rc := givensRecompiles m v p p'
   ⟨r, r', rc, (rc || r == r') && !(l == .single && Zinc.Givens.separateInit v p p' rc)⟩
 
-theorem check_givens_single_is_givens : ([Ver.s2, .s3].all fun v => (Zinc.Givens.bases v).all fun p =>
+/-- `check_givens_single_is_givens`. -/
+example : ([Ver.s2, .s3].all fun v => (Zinc.Givens.bases v).all fun p =>
     (Zinc.Givens.edits v p).all fun (_, p') => [Mode.today, .cheap].all fun m =>
       givensVerdict m .single v p p' == Zinc.Givens.verdict (toNames m) v p p') = true := by
   native_decide

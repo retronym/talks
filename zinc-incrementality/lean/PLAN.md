@@ -17,8 +17,13 @@ Enumerations over bounded program spaces (`native_decide`) and the Zinc conforma
 | 7 | Implicit scope across projects (sbt/zinc#1845) | `ImplicitScope`: `is_obligations`, `is_sound`, `stored_eq_recomputed` | `lake exe exhaustive implicit` |
 | 8 | Classpath, pipelining, keys from the tree | T5 `Classpath.downstream_sound`; `Tree` (T2, T3a for keys from the output); `Snapshot.obligations`; `Pipelining.early_agreement`; `Inline.obligations_withBodies`, `not_obligations_today` | refresh after revert (`Snapshot`), failed upstream (`Pipelining`), `pipelined_ne_final` (`Inline`) |
 | 9 | Termination, additions, sealed | `PingPong.zinc_diverges` (no `transitiveStep`: Zinc's loop need not terminate); `Embed.lift_obligations`, `zinc_lift`; `Added.obligations_fixed`, `not_obligations_today`; `Sealed.obligations_withChildren`, `not_obligations_noChildren` | `transitiveStep_stops` and the run (`PingPong`); `Added`, `Sealed` scenarios |
+<<<<<<< HEAD
 | 10 | Name resolution and implicits (`PLAN-names.md`) | `SplitProof.Spec`: `rules_obligations`, `global_obligations`, `narrowed_obligations` (given recorded package imports); witnesses F2, F3, narrowed without imports; precision (`necessary_invalidated`, `searched_exact`, `narrowed_le_global`, `rules_over`); F4/F5 as `joint_not_comp`. `SpecGivens`: the G rule's obligations, witnesses G1/G2 (`g12_today`), `g_narrowed_without_imports`, `g_decls_not_abstraction` | resolution per version, F6, F7, recompiled sets, cost (`Names`, `Givens`, `NamesRules`); the harness on develop and #34 |
 | 11 | Scala 3 `inline` and opaque types (`PLAN-inline.md`) | being moved to an instance | the families I1–I3, O1 and the fixes (`InlineOpaque`); the harness, both layouts |
+=======
+| 10 | Name resolution and implicits (`PLAN-names.md`) | `SplitProof.Spec`: `rules_obligations`, `global_obligations`, `narrowed_obligations` (given recorded package imports); witnesses F2, F3, narrowed without imports; precision (`necessary_invalidated`, `searched_exact`, `narrowed_le_global`, `rules_over`); F4/F5 as `joint_not_comp`. `GivensSpec`: the G rule's obligations, witnesses G1, G2; `decls_violates_abstraction` | resolution per version, F6, F7, recompiled sets, cost (`Names`, `Givens`, `NamesRules`); the harness on develop and #34 |
+| 11 | Scala 3 `inline` and opaque types (`PLAN-inline.md`) | `InlineOpaqueSpec` (a `TCompiler`): `faithful`, `obligations_fix`, `fix_sound`, `obligations_refine`, `refine_sound`, witnesses I1–I3, O1 (coverage); precision `keys_traced`, `name_exact`, `cls_coarse`. `InlineOpaqueSound` (`NCompiler`): `obligations_denot`, `denot_sound` (fresh denotation hash), `recompiles_or_unchanged`, `I1_abstraction` | counts and recompiled sets (`InlineOpaque.check_*`); which reads dotc folds (probes); the harness, both layouts |
+>>>>>>> claude/framework-merge
 | 12 | Java in mixed builds (`PLAN-java.md`) | `JavaSpec`: `obligations_fix`, `fix_sound`, witnesses J1–J4; `JavaSealedSpec` | `JavaNames`, `JavaSealed`; the harness |
 | 13 | The split layout (`PLAN-split.md`) | `SplitProof`: `proposed_sound`, `cheap_sound_of_local`; `Spec`: `today_not_obligations`, `cheap_not_obligations`, `cross_obligations`, `cross_downstream_sound` (T5) | `Split.check_*` (the slot language matches the concrete model on the bases); the harness |
 | 14 | Compile order and pipelining (`PLAN-order.md`) | `JavaOrder`: `obligations_mixed`, `mixed_sound`, `exclusion_exact`, `flip_spurious`; witnesses V1, V2, O1, O2 | none needed so far |
@@ -28,10 +33,7 @@ Phases 4 and 5 are design notes; their results are in phases 6 to 8.
 
 Against Zinc's bug tracker (`BUG-MAP.md`): of 145 catalogued bugs, 18 are covered by an instance, 42 partially, and 84 are gaps, which fall into 15 candidate phases. Had the instances existed, 14 would have been predicted before they were filed, and 29 partially. 17 pending and 3 disabled scripted tests are mapped the same way.
 
-Still stated as `theorem … := by native_decide`, to relabel as checks or prove (review item 16):
-- `Added` (3), `Inline` (1), `PingPong` (12), `Pipelining` (2), `Sealed` (2), `Snapshot` (2), `Stale` (2);
-- `InlineOpaque` (13, being ported);
-- `Split` (9, named `check_`).
+No `theorem` is proved by `native_decide`: the enumerated facts are `example`s. CI (`.github/workflows/lean.yml`) lints this (`scripts/lint_native_decide.py`) and checks that the core theorems T1–T5, per framework variant, use only `propext`, `Classical.choice` and `Quot.sound` (`scripts/Axioms.lean`, `scripts/check_axioms.py`). `PingPong.zinc_diverges` had leaned on `native_decide` through its step lemmas; they are now kernel `decide`.
 
 Every witness and obligation in the table uses kernel `decide` or a proof.
 
@@ -455,3 +457,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 19 — pipelining's early-output lifecycle: see `PLAN-pipelining.md`
 
 ## Phase 20 — constructors and synthetic case-class members: see `PLAN-synthetic.md`
+
+## Phase 21 — derived API, export forwarders and used types' supertypes: see `PLAN-derived.md`
