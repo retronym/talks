@@ -23,6 +23,9 @@ What Zinc sees (develop):
   Java source is compiled in every cycle.
 * A Java client depends on the classes in its constant pool (`S`, `A`, `B`) and on their ancestors
   (sbt/zinc#148), so on `T`.
+
+The `example`s are checks by `native_decide` on this space, and the dump feeds the harness. The
+specification is `JavaSealedSpec.lean`.
 -/
 
 namespace Zinc.JavaSealed
@@ -116,19 +119,19 @@ def clean (m : Mode) (pipe : Bool) (l : Lang) (p : Prog) (e : Edit) : Bool := re
 /-! ## Families, as checked examples -/
 
 /-- **S1** (retronym/zinc#21): a leaf added to a Java `permits`, no pipelining: no API changes. -/
-theorem s1 : [Lang.java, .s2, .s3].all (fun l =>
+example : [Lang.java, .s2, .s3].all (fun l =>
     !clean .today false l ⟨.jPermits, false, none⟩ (.add .s) && clean .permits false l ⟨.jPermits, false, none⟩ (.add .s)) := by
   native_decide
 
 /-- Pipelining hides it: every Java source is compiled, and the API is scalac's, with children. -/
-theorem s1_pipe : [Lang.java, .s2, .s3].all (fun l => clean .today true l ⟨.jPermits, false, none⟩ (.add .s)) := by
+example : [Lang.java, .s2, .s3].all (fun l => clean .today true l ⟨.jPermits, false, none⟩ (.add .s)) := by
   native_decide
 
 /-- **S2**: a leaf added under the inner sealed `T`, in a file of its own, misses a Scala client
 whatever the mode but the fix: `S`'s file is not edited, so its API is not recomputed, and the client
 depends on `S`, not `T`. A Java client depends on `T` as an ancestor of `B`. With `T` in `S`'s file
 (Java's inferred `permits`, or a Scala hierarchy) `S`'s API changes when it lists the descendants. -/
-theorem s2 :
+example :
     [Mode.today, .permits, .desc].all (fun m => [Lang.s2, .s3].all fun l => [false, true].all fun pipe =>
       !clean m pipe l ⟨.jPermits, true, none⟩ (.add .t)) ∧
     clean .permits false .java ⟨.jPermits, true, none⟩ (.add .t) ∧
@@ -137,7 +140,7 @@ theorem s2 :
     clean .today false .s2 ⟨.scala, true, none⟩ (.add .t) := by
   native_decide
 
-theorem fix_clean : [Lang.java, .s2, .s3].all (fun l => (bases l).all fun p => (edits p).all fun (e, _) =>
+example : [Lang.java, .s2, .s3].all (fun l => (bases l).all fun p => (edits p).all fun (e, _) =>
     [false, true].all fun pipe => clean .fix pipe l p e) := by
   native_decide
 
