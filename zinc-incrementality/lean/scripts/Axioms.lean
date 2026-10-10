@@ -27,3 +27,19 @@ import Zinc
 #print axioms Zinc.NCompiler.downstream_sound
 -- a proved counterexample that used to lean on native_decide
 #print axioms Zinc.PingPong.zinc_diverges
+-- the instances' soundness theorems and witnesses
+#print axioms Zinc.JavaSpec.fix_sound
+#print axioms Zinc.JavaSealedSpec.fix_sound
+#print axioms Zinc.JavaOrder.mixed_sound
+#print axioms Zinc.SplitProof.Spec.cross_downstream_sound
+#print axioms Zinc.SplitProof.Spec.global_obligations
+#print axioms Zinc.SplitProof.Spec.narrowed_obligations
+#print axioms Zinc.SplitProof.Spec.joint_not_comp
+#print axioms Zinc.Cycles.zinc_ne_clean
+#print axioms Zinc.Cycles.annotated_eq_clean
+#print axioms Zinc.Annotations.fix_sound
+#print axioms Zinc.HashForms.conservative_sound
+#print axioms Zinc.Naming.Mini.spelling_bugs
+#print axioms Zinc.PipelineLifecycle.rollback_preserves
+#print axioms Zinc.Synthetic.sound_of_agree
+#print axioms Zinc.InlineOpaqueSpec.fix_sound
