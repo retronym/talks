@@ -5,7 +5,7 @@ import Jvm.Link
 
 Each case is a library edit (`v0` → `v1`) and a client compiled against `v0`. The client's
 classes and sites are fixed; only the library's classfiles change. Each case states the outcome
-before and after, by evaluation, and names the MiMa problem that reports it where there is one.
+before and after, by kernel `decide` (no `native_decide`), and names the MiMa problem that reports it where there is one.
 `lake exe jvmcases` dumps the cases; `probes/jvm` renders them to classfiles and checks the outcomes on
 HotSpot.
 
@@ -153,26 +153,26 @@ def all : List Case :=
    overrideAdded, pulledUp]
 
 example : methodRemoved.before = .ok [.A] ∧ methodRemoved.after = .error .noSuchMethod := by
-  native_decide
-example : resultTypeChanged.after = .error .noSuchMethod := by native_decide
-example : classBecomesInterface.after = .error .incompatibleClassChange := by native_decide
-example : becomesStatic.after = .error .incompatibleClassChange := by native_decide
-example : becomesAbstract.after = .error .instantiation := by native_decide
+  decide
+example : resultTypeChanged.after = .error .noSuchMethod := by decide
+example : classBecomesInterface.after = .error .incompatibleClassChange := by decide
+example : becomesStatic.after = .error .incompatibleClassChange := by decide
+example : becomesAbstract.after = .error .instantiation := by decide
 example : becomesFinal.before = .ok [] ∧ becomesFinal.after = .error .finalSuper := by
-  native_decide
-example : methodBecomesFinal.after = .error .finalOverride := by native_decide
-example : superclassRemoved.after = .error .noSuchMethod := by native_decide
+  decide
+example : methodBecomesFinal.after = .error .finalOverride := by decide
+example : superclassRemoved.after = .error .noSuchMethod := by decide
 example : defaultRemoved.before = .ok [.I] ∧ defaultRemoved.after = .error .abstractMethod := by
-  native_decide
+  decide
 example : defaultConflict.before = .ok [.I] ∧
-    defaultConflict.after = .error .incompatibleClassChange := by native_decide
-example : overrideAdded.before = .ok [.A] ∧ overrideAdded.after = .ok [.B] := by native_decide
-example : pulledUp.before = .ok [.B] ∧ pulledUp.after = .ok [.A] := by native_decide
+    defaultConflict.after = .error .incompatibleClassChange := by decide
+example : overrideAdded.before = .ok [.A] ∧ overrideAdded.after = .ok [.B] := by decide
+example : pulledUp.before = .ok [.B] ∧ pulledUp.after = .ok [.A] := by decide
 
 /-- The two compatible edits change the footprint: `link_congr` does not apply, and a Zinc-style
 "same answers on the trace" test would flag them. -/
 example : (footprint overrideAdded.w0 overrideAdded.prog).any
     (fun q => !agrees overrideAdded.w0 overrideAdded.w1 q) = true := by
-  native_decide
+  decide
 
 end Jvm.Catalogue
