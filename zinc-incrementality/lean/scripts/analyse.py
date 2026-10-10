@@ -34,19 +34,16 @@ def model_res(cfg):
     return b, a
 
 rs = [json.loads(l, strict=False) for l in open(sys.argv[1]) if l.strip()]
-# A fresh dump (optional) supplies the current model's verdicts, matched by base cfg and edit.
+# The harness record embeds the model's fields from the case file it ran. A fresh dump (optional)
+# replaces them with the current model's, matched exactly by the base's cfg and the edit.
 if len(sys.argv) > 2:
     fresh = {}
     for line in open(sys.argv[2]):
         b = json.loads(line)
         for e in b['edits']:
             fresh[(b['cfg'], e['cls'])] = e
-    def norm(cfg):
-        t = cfg.split()
-        return ' '.join(t[:8] + t[9:]) if len(t) == 17 and t[8] == 'false' else cfg
-    fresh = {(norm(c), e): v for (c, e), v in fresh.items()}
     for r in rs:
-        e = fresh.get((norm(r['cfg']), r.get('edit')))
+        e = fresh.get((r['cfg'], r.get('edit')))
         if e:
             r['modelClean'] = e['modelClean']
             r['edited'] = e['cfg']
