@@ -121,7 +121,8 @@ def mainCycles (m : Mode) : IO Unit := do
       "{\"cls\":" ++ jstr name ++ ",\"cfg\":" ++ jstr (name ++ ": " ++ srcCfg p' ++ ": clean " ++ resStr v.clean ++ ", incremental " ++ resStr v.incr) ++
         ",\"factors\":" ++ jfactors [("a", srcCfg p')] ++
         ",\"files\":" ++ jfiles ((cfiles p').filter (fun f => !(cfiles p).contains f) |>.map fun (f, t) => (f, some t)) ++
-        ",\"modelRecompiled\":" ++ jarr (rc.map jstr) ++ ",\"modelClean\":" ++ toString v.same ++
+        ",\"modelRecompiled\":" ++ jarr (rc.map jstr) ++ ",\"modelRounds\":" ++ jarr (v.rounds.map (toString ∘ Finset.card)) ++
+        ",\"modelClean\":" ++ toString v.same ++
         ",\"modelErrs\":" ++ jarr (if v.clean == .error then [jstr "error"] else []) ++ "}"
     out.putStrLn ("{\"space\":\"cycles\",\"id\":\"c" ++ toString i ++ "\",\"cfg\":" ++ jstr (srcCfg p) ++
       ",\"factors\":" ++ jfactors [("src", srcCfg p)] ++ ",\"probe\":\"\"" ++
@@ -132,7 +133,8 @@ end cycles
 
 def main (args : List String) : IO Unit := do
   if args.contains "cycles" then
-    return (← mainCycles (if args.contains "mutual" then .mutual else if args.contains "precise" then .precise else .today))
+    return (← mainCycles (if args.contains "mutual" then .mutual else if args.contains "precise" then .precise
+      else if args.contains "retry" then .retry else .today))
   let pipe := args.contains "pipe"
   let l := langOf args
   if args.contains "sealed" then

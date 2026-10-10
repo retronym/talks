@@ -233,7 +233,7 @@ a round with a compile error stops the build. The modes are Zinc today; sbt/zinc
 and the precise rule proposed here: add the units of a cycle through a changed unit only when the
 edit changes whether, or how, the unit's type is written (a body-only edit adds nothing). -/
 
-inductive Mode | today | mutual | precise
+inductive Mode | today | mutual | precise | retry
   deriving DecidableEq, Repr
 
 /-- A source, and whether its text changed beyond its `Src` (a body-only edit). -/
@@ -273,6 +273,7 @@ def firstRound (m : Mode) (p p' : Prog) : Finset U :=
   | .today => edited
   | .mutual => edited ∪ cyc
   | .precise => edited ∪ cyc.filter fun _ => (S.filter fun v => p.src v != p'.src v).Nonempty
+  | .retry => edited
 
 def initial (src : U → Src) : State U Out K :=
   { out := C.group S src none₀
@@ -285,9 +286,24 @@ structure Verdict where
   same : Bool
   deriving DecidableEq
 
+/-- sbt/zinc#1780: when the first round fails, rerun it once with the unchanged classes on a
+dependency path from an edited class to an edited class (forward ∩ backward closure). -/
+def bridging (p p' : Prog) : Finset U :=
+  let edited := firstRound .today p p'
+  S.filter fun u => u ∉ edited ∧ (p.src u).reads ∈ edited ∧ ∃ e ∈ edited, (p.src e).reads = u
+
+def run (m : Mode) (p p' : Prog) : Option ((U → Out) × List (Finset U)) :=
+  match m, loop p'.src 4 (firstRound m p p') (initial p.src) with
+  | .retry, none =>
+    if (bridging p p').Nonempty then
+      (loop p'.src 4 (firstRound .today p p' ∪ bridging p p') (initial p.src)).map
+        fun (o, rs) => (o, firstRound .today p p' :: rs)
+    else none
+  | _, r => r
+
 def verdict (m : Mode) (p p' : Prog) : Verdict :=
   let cl := cleanResult p'.src
-  match loop p'.src 4 (firstRound m p p') (initial p.src) with
+  match run m p p' with
   | none => ⟨cl, .error, [], cl == .error⟩
   | some (o, rs) => ⟨cl, resultOf o S, rs, resultOf o S == cl⟩
 
