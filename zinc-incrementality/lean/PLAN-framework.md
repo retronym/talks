@@ -1,4 +1,4 @@
-# The framework, merged (design note, for review)
+# The framework, merged
 
 ## Problem
 
@@ -15,23 +15,35 @@ Each restates `envOf`, `override`, `round`, `changed`, `invalidated`, `zinc`, `U
 
 The real cost is that an instance needing two features has nowhere to go. Implicit search needs keys from the output, because the resolved scope is in the output and not the trace's last query. It also needs non-local answers, to live on the shared names instance `SplitProof.Spec` with its `Up`/`S` split. So implicit search sits apart in `GivensSpec.lean`. Phase 14 and the upstream cases will hit the same wall.
 
-## Decision
+## Decision (approved; step 1 built)
 
-**One structure: `NCompiler`, with keys that also read the output.** The only change to its fields is `keys : CUnit → Out → List (CUnit × Q) → Finset (CUnit × K)`. `round` records `keys d (out' d) (trace …)`. The proofs of T2″, T3a″ (`NonLocalAns`) and T5 (`Classpath`) use `keys` only through `coverage`, so they carry over with the extra argument threaded through.
+**One general structure, `XCompiler` (`General.lean`).** It has `NCompiler`'s fields, except that the extractor also reads the output: `keys : CUnit → Out → List (CUnit × Q) → Finset (CUnit × K)`. `round` records `keys d (out' d) (trace …)`.
 
-**The other three become constructors of it.** Each gets a lift into `NCompiler`, as `Embed.lean` already does for `Compiler`:
-- `lift_obligations`: a variant's obligations give the general ones;
-- `zinc_lift`: the general loop on the lift is the variant's loop, round for round.
+The affected units are a decidable predicate, `Affected R s c := c ∈ R ∨ ∃ d ∈ hashDeps c, d ∈ R`, not a `Finset` over `univ`. That way neither the general form nor any variant needs `Fintype CUnit`. `GivensSpec`'s units have none, and `Compiler`'s and `TCompiler`'s theorems never asked for it.
 
-So T2, T3a and T5 hold for every variant through the lift.
+Proved once on `XCompiler`:
+- T2 (`round_preserves`) and T3a (`zinc_sound`);
+- T4 for monotone policies (`zinc_some_of_monotone`, `zinc_some_of_monotoneFrom`);
+- T5 and the snapshot results (`inv_external`, `downstream_sound`, `zinc_out_outside`, `fresh_refreshAll`, `fresh_refreshRef_local`).
 
-- `Compiler.lift`: unchanged from `Embed.lean`, with `keys _ _ tr := C.keys tr`.
-- `TCompiler.lift`: `keys _ o _ := C.keysOf o`.
-- `GCompiler.lift`: `hashDeps _ c := C.hashDeps c`. Its `hashRevDeps` is the reverse of `hashDeps`; T2′'s `affected` is `NCompiler.affected` on the lift, which needs `hashRevDeps` to be that reverse. That is an extra hypothesis on `lift_obligations`, true of every `GCompiler` instance (`Hier`'s `Mk`).
+The design originally said to change `NCompiler.keys` in place. That would have meant editing the `keys` field and coverage statements of six instances (Erasure, Flat, ImplicitScope, Snapshot, SplitProof, GivensSpec) while instance PRs are open. A new structure that `NCompiler` lifts into, like the others, leaves every instance untouched.
 
-**Proofs once.** `Soundness.lean`'s, `Tree.lean`'s and `NonLocal.lean`'s `round_preserves` and `zinc_sound` become one-line corollaries through the lift. They keep their names, so PLAN files, the talk and the instances keep citing them. `Uniqueness` (T3b) and `Termination` (T4) stay on `Compiler`, where they were proved, and are not moved.
+**Every variant lifts into it.** Each lift is `toX`, with `toX_obligations` and an equality lemma: `invalidated_toX`, plus `zinc_toX` for the loop.
 
-**Instances do not change**, except where they want the new power. `Hier`, `JavaSpec`, `JavaOrder`, `Cycles`, `Spec`, `InlineOpaque` and the rest keep their variant and get every general result through the lift. `GivensSpec` moves onto `SplitProof.Spec`. Spec's lookup gains levels: every probe of a level is asked, the first level with a hit decides, and `JavaSpec`'s `mem_trace_resolve` is the model. Its keys read the output's resolved scope instead of `trace.getLast?`. Names and givens are then one instance with the `Up`/`S` split, and `GivensSpec.lean` goes.
+| Variant | Lift | Its theorems, now corollaries |
+|---|---|---|
+| `Compiler` (`Soundness.lean`) | hashes local (`hashDeps _ c = {c}`), keys from the trace | `round_preserves`, `zinc_sound`; `Termination`'s monotone regimes |
+| `TCompiler` (`Tree.lean`) | hashes local, keys from the output | `round_preserves`, `zinc_sound` |
+| `GCompiler` (`NonLocal.lean`) | answers local, `hashDeps` as given | T2′ `round_preserves`: its `affected` (via `hashRevDeps`, which contains the reverse of `hashDeps`, obligation `rev`) contains the general form's, so its dirty set is larger and its invariant weaker (`invalidated_toX_subset`) |
+| `NCompiler` (`NonLocalAns.lean`, `Classpath.lean`) | keys ignore the output; its definitions coincide with the lift's | T2″, T3a″, T5 and the snapshot results |
+
+**T3b and T3 for `TCompiler` instances** (the coordinator's note 1). A per-unit fixed point and the clean build do not mention keys. So `TCompiler.toCompiler`, which forgets the keys, reaches `Uniqueness`'s `fixpoint_unique_of_wf` and `fixpoint_unique_of_explicit` directly. `cleanFrom_fixpoint_of_comp` needs only compositionality. With the `TCompiler`'s own T3a, that gives T3: `TCompiler.zinc_eq_clean_of_explicit` and `TCompiler.zinc_eq_clean_of_wf`, a few lines each. T4's monotone regimes reach `TCompiler` through its lift (`TCompiler.zinc_some_of_monotoneFrom`).
+
+Not moved: T4's explicit-interface and acyclic regimes (`zinc_some_of_explicit`, `zinc_some_of_wf`). They read the round's recorded keys, and no `TCompiler` instance needs them yet. Moving them is the same pattern when one does.
+
+**`Model.lean` stays the first page.** Its docstring introduces the variants and the general form they lift into. DESIGN-spec.md and the README point there first.
+
+**Step 2** (next PR): `SplitProof.Spec` builds on `XCompiler` directly. Its lookup gains levels (every probe of a level asked, the first level with a hit decides) and its keys read the output's resolved scope, so `GivensSpec` folds into it and is removed.
 
 ## Rejected
 
@@ -39,9 +51,8 @@ So T2, T3a and T5 hold for every variant through the lift.
 - **Moving every instance to `NCompiler` declarations.** It churns files that work, and conflicts with every open instance PR. The lift gives the same results without touching them.
 - **Generalising `Compiler` instead.** `NCompiler` is already the most general in three of the four directions (non-local answers, non-local hash, `locality`), and it is where T5 lives.
 
-## Steps, two PRs
+## Steps
 
-1. `NCompiler.keys` reads the output; `TCompiler.lift` and `GCompiler.lift` with `lift_obligations` and `zinc_lift`; the variants' T2/T3a as corollaries; `scripts/Axioms.lean` (talks#36) checks the corollaries.
-2. `Spec`'s level-wise lookup and keys from the output; `GivensSpec` ported onto it and removed; PLAN-names and the status table updated.
-
-Timing: after talks#25 (`InlineOpaque` as an instance) merges, which touches the same imports. Neither PR should conflict with an instance file, since instances are not edited in step 1.
+- [x] 1. `XCompiler` (`General.lean`) with T2, T3a, T4 (monotone), T5 and the snapshot results; lifts and corollaries for `Compiler`, `TCompiler`, `GCompiler` and `NCompiler`; `TCompiler.toCompiler` with T3; `Policy.InS` and `Policy.MonotoneFrom` moved to `Model.lean`. No instance file changed.
+- [ ] 2. `Spec` on `XCompiler` with a level-wise lookup and keys from the output; `GivensSpec` folded in and removed.
+- [ ] Once talks#36 is in: `scripts/Axioms.lean` checks the `XCompiler` theorems too.
