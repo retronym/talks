@@ -159,6 +159,7 @@ On the #34 scratch build (`cheap` mode), 60-base subsets weighted to the new fac
 * F4 is observable (above). F6 also hits `W`, recompiled apart from `WT` (`heirInit`). F7 is new.
 * Scala 3 records a dependency on an inherited package-object member that the lookup passed over for `a.b.Foo`.
 * Not modelled: under #34, classes that *declare* a member named as the added class (`a.Y`, `a.V`) are recompiled too. Real cost is higher than the `User` column.
+* F4 depends on the mode. What decides the mirror is whether the package object has the member when `Inner.scala` is compiled, jointly or apart (probed). The F2 rule recompiles `a.b.Foo` as a user of its own name, which leaves the mirror as a clean build has it for an inherited member, but not for a declared one: there Zinc's `a.b.Foo` is the member, the class-name alias (`innerRecompiled`). zinc-develop-names' run of the narrowed rules (#47, names 2.13, 2,331 cases; givens 2.13, 2,372) agrees with the model on every verdict and recompiled set.
 
 Case files for the Zinc sessions (develop: `all`, `all+narrowed+imports`; #24: `all+decls`, `all+composed`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary` and `modelFamily`.
 
