@@ -65,15 +65,72 @@ No track edits `Zinc/`; talks#21 and the PRs stacked on it own that directory. I
 
 ### J — JVM (`Jvm/`)
 
-- **J1. Calibrate the catalogue on HotSpot.** Render each `Catalogue` case to classfiles (Classfile API on JDK 24+, or ASM) for `v0`, `v1` and the client. Run the client against `v1` and record the `Throwable`'s class. Map `LinkError` to JVM classes. In particular: is `finalSuper` a `VerifyError` or an `IncompatibleClassChangeError` on JDK 21 and 25?
-- **J2. Client spaces.** Enumerate the bounded clients a library edit could break, to answer "∃ a client that links on `v0` and fails on `v1`". This is the model's verdict for a MiMa problem.
-- **J3. More linkage.**
-  - fields (`get`/`put`, static ↔ instance);
-  - `invokespecial`, private methods and nestmates;
-  - static and private interface methods;
-  - `Object`'s methods in interface resolution;
-  - access control, especially package-private across packages and `protected`.
-- **J4. Behaviour.** Constants folded into the client, and which method runs. This makes "links, but runs different code" a first-class verdict (`overrideAdded`, `pulledUp`, constants).
+- **J1. Calibrate the catalogue on HotSpot.** DONE.
+  - `lake exe jvmcases` dumps the catalogue as JSON lines. `probes/jvm` renders each case's `v0`, `v1` and client with the Classfile API (classfile version 65), runs the client against both, and compares the `Throwable` and the method that ran with the model. Run it with `probes/jvm/probe.sh "" -- $JAVA_HOME...`; `OUT=dir` keeps the classfiles for MiMa (B1), and `lake exe jvmcases space` gives the client spaces.
+  - The probe's sites are what javac emits: `C c = new R(); c.m()` is `new R; invokespecial R.<init>; invokevirtual C.m`. So the verifier's upcast check, instantiation and load-on-reference are part of the model, as `Site` semantics. The model's `LinkError` type gained `verify`, `illegalAccess` and `noSuchField`.
+  - Calibrated on Temurin 21.0.12, 25.0.4 and 27. Every case agrees on all three, apart from one known HotSpot bug.
+  - `LinkError` → JVM class: `noClassDef` → `NoClassDefFoundError`, `incompatibleClassChange` → `IncompatibleClassChangeError`, `noSuchMethod` → `NoSuchMethodError`, `noSuchField` → `NoSuchFieldError`, `abstractMethod` → `AbstractMethodError`, `instantiation` → `InstantiationError`, `illegalAccess` → `IllegalAccessError`, `verify` → `VerifyError`, and **`finalSuper`, `finalOverride` → `IncompatibleClassChangeError`** (not `VerifyError`) on all three JDKs.
+  - **JDK 21 deviates on `defaultConflict`.** `invokeinterface` on a receiver with two maximally-specific defaults throws `AbstractMethodError`, where JVMS §6.5 says `IncompatibleClassChangeError`. This is [JDK-8356942](https://bugs.openjdk.org/browse/JDK-8356942): it regressed in JDK 10 and was fixed in 25. The model follows the JVMS, and the probe reports the JDK 21 result as a known deviation.
+- **Finding 7.** DONE. No `native_decide` remains in `Jvm/`. The catalogue's witnesses use plain `decide`. The client-space verdicts use `decide +kernel`, because the elaborator's `decide` hits its recursion limit on them. Both run in the kernel, and none needed `native_decide`.
+- **J2. Client spaces.** DONE. `Jvm/Clients.lean` defines `breaksSomeClient k`: some client in a bounded space links on `v0` and fails on `v1`. It also defines `changesSomeClient k`: some client links on both and runs a different method. Clients must be well-typed against `v0`.
+  - `space`, for the original 12 cases: an optional client class `X` (superclass, interfaces, `m()V`/`m()I`) and one call site of any kind, owner, descriptor and receiver. 15,652 programs.
+  - `space3`, for the J3 cases: adds fields, `invokespecial`, interface statics, and sites run from inside `X`. 44,144 programs.
+  - **The probe agrees with the model on every program in both spaces, before and after, on JDK 21, 25 and 27.** The only exceptions are JDK 21's JDK-8356942 cases.
+- **J3. More linkage.** Done for most of it: fields, `invokespecial`, private methods, static and private interface methods, access control, and the verifier's protected check. 23 catalogue cases.
+  - Calibrating the space found three things the model lacked. All are now modelled:
+    - Loading a class checks that its superclass and superinterfaces are accessible (`IllegalAccessError`).
+    - The verifier's `invokespecial` rule turns on whether the referenced class is an interface, not on the constant's tag. An `InterfaceMethodref` to a class passes the verifier and fails in resolution with ICCE. A reference to an interface that is not a direct superinterface is a `VerifyError`.
+    - The protected-receiver check (§4.10.1.8), predicted by `methodBecomesProtectedOther`.
+  - TODO: nestmates. Private access is same-class only. A nest change can only break a client through a library method's own calls, which needs method bodies (J4).
+  - TODO: `Object`'s methods in interface resolution; transitive overriding through an intermediate package-private method (§5.4.5); clients in the library's package; a space over two client classes.
+- **J4. Behaviour.** TODO. Constants folded into the client. Method bodies, so that a library method's own calls link too. Which method runs is already observed by the probe and is part of the outcome; `changesSomeClient` is the first form of the "links, but runs different code" verdict.
+
+The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is expected to report, to be confirmed by track B. "HotSpot" is the result on `v1`; "same" means it links and runs the method the model predicts. The breaks and changes columns are counts over the clients that link on `v0`.
+
+| Case | MiMa | Model on `v1` | HotSpot | Breaks some client | Changes some client |
+|---|---|---|---|---|---|
+| `methodRemoved` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (12/29) | no |
+| `resultTypeChanged` | IncompatibleResultTypeProblem | `noSuchMethod` | `NoSuchMethodError` | yes (12/29) | no |
+| `classBecomesInterface` | IncompatibleTemplateDefProblem | `incompatibleClassChange` | `IncompatibleClassChangeError` | yes (49/78) | no |
+| `becomesStatic` | VirtualStaticMemberProblem | `incompatibleClassChange` | `IncompatibleClassChangeError` | yes (12/29) | no |
+| `becomesAbstract` | AbstractClassProblem | `instantiation` | `InstantiationError` | yes (7/17) | no |
+| `becomesFinal` | FinalClassProblem | `finalSuper` | `IncompatibleClassChangeError` | yes (8/17) | no |
+| `methodBecomesFinal` | FinalMethodProblem | `finalOverride` | `IncompatibleClassChangeError` | yes (5/29) | no |
+| `superclassRemoved` | MissingTypesProblem | `noSuchMethod` | `NoSuchMethodError` | yes (28/78) | no |
+| `defaultRemoved` | ReversedMissingMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (4/15) | no |
+| `defaultConflict` | — | `incompatibleClassChange` | `IncompatibleClassChangeError` (21: `AbstractMethodError`, JDK-8356942) | yes (4/30) | no |
+| `overrideAdded` | — | links, runs `B` | same | no | yes (26/78) |
+| `pulledUp` | — | links, runs `A` | same | no | yes (14/50) |
+| `methodBecomesPrivate` | DirectMissingMethodProblem | `illegalAccess` | `IllegalAccessError` | yes (18/41) | no |
+| `methodBecomesPackagePrivate` | InaccessibleMethodProblem | `illegalAccess` | `IllegalAccessError` | yes (18/41) | no |
+| `classBecomesPackagePrivate` | InaccessibleClassProblem | `illegalAccess` | `IllegalAccessError` | yes (16/23) | no |
+| `methodBecomesProtected` | InaccessibleMethodProblem | `illegalAccess` | `IllegalAccessError` | yes (12/41) | no |
+| `methodBecomesProtectedSub` | InaccessibleMethodProblem | links, runs `p1.A` | same | yes (12/41) | no |
+| `methodBecomesProtectedOther` | InaccessibleMethodProblem | `verify` | `VerifyError` | yes (12/41) | no |
+| `overrideCutByPackage` | InaccessibleMethodProblem | links, runs `p1.A` | same | yes (18/41) | no |
+| `overrideBecomesPrivate` | — | links, runs `A` | same | yes (22/110) | yes (15/110) |
+| `superCallPulledUp` | — | links, runs `A` | same | no | yes (20/69) |
+| `superCallRemoved` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (22/69) | no |
+| `superCallAbstract` | DirectAbstractMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (25/41) | no |
+| `defaultSuperCallAbstract` | DirectAbstractMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (7/23) | no |
+| `staticIfaceMethodRemoved` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (9/23) | no |
+| `staticMovedToIface` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (11/34) | no |
+| `defaultBecomesStatic` | VirtualStaticMemberProblem | `incompatibleClassChange` | `IncompatibleClassChangeError` | yes (9/23) | no |
+| `defaultBecomesPrivate` | DirectMissingMethodProblem | `illegalAccess` | `IllegalAccessError` | yes (9/23) | no |
+| `fieldRemoved` | MissingFieldProblem | `noSuchField` | `NoSuchFieldError` | yes (34/57) | no |
+| `fieldBecomesStatic` | VirtualStaticMemberProblem | `incompatibleClassChange` | `IncompatibleClassChangeError` | yes (34/57) | no |
+| `fieldBecomesFinal` | — | `illegalAccess` | `IllegalAccessError` | yes (17/57) | no |
+| `fieldBecomesPrivate` | MissingFieldProblem | `illegalAccess` | `IllegalAccessError` | yes (34/57) | no |
+| `fieldShadowed` | — | links, runs `B` | same | no | yes (42/165) |
+| `fieldIfaceBeforeSuper` | — | links, runs `I` | same | yes (37/224) | yes (37/224) |
+| `putstaticBecomesFinal` | — | `illegalAccess` | `IllegalAccessError` | yes (13/49) | no |
+
+For track B, three cases are candidate MiMa false negatives:
+- `defaultConflict` (no problem expected).
+- `overrideBecomesPrivate`: `B.m` becomes private while `A.m` is still inherited, so a client calling `B.m` gets `IllegalAccessError`, because resolution finds the private method first.
+- `fieldIfaceBeforeSuper`: an interface of `B` gains a static field. Field resolution searches superinterfaces before the superclass, so `putstatic B.m` now hits a final interface field and gets `IllegalAccessError`.
+
+`fieldBecomesFinal` and `putstaticBecomesFinal` may be further false negatives if MiMa has no final-field rule.
 
 ### S — Scala (`Scala/`)
 
@@ -130,6 +187,5 @@ J, S and V can start at once; they share only the `Jvm` types. B1 can start as s
   - resolution (§5.4.3.3, §5.4.3.4) and selection (§5.4.6) as a `Task` over the class table;
   - loading checks;
   - `link_congr` (T1 for linkage), `Compatible`, `compatible_of_footprint`.
-- `Jvm/Catalogue.lean`: 12 edits, each with MiMa's problem name, checked before and after by evaluation.
-  - Two are compatible but change the footprint (`overrideAdded`, `pulledUp`).
-  - One has no MiMa problem named (`defaultConflict`).
+- `Jvm/Catalogue.lean`: 35 edits, each with MiMa's expected problem name, checked before and after by kernel `decide` and on HotSpot (§J).
+- `Jvm/Clients.lean`: the J2 verdicts over two client spaces, checked on HotSpot (§J).
