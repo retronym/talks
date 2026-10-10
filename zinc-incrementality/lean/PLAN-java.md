@@ -31,11 +31,11 @@ Modes: `today`; for names `cheap` (#34) and `fix` (#34 with a Java class's used 
 
 ## Harness
 
-The harness needed no code for Java: a source-file base may hold `.java` files under `src/main/java/…` (a public class's file beside its package), and the runs pass `--inc-option pipelining=false`. Two commits on retronym/zinc#36's branch: the scaladoc says so, and the JSON results escape control characters (Scala 3's coloured messages broke the JSON lines). `scripts/jselect.py` picks bases until every signature (the edit, the resolution before and after, the package, the name, `implements`) has an edit; `scripts/janalyse.py` reads the client's classfile for its resolution and compares verdicts and recompilation.
+The harness needed no code for Java: a source-file base may hold `.java` files under `src/main/java/…` (a public class's file beside its package), and the runs pass `--inc-option pipelining=false`. retronym/zinc#44, on #36: the scaladoc says so, and the JSON results escape control characters (Scala 3's coloured messages broke the JSON lines). `scripts/jselect.py` picks bases until every signature (the edit, the resolution before and after, the package, the name, `implements`) has an edit; `scripts/janalyse.py` reads the client's classfile for its resolution and compares verdicts and recompilation.
 
 ## Families
 
-| | Family | Lean | Scripted (pending, retronym/zinc branch `claude/java-names-pending`) |
+| | Family | Lean | Scripted (pending, retronym/zinc#42) |
 |---|---|---|---|
 | J1 | A Java class added to a Java client's package (or moved, or renamed to the name) over an on-demand import or `java.lang`. The client's classfile names only what it resolved, and it records no used names, so #34 does not reach it. A Scala client over a Java-added class is #34's F1: fixed. | `j1_today`, `j1_cheap` | `java-added-class-same-package`; `java-added-class-inner-package-scala-client` (fixed by #34) |
 | J2 | A member class added behind a single-static import (`import static a.X.Foo`, `X` had only a method `Foo`) shadows the package's or an on-demand `Foo`. An import leaves no trace in a classfile. | `j2` | `java-static-import-member-added` |
@@ -70,12 +70,12 @@ Besides: after a Java client's compile fails (an edit the incremental build righ
 2. Java's static imports are the other half: an import is not in the classfile, so a member added behind `import static` is invisible (J2), and so is a second on-demand binding, which Java makes an error (J3).
 3. #21 fixes the one-level case for every client. A nested sealed level in its own file (S2) still misses Scala clients; Java clients are saved by sbt/zinc#148's ancestor edges.
 
-The fix for 1 and 2 (retronym/zinc branch `claude/java-used-names`, on #34): the listener that recovers inlined constants from javac's attributed AST gains a sibling that records each class's simple names (identifiers) and an edge to the class of each static import. Pragmatically: the names cost what Scala's do, #34 invalidates Java users of an added class's simple name as it does Scala ones, and the static-import edges invalidate a Java importer on an API change of the imported class (Java dependents are not name-filtered), which a Java class using any member of it already had. For S2: invalidate the `PatMatTarget` users of a sealed class's sealed ancestors when its children change (rare edits, so cheap); listing descendants in #21 catches only the same-file case.
+The fix for 1 and 2 (retronym/zinc#43, on #34): the listener that recovers inlined constants from javac's attributed AST gains a sibling that records each class's simple names (identifiers) and an edge to the class of each static import. Pragmatically: the names cost what Scala's do, #34 invalidates Java users of an added class's simple name as it does Scala ones, and the static-import edges invalidate a Java importer on an API change of the imported class (Java dependents are not name-filtered), which a Java class using any member of it already had. For S2: invalidate the `PatMatTarget` users of a sealed class's sealed ancestors when its children change (rare edits, so cheap); listing descendants in #21 catches only the same-file case.
 
 ## Steps
 
 - [x] P12.1 `JavaNames.lean`, `JavaSealed.lean`: rules (probed with javac 21, scalac 2.13.16 and 3.3.6), Zinc's Java edges, verdicts, families as checked examples; `fix_clean` (names, Java and Scala 3 clients), `cheap_clean_scala`, `JavaSealed.fix_clean`.
 - [x] P12.2 `lake exe jconformance names|sealed java|2|3 [cheap|fix|permits|desc] [pipe]`; harness: Java files under `src/main/java`, `pipelining=false`, JSON escaping.
 - [x] P12.3 Runs on develop, develop+#34 and develop+#34+fix (names), develop and develop+#21, with and without pipelining (sealed); model and harness reconciled (Scala 2's `classOf`; the Scala bridge's descendants; pipelining's unchanged Java sources keep their API).
-- [x] P12.4 Pending scripted tests per family (`claude/java-names-pending`); the Java fix with its tests (`claude/java-used-names`).
+- [x] P12.4 Pending scripted tests per family (retronym/zinc#42); the Java fix with its tests (retronym/zinc#43).
 - [ ] Future: the S2 fix; N1 in the Scala 2 bridge; the stale javac classfile after a failed compile; Java clients of Scala bindings (package objects are invisible to Java, but Scala `object` members are static forwarders); the `split` layout.
