@@ -1,4 +1,4 @@
-import Zinc.Names
+import ZincNames.Names
 
 /-!
 # Givens and implicits: resolution by type, where Zinc records the owner only
@@ -27,18 +27,21 @@ Zinc records the same edges as for a name, but a changed implicit member invalid
 member-ref dependent of its class, used names or not (`MemberRefInvalidator`). So the import's edge
 charged to the first class suffices here, and the misses are the scopes reached through no edge:
 the package object, and an added top-level given (an added source, `T$package`).
+
+The specification is `GivensSpec.lean`; this file is the executable model, checked on a
+bounded space.
 -/
 
 namespace Zinc.Givens
 
-open Zinc.Names (Ver Pkg)
+open Zinc.Names (Ver Pkg Rules)
 
-inductive Slot | blk | inh | wild | inner | pobj | outer | comp
+inductive Slot | blk | inh | wild | wpkg | inner | pobj | outer | comp
   deriving DecidableEq, Repr
 
 def Slot.str : Slot → String
-  | .blk => "blk" | .inh => "inh" | .wild => "wild" | .inner => "inner" | .pobj => "pobj"
-  | .outer => "outer" | .comp => "comp"
+  | .blk => "blk" | .inh => "inh" | .wild => "wild" | .wpkg => "wpkg" | .inner => "inner"
+  | .pobj => "pobj" | .outer => "outer" | .comp => "comp"
 
 inductive Res | ok (s : Slot) | err (why : String)
   deriving DecidableEq, Repr
@@ -53,11 +56,11 @@ structure Verdict where
   clean : Bool
   deriving DecidableEq, Repr
 
-def Slot.all : List Slot := [.blk, .inh, .wild, .inner, .pobj, .outer, .comp]
+def Slot.all : List Slot := [.blk, .inh, .wild, .wpkg, .inner, .pobj, .outer, .comp]
 
 /-- A top-level given is a file of its own (Scala 3 only). -/
 def Slot.topLevel (v : Ver) : Slot → Bool
-  | .inner | .outer => v == .s3
+  | .inner | .outer | .wpkg => v == .s3
   | _ => false
 
 structure Client where
@@ -66,6 +69,12 @@ structure Client where
   inh : Bool
   wild : Bool
   first : Bool
+  /-- `package object b extends a.PT`: the package object inherits its instance from `a.PT`, which
+  the edit changes. -/
+  pinh : Bool := false
+  /-- `import a.q._` (Scala 3: `import a.q.given`): an instance in `package object q` (Scala 2) or
+  at the top level of package `a.q` (Scala 3). The bridge records nothing for a package import. -/
+  wpkg : Bool := false
   deriving DecidableEq, Repr
 
 structure Prog where
@@ -75,7 +84,7 @@ structure Prog where
 /-- The slots the client can see, innermost first; the companion is always there. -/
 def visible (v : Ver) (c : Client) : List Slot :=
   (if c.blk then [.blk] else []) ++ (if c.inh then [.inh] else []) ++
-  (if c.wild then [.wild] else []) ++
+  (if c.wild then [.wild] else []) ++ (if c.wpkg then [.wpkg] else []) ++
   (if c.pkg != .top && v == .s3 then [.inner] else []) ++
   (if c.pkg != .top then [.pobj] else []) ++
   (if c.pkg != .flat then [.outer] else []) ++ [.comp]
@@ -84,10 +93,10 @@ def visible (v : Ver) (c : Client) : List Slot :=
 def present (v : Ver) (c : Client) : List Slot := visible v c
 
 /-- Scala 3's nesting level of a slot, for this client. -/
-def level (c : Client) : Slot → ℕ
+def level (c : Client) : Slot → Nat
   | .blk => 0
   | .inh => 1
-  | .wild | .inner | .pobj => 2
+  | .wild | .wpkg | .inner | .pobj => 2
   | .outer => if c.pkg == .top then 2 else 3
   | .comp => 4
 
@@ -114,7 +123,7 @@ def invalidates (v : Ver) (p : Prog) (r : Res) (s : Slot) : Bool :=
   -- an edge to the class (the import's edge goes to the first class), and the change is implicit
   | .blk | .inh | .wild | .comp => true
   -- a package object, or an added or removed top-level given
-  | .pobj | .inner | .outer => r == .ok s && (!s.topLevel v || p.has s)
+  | .pobj | .inner | .outer | .wpkg => r == .ok s && (!s.topLevel v || p.has s)
 
 def changed (v : Ver) (p p' : Prog) : List Slot :=
   (present v p.cl).filter fun s => p.has s != p'.has s
@@ -124,19 +133,47 @@ holds class `Inner$package` (Scala 3); Scala 2's `package object a` exists befor
 def addedClasses (v : Ver) (p p' : Prog) : List String :=
   (present v p.cl).filterMap fun s =>
     if s.topLevel v && !p.has s && p'.has s then
-      some (if s == .inner then "Inner$package" else "Outer$package")
+      some (if s == .inner then "Inner$package" else if s == .wpkg then "Q$package" else "Outer$package")
     else none
 
 /-- Does the client use a name? It never names a `$package` class: it summons by type. -/
 def clientUses (n : String) : Bool := !n.endsWith "$package"
 
+/-- The packages that hold implicits at the top level: `a.b`, `a`, and the imported `a.q`. -/
+inductive Where | ab | a | aq
+  deriving DecidableEq, Repr
+
+def Slot.where? : Slot → Option Where
+  | .pobj | .inner => some .ab
+  | .outer => some .a
+  | .wpkg => some .aq
+  | _ => none
+
+/-- The packages whose package object or `$package` class gains or loses an implicit, as a rule
+diffing their names sees it: `package object b` (an inherited instance as `Rules.seesInherited`
+says), `package object q` and Scala 2's `package object a`, and Scala 3's `$package` classes (a new
+or deleted class has all its names added or removed). -/
+def implicitPkgs (rs : Rules) (v : Ver) (p p' : Prog) : List Where :=
+  (changed v p p').filterMap fun s =>
+    if s == .pobj && p.cl.pinh && !rs.seesInherited then none else s.where?
+
+/-- Does the G rule, for an implicit changed in package `w`, reach a class of package clause `c`
+that imports `a.q` (`wpkg`)? Global: every class. Narrowed: the classes of `w` and of the packages
+nested in it, and those that record a wildcard import of `w` (with `imports`). -/
+def reachesG (rs : Rules) (c : Pkg) (wpkg : Bool) : Where → Bool
+  | .a => true
+  | .ab => rs.reach == .global || c != .top
+  | .aq => rs.reach == .global || (rs.imports && wpkg)
+
 def recompiles (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Bool :=
   match m with
-  | .today => (changed v p p').any (invalidates v p (resolve v p))
-  | .cheap => (changed v p p').any (invalidates v p (resolve v p)) ||
-      (addedClasses v p p').any clientUses
   | .searched => !(changed v p p').isEmpty
   | .names => !(changed v p p').isEmpty
+  | m =>
+    let rs := m.toRules
+    (changed v p p').any (invalidates v p (resolve v p)) ||
+      (rs.cheap && (addedClasses v p p').any clientUses) ||
+      (rs.g && (implicitPkgs rs v p p').any (reachesG rs p.cl.pkg p.cl.wpkg))
 
 /-- Scala 3 compiles a class that extends a trait whose members are all lazy (a given alias is a
 lazy val) differently alone than with the trait: read from TASTy, the trait has no initialiser, and
@@ -166,7 +203,11 @@ def clients : List Client := Id.run do
       for inh in [false, true] do
         for wild in [false, true] do
           for first in [false, true] do
-            if !first || wild then out := out ++ [⟨pkg, blk, inh, wild, first⟩]
+            if !first || wild then
+              for pinh in [false, true] do
+                if !pinh || pkg != .top then
+                  for wpkg in [false, true] do
+                    out := out ++ [⟨pkg, blk, inh, wild, first, pinh, wpkg⟩]
   return out
 
 def subsets : List Slot → List (List Slot)
@@ -197,42 +238,95 @@ def edits (v : Ver) (p : Prog) : List (Edit × Prog) :=
 
 /-! ## Families -/
 
-def cl0 : Client := ⟨.nested, false, false, false, false⟩
+def cl0 : Client := ⟨.nested, false, false, false, false, false, false⟩
 
-/-- **Package object, Scala 2**: an implicit added to `package object b` over the companion's. -/
-theorem pobj_added_today_s2 :
+/-- `pobj_added_today_s2`: **Package object, Scala 2**: an implicit added to `package object b` over the companion's. -/
+example :
     verdict .today .s2 ⟨cl0, (· == .comp)⟩ ⟨cl0, fun s => s == .comp || s == .pobj⟩ =
       ⟨.ok .comp, .ok .pobj, false, false⟩ := by native_decide
 
-/-- **Top-level given, Scala 3**: a file with `given a.T` added to package `a.b`, over the
+/-- `inner_added_today_s3`: **Top-level given, Scala 3**: a file with `given a.T` added to package `a.b`, over the
 companion's. -/
-theorem inner_added_today_s3 :
+example :
     verdict .today .s3 ⟨cl0, (· == .comp)⟩ ⟨cl0, fun s => s == .comp || s == .inner⟩ =
       ⟨.ok .comp, .ok .inner, false, false⟩ := by native_decide
 
-/-- An import's edge is enough for an implicit: the first class is invalidated whatever it uses. -/
-theorem wild_first_clean :
+/-- `wild_first_clean`: An import's edge is enough for an implicit: the first class is invalidated whatever it uses. -/
+example :
     (verdict .today .s3 ⟨{ cl0 with wild := true, first := true }, (· == .comp)⟩
       ⟨{ cl0 with wild := true, first := true }, fun s => s == .comp || s == .wild⟩).clean = true := by
   native_decide
 
-/-- Recording the scopes searched is clean on the whole space, but for the classfile bytes of a
-client compiled apart from its trait. -/
-theorem searched_clean : ([Ver.s2, .s3].all fun v => (bases v).all fun p =>
-    (edits v p).all fun (_, p') =>
-      (verdict .searched v p p').clean || separateInit v p p' (recompiles .searched v p p')) = true := by
+/-! ## The package rule (G) -/
+
+/-- Is every edit of the space clean in both versions under a mode, but for the trait initialiser? -/
+def cleanOn (m : Zinc.Names.Mode) : Bool := [Ver.s2, .s3].all fun v => (bases v).all fun p =>
+  (edits v p).all fun (_, p') => (verdict m v p p').clean || separateInit v p p' (recompiles m v p p')
+
+/-- `package object b extends a.PT`, and `a.PT` gains an instance over the companion's. -/
+def pinhBase : Prog := ⟨{ cl0 with pinh := true }, (· == .comp)⟩
+
+/-- `pobj_inherited_today`. -/
+example :
+    verdict .today .s2 pinhBase (pinhBase.set .pobj true) = ⟨.ok .comp, .ok .pobj, false, false⟩ := by
   native_decide
 
-/-- retronym/zinc#34's cheap fix changes nothing here: the only classes an edit adds are
-`Inner$package` and `Outer$package`, whose names the client never uses. -/
-theorem cheap_is_today : ([Ver.s2, .s3].all fun v => (bases v).all fun p =>
-    (edits v p).all fun (_, p') => recompiles .cheap v p p' == recompiles .today v p p') = true := by
-  native_decide
+/-- `pobj_inherited_decls`. -/
+example :
+    verdict (.rules { Zinc.Names.allRules with api := .decls }) .s2 pinhBase (pinhBase.set .pobj true) =
+      ⟨.ok .comp, .ok .pobj, false, false⟩ := by native_decide
+
+/-- The family of an unclean edit: G3 the trait initialiser; G1 an instance in a package object
+(Scala 2's `package object a` and the imported `package object q` included); G2 a top-level given
+(Scala 3, the imported package's included). -/
+def family (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : String :=
+  if (verdict m v p p').clean then "-"
+  else if separateInit v p p' (recompiles m v p p') then "G3"
+  else if (changed v p p').any (fun s => s.topLevel v) then "G2"
+  else if (changed v p p').any (fun s => s == .pobj || s == .outer || s == .wpkg) then "G1" else "?"
+
+/-! ## Cost
+
+Beyond the edited files and their heirs: the client's file, and two classes that summon nothing,
+`a.b.Near` and `a.Mid`, standing for the other classes of package `a.b` and of package `a`. -/
+
+def necessary (v : Ver) (p p' : Prog) : Bool := resolve v p != resolve v p'
+
+/-- `Near` (in `a.b`), `Mid` (in `a`), `Far` (in `c`): does the mode recompile them? -/
+def bystanders (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Bool × Bool × Bool :=
+  match m with
+  | .searched | .names => (false, false, false)
+  | m =>
+    let rs := m.toRules
+    let ws := if rs.g then implicitPkgs rs v p p' else []
+    (ws.any (reachesG rs .flat false), ws.any (reachesG rs .top false),
+      rs.reach == .global && !ws.isEmpty)
+
+structure Cost where
+  edits : Nat
+  wrong : Nat
+  client : Nat
+  near : Nat
+  mid : Nat
+  far : Nat
+  deriving Repr
+
+def cost (m : Zinc.Names.Mode) (v : Ver) : Cost := Id.run do
+  let mut c : Cost := ⟨0, 0, 0, 0, 0, 0⟩
+  for p in bases v do
+    for (_, p') in edits v p do
+      let rc := recompiles m v p p'
+      let (n, d, f) := bystanders m v p p'
+      c := ⟨c.edits + 1,
+        c.wrong + (if !(verdict m v p p').clean && !separateInit v p p' rc then 1 else 0),
+        c.client + (if rc && !necessary v p p' then 1 else 0),
+        c.near + (if n then 1 else 0), c.mid + (if d then 1 else 0), c.far + (if f then 1 else 0)⟩
+  return c
 
 /-! ## Rendering -/
 
 def gname : Slot → String
-  | .blk => "gBlk" | .inh => "gInh" | .wild => "gWild" | .inner => "gInner" | .pobj => "gPobj"
+  | .blk => "gBlk" | .inh => "gInh" | .wild => "gWild" | .wpkg => "gWpkg" | .inner => "gInner" | .pobj => "gPobj"
   | .outer => "gOuter" | .comp => "gComp"
 
 def instance_ (v : Ver) (s : Slot) : String :=
@@ -243,17 +337,22 @@ def instance_ (v : Ver) (s : Slot) : String :=
 def body (v : Ver) (p : Prog) (s : Slot) : String :=
   if p.has s then " {\n  " ++ instance_ v s ++ "\n}\n" else "\n"
 
-def slotFile : Slot → String
+def slotFile (p : Prog) : Slot → String
+  | .pobj => if p.cl.pinh then "PT.scala" else "PObj.scala"
   | .blk => "V.scala" | .inh => "P.scala" | .wild => "W.scala" | .inner => "Inner.scala"
-  | .pobj => "PObj.scala" | .outer => "Outer.scala" | .comp => "T.scala"
+  | .outer => "Outer.scala" | .comp => "T.scala" | .wpkg => "Q.scala"
 
 def slotSrc (v : Ver) (p : Prog) : Slot → Option String
   | .blk => some ("package a\n\nobject V" ++ body v p .blk)
   | .inh => some ("package a\n\ntrait P" ++ body v p .inh)
   | .wild => some ("package a\n\nobject W" ++ body v p .wild)
-  | .pobj => some ("package a\n\npackage object b" ++ body v p .pobj)
+  | .pobj => some ((if p.cl.pinh then "package a\n\ntrait PT" else "package a\n\npackage object b") ++
+      body v p .pobj)
   | .comp => some ("package a\n\nclass T\nobject T" ++ body v p .comp)
   | .inner => if p.has .inner then some ("package a.b\n\n" ++ instance_ v .inner ++ "\n") else none
+  | .wpkg => match v with
+    | .s3 => if p.has .wpkg then some ("package a.q\n\n" ++ instance_ v .wpkg ++ "\n") else none
+    | .s2 => some ("package a\n\npackage object q" ++ body v p .wpkg)
   | .outer => match v with
     | .s3 => if p.has .outer then some ("package a\n\n" ++ instance_ v .outer ++ "\n") else none
     | .s2 => some ("package object a" ++ body v p .outer)
@@ -264,18 +363,26 @@ def clientSrc (v : Ver) (p : Prog) : String :=
     | .nested => "package a\npackage b\n" | .flat => "package a.b\n" | .top => "package a\n"
   let sel := if v == .s3 then "given" else "_"
   let summ := if v == .s3 then "summon[a.T]" else "implicitly[a.T]"
-  let imps := if c.wild then "import a.W." ++ sel ++ "\n\n" else ""
+  let imps := (if c.wild then "import a.W." ++ sel ++ "\n" else "") ++
+    (if c.wpkg then "import a.q." ++ sel ++ "\n" else "")
+  let imps := if imps.isEmpty then "" else imps ++ "\n"
   let first := if c.first then "object First\n\n" else ""
   let ext := if c.inh then " extends a.P" else ""
   let use := if c.blk then "{ import a.V." ++ sel ++ "; " ++ summ ++ " }" else summ
   pkg ++ "\n" ++ imps ++ first ++ "object Client" ++ ext ++ " {\n  val use: Any = " ++ use ++ "\n}\n"
 
+/-- The program's files: the client, the bystanders `a.b.Near`, `a.Mid` and `c.Far`, the package
+object that inherits its instance, `a.q.Other` (package `a.q` exists without its given), and the
+slots'. -/
 def files (v : Ver) (p : Prog) : List (String × String) :=
-  [("Client.scala", clientSrc v p)] ++
-  (present v p.cl).filterMap fun s => (slotSrc v p s).map (slotFile s, ·)
+  [("Client.scala", clientSrc v p), ("Near.scala", "package a.b\n\nobject Near\n"),
+   ("Mid.scala", "package a\n\nobject Mid\n"), ("Far.scala", "package c\n\nobject Far\n")] ++
+  (if p.cl.wpkg then [("Other.scala", "package a.q\n\nobject Other\n")] else []) ++
+  (if p.cl.pinh then [("PObj.scala", "package a\n\npackage object b extends a.PT\n")] else []) ++
+  (present v p.cl).filterMap fun s => (slotSrc v p s).map (slotFile p s, ·)
 
 def fileEdits (v : Ver) (p p' : Prog) : List (String × Option String) :=
   (present v p.cl).filterMap fun s =>
-    if slotSrc v p s == slotSrc v p' s then none else some (slotFile s, slotSrc v p' s)
+    if slotSrc v p s == slotSrc v p' s then none else some (slotFile p s, slotSrc v p' s)
 
 end Zinc.Givens

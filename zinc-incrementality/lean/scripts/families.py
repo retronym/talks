@@ -28,7 +28,7 @@ def givens_family(edit, before, after):
     dest = slots[-1]
     if before == after or dest in ('inh', 'wild', 'blk', 'comp'):
         return 'G3 trait initialiser, compiled apart (Scala 3)'
-    if kind in ('add', 'move') and dest == 'pobj':
+    if kind in ('add', 'move') and dest in ('pobj', 'wpkg'):
         return 'G1 package object instance'
     if kind in ('add', 'move') and dest in ('inner', 'outer'):
         return 'G2 top-level given (Scala 3) / package object a (Scala 2)'

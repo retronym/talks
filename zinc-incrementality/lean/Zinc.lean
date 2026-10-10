@@ -24,8 +24,9 @@ import Zinc.PingPong
 import Zinc.Embed
 import Zinc.Added
 import Zinc.Sealed
-import Zinc.Names
-import Zinc.Givens
+import ZincNames.Names
+import ZincNames.Givens
+import Zinc.NamesRules
 import Zinc.InlineOpaque
 import Zinc.InlineOpaqueSound
 import Zinc.JavaNames
@@ -33,4 +34,6 @@ import Zinc.JavaSealed
 import Zinc.JavaSpec
 import Zinc.JavaSealedSpec
 import Zinc.InlineOpaqueSpec
+import Zinc.GivensSpec
 import Zinc.JavaOrder
+import Zinc.Split
