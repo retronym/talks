@@ -33,12 +33,8 @@ import Zinc.JavaNames
 import Zinc.JavaSealed
 import Zinc.JavaSpec
 import Zinc.JavaSealedSpec
-<<<<<<< HEAD
-import Zinc.SpecGivens
-=======
 import Zinc.InlineOpaqueSpec
-import Zinc.GivensSpec
->>>>>>> claude/framework-merge
+import Zinc.SpecGivens
 import Zinc.JavaOrder
 import Zinc.Split
 import Zinc.Cycles
