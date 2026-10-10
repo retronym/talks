@@ -539,3 +539,7 @@ Case files for the Zinc sessions (develop: `all`; #24: `all+decls`, `all+compose
 - [x] P10.7 #34's extensions as rules (F2, F3, G) with theorems per rule and combined; inherited bindings (`pinh`, `winh`); #24's declarations-only API, with and without composition, and the per-cycle baseline; the cost per mode (`conformance cost`); a harness check of the new factors on #34, model and harness reconciled (Scala 2's inherited package-object member and class-name alias, F4 observable, F6 on `W`, F7).
 - [ ] P10.8 Harness runs of the rules: develop (`all`) and #24 (`all+decls`, `all+composed`), by the Zinc sessions.
 - [ ] Future: a pending scripted test for F7 (and a dotc issue); count the declaring classes the name rules reach; a G that reaches only classes whose implicit search could see the instance (needs the extractor); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
+
+## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
+
+## Phase 12 — Java in mixed builds, name resolution and sealed hierarchies: see `PLAN-java.md`

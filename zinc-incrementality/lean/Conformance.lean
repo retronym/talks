@@ -1,6 +1,7 @@
 import Zinc.FlatRules
 import ZincNames.Names
 import ZincNames.Givens
+import Zinc.InlineOpaque
 
 /-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
 with all of its single-class edits, for the Zinc conformance harness (`Conformance` in Zinc's
@@ -21,6 +22,10 @@ their heirs (`modelRecompiled`, among the client, `User`, `Near` and `Mid`).
 
 `conformance cost`: per space, version and mode, the edits, the wrong ones, and the recompilations
 beyond the necessary, as a markdown table.
+
+`conformance inline|opaque [mode]`: the Scala 3 spaces of `Zinc/InlineOpaque.lean`, as source files
+with tiers (the client and descendants downstream), with the classes the model recompiles under
+`today` or the named fix.
 
 `conformance [all]`: bases whose model build has no errors, resolves every selection and
 inherits one instance of each ancestor, or every base with `all`. -/
@@ -249,8 +254,56 @@ def mainCost : IO Unit := do
       let c := Zinc.Givens.cost md v
       out.putStrLn s!"| givens, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | | {c.near} | {c.mid} |"
 
+section inlineOpaque
+open Zinc.InlineOpaque
+
+def jtiers (ts : List (String × ℕ)) : String :=
+  "{" ++ ",".intercalate (ts.map fun (f, t) => jstr f ++ ":" ++ jstr (toString t)) ++ "}"
+
+def ioEdit (cls cfg : String) (fs : List (String × String)) (files : List (String × Option String))
+    (v : Verdict) : String :=
+  "{\"cls\":" ++ jstr cls ++ ",\"cfg\":" ++ jstr cfg ++ ",\"factors\":" ++ jfactors fs ++
+    ",\"files\":" ++ jfiles files ++ ",\"modelRecompiled\":" ++ jarr (v.recompiled.map jstr) ++
+    ",\"modelClean\":" ++ toString v.clean ++ ",\"modelErrs\":[]}"
+
+def ioBase (space id : String) (fs : List (String × String)) (files : List (String × String))
+    (tiers : List (String × ℕ)) (es : List String) : String :=
+  "{\"space\":" ++ jstr space ++ ",\"id\":" ++ jstr id ++ ",\"cfg\":" ++
+    jstr (" ".intercalate (fs.map (·.2))) ++ ",\"factors\":" ++ jfactors fs ++
+    ",\"files\":" ++ jfiles (files.map fun (f, s) => (f, some s)) ++ ",\"tiers\":" ++ jtiers tiers ++
+    ",\"edits\":" ++ jarr es ++ "}"
+
+def mainInline (m : Inl.Mode) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in Inl.bases do
+    let es := (Inl.edits p).map fun (e, p') =>
+      ioEdit (Inl.editedFile p.ref) (e.str ++ ": " ++ " ".intercalate ((Inl.factors p).map (·.2)))
+        (Inl.factors p' ++ [("edit", e.str)]) (Inl.fileEdits p p') (Inl.check m p p')
+    out.putStrLn (ioBase "inline" ("i" ++ toString i) (Inl.factors p) (Inl.files p) (Inl.tiers p) es)
+    i := i + 1
+
+def mainOpaque (m : Opq.Mode) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in Opq.bases do
+    let es := (Opq.edits p).map fun (r, p') =>
+      let fe := ((Opq.files p').filter fun f => !(Opq.files p).contains f).map fun (n, s) => (n, some s)
+      ioEdit "O.scala" (p.rhs.str ++ " -> " ++ r.str ++ ": " ++ " ".intercalate ((Opq.factors p).map (·.2)))
+        (Opq.factors p') fe (Opq.check m p p')
+    out.putStrLn (ioBase "opaque" ("o" ++ toString i) (Opq.factors p) (Opq.files p) (Opq.tiers p) es)
+    i := i + 1
+
+end inlineOpaque
+
 def main (args : List String) : IO Unit := do
   if args.contains "cost" then return (← mainCost)
+  if args.contains "inline" then
+    return (← mainInline (if args.contains "hashConsts" then .hashConsts
+      else if args.contains "bodyDeps" then .bodyDeps else .today))
+  if args.contains "opaque" then
+    return (← mainOpaque (if args.contains "dep" then .dep else if args.contains "refine" then .refine
+      else .today))
   let m : Zinc.Names.Mode := ((args.drop 2).head?.bind Zinc.Names.Mode.parse).getD .today
   if args.contains "names" then return (← mainNames m (if args.contains "3" then .s3 else .s2))
   if args.contains "givens" then return (← mainGivens m (if args.contains "3" then .s3 else .s2))

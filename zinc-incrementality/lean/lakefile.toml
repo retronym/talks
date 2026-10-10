@@ -24,3 +24,7 @@ root = "Exhaustive"
 [[lean_exe]]
 name = "conformance"
 root = "Conformance"
+
+[[lean_exe]]
+name = "jconformance"
+root = "JConformance"
