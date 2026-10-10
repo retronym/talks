@@ -2,6 +2,7 @@ import Zinc.FlatRules
 import ZincNames.Names
 import ZincNames.Givens
 import Zinc.InlineOpaque
+import Zinc.Companions
 import Zinc.Split
 
 /-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
@@ -31,6 +32,9 @@ with tiers (the client and descendants downstream), with the classes the model r
 With `split`, the verdicts of `Zinc/Split.lean` with every binding upstream and the client
 downstream (each file's `tiers`, for the harness's `split` layout); `upstream` is #34 extended
 across subprojects, `proposed` the rule of `Zinc/SplitProof.lean`.
+
+`conformance companions [today|merkle|pre56]`: companion pairs in a hierarchy (`Zinc/Companions.lean`),
+as source files, Scala 2.
 
 `conformance [all]`: bases whose model build has no errors, resolves every selection and
 inherits one instance of each ancestor, or every base with `all`. -/
@@ -309,8 +313,25 @@ def mainOpaque (m : Opq.Mode) : IO Unit := do
 
 end inlineOpaque
 
+/-- `conformance companions [today|merkle|pre56]`: the companion-pair space of `Zinc/Companions.lean`. -/
+def mainCompanions (m : Zinc.Companions.Mode) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in Zinc.Companions.bases do
+    let fs := Zinc.Companions.files p
+    let es := (Zinc.Companions.edits p).map fun (e, p') =>
+      let fe := ((Zinc.Companions.files p').filter fun f => !fs.contains f).map fun (n, s) => (n, some s)
+      ioEdit (Zinc.Companions.editedFile e)
+        (e.str ++ ": " ++ " ".intercalate ((Zinc.Companions.factors p).map (·.2)))
+        (Zinc.Companions.factors p ++ [("edit", e.str)]) fe (Zinc.Companions.check m p e)
+    out.putStrLn (ioBase "companions" ("c" ++ toString i) (Zinc.Companions.factors p) fs
+      (Zinc.Companions.tiers p) es)
+    i := i + 1
+
 def main (args : List String) : IO Unit := do
   if args.contains "cost" then return (← mainCost)
+  if args.contains "companions" then
+    return (← mainCompanions ((args.drop 1).head?.bind Zinc.Companions.Mode.parse |>.getD .today))
   if args.contains "inline" then
     return (← mainInline (if args.contains "hashConsts" then .hashConsts
       else if args.contains "bodyDeps" then .bodyDeps else .today))

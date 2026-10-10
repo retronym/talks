@@ -46,4 +46,5 @@ import Zinc.Synthetic
 import Zinc.DerivedApi
 import Zinc.MacroDeps
 import Zinc.ExtraHash
+import Zinc.Companions
 import Zinc.Extensions
