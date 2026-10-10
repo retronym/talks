@@ -166,6 +166,9 @@ inductive Mode
   | searched
   /-- When a binding of a name is added or removed, invalidate the users of the name. -/
   | names
+  /-- Zinc today, and after each cycle the users of the simple name of a top-level class the cycle
+  added (`invalidateByAddedClasses`, retronym/zinc#34). -/
+  | cheap
   deriving DecidableEq, Repr
 
 /-- The slots whose binding of the name changed. -/
@@ -192,10 +195,18 @@ def invalidates (p : Prog) (r : Res) (s : Slot) : Bool :=
   | .wpkg | .inner | .outer => r == .ok s && p.st s == .foo
   | .lib => false
 
+/-- Does the edit add a top-level class named as the client's name? A class is added when its
+fully qualified name is new: added, renamed to the name (`unrename`), or moved to another package.
+A package object is never one (`invalidateByAddedClasses` drops the name `package`), nor is a
+member of an object. The client uses its name, so `invalidateByAddedClasses` invalidates it. -/
+def addsClass (p p' : Prog) : Bool :=
+  (present p.cl).any fun s => s.topLevel && p.st s != .foo && p'.st s == .foo
+
 def recompiles (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
   let r := resolve v p
   match m with
   | .today => (changed p p').any (invalidates p r)
+  | .cheap => (changed p p').any (invalidates p r) || addsClass p p'
   | .searched => (changed p p').any (visible p.cl).contains
   | .names => !(changed p p').isEmpty
 
@@ -359,6 +370,32 @@ theorem wild_first_today :
 theorem wild_client_today :
     (verdict .today .s2 { wildBase with cl := { wildBase.cl with first := false } }
       (({ wildBase with cl := { wildBase.cl with first := false } }).set .wild .foo)).clean = true := by
+  native_decide
+
+/-- The cheap fix (retronym/zinc#34) on the inner package: the added `a.b.Foo` invalidates the
+client, which uses `Foo`. -/
+theorem inner_added_cheap :
+    verdict .cheap .s2 innerBase (innerBase.set .inner .foo) = ⟨.ok .outer, .ok .inner, true, true⟩ := by
+  native_decide
+
+/-- It misses the package object and the wildcard-imported object: neither adds a class. -/
+theorem pobj_added_cheap :
+    verdict .cheap .s3 innerBase (innerBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
+  native_decide
+
+theorem export_added_cheap :
+    verdict .cheap .s3 expBase (expBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
+  native_decide
+
+theorem wild_first_cheap :
+    verdict .cheap .s2 wildBase (wildBase.set .wild .foo) = ⟨.ok .outer, .ok .wild, false, false⟩ := by
+  native_decide
+
+/-- Under the cheap fix, every edit that adds a top-level class is clean, but for the divergences
+beside the client's resolution. -/
+theorem cheap_added_clean : (bases.all fun p => (edits p).all fun (_, p') =>
+    !addsClass p p' || [Ver.s2, .s3].all fun v => (verdict .cheap v p p').clean ||
+      besideResolution v p p' || separateInit v p' (recompiles .cheap v p p')) = true := by
   native_decide
 
 /-- Every edit of the space, both versions, is clean when the lookup's misses are recorded, and

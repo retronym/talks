@@ -13,7 +13,8 @@ Each edit carries the model's verdict under the widened default rules: the class
 recompiles besides the edited one, and whether the run equals the clean build.
 
 `conformance names 2|3`: the name-resolution space of `Zinc/Names.lean`, as source files, with the
-model's resolution before and after each edit and its verdict for that Scala version.
+model's resolution before and after each edit and its verdict for that Scala version; with `cheap`,
+the verdict under retronym/zinc#34's invalidation of an added class's users.
 
 `conformance [all]`: bases whose model build has no errors, resolves every selection and
 inherits one instance of each ancestor, or every base with `all`. -/
@@ -168,12 +169,12 @@ def jfactors (fs : List (String × String)) : String :=
 
 def namesCfg (p : Prog) : String := " ".intercalate ((namesFactors p).map (·.2))
 
-def mainNames (v : Ver) : IO Unit := do
+def mainNames (m : Mode) (v : Ver) : IO Unit := do
   let out ← IO.getStdout
   let mut i := 0
   for p in bases.filter (fun p => v == .s3 || !p.cl.exp) do
     let es := (edits p).map fun (e, p') =>
-      let r := verdict .today v p p'
+      let r := verdict m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (namesFactors p') ++ ",\"files\":" ++ jfiles (fileEdits p p') ++
         ",\"modelRecompiled\":" ++ (if r.recompiled then "[\"Client\"]" else "[]") ++
@@ -195,12 +196,12 @@ def givensFactors (v : Zinc.Names.Ver) (p : Prog) : List (String × String) :=
    ("first", toString c.first)] ++
   Slot.all.map fun s => ("s." ++ s.str, if (present v c).contains s then toString (p.has s) else "-")
 
-def mainGivens (v : Zinc.Names.Ver) : IO Unit := do
+def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) : IO Unit := do
   let out ← IO.getStdout
   let mut i := 0
   for p in bases v do
     let es := (edits v p).map fun (e, p') =>
-      let r := verdict .today v p p'
+      let r := verdict m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (givensFactors v p') ++ ",\"files\":" ++ jfiles (fileEdits v p p') ++
         ",\"modelRecompiled\":" ++ (if r.recompiled then "[\"Client\"]" else "[]") ++
@@ -216,8 +217,9 @@ def mainGivens (v : Zinc.Names.Ver) : IO Unit := do
 end givens
 
 def main (args : List String) : IO Unit := do
-  if args.contains "names" then return (← mainNames (if args.contains "3" then .s3 else .s2))
-  if args.contains "givens" then return (← mainGivens (if args.contains "3" then .s3 else .s2))
+  let m : Zinc.Names.Mode := if args.contains "cheap" then .cheap else .today
+  if args.contains "names" then return (← mainNames m (if args.contains "3" then .s3 else .s2))
+  if args.contains "givens" then return (← mainGivens m (if args.contains "3" then .s3 else .s2))
   let everything := args.contains "all"
   if args.contains "v" then return (← mainV everything)
   let out ← IO.getStdout

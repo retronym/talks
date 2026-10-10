@@ -8,6 +8,10 @@ def family(edit, before, after):
         return 'F5 missed clash'
     if before == after and dest in ('inh', 'wild', 'blk', 'expl'):
         return 'F6 trait initialiser, compiled apart (Scala 3)'
+    # the client recompiled although its resolution did not change: retronym/zinc#34 invalidates
+    # the users of an added class's name, and a client extending `P` is compiled apart from it
+    if before == after and kind in ('add', 'unrename', 'move') and dest in ('inner', 'outer', 'wpkg'):
+        return 'F6 trait initialiser, compiled apart (Scala 3)'
     if kind in ('add', 'unrename', 'move') and dest in ('inner', 'outer', 'wpkg'):
         return 'F1 added class'
     if kind == 'add' and dest == 'pobj':

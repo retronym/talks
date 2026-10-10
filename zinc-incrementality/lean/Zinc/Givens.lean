@@ -119,9 +119,22 @@ def invalidates (v : Ver) (p : Prog) (r : Res) (s : Slot) : Bool :=
 def changed (v : Ver) (p p' : Prog) : List Slot :=
   (present v p.cl).filter fun s => p.has s != p'.has s
 
+/-- The simple names of the top-level classes an edit adds: a top-level given's file `Inner.scala`
+holds class `Inner$package` (Scala 3); Scala 2's `package object a` exists before and after. -/
+def addedClasses (v : Ver) (p p' : Prog) : List String :=
+  (present v p.cl).filterMap fun s =>
+    if s.topLevel v && !p.has s && p'.has s then
+      some (if s == .inner then "Inner$package" else "Outer$package")
+    else none
+
+/-- Does the client use a name? It never names a `$package` class: it summons by type. -/
+def clientUses (n : String) : Bool := !n.endsWith "$package"
+
 def recompiles (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Bool :=
   match m with
   | .today => (changed v p p').any (invalidates v p (resolve v p))
+  | .cheap => (changed v p p').any (invalidates v p (resolve v p)) ||
+      (addedClasses v p p').any clientUses
   | .searched => !(changed v p p').isEmpty
   | .names => !(changed v p p').isEmpty
 
@@ -208,6 +221,12 @@ client compiled apart from its trait. -/
 theorem searched_clean : ([Ver.s2, .s3].all fun v => (bases v).all fun p =>
     (edits v p).all fun (_, p') =>
       (verdict .searched v p p').clean || separateInit v p p' (recompiles .searched v p p')) = true := by
+  native_decide
+
+/-- retronym/zinc#34's cheap fix changes nothing here: the only classes an edit adds are
+`Inner$package` and `Outer$package`, whose names the client never uses. -/
+theorem cheap_is_today : ([Ver.s2, .s3].all fun v => (bases v).all fun p =>
+    (edits v p).all fun (_, p') => recompiles .cheap v p p' == recompiles .today v p p') = true := by
   native_decide
 
 /-! ## Rendering -/

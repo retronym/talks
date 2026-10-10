@@ -443,6 +443,31 @@ Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` 
 
 Model unclean counts are over the whole space; the harness ran every edit of the givens spaces and a greedy selection of bases for the names spaces. Resolution agreed with the compiler on every case run.
 
+### The cheap fix (retronym/zinc#34)
+
+#34 invalidates, after each cycle, the users of the simple name of every top-level class the cycle added (`invalidateByAddedClasses`). The model's `Mode.cheap` mirrors it: Zinc today, plus the client whenever an edit adds a top-level class named as the client's name (`add`, `unrename` or `move` into `wpkg`, `inner` or `outer`); in `Givens.lean` the only classes added are `Inner$package` and `Outer$package`, which no client names, so the mode is today's (`cheap_is_today`). `cheap_added_clean`: every edit that adds a class is clean under it, but for the divergences beside resolution and the trait initialiser. `lake exe conformance names|givens 2|3 cheap` dumps its verdicts.
+
+The harness ran the same cases as on develop (the same base selection, identical sources) on a scratch branch of retronym/zinc: `claude/names-conformance` with #34 cherry-picked. Model and harness agree on every case, and resolution on every case.
+
+| Space | Family | develop | #34 | Model on the space, today → cheap |
+|---|---|---|---|---|
+| names, 2.13 | F1 | 844 | 0 | 3,228 → 0 |
+| | F2 / F3 / F4 | 252 / 260 / 176 | 252 / 260 / 176 | unchanged |
+| names, 3 | F1 | 256 | 0 | 6,400 → 0 |
+| | F2 / F3 / F5 | 42 / 78 / 270 | 42 / 78 / 270 | unchanged |
+| | F6 | 150 | 450 | 7,920 → 15,672 |
+| givens, 2.13 | G1 (both package objects) | 256 | 256 | unchanged |
+| givens, 3 | G1 / G2 / G3 | 148 / 208 / 289 | 148 / 208 / 289 | unchanged |
+
+F1 is gone, as predicted; F2, F3, G1 and G2 stay, because none adds a class: the binding is a member of an existing package object, object or `$package` class (G2's added class is `Inner$package`, not a name the client uses). In Scala 3 the fix turns 300 of the harness's F1 cases into F6: a client extending `P`, whose resolution an added class does not change (the inherited member wins), is now recompiled, apart from `P`, and loses the `P.$init$` call (`Client$.class` bytes only; the model counts 7,752 such edits). The revert column moves the same way: names 2.13 988 → 148 (an added class is the revert of a delete, rename or move), names 3 430 → 618 (F6 again).
+
+Extending #34 to the remaining families:
+
+* F2 (package object member, Scala 3 top-level export): the same rule on names instead of classes. After each cycle, diff the member names of each recompiled package object (`a.b.package`; in Scala 3 also the `F$package` class holding top-level definitions and export forwarders) against the previous API, and invalidate the users of each added name. Zinc's name hashes already give the added names (a name with no previous hash).
+* F3 (member added to a wildcard-imported object, the import charged to another class): not a scope Zinc misses but a used-name check on the wrong class. Checking the used names of every class in the dependent's file (or charging an import to every class of its file) fixes it; or apply the F2 rule to every class whose API gains a name, which covers F1–F3 at once (the model's `names` mode restricted to additions) at the cost of invalidating every user of a common name.
+* G1, G2 (implicit added to a package object or as a top-level given): a name does not help, since the client never named the new instance. When a package object or `$package` class gains or loses an implicit member (or a new `$package` class has one), invalidate the classes of that package and the packages nested in it; Zinc can enumerate them by class name. The alternative is in the extractor: record an edge from every implicit search to the package objects of the enclosing packages.
+* F4, F5, F6/G3 are not about the client's resolution; #34 does not touch them, and F6 grows with every extra recompilation.
+
 ### Steps
 
 - [x] P10.1 `Names.lean`: scopes, resolution per version, Zinc's edges, verdict; families as checked examples; `searched_clean`, `names_clean`.
@@ -450,4 +475,5 @@ Model unclean counts are over the whole space; the harness ran every edit of the
 - [x] P10.3 `conformance names|givens 2|3`; harness: source-file bases, a classfile probe, Scala 3's TASTy files and source paths.
 - [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the explicit selector's name charged to the import's class, the missed clash, the trait initialiser).
 - [x] P10.5 Pending scripted tests per family.
-- [ ] Future: the cheap fix in Zinc (on an added or removed binding of a name, invalidate the name's users; for an added source, its classes' simple names) and a run of the space against it; the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
+- [x] P10.6 The cheap fix (retronym/zinc#34) in the model (`Mode.cheap`) and the harness: F1 gone, F6 grows, the rest unchanged.
+- [ ] Future: extend #34 to names added to package objects and imported objects, and to implicits (above); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
