@@ -266,4 +266,21 @@ def reabsTrait : Program := program .conc .abs true .none false .none
 example : errors .s213 reabsClass = .ok [{ cls := "C", kind := .needsAbstract }] := by decide +kernel
 example : errors .s213 reabsTrait = .ok [] ∧ runs reabsTrait = [("C", "T")] := by decide +kernel
 
+/-! ## Case classes, through the desugaring
+
+The membership checks run on the desugared program, so a synthesized member is checked like a
+written one. `productPrefix` is always synthesized, so a superclass's `final productPrefix` is an
+error (scalac 2.13 and 3.9 both report "cannot override final member"); a superclass's `final
+toString` is not, because then `toString` is not synthesized. -/
+
+def caseOver (m : Mem) : Program :=
+  [{ name := "B", cls := some { name := "B", abs := true, members := [m] } },
+   { name := "P", cls := some { name := "P", isCase := true, cparams := [("x", .int)], super := some ("B", []) } }]
+
+example : errors .s213 (caseOver { name := "productPrefix", res := .str, nullary := true, final := true }) =
+    .ok [{ cls := "P", kind := .finalOverride }] := by decide +kernel
+-- (written without `override`: the model has no `Any`, so `override` would override nothing)
+example : errors .s213 (caseOver { name := "toString", res := .str, nullary := true, final := true }) =
+    .ok [] := by decide +kernel
+
 end Scala.Members
