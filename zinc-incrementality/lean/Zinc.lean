@@ -44,5 +44,6 @@ import Zinc.Annotations
 import Zinc.PipelineLifecycle
 import Zinc.Synthetic
 import Zinc.DerivedApi
+import Zinc.MacroDeps
 import Zinc.ExtraHash
 import Zinc.Extensions
