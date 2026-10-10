@@ -150,4 +150,20 @@ def defaultConflict : Witness where
 example : defaultConflict.missed = true ∧ defaultConflict.uncovered (.method .J .m .v) = true := by
   decide +kernel
 
+/-- **P1, protected members.** MiMa checks only `ACC_PUBLIC` members (`nonAccessible` is
+`!isBytecodePublic`), so a protected method that a client's subclass calls can go. -/
+def protectedRemoved : Witness where
+  o := [(.A, { header := pub1, methods := [(.m, .v, { access := .prot })] })]
+  n := [(.A, { header := pub1 })]
+  client := [(.X, { header := { super := some .A } })]
+  prog := { loads := [.X], sites := [.within .X (.invokevirtual .X .m .v .X)] }
+
+example : protectedRemoved.missed = true ∧ protectedRemoved.uncovered (.method .A .m .v) = true := by
+  decide +kernel
+
+/-- The `mima` field of each `Jvm` catalogue case is the first problem the model of MiMa reports
+(which MiMa itself reports too: `probes/mima`). -/
+example : (all ++ j3).all (fun k => k.mima == ((mima k.v0 k.v1).head?.map Problem.name)) = true := by
+  decide +kernel
+
 end BinCompat

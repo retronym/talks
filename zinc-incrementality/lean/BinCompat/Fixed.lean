@@ -122,7 +122,8 @@ def extra (o n : Lib) : List Extra :=
 def fixedReports (o n : Lib) : Bool := mima o n != [] || extra o n != []
 
 /-- Each witness of a MiMa gap is reported by the corrected rules. -/
-example : [finalField, shadowStatic, shadowField, overridePrivate, ifaceField, defaultConflict].all
+example : [finalField, shadowStatic, shadowField, overridePrivate, ifaceField, defaultConflict,
+    protectedRemoved].all
     (fun x => fixedReports x.o x.n) = true := by decide +kernel
 
 /-! ## The edit space, indexed for `BinCompat/Sound.lean` -/
