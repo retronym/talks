@@ -42,3 +42,10 @@ name = "Scala"
 [[lean_exe]]
 name = "scalaprobe"
 root = "ScalaProbe"
+
+[[lean_lib]]
+name = "BinCompat"
+
+[[lean_exe]]
+name = "bincompat"
+root = "BinCompatMain"
