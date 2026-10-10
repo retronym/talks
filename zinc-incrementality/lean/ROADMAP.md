@@ -195,9 +195,9 @@ The model started from the textbook rules; the probe corrected it in these place
 - Lowering as an `NCompiler` instance, for B4; after the framework merge (review finding 1).
 - S4.
 
-### V — Java (`Java/`), deferred
+### V — Java (`Java/`)
 
-Not launched yet. Java name resolution, sealed hierarchies and compile order are already Phases 12 and 14 (`PLAN-java.md`, `PLAN-order.md`). Lowering javac's output to `Jvm.World` comes after J and S, and reuses those phases' probes.
+Java name resolution, sealed hierarchies and compile order are already Phases 12 and 14 (`PLAN-java.md`, `PLAN-order.md`). This track lowers javac's output to `Jvm.World`, calibrates it against javac, and states JLS chapter 13 against `Jvm` linkage.
 
 - **V1. Lowering for a javac subset:**
   - classes and interfaces;
@@ -207,6 +207,18 @@ Not launched yet. Java name resolution, sealed hierarchies and compile order are
   - enums, records, sealed / `permits`.
 - **V2. JLS ch. 13 as checked statements against `Jvm` linkage.** One example per rule. The theorem `compatible_of_footprint` applies where it can.
 - **V3. Calibrate against javac.**
+
+#### V design
+
+**Source.** A typed, already-attributed subset, since javac's back end (`Lower`, `TransTypes`, `Gen`) runs after attribution: top-level types in one package, each a class (abstract, final, sealed, non-sealed), an interface (sealed or not), an enum or a record. A type has at most one type parameter `T` and a superclass and interfaces applied to type arguments (`String`, `Object`, `T`). `permits` is explicit or inferred. Members are methods (abstract, concrete, `static`, `final`, `default` and `private` in interfaces, a result type that may narrow the overridden one), fields (instance, `static`, `static final` with a constant initialiser: a literal or a constant expression over other types' constants), enum constants and record components. Access is public, except interface `private` methods. Method bodies are opaque, except two things lowering reads: the constants a body uses (folded into the client) and whether a field's initialiser is a constant expression. Out of scope: nested, local and anonymous classes (so no nestmates beyond what one type gets), overloading beyond what bridges create, varargs, annotations, generic `Signature` attributes, inner-class attributes, lambdas, switch on enums or patterns, `Object` methods beyond the ones records and enums synthesise, and `module-info`.
+
+**Lowering is a `Task` over other types' interfaces,** as `Scala/Lower.lean` is: lowering a type asks for the declarations (`decl n`: kind, parents, members with signatures, and the values of constant fields) of its supertypes (bridges, `ACC_ABSTRACT` of an inherited interface method, enum and record supertypes), and of every type whose constant it reads (`static final int L = A.K + 1` folds `A.K`; a client method that uses `A.K` gets the value, not a `getstatic`). That is what javac reads from other classfiles' `ConstantValue` attributes and signatures. The output is `Java.ClassOut`, a `Jvm.Classfile` (`toJvm`) plus what `Jvm` does not model: fields' `ConstantValue`, `ACC_BRIDGE`/`ACC_SYNTHETIC`/`ACC_ENUM`, `PermittedSubclasses`, the `Record` attribute, and the invokes of synthesised bodies (bridges, enum `values`/`valueOf`). T1 (`lower_congr`) says an environment that agrees on a type's trace lowers it the same: in particular, a client's classfile depends on the *values* of the constants it reads, so a constant edit changes the client's classfile although no signature changed (JLS §13.4.9).
+
+**javac's release is a parameter,** `Release` (17, 21, 25), read only where the probe finds a difference.
+
+**Calibration (V3).** As S3: a Lean exe enumerates a bounded space and prints each program as Java source and as the model's classfiles; `probes/java/probe.py` compiles them with javac 17, 21 and 25 (`--release` matching), reads the classfiles directly (header, access flags, fields with `ConstantValue`, methods with flags and synthesised invokes, `PermittedSubclasses`, `Record`), and diffs. Divergences are listed here.
+
+**JLS chapter 13 (V2).** `Java/Jls13.lean`: one example per rule of §13.4 and §13.5 that `Jvm` can observe: a library edit in Java source, lowered, an old client's classfile linked against the new library (`Jvm.outcome`), against the expectation the JLS states (compatible, or the `LinkageError`). `compatible_of_footprint` proves the compatible cases where the client's footprint is untouched. `Java/Catalogue.lean` lists the same edits as source-level cases with `before`, `after` and `fresh`, mirroring `Scala/Catalogue.lean`, for track B.
 
 ### B — Binary compatibility (`BinCompat/`, plus a scala-cli harness outside Lean)
 
