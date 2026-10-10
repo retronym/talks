@@ -56,26 +56,31 @@ Artefact (dotc, not Zinc): when an object is compiled apart from what it referen
 
 Macros, briefly: a macro implementation edited in the same subproject as the inline def that splices it recompiles the clients (Zinc's transitive bytecode hash of classes with macros); in a separate subproject the harness cannot run it (the macro is loaded from the upstream's early output). Not modelled.
 
-### Proved vs checked (`InlineOpaqueSound.lean`)
+### Proved vs checked
 
-The first round of this phase (`InlineOpaque.lean`) is an executable spec: its `check_` theorems are `native_decide` over bounded factor spaces, the same verdicts the conformance dump hands the harness. The second round proves the fixes in general, through the Phase 1 framework.
+The first round of this phase (`InlineOpaque.lean`) is an executable spec checked by brute force: its `check_` definitions are Booleans evaluated by `native_decide` in `example`s over bounded factor spaces, the verdicts the conformance dump hands the harness. The specification is `InlineOpaqueSpec.lean`, following `DESIGN-spec.md` and `JavaSpec.lean`.
 
-**The instance.** A slot language of any finite set of units: members with signatures (primitive or opaque), constants, `inline` and `transparent inline` defs whose bodies are lists of items (literals, calls, constants through `this` or a path, signatures, nested inline calls up to a depth), opaque types, trait methods that descendants forward. A unit's compilation is a `Task`; an inline call asks for the callee's body and then issues the body's queries itself, so "what the inliner read" is the client's trace, and the framework needs no new concept. The one change is in the *queries*: each carries its context (own code, plain or transparent expansion, forwarder erasure), which the answer ignores and the bridge reads when it records keys. It is an `NCompiler` (`NonLocalAns.lean`, T2″/T3a″), unchanged, rather than `Model.lean`'s `Compiler` (`DESIGN-spec.md`): the hash-what-references-denote fix hashes other units' answers, which only `NCompiler` expresses. Under the recording fix every hash and answer is local (`hashDeps` is the unit itself); one compiler serves both.
+**The instance** (`InlineOpaqueSpec.lean`). A `TCompiler` (`Tree.lean`: `Model.lean`'s `Compiler` with keys read off the output) over any set of units and any program of a slot language: members with primitive or opaque signatures, constants, type aliases read at the type level, `inline` and `transparent inline` defs whose bodies are item lists (literals, calls, constants through `this` or a path, alias reads, signatures, nested inline calls up to a depth), opaque types, trait methods that descendants forward. The unit task is dotc's: an inline call asks `inlineBody` and expands the body in the client, asking inside it what the inliner reads (`constant`, `aliasRhs`, `sig`, nested `inlineBody`); erasing a signature asks `erasure` of an opaque type; a forwarder asks the trait's `meths`, then `erasure` for each opaque type in the inherited signature. The output is the typed tree after inlining, each reference marked by where it ended up: own code, a reference surviving a plain expansion, folded by the inliner, inside a transparent expansion, read only for a forwarder. Today's bridge records the first two (plus the owner's own name for every reference through it), hashes an inline def by its tree, and an opaque right-hand side into the owner (`cls`). `Model.lean` needed no change.
 
-**Proved, for every program, every edit, every depth:**
+| Result | Proved generally | Lean |
+|---|---|---|
+| The trace is the tree: a unit asks exactly the queries whose references are in its output | yes | `faithful` |
+| Today fails coverage; witnesses I1 (constant through a path), I2 (alias read at the type level), I3 (transparent expansion), O1 (opaque type in an inherited signature) | witness programs (kernel `decide`) | `Ex.I1_today` … `Ex.O1_today` |
+| Each fix alone leaves the other family | witness programs | `Ex.O1_inl`, `Ex.I1_opq` |
+| Recording folded and transparent references and a forwarder's erased types (`fix`) meets comp, coverage, abstraction; T3a | yes, any program, edit, sound policy | `obligations_fix`, `fix_sound` |
+| The same with the right-hand side in `T`'s own name key (`refine`) | yes | `obligations_refine`, `refine_sound` |
+| Precision: every name key covers a query asked | yes | `keys_traced` |
+| Precision: a name key moves only if an answer it covers changed | yes | `name_exact` |
+| Precision: the owner's `cls` key is coarse (a client of `O.other` alone is recompiled on an opaque edit under `fix`, not under `refine`) | witness | `Ex.cls_coarse` |
+| Hashing what an inline def's references denote meets the obligations (abstraction restored), T3a″ | yes, `NCompiler` | `InlineOpaqueSound.obligations_denot`, `denot_sound` |
+| Per edit: every other unit is invalidated, or its untouched output is already its new compilation | yes, `NCompiler` | `InlineOpaqueSound.recompiles_or_unchanged` |
+| Counts, recompiled sets, and agreement of the language's `today` rules with dotc 3.9.0 | checked (bounded spaces, 552 harness cases) | `InlineOpaque.lean` `check_…`, PLAN tables |
 
-| Statement | Lean |
-|---|---|
-| Recording the expansion's references before folding, transparent ones too, and the types a forwarder's erasure reads (`bodyDeps` + `dep`) meets the obligations | `obligations_record` |
-| Hashing what an inline def's references denote (`hashDenot`: the def's key hashes every query of its expansion with its current answer, a fresh verifying-trace hash) + `dep` meets them | `obligations_denot`, with `trace_code` (every query in an expansion belongs to the expansion of a body the unit's own code asked for, whose key is recorded) |
-| Hence T3a″: if Zinc's loop stops, every unit is a per-unit fixed point | `record_sound`, `denot_sound` |
-| Per edit (T2″ for one round): after any edit of units `D`, each unit outside `D` is invalidated or its untouched output is already its compilation against the new interfaces: the client recompiles or its inlined and erased results are unchanged | `recompiles_or_unchanged`, `record_recompiles_or_unchanged`, `denot_recompiles_or_unchanged` |
-| Today's bridge (Scala 3.9.0's recording) fails coverage | `not_obligations_today` |
-| One concrete program pair per family where every key the client recorded hashes the same and its output differs | `I1_today`, `I2_today`, `I3_today`, `O1_today` (kernel `decide`), and the same pairs not stale under the fixes |
+**Which obligation I1 breaks.** In the specification all four families are coverage failures: the client asks `D` for `K`, and no recorded key is on `D`. I1 is an abstraction failure only under a stronger covering, which credits the inline def's key with what its body reads (dotc's own justification for hashing bodies). That covering depends on the interface (which body reads what), which `TCompiler`'s `covers` cannot express, so it is stated on the `NCompiler` instance: `InlineOpaqueSound.Ex.I1_abstraction` (the tree hashes of `L.inl` are equal, the read of `D.K` is covered by that key, and its answers differ). Hashing what references denote restores abstraction there (`obligations_denot`).
 
-**Only checked (bounded enumeration or harness):** the exact counts and recompiled sets of the factor spaces, precision (no client recompiled for nothing; `refine` saving the users of the owner's other members), and that the language's `today` rules are dotc's (reconciled against the harness on 552 cases). The language abstracts dotc: which reads are folded and which contexts lose their dependencies are inputs from the probes, not derived.
+**The framework.** `Model.lean` is unchanged. The specification is a `TCompiler`. The denotation-hash fix needs a hash over other units' answers and an interface-dependent covering, and both already exist in `NonLocalAns.lean`'s `NCompiler`. As proved, that hash is *fresh* (recomputed from the current interfaces). dotc would *store* it in the owner's API, which is P6.9's stored witness: sound only as a run invariant, so it is not an instance. For the fix dotc would actually ship, the proved soundness is `fix` (recording).
 
-**Not an instance.** dotc would *store* a hash of what the references denote in the owner's API at the owner's compilation. That is P6.9's stored witness: sound only as a run invariant (the owner recompiles in the cycle after what it reads changed, then the client a cycle later), which the framework's per-round invariant cannot state. The proved `hashDenot` is the fresh variant (recomputed from the current interfaces, Δ over `affected`), so for the dotc fix as it would be implemented, the per-edit theorem holds only for `bodyDeps`.
+**Assumptions, not derived.** The language abstracts dotc. Two things are inputs from the probes and the harness, not consequences of anything proved: which reads the inliner folds, and which contexts lose their dependencies.
 
 ## Steps
 
@@ -83,5 +88,5 @@ The first round of this phase (`InlineOpaque.lean`) is an executable spec: its `
 - [x] P11.2 `InlineOpaque.lean`: the loop, the two spaces, families as checked examples, the fixes clean on the space.
 - [x] P11.3 `conformance inline|opaque [mode]`; harness runs on develop, model and harness reconciled (transparent expansions record nothing; an unqualified top-level constant is recorded; the pickling artefact).
 - [x] P11.4 Pending scripted tests per family (retronym/zinc#40, each failing only at its last step, its edited sources passing a clean build); dotc write-ups.
-- [x] P11.5 Proofs (`InlineOpaqueSound.lean`): the fixes as `NCompiler` instances over every program of a slot language (T2″/T3a″), today's failure of coverage, one counterexample term per family; the enumerated theorems of `InlineOpaque.lean` renamed `check_`.
+- [x] P11.5 The specification (`InlineOpaqueSpec.lean`, a `TCompiler`): today's coverage failures I1–I3, O1; `fix` and `refine` with obligations and T3a; precision per key. The non-local denotation hash and the per-edit theorem (`InlineOpaqueSound.lean`, `NCompiler`); I1 as an abstraction failure there. `InlineOpaque.lean`'s enumerations are `check_` definitions in `example`s.
 - [ ] Future: macros across subprojects (needs the harness to load a macro from final classes); `-Ypickle-java`/Java constants read by inline bodies; the pickling artefact as a dotc reproducibility issue; implementing `bodyDeps` in dotc and re-running the space.

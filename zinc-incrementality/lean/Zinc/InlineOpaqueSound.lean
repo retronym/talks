@@ -3,9 +3,11 @@ import Zinc.NonLocalAns
 /-!
 # Inline bodies and opaque types in the Phase 1 framework
 
-`InlineOpaque.lean` checks Zinc's rules on bounded program spaces. Here the same observables are an
-instance of `NCompiler` (`NonLocalAns.lean`), over every program of a small language, so the fixes
-inherit T2″/T3a″ (`NCompiler.round_preserves`, `NCompiler.zinc_sound`).
+The specification is `InlineOpaqueSpec.lean` (a `TCompiler`). This file is its non-local
+companion: the same observables as an `NCompiler` (`NonLocalAns.lean`), for what a local framework
+cannot state: a hash of what an inline def's references denote, which reads other units' answers,
+and a covering that credits the inline def's key with its body's reads (`Ex.I1_abstraction`: I1 as
+an abstraction failure). It also gives the per-edit form of T2″ (`recompiles_or_unchanged`).
 
 The language. Units (classes) of any finite type `U`; a unit declares members by name:
 
@@ -46,7 +48,8 @@ Results:
   the client recorded hashes the same and the client's output differs: `I1_today` (a constant
   through a path), `I2_today` (an alias read at the type level: the same folded read),
   `I3_today` (a transparent expansion), `O1_today` (an opaque type in an inherited signature).
-  `not_obligations_today`: today's bridge fails coverage.
+  `not_obligations_today`: today's bridge fails coverage. `I1_abstraction`: under the denotation
+  covering, today's tree hash fails abstraction on I1.
 -/
 
 namespace Zinc.InlineOpaqueSound
@@ -694,6 +697,16 @@ def k : Src Cls := { parents := [Tr] }
 
 /-- **O1.** An opaque type in an inherited signature: `K`'s forwarder. -/
 theorem O1_today : Stale ⟨.bodyDeps, .today⟩ 1 (ifO1 0) (ifO1 1) k := by decide
+
+/-- **I1 as an abstraction failure.** Credit the inline def's key with covering what its body reads
+(the covering of `hashDenot`, which depends on the interface: an `NCompiler` statement). Then
+today's tree hash fails abstraction: the two interfaces hash `L.inl` the same, the client's read of
+`D.K` is covered by that key, and its answers differ. -/
+theorem I1_abstraction :
+    π ⟨.today, .dep⟩ 1 (ifI1 1) L (.name 1) = π ⟨.today, .dep⟩ 1 (ifI1 2) L (.name 1) ∧
+    (D, (⟨.exp false, .const 0 true⟩ : Q)) ∈ expansion 1 (ifI1 1) (ifI1 1 L) 1 ∧
+    answer (ifI1 1) (D, ⟨.exp false, .const 0 true⟩) ≠ answer (ifI1 2) (D, ⟨.exp false, .const 0 true⟩) := by
+  decide
 
 /-- The same programs are not stale under the fixes (as the obligations imply). -/
 theorem I1_bodyDeps : ¬ Stale ⟨.bodyDeps, .dep⟩ 1 (ifI1 1) (ifI1 2) client := by decide

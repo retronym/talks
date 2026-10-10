@@ -30,7 +30,8 @@ recompiled. What each class records and hashes follows dotc 3.9.0 (read from `Ex
   owner's own name (`O`, or `O$package` at the top level): every user of the owner is
   invalidated, and nobody else.
 
-Everything below is *checked*, not proved: the `check_` theorems are `native_decide` over the
+Everything below is *checked*, not proved: the `check_` definitions are Booleans evaluated by
+`native_decide` (in `example`s, never `theorem`s) over the
 bounded spaces (`Inl.bases`, `Opq.bases`) of this executable spec, the same verdicts the conformance
 dump hands the harness. The general statements, over every program of a slot language and through
 the Phase 1 framework, are in `InlineOpaqueSound.lean`.
@@ -312,42 +313,50 @@ def b0 : Prog := { owner := .obj, trans := false, via := .direct, ref := .dConst
 
 /-- **Inline constant**: `inline def inl: Any = D.K`, `D.K` edited from `1` to `2`: `D` and `L`
 recompile, the client keeps `1`. -/
-theorem check_dConst_today :
-    check .today b0 { b0 with val := 2 } = ⟨["D", "L"], ["Client"], ["L"]⟩ := by native_decide
+def check_dConst_today : Bool := decide (check .today b0 { b0 with val := 2 } = ⟨["D", "L"], ["Client"], ["L"]⟩)
+
+example : check_dConst_today = true := by native_decide
 
 /-- Through `this`, the reference survives inlining and the client records `K`. -/
-theorem check_thisK_today :
-    (check .today { b0 with ref := .thisK } { b0 with ref := .thisK, val := 2 }).clean = true := by
-  native_decide
+def check_thisK_today : Bool := decide ((check .today { b0 with ref := .thisK } { b0 with ref := .thisK, val := 2 }).clean = true)
+
+example : check_thisK_today = true := by native_decide
 
 /-- The owner's own constant through its path is folded like another object's. -/
-theorem check_pathK_today :
-    (check .today { b0 with ref := .pathK } { b0 with ref := .pathK, val := 2 }).stale = ["Client"] := by
-  native_decide
+def check_pathK_today : Bool := decide ((check .today { b0 with ref := .pathK } { b0 with ref := .pathK, val := 2 }).stale = ["Client"])
+
+example : check_pathK_today = true := by native_decide
 
 /-- A helper's body is not the client's business: nothing but `L` recompiles. -/
-theorem check_helper_body_precise :
-    check .today { b0 with ref := .helper } { b0 with ref := .helper, val := 2 } = ⟨["L"], [], []⟩ := by
-  native_decide
+def check_helper_body_precise : Bool := decide (check .today { b0 with ref := .helper } { b0 with ref := .helper, val := 2 } = ⟨["L"], [], []⟩)
+
+example : check_helper_body_precise = true := by native_decide
 
 /-- The stale cases today: constants through a path and type-level reads of an alias; and for a
 transparent `inl` expanded in typer, every reference whose hash moves without moving `inl`'s. -/
-theorem check_today_stale : (bases.all fun p => (edits p).all fun (e, p') =>
+def check_today_stale : Bool := decide ((bases.all fun p => (edits p).all fun (e, p') =>
     (check .today p p').clean ||
       [Ref.pathK, .dConst, .constValue, .matchN].contains p.ref ||
-      p.trans && p.via != .inl && (p.ref == .thisK || e == .ty)) = true := by
-  native_decide
+      p.trans && p.via != .inl && (p.ref == .thisK || e == .ty)) = true)
 
-theorem check_hashConsts_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    (check .hashConsts p p').clean) = true := by native_decide
+example : check_today_stale = true := by native_decide
 
-theorem check_bodyDeps_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    (check .bodyDeps p p').clean) = true := by native_decide
+def check_hashConsts_clean : Bool := decide ((bases.all fun p => (edits p).all fun (_, p') =>
+    (check .hashConsts p p').clean) = true)
+
+example : check_hashConsts_clean = true := by native_decide
+
+def check_bodyDeps_clean : Bool := decide ((bases.all fun p => (edits p).all fun (_, p') =>
+    (check .bodyDeps p p').clean) = true)
+
+example : check_bodyDeps_clean = true := by native_decide
 
 /-- No mode recompiles a client that reads nothing the edit changed (`L` and `M` may recompile for
 nothing: they use the names their bodies read). -/
-theorem check_precise : ([Mode.today, .hashConsts, .bodyDeps].all fun m => bases.all fun p =>
-    (edits p).all fun (_, p') => !(check m p p').wasted.contains "Client") = true := by native_decide
+def check_precise : Bool := decide (([Mode.today, .hashConsts, .bodyDeps].all fun m => bases.all fun p =>
+    (edits p).all fun (_, p') => !(check m p p').wasted.contains "Client") = true)
+
+example : check_precise = true := by native_decide
 
 /-! ### Rendering -/
 
@@ -510,24 +519,30 @@ def b0 : Prog := { site := .obj, use := .fwd, rhs := .int }
 
 /-- **Opaque forwarder**: `class K extends Tr`, `Tr.h(t: O.T)`; `T = Int` to `T = Any`: `O` and
 `Tr` recompile, `K` keeps the forwarder `h(I)I`. -/
-theorem check_fwd_today : check .today b0 { b0 with rhs := .any } = ⟨["O", "Tr"], ["K"], []⟩ := by
-  native_decide
+def check_fwd_today : Bool := decide (check .today b0 { b0 with rhs := .any } = ⟨["O", "Tr"], ["K"], []⟩)
 
-theorem check_today_stale : (bases.all fun p => (edits p).all fun (_, p') =>
-    (check .today p p').clean || [Use.fwd, .inhBridge].contains p.use) = true := by native_decide
+example : check_fwd_today = true := by native_decide
 
-theorem check_dep_clean : (bases.all fun p => (edits p).all fun (_, p') => (check .dep p p').clean) = true := by
-  native_decide
+def check_today_stale : Bool := decide ((bases.all fun p => (edits p).all fun (_, p') =>
+    (check .today p p').clean || [Use.fwd, .inhBridge].contains p.use) = true)
 
-theorem check_refine_clean_with_dep_gap : (bases.all fun p => (edits p).all fun (_, p') =>
-    (check .refine p p').clean || [Use.fwd, .inhBridge].contains p.use) = true := by native_decide
+example : check_today_stale = true := by native_decide
+
+def check_dep_clean : Bool := decide ((bases.all fun p => (edits p).all fun (_, p') => (check .dep p p').clean) = true)
+
+example : check_dep_clean = true := by native_decide
+
+def check_refine_clean_with_dep_gap : Bool := decide ((bases.all fun p => (edits p).all fun (_, p') =>
+    (check .refine p p').clean || [Use.fwd, .inhBridge].contains p.use) = true)
+
+example : check_refine_clean_with_dep_gap = true := by native_decide
 
 /-- Today an edit of the right-hand side recompiles a client that uses only another member of the
 owner; `refine` does not. -/
-theorem check_other_wasted :
-    (check .today { b0 with use := .other } { b0 with use := .other, rhs := .any }).wasted = ["Client"] ∧
-    (check .refine { b0 with use := .other } { b0 with use := .other, rhs := .any }).wasted = [] := by
-  native_decide
+def check_other_wasted : Bool := decide ((check .today { b0 with use := .other } { b0 with use := .other, rhs := .any }).wasted = ["Client"] ∧
+    (check .refine { b0 with use := .other } { b0 with use := .other, rhs := .any }).wasted = [])
+
+example : check_other_wasted = true := by native_decide
 
 /-! ### Rendering -/
 
