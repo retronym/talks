@@ -143,7 +143,7 @@ For track B, three cases are candidate MiMa false negatives:
   - value classes: extension methods, erased signatures.
 - [x] **S2. Scala 3 deltas.** Trait initialisers including F6 (separate compilation), `@static`, extension methods, `Serializable` objects. Enums and `inline`: TODO.
 - [x] **S3. Calibrate against scalac's own classfiles** (`probes/scala/probe.py`). Agreement below.
-- [ ] **S4. Shared `AsSeenFrom` and linearization,** one model used by the TCK and later by `Zinc/Hier`. `Scala.lin` and `Scala.lookup` are a start.
+- [x] **S4. Shared `AsSeenFrom`** (`Scala/AsSeenFrom.lean`), used by `Scala/Lower.lean` and, as an instance, by the TCK (retronym/scala-type-system-tck, branch `claude/shared-asf`). `Zinc/Hier` later.
 - [x] **Source-level edit catalogue** (`Scala/Catalogue.lean`), the bridge to B3.
 
 #### S design
@@ -156,7 +156,7 @@ For track B, three cases are candidate MiMa false negatives:
 
 **Calibration (S3).** A Lean exe enumerates a bounded space of programs, prints each as Scala source and as the model's classfiles. A script compiles them with scalac 2.12, 2.13 and 3 (one package per program, one compiler run per dialect, two runs for the separate-compilation cases), parses the classfiles directly (header, fields, methods with access and flags, and the invokes in synthesized methods), and diffs. Enumeration here is testing, per `DESIGN-spec.md`.
 
-**Out of scope** for S1–S3: method bodies and their call sites in user code, overloading, nested and local classes, inner-class attributes and generic `Signature` attributes, how a class implements a `lazy val`, `var`, `private[this]` and qualified access, specialization, case classes (catalogue only), Java-defined parents, Scala 3 `inline`, opaque types and given instances. Type checking is limited to what the space needs to stay well-typed (abstract members implemented, conflicting inherited members overridden).
+**Out of scope** for S1–S3: method bodies and their call sites in user code, overloading (beyond keeping overloads apart from overrides, S4), nested and local classes, inner-class attributes and generic `Signature` attributes, how a class implements a `lazy val`, `var`, `private[this]` and qualified access, specialization, case classes (catalogue only), Java-defined parents, Scala 3 `inline`, opaque types and given instances. Type checking is limited to what the space needs to stay well-typed (abstract members implemented, conflicting inherited members overridden).
 
 
 #### S4 design
@@ -178,9 +178,9 @@ For track B, three cases are candidate MiMa false negatives:
 
 | scalac | programs | of which |
 |---|---|---|
-| 2.12.21 | 1320/1320 | mixin 1280, generic 24, value class 4, trait companion 2, misc 4, `$init$` joint 3 and separate 3 |
-| 2.13.18 | 1320/1320 | the same |
-| 3.9.0 | 1326/1326 | the same, plus `@static` and extension methods 4, `$init$` of a trait with an extension method, joint and separate |
+| 2.12.21 | 1330/1330 | mixin 1280, generic 24, `asf` 10, value class 4, trait companion 2, misc 4, `$init$` joint 3 and separate 3 |
+| 2.13.18 | 1330/1330 | the same |
+| 3.9.0 | 1336/1336 | the same, plus `@static` and extension methods 4, `$init$` of a trait with an extension method, joint and separate |
 
 The model started from the textbook rules; the probe corrected it in these places, each now a rule in `Lower.lean`:
 
@@ -201,12 +201,30 @@ The model started from the textbook rules; the probe corrected it in these place
 
 `valAddedToTrait` fails earlier on HotSpot than in the model: `new Y` already throws `AbstractMethodError`, since `$init$` calls the missing setter. The model needs static interface methods (J3) to see that.
 
+**S4 status.** `Scala/AsSeenFrom.lean` is the walk once (`leafAsSeen`: this-types and class parameters), `asf` as `bind` of it, and `compose` and `chain_is_single` from lockstep; it imports only Lean core. In the Scala layer:
+- `Scala.Ty` is an instance (leaves `this` and `tp`, now anchored at their class);
+- `lin` computes each base type's argument as `asSeenFrom(C.this, P)` of the parent's (scalac's `baseType`), replacing `Ty.subst`;
+- members are looked up by signature (`sigGroups`: overriding-equivalence classes by `memberType`), and bridges, mixin forwarders and static forwarders work per group.
+
+The new `asf` family in the probe exercises this: an argument passed through an intermediate generic class or trait, a value class as argument, an overload next to an inherited generic method. Two corrections came out of it, both now agreeing with all three compilers:
+- A bridge to an override at a value class unboxes the argument (`V.x`) and boxes the result (`new V`).
+- An overload (`def g(x: Int)` next to an inherited `g(x: X)` at `X = String`) is not an override. Name-only lookup had dropped the mixin forwarder for the trait's `g`; scalac emits it.
+
+Witnesses by kernel `decide` in `Scala/Facts.lean` (`memberType` through two parents, overload groups). `scripts/Axioms.lean` checks `AsSeenFrom.compose`, `chain_is_single`, `Scala.lower_congr`.
+
+**The TCK.** On retronym/scala-type-system-tck branch `claude/shared-asf`: `lean/AsSeenFrom/Shared.lean` is a vendored copy, and `Port.lean` makes the TCK's `Ty` an instance (this-leaves only, empty `bargs`). It proves `Scalac.asf` *is* the shared map (`asf_eq`), and that the TCK's lockstep is the shared one. `Chain.compose` is now proved from the shared theorem; the other `Chain`, `Relaxations`, `IntelliJ` and `Cases` results build unchanged. **How the TCK should depend on the file is Jason's call:**
+- *Vendored copy* (the prototype): no build coupling. Drift is the cost; a TCK CI step could diff it against a pinned talks commit.
+- *A lake package:* move the file into a Mathlib-free package in this repo (say `zinc-incrementality/lean/asf/`, with `lean_lib AsSeenFromCore`, since the TCK's own library is already called `AsSeenFrom`). This repo `require`s it by path, and the TCK by `git … subDir`. One source, but the TCK pins a talks revision.
+
+Recommendation: keep the vendored copy until this branch reaches `master`, then switch to the package.
+
 **TODO (future work)**
 - Enums. Observed (3.9.0): `enum Color { case Red, Green }` is an abstract class implementing `scala.reflect.Enum` with forwarders for `scala.Product`'s methods and static `values`/`valueOf`/`fromOrdinal`; the cases are public static final fields of `Color$` without accessors or static forwarders; simple cases are instances of one anonymous class. Needs library traits (`Product`, `Mirror`) in the environment.
-- Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading, nested classes, Java-defined parents.
+- Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading in general, nested classes (the shared `asSeenFrom` already handles owner chains; the Scala layer's classes are top-level), Java-defined parents.
 - Check the catalogue against MiMa and HotSpot for every case (B3), and add a client-space enumeration over source edits.
 - Lowering as an `NCompiler` instance, for B4; after the framework merge (review finding 1).
-- S4.
+- The TCK's dependency on the shared file (below).
+- `Zinc/Hier` and `Zinc/Erasure` on the shared map, in the single-writer port.
 
 ### V — Java (`Java/`), deferred
 
