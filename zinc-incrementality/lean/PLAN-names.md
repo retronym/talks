@@ -115,8 +115,8 @@ Every edit in the space touches a binding of the client's name, so these are wor
 | | `f2` | | 11,904 | 25,088 | 20,464 | | | |
 | | `f3` | | 16,400 | 19,120 | 0 | | | |
 | | `cheap+f2+f3`, global | | 0 | 92,712 | 95,256 | | | |
-| | narrowed | | 6,896 | 78,376 | 0 | | | |
-| | narrowed + imports | | 0 | 92,712 | 0 | | | |
+| | narrowed | | 6,896 | 65,008 | 0 | | | |
+| | narrowed + imports | | 0 | 79,344 | 0 | | | |
 | | `searched` | | 0 | 102,808 | 0 | | | |
 | | `names` | | 0 | 119,832 | 209,552 | | | |
 | | `all+decls` (#24) | | 6,264 | 90,728 | 85,024 | | | |
@@ -125,23 +125,24 @@ Every edit in the space touches a binding of the client's name, so these are wor
 | | `f2` | | 17,444 | 35,688 | 26,296 | | | |
 | | `f3` | | 16,604 | 19,472 | 0 | | | |
 | | `cheap+f2+f3`, global | | 0 | 115,128 | 129,244 | | | |
-| | narrowed | | 11,288 | 99,128 | 0 | | | |
-| | narrowed + imports | | 0 | 115,128 | 0 | | | |
+| | narrowed | | 11,288 | 82,192 | 0 | | | |
+| | narrowed + imports | | 0 | 98,192 | 0 | | | |
 | | `searched` | | 0 | 125,176 | 0 | | | |
 | | `all+decls` | | 840 | 105,736 | 119,012 | | | |
 | givens, 2.13 | `today` | 4,748 | 1,516 | 856 | | 0 | 0 | 0 |
 | | `g`, global | | 0 | 856 | | 1,972 | 1,972 | 1,972 |
-| | narrowed | | 428 | 856 | | 1,424 | 624 | 0 |
-| | narrowed + imports | | 0 | 856 | | 1,424 | 624 | 0 |
+| | narrowed | | 428 | 856 | | 800 | 624 | 0 |
+| | narrowed + imports | | 0 | 856 | | 800 | 624 | 0 |
 | | `all+decls` | | 304 | 856 | | 1,572 | 1,572 | 1,572 |
 | givens, 3 | `today` | 11,289 | 2,188 | 2,301 | | 0 | 0 | 0 |
 | | `g`, global | | 0 | 4,938 | | 6,169 | 6,169 | 6,169 |
-| | narrowed | | 468 | 4,571 | | 5,190 | 1,814 | 0 |
-| | narrowed + imports | | 0 | 4,938 | | 5,190 | 1,814 | 0 |
+| | narrowed | | 468 | 4,571 | | 3,768 | 1,814 | 0 |
+| | narrowed + imports | | 0 | 4,938 | | 3,768 | 1,814 | 0 |
 | | `all+decls` | | 356 | 4,654 | | 5,409 | 5,409 | 5,409 |
 
 Reading it:
 
+* **Narrowed means exactly the packages the lookup searches** (retronym/zinc#47's `sees`): a class's own package, and the packages its source records as `p._`, a wildcard import when recorded or the outer clause of a chained `package a; package b`. A class of a nested package does not see its parent unless the clause is chained, so a flat `package a.b` client is not reached by `a`'s changes. For Scala 2's implicits, the classes referring to a type under the package are added too, since Scala 2's implicit scope includes the package objects of a type's prefix (Scala 3 dropped this).
 * **Narrowing with recorded package imports costs nothing in soundness and removes every bystander outside the searched packages.** `User` and `Far` drop to 0. The client's own count is unchanged, because the client searches those packages.
 * **Narrowing without the recorded import is unsound,** exactly on the wildcard-imported package. That is the spec's `narrowed_without_imports`; here it is 6,896 (2.13) and 11,288 (3) wrong edits.
 * **F3 is free.**
@@ -160,6 +161,7 @@ On the #34 scratch build (`cheap` mode), 60-base subsets weighted to the new fac
 * Scala 3 records a dependency on an inherited package-object member that the lookup passed over for `a.b.Foo`.
 * Not modelled: under #34, classes that *declare* a member named as the added class (`a.Y`, `a.V`) are recompiled too. Real cost is higher than the `User` column.
 * F4 depends on the mode. What decides the mirror is whether the package object has the member when `Inner.scala` is compiled, jointly or apart (probed). The F2 rule recompiles `a.b.Foo` as a user of its own name, which leaves the mirror as a clean build has it for an inherited member, but not for a declared one: there Zinc's `a.b.Foo` is the member, the class-name alias (`innerRecompiled`). zinc-develop-names' run of the narrowed rules (#47, names 2.13, 2,331 cases; givens 2.13, 2,372) agrees with the model on every verdict and recompiled set.
+* With exact `sees` (#47's final build, the Scala 2 import record), model and harness agree on every verdict and recompiled client/bystander set: names 2.13 2,331 cases, givens 2.13 2,372.
 
 Case files for the Zinc sessions (develop: `all`, `all+narrowed+imports`; #24: `all+decls`, `all+composed`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary` and `modelFamily`.
 
