@@ -151,6 +151,33 @@ Reading it:
 * **Every extra recompilation grows F6 in Scala 3** (the dotc trait-initialiser bug).
 * **The per-cycle baseline is dropped.** Zinc diffs each cycle against the merged analysis, which still holds a not-yet-recompiled package object's old API, so it is sound on develop. With #24's composition, names must be composed against that same analysis.
 
+#### On a real build (Spark 4.0.1 `sql/catalyst`, from retronym/zinc#47)
+
+zinc-develop-names measured the rules on catalyst, 2,527 classes (241 Java), Scala 2.13, with IncBench. These are #47's numbers, quoted.
+
+| Edit | #34 | global | scoped (`sees`) |
+|---|---|---|---|
+| `util` package object gains `def sql(x: Int)`, a name most classes use | 631 | 2,527 (full) | 831 |
+| `expressions` package object gains an implicit class | 664 (unsound) | 2,528 | 2,294 |
+| root `catalyst` package object gains an implicit class | 243 (unsound) | 2,528 | 2,477 |
+
+**Blast radius of "the users of `n`".** For each top-level class `p.n`, count the other classes using `n`:
+- every class using `n` (#34): p50 2, p90 16, p99 151, max 1,308;
+- those that also see `p` (#47): p50 1, p90 8, p99 72, max 979.
+
+The global numbers are skewed by names that recur across packages: 1,187 classes use `Product`, but only 73 of them see `catalyst.expressions.aggregate`.
+
+**Package-object audiences**, in classes, for F2 and G:
+
+| package object | package tree + recorded (the model's old `narrowed`) | `sees`: package + recorded (F2) | + referrers of types under it (G, Scala 2 with package prefixes in the implicit scope) |
+|---|---|---|---|
+| `catalyst` | 2,137 | 130 | 2,085 |
+| `catalyst.expressions` | 1,429 | 1,343 | 1,836 |
+| `catalyst.plans` | 503 | 241 | 758 |
+| `catalyst.trees` | 14 | 14 | 694 |
+
+Recording chained package clauses is what makes F2 cheap for outer packages: the root package object drops from 2,137 classes to 130. G stays costly only in Scala 2 builds that keep package prefixes in the implicit scope; Scala 3 builds, and Scala 2 without them, get the middle column. #47 proposes the precise key as a follow-up: record, per class, the prefix packages an implicit search consulted. That would bring the root object back to about 130.
+
 ### Harness check of the new factors
 
 On the #34 scratch build (`cheap` mode), 60-base subsets weighted to the new factors (names 2.13: 407 cases, names 3: 411, givens 2.13: 257, givens 3: 337). After the fixes below, model and harness agree on every resolution, every verdict, and every recompiled client and bystander set (`analyse.py` now compares those). What the run taught the model:
