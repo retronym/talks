@@ -1,6 +1,6 @@
 name = "zinc"
 version = "0.1.0"
-defaultTargets = ["Zinc"]
+defaultTargets = ["Zinc", "Jvm"]
 
 [[require]]
 name = "mathlib"
@@ -21,3 +21,6 @@ root = "Conformance"
 [[lean_exe]]
 name = "jconformance"
 root = "JConformance"
+
+[[lean_lib]]
+name = "Jvm"
