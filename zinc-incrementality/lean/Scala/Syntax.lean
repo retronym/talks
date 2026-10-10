@@ -1,3 +1,5 @@
+import Scala.AsSeenFrom
+
 /-!
 # A typed Scala subset, as the back end sees it
 
@@ -13,14 +15,39 @@ namespace Scala
 inductive Dialect | s212 | s213 | s3
   deriving DecidableEq, Repr
 
-/-- Types: base types, a definition's own type parameter `X`, another definition by name. -/
-inductive Ty | int | bool | unit | str | obj | tp | ref (d : String)
+/-- Types: base types, another definition by name, a this-type `D.this`, and the `i`-th type
+parameter of a definition `D`. Classes are owner paths, innermost first, as in `AsSeenFrom`; a
+top-level definition `D` is `[D]`. -/
+inductive Ty
+  | int | bool | unit | str | obj
+  | ref (d : String)
+  | this (c : List String)
+  | tp (c : List String) (i : Nat)
   deriving DecidableEq, Repr
 
-/-- `X ↦ a`. -/
-def Ty.subst (a : Ty) : Ty → Ty
-  | .tp => a
-  | t => t
+/-- `X`, the type parameter of the top-level definition `d`. -/
+def Ty.X (d : String) : Ty := .tp [d] 0
+
+/-! `Ty` is a type language for `AsSeenFrom`: its leaves are `this` and `tp`. -/
+
+open AsSeenFrom in
+def Ty.bind : Ty → (Leaf String → Ty) → Ty
+  | .this c, f => f (.this c)
+  | .tp c i, f => f (.param c i)
+  | t, _ => t
+
+open AsSeenFrom in
+instance : Subst Ty (AsSeenFrom.Leaf String) where
+  leaf | .this c => .this c | .param c i => .tp c i
+  bind := Ty.bind
+  leaves | .this c => [.this c] | .tp c i => [.param c i] | _ => []
+
+open AsSeenFrom in
+instance : LawfulSubst Ty (AsSeenFrom.Leaf String) where
+  bind_leaf l f := by cases l <;> rfl
+  bind_bind t f g := by cases t <;> rfl
+  bind_congr t f g h := by
+    cases t <;> first | rfl | exact h _ (by simp [Subst.leaves])
 
 inductive Kind | cls | trt | obj | vcls
   deriving DecidableEq, Repr
@@ -79,7 +106,9 @@ def Ty.show : Ty → String
   | .unit => "Unit"
   | .str => "String"
   | .obj => "Object"
-  | .tp => "X"
+  | .tp _ 0 => "X"
+  | .tp _ i => s!"X{i}"
+  | .this c => s!"{c.headD ""}.this.type"
   | .ref d => d
 
 def Parent.show : Parent → String
@@ -92,7 +121,8 @@ def body : Ty → String
   | .unit => "()"
   | .str => "\"\""
   | .obj => "null"
-  | .tp => "null.asInstanceOf[X]"
+  | .tp _ _ => "null.asInstanceOf[X]"
+  | .this _ => "this"
   | .ref _ => "???"
 
 def Mem.show (ov : Bool) (m : Mem) : String :=
