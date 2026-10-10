@@ -24,3 +24,7 @@ root = "JConformance"
 
 [[lean_lib]]
 name = "Jvm"
+
+[[lean_exe]]
+name = "jvmcases"
+root = "JvmCases"

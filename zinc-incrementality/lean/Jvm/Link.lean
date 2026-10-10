@@ -79,7 +79,8 @@ theorem agrees_iff (w w' : World C N D) (q : Q C N D) :
     agrees w w' q = true ↔ answer w q = answer w' q := by
   cases q <;> simp only [agrees, answer, decide_eq_true_eq] <;> exact Iff.rfl
 
-/-- The `LinkageError`s the model raises; `Probe.lean` names the JVM's class for each. -/
+/-- The `LinkageError`s the model raises. `probes/jvm/Run.java` maps each to the JVM's class, calibrated on
+HotSpot 21, 25 and 27: `finalSuper` and `finalOverride` are `IncompatibleClassChangeError`s. -/
 inductive LinkError
   | noClassDef
   | incompatibleClassChange
