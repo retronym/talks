@@ -138,9 +138,12 @@ def dump(pid, c):
     return out
 
 def read_expected(path):
-    out = {}
+    """The model's lines, and the classes it models only partly."""
+    out, partly = {}, set()
     for line in open(path):
         parts = line.rstrip('\n').split('\t')
+        if len(parts) == 3 and parts[2] == 'partly':
+            partly.add((parts[0], parts[1]))
         if len(parts) < 4:
             continue
         pid, cls, key, fl = parts[:4]
@@ -150,23 +153,44 @@ def read_expected(path):
             out[(pid, cls, key)] = (fl, None)
         else:
             out[(pid, cls, key)] = (fl, None if parts[4] == '*' else parts[4])
-    return out
+    return out, partly
 
 # --- driver -----------------------------------------------------------------------------------
 
-def compile_all(out, version, tag):
-    dest = os.path.join(out, f'classes-{tag}')
+def scalac(version, inputs, dest, cp=None):
     if os.path.isdir(dest) and os.listdir(dest):
-        return dest
+        return
     os.makedirs(dest, exist_ok=True)
-    cmd = ['scala-cli', 'compile', '--server=false', '-S', version, os.path.join(out, 'src'), '-d', dest]
+    cmd = ['scala-cli', 'compile', '--server=false', '-S', version] + inputs + ['-d', dest]
+    if cp:
+        cmd += ['--extra-jars', cp]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         sys.stderr.write(r.stdout + r.stderr)
         raise SystemExit(f'scalac {version} failed')
-    return dest
 
-def actual(dest):
+def compile_all(out, version, tag):
+    """One run over src (and src3 for Scala 3); for sep, a run over the libraries, then one over
+    the clients against them."""
+    three = tag == '3'
+    srcs = [os.path.join(out, 'src')] + ([os.path.join(out, 'src3')] if three else [])
+    main = os.path.join(out, f'classes-{tag}')
+    scalac(version, srcs, main)
+    dests = [main]
+    for sep in ['sep'] + (['sep3'] if three else []):
+        lib, client = os.path.join(out, f'classes-{tag}-{sep}-lib'), os.path.join(out, f'classes-{tag}-{sep}-client')
+        scalac(version, [os.path.join(out, sep, 'lib')], lib)
+        scalac(version, [os.path.join(out, sep, 'client')], client, cp=lib)
+        dests += [lib, client]
+    return dests
+
+def actual(dests):
+    out = {}
+    for dest in dests:
+        out.update(actual1(dest))
+    return out
+
+def actual1(dest):
     out = {}
     for pdir in sorted(os.listdir(dest)):
         full = os.path.join(dest, pdir)
@@ -181,10 +205,13 @@ def shape(key, what):
     """A divergence with the program id dropped, for grouping."""
     return f'{key[1]}\t{key[2]}\t{what}'
 
-def diff(exp, act, fam):
+def diff(exp, partly, act):
     by_prog = defaultdict(list)
-    for k in sorted(set(exp) | set(act)):
+    pids = {k[0] for k in exp}
+    for k in sorted(set(exp) | {k for k in act if k[0] in pids}):
         e, a = exp.get(k), act.get(k)
+        if e is None and (k[0], k[1]) in partly:
+            continue
         if e is None:
             by_prog[k[0]].append(shape(k, f'only scalac: {a[0]}'))
         elif a is None:
@@ -209,24 +236,25 @@ def main():
     fam = dict(l.split('\t') for l in open(os.path.join(out, 'index.txt')).read().split('\n') if l)
     for tag, (version, dialect) in versions.items():
         dest = compile_all(out, version, tag)
-        exp = read_expected(os.path.join(out, f'expected-{dialect}.txt'))
+        exp, partly = read_expected(os.path.join(out, f'expected-{dialect}.txt'))
         act = actual(dest)
-        by_prog = diff(exp, act, fam)
+        by_prog = diff(exp, partly, act)
+        pids = {k[0] for k in exp}
         groups = defaultdict(list)
         for pid, ds in by_prog.items():
             for d in ds:
                 groups[(fam[pid], d)].append(pid)
         famcount = defaultdict(int)
-        for pid in fam.values():
-            famcount[pid] += 1
+        for pid in pids:
+            famcount[fam[pid]] += 1
         badfam = defaultdict(int)
         for pid in by_prog:
             badfam[fam[pid]] += 1
         summary = ', '.join(f'{f} {famcount[f] - badfam[f]}/{famcount[f]}' for f in sorted(famcount))
-        print(f'scalac {version}: {len(fam) - len(by_prog)}/{len(fam)} programs agree ({summary}); '
+        print(f'scalac {version}: {len(pids) - len(by_prog)}/{len(pids)} programs agree ({summary}); '
               f'{len(groups)} divergence shapes')
         with open(os.path.join(out, f'report-{tag}.txt'), 'w') as rep:
-            rep.write(f'scalac {version}: {len(fam) - len(by_prog)}/{len(fam)} programs agree ({summary})\n\n')
+            rep.write(f'scalac {version}: {len(pids) - len(by_prog)}/{len(pids)} programs agree ({summary})\n\n')
             for (f, d), pids in sorted(groups.items(), key=lambda kv: -len(kv[1])):
                 rep.write(f'{len(pids):5d}  {f}\t{d}\te.g. {" ".join(pids[:4])}\n')
 

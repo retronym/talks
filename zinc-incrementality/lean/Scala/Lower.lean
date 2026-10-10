@@ -23,22 +23,36 @@ namespace Scala
 inductive Q | decl (n : String) (isObj : Bool)
   deriving DecidableEq, Repr
 
-def Ans : Q → Type
-  | .decl .. => Option Decl
+/-- A definition's interface, and whether this compiler run reads it from source (it is one of the
+run's units) or from a pickle (TASTy, or Scala 2's pickle) on the classpath. -/
+structure View where
+  decl : Decl
+  inRun : Bool := true
+  deriving DecidableEq, Repr
 
-/-- The environment a program gives: every definition's interface. -/
-def Program.env (p : Program) : (q : Q) → Ans q
-  | .decl n o => (p.find? (·.name = n)).bind fun s => if o then s.obj else s.cls
+def Ans : Q → Type
+  | .decl .. => Option View
+
+/-- The environment of a compiler run over the units `run` of `p`; the others are on the
+classpath. -/
+def Program.envIn (p : Program) (run : List String) : (q : Q) → Ans q
+  | .decl n o => (p.find? (·.name = n)).bind fun s =>
+    ((if o then s.obj else s.cls).map fun d => { decl := d, inRun := run.contains n })
+
+/-- The environment of one run over the whole program. -/
+def Program.env (p : Program) : (q : Q) → Ans q := p.envIn (p.map (·.name))
 
 abbrev M := ExceptT String (Zinc.Task Q Ans)
 
-def askDecl (n : String) (o : Bool) : M (Option Decl) :=
-  ExceptT.lift (Zinc.Task.ask (Q.decl n o) Zinc.Task.pure : Zinc.Task Q Ans (Option Decl))
+def askDecl (n : String) (o : Bool) : M (Option View) :=
+  ExceptT.lift (Zinc.Task.ask (Q.decl n o) Zinc.Task.pure : Zinc.Task Q Ans (Option View))
 
-def need (n : String) : M Decl := do
+def needView (n : String) : M View := do
   match ← askDecl n false with
-  | some d => pure d
+  | some v => pure v
   | none => throw s!"not found: {n}"
+
+def need (n : String) : M Decl := (·.decl) <$> needView n
 
 /-! ## Linearization and member lookup -/
 
@@ -113,7 +127,7 @@ def descOf (pre : List String) (ps : List Ty) (r : Ty) : M String := do
   pure s!"({String.join (pre ++ ps)}){← erase r}"
 
 /-- The descriptor of a member as declared in its owner. -/
-def Mem.desc (m : Mem) : M String := descOf [] m.params m.res
+def Mem.desc (m : Mem) : M String := descOf [] m.allParams m.res
 
 /-! ## Output -/
 
@@ -154,6 +168,9 @@ structure ClassOut where
   ifaces : List String := []
   methods : List MOut := []
   fields : List FOut := []
+  /-- Only part of the classfile is modelled (a class implementing a trait's `lazy val`); the
+  probe compares only what is listed. -/
+  partly : Bool := false
   deriving DecidableEq, Repr
 
 def ClassOut.toJvm (c : ClassOut) : Jvm.Classfile String String String where
@@ -170,12 +187,16 @@ def toWorld (cs : List ClassOut) : Jvm.World String String String :=
 def setterName (t : String) (v : String) : String := s!"{t}$_setter_${v}_$eq"
 
 /-- Does a trait have an initialiser `$init$`, and do its subclasses' constructors call it? Scala
-2.13: unless the trait is an interface (no concrete member). Scala 3: only if it has a statement
-or a field to initialise; here, a concrete `val`. -/
-def hasInit (dl : Dialect) (t : Decl) : Bool :=
+2: unless the trait is an interface (no concrete member). Scala 3: if it has a statement or a field
+to initialise; here, a concrete `val`. Also, *when the trait is compiled in the same run*, if it has
+a `lazy val` or an extension method (even an abstract one). Read from TASTy, such a trait has
+`NoInits`, so a subclass compiled apart from it does not call the `$init$` the trait has (F6 in
+`PLAN.md`; the extension case is new). -/
+def hasInit (dl : Dialect) (inRun : Bool) (t : Decl) : Bool :=
   match dl with
   | .s212 | .s213 => t.members.any (!·.abs)
-  | .s3 => t.members.any fun m => m.isVal && !m.abs
+  | .s3 => t.members.any fun m =>
+    (m.isVal && !m.abs && !m.lzy) || (inRun && (m.lzy || m.ext.isSome))
 
 /-- The classfile's interfaces: the direct trait parents, minus those another direct parent
 already extends. -/
@@ -217,6 +238,7 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   let mut ms : List MOut := []
   let mut fs : List FOut := []
   for m in d.members do
+    if m.static then continue
     let e ← m.desc
     if m.isVal && !m.abs then
       fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := true }]
@@ -224,6 +246,7 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   let mx ← mixins d l
   for (t, _) in mx do
     for m in t.members do
+      if m.lzy then continue
       let some ((o, _), w) := lookup l m.name | continue
       if o.name != t.name || w.abs then continue
       let e ← m.desc
@@ -232,21 +255,24 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
         ms := addM ms { name := m.name, desc := e }
         ms := addM ms { name := setterName t.name m.name, desc := s!"({← erase m.res})V" }
       else
-        let sd ← descOf [jname t.name] m.params m.res
+        let sd ← descOf [jname t.name] m.allParams m.res
         let call : Insn := ⟨"invokestatic", t.name, m.name ++ "$", sd⟩
         ms := addM ms { name := m.name, desc := e, final := m.final, calls := some [call] }
   pure (ms, fs, mx)
 
 /-- The `$init$` calls of a constructor: the mixed-in traits, base first. -/
-def initCalls (dl : Dialect) (mx : List Anc) : List Insn :=
-  (mx.reverse.filter fun (t, _) => hasInit dl t).map fun (t, _) =>
-    ⟨"invokestatic", t.name, "$init$", s!"({jname t.name})V"⟩
+def initCalls (dl : Dialect) (mx : List Anc) : M (List Insn) := do
+  let ts ← mx.reverse.filterM fun (t, _) => do pure (hasInit dl (← needView t.name).inRun t)
+  pure <| ts.map fun (t, _) => ⟨"invokestatic", t.name, "$init$", s!"({jname t.name})V"⟩
+
+/-- Does `d` implement a trait's `lazy val`? Its classfile is then only partly modelled. -/
+def implementsLazy (mx : List Anc) : Bool := mx.any fun (t, _) => t.members.any (·.lzy)
 
 def lowerTrait (dl : Dialect) (d : Decl) : M ClassOut := do
   let mut ms : List MOut := []
   for m in d.members do
     let e ← m.desc
-    if m.isVal then
+    if m.isVal && !m.lzy then
       ms := ms ++ [{ name := m.name, desc := e, abs := true }]
       if !m.abs then
         ms := ms ++ [{ name := setterName d.name m.name, desc := s!"({← erase m.res})V", abs := true }]
@@ -254,9 +280,9 @@ def lowerTrait (dl : Dialect) (d : Decl) : M ClassOut := do
       ms := ms ++ [{ name := m.name, desc := e, abs := true }]
     else
       ms := ms ++ [{ name := m.name, desc := e },
-                   { name := m.name ++ "$", desc := ← descOf [jname d.name] m.params m.res, static := true,
+                   { name := m.name ++ "$", desc := ← descOf [jname d.name] m.allParams m.res, static := true,
                      calls := some [⟨"invokespecial", d.name, m.name, e⟩] }]
-  if hasInit dl d then
+  if hasInit dl true d then
     ms := ms ++ [{ name := "$init$", desc := s!"({jname d.name})V", static := true }]
   pure { name := d.name, itf := true, abs := true, ifaces := ← ifacesOf d, methods := ms }
 
@@ -268,10 +294,12 @@ def superLin (d : Decl) : M (List Anc) := do
 def lowerClass (dl : Dialect) (d : Decl) : M ClassOut := do
   let l ← lin fuel d none
   let (ms, fs, mx) ← classBody dl d false l
-  let ctor : MOut := { name := ctorName, desc := "()V", calls := some (initCalls dl mx) }
+  let ctor : MOut := { name := ctorName, desc := "()V", calls := some (← initCalls dl mx) }
   let ms ← bridges d.name l (← superLin d) (ms ++ [ctor])
+  let part := implementsLazy mx
   pure { name := d.name, abs := d.abs, final := d.final, super := d.super.map (·.1),
-         ifaces := ← ifacesOf d, methods := ms, fields := fs }
+         ifaces := ← ifacesOf d, methods := if part then [ctor] else ms, fields := if part then [] else fs,
+         partly := part }
 
 def moduleName (n : String) : String := n ++ "$"
 
@@ -312,17 +340,22 @@ def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
   let (ms, fs, mx) ← classBody dl d true l
   let ms ← bridges self l (← superLin d) ms
   let ms := ms ++ (← match vc with | some v => extensions v | none => pure [])
+  -- 2.12 initialises an object in its constructor, later versions in its static initialiser
+  let inits ← initCalls dl mx
   let extra : List MOut :=
-    -- 2.12 initialises an object in its constructor, later versions in its static initialiser
-    let inits := initCalls dl mx
     [{ name := ctorName, desc := "()V", priv := true, calls := some (if dl == .s212 then inits else []) },
      { name := "<clinit>", desc := "()V", static := true, calls := some (if dl == .s212 then [] else inits) }] ++
     (if dl == .s3 then [{ name := "writeReplace", desc := "()Ljava/lang/Object;", priv := true }] else [])
   -- Scala 3 objects are serializable.
   let ser := if dl == .s3 then ["java/io/Serializable"] else []
+  let part := implementsLazy mx
   pure { name := self, final := true, super := d.super.map (·.1), ifaces := (← ifacesOf d) ++ ser,
-         methods := ms ++ extra,
-         fields := [{ name := "MODULE$", desc := jname self, static := true, final := dl != .s212, priv := false }] ++ fs }
+         -- (Scala 3's static initialiser of an object with a lazy val is private)
+         methods := if part then (extra.take 2).map (fun m =>
+             if m.name == "<clinit>" && dl == .s3 then { m with priv := true } else m)
+           else ms ++ extra,
+         fields := (if part then [] else [{ name := "MODULE$", desc := jname self, static := true, final := dl != .s212, priv := false }] ++ fs),
+         partly := part }
 
 /-- Static forwarders in the companion class (or a mirror class) for the object's public methods,
 its own and inherited, except those whose name the companion class also has. Scala 2 skips
@@ -343,13 +376,23 @@ def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String
       if concrete then cands := cands ++ [b]
   for n in memberNames l do
     let some ((w, _), m) := lookup l n | continue
-    if m.abs || cands.any (·.name == n) then continue
+    if m.abs || m.static || cands.any (·.name == n) then continue
     cands := cands ++ [{ name := n, desc := ← m.desc }]
-    if dl == .s3 && m.isVal then
+    if dl == .s3 && m.isVal && !m.lzy then
       cands := cands ++ [{ name := setterName w.name n, desc := s!"({← erase m.res})V" }]
   pure <| (cands.filter fun m => !clsNames.contains m.name).map fun m =>
     { name := m.name, desc := m.desc, static := true,
       calls := some [⟨"getstatic", o.name, "MODULE$", jname o.name⟩, ⟨"invokevirtual", o.name, m.name, m.desc⟩] }
+
+/-- Scala 3 `@static` members of an object move to its companion class: a method, or a field
+initialised in the class's static initialiser (which is private). -/
+def statics (od : Decl) : M (List MOut × List FOut) := do
+  let ss := od.members.filter (·.static)
+  let ms ← (ss.filter (!·.isVal)).mapM fun m => do pure ({ name := m.name, desc := ← m.desc, static := true } : MOut)
+  let fs ← (ss.filter (·.isVal)).mapM fun m => do
+    pure ({ name := m.name, desc := ← erase m.res, static := true, final := true, priv := false } : FOut)
+  let clinit : List MOut := if fs.isEmpty then [] else [{ name := "<clinit>", desc := "()V", static := true, priv := true }]
+  pure (ms ++ clinit, fs)
 
 def lowerSrc (dl : Dialect) (s : Src) : M (List ClassOut) := do
   let c ← match s.cls with
@@ -368,10 +411,13 @@ def lowerSrc (dl : Dialect) (s : Src) : M (List ClassOut) := do
         | some d => do pure (memberNames (← lin fuel d none))
         | none => pure []) ++ c.methods.map (·.name)
       let fw ← forwarders dl od o clsNames
-      pure [{ c with methods := c.methods ++ fw.filter fun f =>
-                !c.methods.any fun m => m.name == f.name && m.desc == f.desc }, o]
+      let (sm, sf) ← statics od
+      pure [{ c with methods := c.methods ++ sm ++ fw.filter (fun f =>
+                !c.methods.any fun m => m.name == f.name && m.desc == f.desc),
+                     fields := c.fields ++ sf }, o]
     | none =>
-      pure [{ name := s.name, final := true, methods := ← forwarders dl od o [] }, o]
+      let (sm, sf) ← statics od
+      pure [{ name := s.name, final := true, methods := sm ++ (← forwarders dl od o []), fields := sf }, o]
   | none =>
     match vc, c with
     | some v, some c => do
@@ -396,6 +442,13 @@ theorem lower_congr (dl : Dialect) (s : Src) (e e' : (q : Q) → Ans q)
 
 def lowerProgram (dl : Dialect) (p : Program) : Except String (List ClassOut) := do
   let cs ← p.mapM fun s => lower dl s p.env
+  pure cs.flatten
+
+/-- Separate compilation: the units `lib` in one run, then the rest in a second run that reads
+`lib` from the classpath. -/
+def lowerSeparately (dl : Dialect) (p : Program) (lib : List String) : Except String (List ClassOut) := do
+  let cs ← p.mapM fun s =>
+    if lib.contains s.name then lower dl s (p.envIn lib) else lower dl s (p.envIn (p.map (·.name) |>.filter (!lib.contains ·)))
   pure cs.flatten
 
 end Scala

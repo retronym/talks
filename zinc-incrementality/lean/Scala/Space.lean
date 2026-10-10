@@ -14,6 +14,10 @@ and its lowered classfiles, and `probes/scala/probe.py` diffs those against scal
   bridges for erasure.
 * `vclsSpace`: value classes, their companions, and erasure in a client's signature.
 * `traitCompanionSpace`: static forwarders for a trait's companion.
+* `miscSpace`: `final` members, fields of classes and objects.
+* `initProgram`: trait initialisers, with the trait compiled in the same run as its subclasses
+  and in a run of its own (F6).
+* `scala3Space`: `@static` members and extension methods.
 -/
 
 namespace Scala
@@ -47,7 +51,9 @@ def Src.show (p : Program) (s : Src) : String :=
   String.join (s.cls.toList.map one ++ s.obj.toList.map one)
 
 def Program.show (pkg : String) (p : Program) : String :=
-  s!"package {pkg}\n\n" ++ String.join (p.map (Src.show p))
+  let static := p.any fun s => (s.obj.map fun o => o.members.any (·.static)).getD false
+  s!"package {pkg}\n\n" ++ (if static then "import scala.annotation.static\n\n" else "") ++
+    String.join (p.map (Src.show p))
 
 /-! ## Mixins -/
 
@@ -168,9 +174,56 @@ def miscSpace : List Program :=
     [{ name := "T", cls := some { name := "T", kind := .trt, members := [fm, k "v"] } },
      { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", none)] } }] ]
 
-def space : List (String × Program) :=
-  (mixinSpace.map ("mixin", ·)) ++ (genericSpace.map ("generic", ·)) ++ (vclsSpace.map ("vcls", ·)) ++
-    (traitCompanionSpace.map ("tcomp", ·)) ++ (miscSpace.map ("misc", ·))
+/-! ## Trait initialisers, compiled together and apart -/
+
+/-- A trait with one member (a concrete `def`, `val` or `lazy val`, or an abstract extension
+method), a class and an object extending it. As a `Case` with `lib := ["T"]`, the trait is compiled in a run of its own. -/
+def initProgram (k : Nat) : Program :=
+  let m : Mem := match k with
+    | 0 => { name := "m", res := .int }
+    | 1 => { name := "v", res := .int, isVal := true }
+    | 2 => { name := "z", res := .int, isVal := true, lzy := true }
+    | _ => { name := "e", res := .int, ext := some .int, abs := true }
+  let cms : List Mem := if k == 3 then [{ m with abs := false }] else []
+  [{ name := "T", cls := some { name := "T", kind := .trt, members := [m] } },
+   { name := "C", cls := some { name := "C", traits := [("T", none)], members := cms } },
+   { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", none)], members := cms } }]
+
+/-! ## Scala 3: `@static` and extension methods -/
+
+def scala3Space : List Program :=
+  let sv : Mem := { name := "sv", res := .int, isVal := true, static := true }
+  let sf : Mem := { name := "sf", params := [.int], res := .int, static := true }
+  let g : Mem := { name := "g", res := .int }
+  let twice : Mem := { name := "twice", res := .int, ext := some .int }
+  let len : Mem := { name := "len", params := [.int], res := .int, ext := some .str }
+  [ [{ name := "S", cls := some { name := "S" }, obj := some { name := "S", kind := .obj, members := [sv, sf, g] } }],
+    [{ name := "S", cls := some { name := "S" }, obj := some { name := "S", kind := .obj, members := [sf, g] } }],
+    [{ name := "E", obj := some { name := "E", kind := .obj, members := [twice, len] } }],
+    [{ name := "TE", cls := some { name := "TE", kind := .trt, members := [twice, { len with abs := true }] } },
+     { name := "CE", cls := some { name := "CE", traits := [("TE", none)],
+                                   members := [{ len with }] } }] ]
+
+structure Case where
+  fam : String
+  prog : Program
+  /-- Scala 3 syntax only. -/
+  only3 : Bool := false
+  /-- Compile these units in a run of their own, then the rest against them. -/
+  lib : List String := []
+
+def space : List Case :=
+  (mixinSpace.map ({ fam := "mixin", prog := · })) ++ (genericSpace.map ({ fam := "generic", prog := · })) ++
+  (vclsSpace.map ({ fam := "vcls", prog := · })) ++ (traitCompanionSpace.map ({ fam := "tcomp", prog := · })) ++
+  (miscSpace.map ({ fam := "misc", prog := · })) ++
+  ([0, 1, 2].map fun k => { fam := "init", prog := initProgram k }) ++
+  ([0, 1, 2].map fun k => { fam := "initSep", prog := initProgram k, lib := ["T"] }) ++
+  [{ fam := "init", prog := initProgram 3, only3 := true },
+   { fam := "initSep", prog := initProgram 3, lib := ["T"], only3 := true }] ++
+  (scala3Space.map ({ fam := "scala3", prog := ·, only3 := true }))
+
+def Case.lower (dl : Dialect) (c : Case) : Except String (List ClassOut) :=
+  if c.lib.isEmpty then lowerProgram dl c.prog else lowerSeparately dl c.prog c.lib
 
 /-! ## Dumping classfiles in the probe's format -/
 
@@ -180,6 +233,7 @@ def Insn.show (i : Insn) : String := s!"{i.op} {i.owner}.{i.name}:{i.desc}"
 
 def ClassOut.dump (pid : String) (c : ClassOut) : List String :=
   let pre := s!"{pid}\t{c.name}\t"
+  (if c.partly then [pre ++ "partly"] else []) ++
   [pre ++ s!"class\t{flags [("interface", c.itf), ("abstract", c.abs), ("final", c.final)]}\t" ++
      s!"super={c.super.getD "java/lang/Object"};ifaces={",".intercalate c.ifaces}"] ++
   c.fields.map (fun f => pre ++ s!"field {f.name} {f.desc}\t" ++

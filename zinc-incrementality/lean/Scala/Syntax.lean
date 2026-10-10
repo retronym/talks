@@ -32,7 +32,15 @@ structure Mem where
   isVal : Bool := false
   abs : Bool := false
   final : Bool := false
+  /-- `lazy val`. -/
+  lzy : Bool := false
+  /-- Scala 3 `@static`, in an object. -/
+  static : Bool := false
+  /-- Scala 3 `extension (x: T) def …`: the receiver, an extra first parameter. -/
+  ext : Option Ty := none
   deriving DecidableEq, Repr
+
+def Mem.allParams (m : Mem) : List Ty := m.ext.toList ++ m.params
 
 /-- A parent: a definition, applied to a type argument if it has a type parameter. -/
 abbrev Parent := String × Option Ty
@@ -88,7 +96,9 @@ def body : Ty → String
   | .ref _ => "???"
 
 def Mem.show (ov : Bool) (m : Mem) : String :=
-  let mods := (if ov then "override " else "") ++ (if m.final then "final " else "")
+  let mods := (match m.ext with | some t => s!"extension (self: {t.show}) " | none => "") ++
+    (if m.static then "@static " else "") ++ (if ov then "override " else "") ++
+    (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "")
   let kw := if m.isVal then "val" else "def"
   let ps := if m.params.isEmpty && m.isVal then ""
     else "(" ++ ", ".intercalate ((m.params.zipIdx.map fun (t, i) => s!"x{i}: {t.show}")) ++ ")"
