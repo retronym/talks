@@ -1,4 +1,4 @@
-# Files as a layer (design note, for review)
+# Files as a layer (design note, approved)
 
 ## Problem
 
@@ -35,9 +35,14 @@ Zinc recompiles source files, not classes, but records keys per class. The frame
 - **Files as units** (`CUnit := File`). It loses per-class keys, so Zinc's name filter per class, and with it F3's cause, could not be stated. It also changes every instance.
 - **Charging inside each instance**, as `Names.lean` does with `first`. It is what we have, and it is why F3 is not a framework statement.
 
+## Review notes (approved with these)
+
+- **The default `file` is one class per file**, so no instance changes. Round closure is a property of the policy, not a change to the loop: a policy is file-closed when it returns file-closed sets. T3a then carries over without re-proving the loop. Charged coverage needs closed rounds (a recompiled class's charged representative is recompiled with it), so the charged T2 takes file-closed `R` and a file-closed policy as hypotheses.
+- **The F3 witness is `Spec`'s existing first/last factor.** Scala 2 charges the first class, Scala 3 the last. The fix, "charge every class of the file", is proved once. The second witness is sbt/zinc#417's same-file inheritance edge.
+
 ## Steps
 
 1. This note, for review.
-2. `General.lean`: `file`, `close`, T2/T3a/T5 with closed rounds; the lifts set `file := id`; the axioms check covers the new statements.
+2. `General.lean`: `file` (default one class per file) and `Policy.FileClosed`; the charged T2 under closed rounds; T3a and T5 carried; the axioms check covers the new statements.
 3. `ChargedCoverage`, with `charged_of_coverage`; the F3 witness and fix on `SplitProof.Spec` with a two-class client file.
 4. FI: one witness for sbt/zinc#417 (an inheritance edge between classes of one file, dropped).
