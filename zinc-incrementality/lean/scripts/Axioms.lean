@@ -53,3 +53,4 @@ import Zinc
 #print axioms Zinc.SplitProof.Spec.g_global_obligations
 #print axioms Zinc.SplitProof.Spec.g_narrowed_obligations
 #print axioms Zinc.SplitProof.Spec.g12_today
+#print axioms Zinc.TCompiler.downstream_sound

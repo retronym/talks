@@ -10,7 +10,7 @@ Enumerations over bounded program spaces (`native_decide`) and the Zinc conforma
 
 | Phase | Topic | Proved, for every program | Checked on a space, or by the harness |
 |---|---|---|---|
-| 1 | The framework | T1 `Task.run_eq_of_trace`; T2 and T3a (`Soundness`); T3b, incremental equals clean under acyclic dependencies or source-determined interfaces (`Uniqueness`); T4, termination per regime (`Termination`); the toy's obligations (`Toy`) | §15a/§15b counterexamples (`Examples`) |
+| 1 | The framework | T1 `Task.run_eq_of_trace`; T2, T3a, T4 (monotone) and T5 once for the general form `XCompiler` (`General.lean`), every variant's as corollaries through its lift (`PLAN-framework.md`); T2 and T3a (`Soundness`); T3b, incremental equals clean under acyclic dependencies or source-determined interfaces (`Uniqueness`); T4, termination per regime (`Termination`); the toy's obligations (`Toy`) | §15a/§15b counterexamples (`Examples`) |
 | 2 | Members, declarations, Merkle | `NonLocal` (T2′, non-local hash); `Stale.obligations`; `HierSound`: `D_obligations`, `W_obligations`, `Mk_obligations` | scenarios 1–3 (`Hier`); `Stale.stale_unsound` |
 | 3 | The Merkle PoC's design | `NonLocalAns` (T2″, T3a″); `Flat`: `Fl_obligations`, `flat_sound` | the rule table over 7,500 programs (`FlatRules`, `lake exe exhaustive`); the conformance harness |
 | 6 | Erasure through inheritance | `Erasure`: `asf_of_decl`, `Er_obligations`, `dep_obligations`, `dep_sound` | `lake exe exhaustive erasure`; the scripted cases |
