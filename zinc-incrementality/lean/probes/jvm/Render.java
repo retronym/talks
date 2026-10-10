@@ -9,7 +9,8 @@ import static java.lang.classfile.ClassFile.*;
 /**
  * Renders each case of `lake exe jvmcases` to classfiles with the Classfile API (JDK 24+):
  * `out/<case>/{v0,v1,client,sites}/*.class`. Library and client classes come from the case's class
- * tables; `sites` has one class `Site<k>` per call site, with `static void run(Object recv)`.
+ * tables. `sites` has `Loads` (`ldc X.class` for each class the client loads) and one class
+ * `Site<k>` per call site, with `static void run()` as javac compiles `C c = new R(); c.m();`.
  *
  * Usage: java Render.java cases.jsonl out
  */
@@ -21,7 +22,7 @@ public class Render {
   static final ClassDesc LOG = ClassDesc.of("ProbeLog");
   static final MethodTypeDesc VOID = MethodTypeDesc.of(ConstantDescs.CD_void);
   static final MethodTypeDesc RAN = MethodTypeDesc.of(ConstantDescs.CD_void, STRING);
-  static final MethodTypeDesc RUN = MethodTypeDesc.of(ConstantDescs.CD_void, OBJECT);
+  static final MethodTypeDesc RUN = VOID;
 
   public static void main(String[] args) throws Exception {
     Path out = Path.of(args[1]);
@@ -32,6 +33,7 @@ public class Render {
       for (String t : List.of("v0", "v1", "client")) {
         for (Map<String, Object> c : Json.objs(k.get(t))) write(dir.resolve(t), (String) c.get("name"), renderClass(c));
       }
+      write(dir.resolve("sites"), "Loads", renderLoads(Json.arr(k.get("loads"))));
       List<Map<String, Object>> sites = Json.objs(k.get("sites"));
       for (int i = 0; i < sites.size(); i++) write(dir.resolve("sites"), "Site" + i, renderSite("Site" + i, sites.get(i)));
     }
@@ -86,6 +88,22 @@ public class Render {
     });
   }
 
+  static CodeBuilder newRecv(CodeBuilder b, Map<String, Object> s) {
+    ClassDesc r = ClassDesc.of((String) s.get("recv"));
+    return b.new_(r).dup().invokespecial(r, ConstantDescs.INIT_NAME, VOID);
+  }
+
+  static byte[] renderLoads(List<Object> loads) {
+    return ClassFile.of().build(ClassDesc.of("Loads"), cb -> {
+      cb.withVersion(VERSION, 0);
+      cb.withFlags(ACC_PUBLIC | ACC_SUPER);
+      cb.withMethodBody("run", RUN, ACC_PUBLIC | ACC_STATIC, b -> {
+        for (Object x : loads) b.ldc(ClassDesc.of((String) x)).pop();
+        b.return_();
+      });
+    });
+  }
+
   static byte[] renderSite(String name, Map<String, Object> s) {
     String op = (String) s.get("op");
     ClassDesc owner = ClassDesc.of((String) s.get("owner"));
@@ -97,8 +115,8 @@ public class Render {
       cb.withMethodBody("run", RUN, ACC_PUBLIC | ACC_STATIC, b -> {
         switch (op) {
           case "invokestatic" -> b.invokestatic(owner, mname, d, false);
-          case "invokevirtual" -> b.aload(0).checkcast(owner).invokevirtual(owner, mname, d);
-          case "invokeinterface" -> b.aload(0).checkcast(owner).invokeinterface(owner, mname, d);
+          case "invokevirtual" -> newRecv(b, s).invokevirtual(owner, mname, d);
+          case "invokeinterface" -> newRecv(b, s).invokeinterface(owner, mname, d);
           case "new" -> b.new_(owner).dup().invokespecial(owner, ConstantDescs.INIT_NAME, VOID).pop();
           default -> throw new IllegalArgumentException(op);
         }

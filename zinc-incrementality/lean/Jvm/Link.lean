@@ -18,8 +18,9 @@ the new library. Both are questions about a task's trace against an edited envir
 
 The model is generic in class, method-name and descriptor types. Not modelled: access control,
 private methods and `invokespecial`, fields, signature-polymorphic methods, `Object`'s methods in
-interface resolution, static interface methods, and the order HotSpot loads classes in. Linking is
-lazy, as on the JVM: an error is raised by the first site that hits it.
+interface resolution, static interface methods. Linking is lazy, as on the JVM: an error is raised by
+the first site that hits it; a class is loaded, with its loading checks, when it is first referred
+to, and each site is verified just before it runs (as if each site were its own method).
 -/
 
 namespace Jvm
@@ -89,6 +90,8 @@ inductive LinkError
   | instantiation
   | finalSuper
   | finalOverride
+  /-- A receiver not assignable to the site's owner: the verifier rejects the client. -/
+  | verify
   deriving DecidableEq, Repr
 
 abbrev L (C N D : Type) := Zinc.Task (Q C N D) Ans
@@ -143,6 +146,37 @@ def chain (inst : Bool) (n : N) (d : D) : ℕ → C → M C N D (Option (C × Me
       | none => pure none
       | some s => chain inst n d k s
 
+/-- Load a class, and first its superinterfaces and superclass (HotSpot's class file parser resolves
+them in that order): each superinterface must be an interface, the superclass a non-final class,
+and none of the class's instance methods may override a final one. The JVM loads a class when a
+site, the verifier or a subclass first refers to it; the model loads it at each such reference,
+which repeats queries but not answers. -/
+def loadK : ℕ → C → M C N D Unit
+  | 0, _ => pure ()
+  | k + 1, x => do
+    let h ← hdr x
+    for i in h.ifaces do
+      loadK k i
+      if !(← hdr i).isInterface then throw .incompatibleClassChange
+    match h.super with
+    | none => pure ()
+    | some s =>
+      loadK k s
+      let hs ← hdr s
+      if hs.isInterface then throw .incompatibleClassChange
+      if hs.isFinal then throw .finalSuper
+      for (n, d, mi) in ← askDeclared x do
+        if !mi.isStatic then
+          if let some (_, si) ← chain true n d depth s then
+            if si.isFinal then throw .finalOverride
+
+def load (x : C) : M C N D Unit := loadK depth x
+
+/-- A class's header, after loading it. -/
+def cls (c : C) : M C N D (Header C) := do
+  load c
+  hdr c
+
 /-- The maximally-specific superinterface methods of `c` for `n` and `d` (§5.4.3.3): instance
 methods declared in a superinterface of `c` that no other such method's interface extends. -/
 def maxSpecific (c : C) (n : N) (d : D) : M C N D (List (C × MethodInfo)) := do
@@ -169,7 +203,7 @@ def fromIfaces (c : C) (n : N) (d : D) : M C N D (C × MethodInfo) := do
 
 /-- Method resolution against a class, §5.4.3.3. -/
 def resolveClass (c : C) (n : N) (d : D) : M C N D (C × MethodInfo) := do
-  let h ← hdr c
+  let h ← cls c
   if h.isInterface then throw .incompatibleClassChange
   match ← chain false n d depth c with
   | some r => pure r
@@ -177,7 +211,7 @@ def resolveClass (c : C) (n : N) (d : D) : M C N D (C × MethodInfo) := do
 
 /-- Interface method resolution, §5.4.3.4. -/
 def resolveIface (c : C) (n : N) (d : D) : M C N D (C × MethodInfo) := do
-  let h ← hdr c
+  let h ← cls c
   if !h.isInterface then throw .incompatibleClassChange
   match ← askMethod c n d with
   | some i => pure (c, i)
@@ -195,6 +229,8 @@ def select (r : C) (n : N) (d : D) : M C N D C := do
     | [] => throw .abstractMethod
     | _ => throw .incompatibleClassChange
 
+/-- A call site, as javac emits it for `new R().m()` with the static receiver type `C` (an upcast
+`C c = new R(); c.m()` when `R ≠ C`), or a `new C()`. -/
 inductive Site (C N D : Type)
   | invokestatic (c : C) (n : N) (d : D)
   | invokevirtual (c : C) (n : N) (d : D) (recv : C)
@@ -202,42 +238,51 @@ inductive Site (C N D : Type)
   | new (c : C)
   deriving DecidableEq, Repr
 
-/-- Execute a site; the result is the class whose method runs (or that is instantiated). -/
+/-- The verifier's assignability of class type `r` to `c` (JVMS §4.10.1.2, as HotSpot checks it):
+equal names pass without loading; otherwise `c` is loaded, an interface passes, and a class must be
+a superclass of `r`. -/
+def assignable (r c : C) : M C N D Unit := do
+  if r = c then return
+  if (← cls c).isInterface then return
+  discard <| cls r
+  let rec up : ℕ → C → M C N D Bool
+    | 0, _ => pure false
+    | k + 1, x => do
+      if x = c then return true
+      match (← hdr x).super with
+      | none => pure false
+      | some s => up k s
+  if !(← up depth r) then throw .verify
+
+/-- `new c`: load it; it must be a concrete class. -/
+def instantiate (c : C) : M C N D Unit := do
+  let h ← cls c
+  if h.isInterface || h.isAbstract then throw .instantiation
+
+/-- Execute a site; the result is the class whose method runs (or that is instantiated). The
+verifier checks the receiver's upcast before the site runs; then the receiver is instantiated, the
+method resolved and selected. -/
 def runSite : Site C N D → M C N D C
   | .invokestatic c n d => do
     let (o, i) ← resolveClass c n d
     if !i.isStatic then throw .incompatibleClassChange
     pure o
   | .invokevirtual c n d r => do
+    assignable r c
+    instantiate r
     let (_, i) ← resolveClass c n d
     if i.isStatic then throw .incompatibleClassChange
     select r n d
   | .invokeinterface c n d r => do
+    assignable r c
+    instantiate r
     let (_, i) ← resolveIface c n d
     if i.isStatic then throw .incompatibleClassChange
     if !(← ifacesOf depth r).contains c then throw .incompatibleClassChange
     select r n d
   | .new c => do
-    let h ← hdr c
-    if h.isInterface || h.isAbstract then throw .instantiation
+    instantiate c
     pure c
-
-/-- Load a class: its superclass must be a non-final class, its superinterfaces interfaces, and
-none of its instance methods may override a final one. -/
-def load (x : C) : M C N D Unit := do
-  let h ← hdr x
-  for i in h.ifaces do
-    if !(← hdr i).isInterface then throw .incompatibleClassChange
-  match h.super with
-  | none => pure ()
-  | some s =>
-    let hs ← hdr s
-    if hs.isInterface then throw .incompatibleClassChange
-    if hs.isFinal then throw .finalSuper
-    for (n, d, mi) in ← askDeclared x do
-      if !mi.isStatic then
-        if let some (_, si) ← chain true n d depth s then
-          if si.isFinal then throw .finalOverride
 
 /-- A client: the classes it loads, then the sites it executes, in order. -/
 structure Program (C N D : Type) where

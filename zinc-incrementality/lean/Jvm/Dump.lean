@@ -27,6 +27,7 @@ def errName : LinkError → String
   | .instantiation => "instantiation"
   | .finalSuper => "finalSuper"
   | .finalOverride => "finalOverride"
+  | .verify => "verify"
 
 def methodJson (m : N × D × MethodInfo) : String :=
   "{\"name\":" ++ jstr (nName m.1) ++ ",\"desc\":" ++ jstr (dName m.2.1) ++

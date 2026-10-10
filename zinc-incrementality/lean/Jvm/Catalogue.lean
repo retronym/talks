@@ -62,13 +62,15 @@ def resultTypeChanged : Case where
   v1 := [(.A, { methods := [(.m, .i, inst)] })]
   prog := { sites := [invokevirtual .A .m .v .A] }
 
+/-- `A` becomes an interface that `B` implements; the client's `A a = new B(); a.m()` still
+verifies (an interface target is assignable) and fails to resolve `A.m` as a class method. -/
 def classBecomesInterface : Case where
   name := "classBecomesInterface"
   mima := some "IncompatibleTemplateDefProblem"
-  v0 := [(.A, { methods := [(.m, .v, inst)] })]
+  v0 := [(.A, { methods := [(.m, .v, inst)] }), (.B, { header := { super := some .A } })]
   v1 := [(.A, { header := { isInterface := true }, methods := [(.m, .v, inst)] }),
          (.B, { header := { super := none, ifaces := [.A] } })]
-  prog := { sites := [invokevirtual .A .m .v .A] }
+  prog := { sites := [invokevirtual .A .m .v .B] }
 
 def becomesStatic : Case where
   name := "becomesStatic"
@@ -152,6 +154,7 @@ def all : List Case :=
    becomesFinal, methodBecomesFinal, superclassRemoved, defaultRemoved, defaultConflict,
    overrideAdded, pulledUp]
 
+example : classBecomesInterface.before = .ok [.A] := by decide
 example : methodRemoved.before = .ok [.A] ∧ methodRemoved.after = .error .noSuchMethod := by
   decide
 example : resultTypeChanged.after = .error .noSuchMethod := by decide

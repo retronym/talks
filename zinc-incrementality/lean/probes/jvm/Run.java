@@ -8,10 +8,8 @@ import java.util.*;
  * Runs each rendered case's client against `v0` and `v1` and compares the outcome with the model's.
  * Plain Java 17, so it runs on JDK 21 as well as on the JDK that rendered the classfiles.
  *
- * A client loads its classes (`Class.forName(x, false, l)`: loading, with the supertype and
- * final-override checks), then runs each site. A site's receiver is instantiated reflectively first;
- * if the receiver's class cannot be instantiated (an interface or abstract class in that world) the
- * site gets `null`, and resolution still happens before the null check.
+ * A client loads its classes (`Loads.run`, by `ldc`), then runs each site (`Site<k>.run`), each
+ * verified just before it runs. Which method ran is read from `ProbeLog`.
  *
  * Usage: java -cp classes Run cases.jsonl out
  * Prints one TSV row per case and world: case, world, model, JVM, agree, JVM message.
@@ -26,7 +24,8 @@ public class Run {
       "instantiation", "java.lang.InstantiationError",
       // HotSpot's class file parser, on JDK 21, 25 and 27; not the VerifyError older JDKs threw.
       "finalSuper", "java.lang.IncompatibleClassChangeError",
-      "finalOverride", "java.lang.IncompatibleClassChangeError");
+      "finalOverride", "java.lang.IncompatibleClassChangeError",
+      "verify", "java.lang.VerifyError");
 
   public static void main(String[] args) throws Exception {
     Path out = Path.of(args[1]);
@@ -67,31 +66,24 @@ public class Run {
     try (URLClassLoader l = new URLClassLoader(cp, Run.class.getClassLoader())) {
       List<String> ran = new ArrayList<>();
       try {
-        for (Object x : Json.arr(k.get("loads"))) Class.forName((String) x, false, l);
+        call(l, "Loads");
         List<Map<String, Object>> sites = Json.objs(k.get("sites"));
         for (int i = 0; i < sites.size(); i++) {
           Map<String, Object> s = sites.get(i);
-          Object recv = s.get("recv") == null ? null : instantiate((String) s.get("recv"), l);
           ProbeLog.last = null;
-          try {
-            Class.forName("Site" + i, true, l).getMethod("run", Object.class).invoke(null, recv);
-          } catch (InvocationTargetException e) {
-            throw e.getCause();
-          }
+          call(l, "Site" + i);
           ran.add(s.get("op").equals("new") ? (String) s.get("owner") : ProbeLog.last);
         }
         return new String[] { "ok " + ran, "" };
       } catch (Throwable t) {
-        return new String[] { t.getClass().getName(), String.valueOf(t.getMessage()) };
+        return new String[] { t.getClass().getName(), String.valueOf(t.getMessage()).lines().findFirst().orElse("") };
       }
     }
   }
 
-  static Object instantiate(String c, ClassLoader l) throws Throwable {
-    Class<?> k = Class.forName(c, true, l);
-    if (k.isInterface() || java.lang.reflect.Modifier.isAbstract(k.getModifiers())) return null;
+  static void call(ClassLoader l, String c) throws Throwable {
     try {
-      return k.getDeclaredConstructor().newInstance();
+      Class.forName(c, true, l).getMethod("run").invoke(null);
     } catch (InvocationTargetException e) {
       throw e.getCause();
     }
