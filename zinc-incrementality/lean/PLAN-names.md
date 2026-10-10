@@ -61,7 +61,7 @@ F1 is gone, as predicted; F2, F3, G1 and G2 stay, because none adds a class: the
 
 ## Extending #34: a rule per family, as a specification (P10.7, P10.9, P10.10)
 
-Each remaining family gets a rule, run after every cycle as #34's is. `SplitProof.Spec` (names) and `GivensSpec.lean` (implicits) state the rules as keys of the framework's compiler (DESIGN-spec.md) and prove what they guarantee for every program. `Names.lean`/`Givens.lean` check the same rules on the bounded spaces, against the harness, and measure their cost.
+Each remaining family gets a rule, run after every cycle as #34's is. `SplitProof.Spec` (names) and `SpecGivens.lean` (implicits) state the rules as keys of the framework's compiler (DESIGN-spec.md) and prove what they guarantee for every program. `Names.lean`/`Givens.lean` check the same rules on the bounded spaces, against the harness, and measure their cost.
 
 The rules:
 
@@ -74,14 +74,14 @@ Each comes in two reaches. `global` covers every user of the name, or every clas
 
 Two new factors make the binding inherited rather than declared: `package object b extends a.PT` (`pinh`) and `object W extends a.WT` (`winh`). The givens space gets `pinh` and `wpkg` (an instance in `package object q` or a top-level given in `a.q`, imported with `import a.q._` / `import a.q.given`).
 
-### The specification (`SplitProof.Spec`, `GivensSpec.lean`)
+### The specification (`SplitProof.Spec`, `SpecGivens.lean`)
 
 Name resolution is one `NCompiler` instance, shared with Phase 13: `SplitProof.Spec`.
 
 - **The client and its scopes.** One client looks the name up in `n` scopes in search order and stops at the first hit. Each scope's binding is a unit, so any program of the slot language is an instance, with any number of bindings.
 - **The rules extend it in place.** `Ext` adds three kinds of scope: a package-object member (F2), a wildcard import charged to a class that does not use the name (F3), and a scope reached through a package import. The `rules` design records today's keys, F3's existence keys, and one `rule` key. That key's hash reads the scopes #34 and F2 reach (`global`, or `narrowed`).
 
-Implicit search is `GivensSpec.lean`, a `TCompiler` instance, until the framework merge. The search reads the whole level of its hit, so its keys need the output, and `NCompiler.keys` reads only the trace.
+Implicit search is `SpecGivens.lean`: the same scopes, as an `XCompiler` (`General.lean`), because the search reads the whole level of its hit and its keys must read the resolved scope from the output.
 
 Because the oracle is arbitrary, the proofs hold for any number of bindings. T3a starts from any state satisfying the invariant, so it covers edit sequences. That answers the bound of the enumeration (at most two bindings, single edits).
 
@@ -93,7 +93,7 @@ Because the oracle is arbitrary, the proofs hold for any number of bindings. T3a
 | `f2_not_obligations` (#34 + F3), `f3_not_obligations` (#34 + F2), `narrowed_without_imports`; Phase 13's `today_not_obligations` (F1, upstream), `cheap_not_obligations` (#34 across subprojects) | proved, one witness each (kernel `decide`/`simp`) |
 | Precision: `Necessary`, `Invalidated`, `OverInvalidated` (after an edit `I → I'`); `necessary_invalidated` (sound keys invalidate every necessary unit); `searched_exact` (`searched` invalidates only necessary units); `narrowed_le_global`; `rules_over` (the rules over-invalidate when a scope searched after the hit gains a binding) | proved |
 | `joint_not_comp`: F4 (Scala 2's mirror without `ScalaSignature`) and F5 (Scala 3's missed clash) are failures of compositionality, not coverage, so no key fixes them | proved, one witness |
-| Givens: `obligations_g_global`, `obligations_g_narrowed` (given recorded imports), `obligations_searched`; `g1_cheap`, `g2_cheap`, `g_narrowed_without_imports`; `decls_violates_abstraction` (#24 without composition) | proved (`GivensSpec.lean`) |
+| Givens (`SpecGivens.lean`): `g_global_obligations`, `g_narrowed_obligations` (given recorded imports), `g_searched_obligations`; `g12_today`, `g_narrowed_without_imports`; `g_decls_not_abstraction` (#24 without composition) | proved |
 | Resolution per version (Scala 2's precedence, ambiguities, the class-name alias), F6 and F7, the exact recompiled sets, the bystanders of other clients | checked: `Names.lean`/`Givens.lean` on the bounded space and the harness; `Split.check_abstract` checks the slot mapping on the bases |
 | Each rule closes its family and nothing else, today's families are F1–F3, the rules together are clean | checked: `NamesRules.lean` `example`s over the bounded spaces |
 
