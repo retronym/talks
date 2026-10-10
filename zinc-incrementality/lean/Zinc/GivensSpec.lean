@@ -1,68 +1,39 @@
 import Zinc.JavaSpec
 
 /-!
-# Scala name resolution and implicit search as a specification
+# Implicit search as a specification
 
-A `TCompiler` instance (`Tree.lean`) for a Scala client resolving one simple name `n`
-(`Names.lean`) or summoning one type (`Givens.lean`). The lookup is `JavaSpec`'s: probes grouped
-in levels, every probe of a level asked, the first level with a hit decides. Packages `Pkg` and
-names `N` are arbitrary types, and the oracle is arbitrary, so every result here holds for any
-program, with any number of bindings in the searched scopes, not only the enumerated bases.
+A `TCompiler` instance (`Tree.lean`) for a Scala client summoning one type (`Givens.lean`). Name
+resolution is `SplitProof.Spec` (the shared names instance, with the split layout's `Up`/`S` and
+the Phase 10 rules); implicit search is here because its keys need the output: the search reads the
+whole level of its hit (to detect an ambiguity), so the scope it resolved to is not the trace's
+last query, and `NCompiler.keys` reads only the trace. This moves onto the merged framework, whose
+keys read output and trace (REVIEW-2026-10-11, finding 1).
 
-**Units** are top-level classes, named by package and simple name (`Pkg × N`). A package object
-is the unit `(p, pk)`, for a distinguished name `pk` (`package`); a Scala 3 file's top-level
-definitions are the unit `(p, F$package)`. **Queries** to a unit, as in `JavaSpec`: does the class
-exist (`present`), does it have the member `m` (`member m`, declared or inherited).
+**Units** are top-level classes `Pkg × N` over arbitrary types; a package object is `(p, pk)`, a
+Scala 3 file's top-level definitions `(p, F$package)`. **Queries** are `JavaSpec`'s: does the class
+exist, does it have the member `m`; the instance of `T` is the member `imp`. **The search**
+(`glevels`, Scala 3's levels): the block import, the parents, the file's wildcard imports
+(objects, and packages' package objects and `$package` classes) with the client's own package,
+each enclosing package, and last `T`'s companion; every probe of a level is asked, the first level
+with a hit decides.
 
-**The lookup** (`levels`), innermost first:
+**Keys.** Today's bridge: a changed implicit invalidates every member-ref dependent, so every
+import qualifier, parent and the companion is keyed, and the owner of the resolved instance. The
+G rule keys every package object and `$package` class of a package, `global` (every package) or
+`narrowed` (the searched ones, the wildcard-imported packages only when the bridge records the
+import, `imports`).
 
-1. the block's wildcard imports and the parents (inherited members);
-2. the explicit imports `import X.n` (also checked to exist before resolving);
-3. the file's wildcard imports: objects (`import W._`) and packages (`import q._`: the class
-   `q.n` and the package object's member);
-4. each enclosing package, innermost first: its package object's member and its class `p.n`.
-
-The levels follow Scala 3's nesting. Scala 2 orders a package's package object before its classes
-and lets imports beat package members of other files; those rules decide *which* hit wins, which
-`Names.lean` models and checks against the compiler, not *what* the lookup reads, which is all
-coverage depends on. Implicit search (`glevels`) asks every scope for an instance of `T` (a member
-named `imp`): the block import, the parents, the file's wildcard imports with the client's own
-package, each enclosing package (its package object and every `$package` file class, `files`), and
-last `T`'s companion.
-
-**Keys.** Today's bridge records a member-ref edge to the owner of the symbol the reference resolved
-to and the used name; edges to import qualifiers that are objects (a package records nothing),
-charged with the import's selector name to one class of the file (`first`); inheritance edges, on
-which any API change invalidates. A changed implicit invalidates every member-ref dependent, used
-names or not. As keys: `has n` on the resolved owner and on import qualifiers when the charged
-class uses `n`, `api` on parents. The fixes are keys too:
-
-* `searched`: a key per probe, hit or miss (Kotlin's `LookupTracker`);
-* #34 (`cheap`): `present` on every top-level class named `n`, in every package (`global`, what #34
-  does) or only in the searched packages (`narrowed`);
-* F2: `has n` on package objects, with the same two reaches;
-* F3: the wildcard import's qualifier keyed with every class's used names in the file;
-* G: `has imp` on package objects and `$package` classes, with the same two reaches.
-
-`narrowed` reaches the enclosing packages, and the wildcard-imported packages only when the bridge
-records `import q._` (`imports`).
-
-**Results** (no `native_decide`): today's keys fail coverage, one witness per family (F1, F2, F3,
-G1, G2); the narrowed rules without recorded package imports fail it too (a wildcard-imported
-package); every set of rules that reaches all searched scopes meets the obligations and inherits
-T3a (`obligations_rules`, `rules_sound`), as does `searched`. #24's declarations-only `π` fails
-abstraction (an inherited member); composed from the ancestors it is `full`. Precision: the
-narrowed rules and `searched` record only keys a probe of the lookup justifies (`tight`); the
-global ones record keys on every package.
-
-Simplifications: one name and one use per client; a class's inherited members are part of its
-source (the inheritance edge itself is `Hier.lean`'s); the result (which hit wins, ambiguities)
-follows the levels and is refined in `Names.lean`.
+**Results** (no `native_decide`): G1 and G2 fail coverage under #34 (`g1_cheap`, `g2_cheap`); the
+narrowed G rule without recorded package imports fails it (`g_narrowed_without_imports`); the G
+rule, global or narrowed given recorded imports, and `searched` meet the obligations and inherit
+T3a (`obligations_g_global`, `obligations_g_narrowed`, `obligations_searched`, `sound_of`); #24's
+declarations-only hash fails abstraction (`decls_violates_abstraction`).
 -/
 
 set_option linter.unusedSectionVars false
 
-namespace Zinc.NamesSpec
+namespace Zinc.GivensSpec
 
 open Zinc.JavaSpec (CU Q Ans Probe Res T Env askAll resolve run_askAll mem_trace_askAll
   mem_trace_resolve)
@@ -106,13 +77,6 @@ structure Out (Pkg N : Type) where
 
 def importChecks (c : Client Pkg N) : List (Probe Pkg N) := c.expl.map (.mem · c.name)
 
-/-- The levels of the name lookup. -/
-def levels (pk : N) (c : Client Pkg N) : List (List (Probe Pkg N)) :=
-  [c.blk.map (.mem · c.name) ++ c.sup.map (.mem · c.name),
-   c.expl.map (.mem · c.name),
-   c.wild.map (.mem · c.name) ++ c.wpkg.map (fun q => .top (q, c.name)) ++
-     c.wpkg.map (fun q => .mem (q, pk) c.name)] ++
-  c.pkgs.map fun p => [.mem (p, pk) c.name, .top (p, c.name)]
 
 /-- The scopes of a package for implicit search: its package object and its `$package` classes. -/
 def pkgProbes (pk : N) (files : List N) (imp : N) (p : Pkg) : List (Probe Pkg N) :=
@@ -253,13 +217,6 @@ def reach (d : Design) (r : Reach) (c : Client Pkg N) : Finset Pkg :=
   | .narrowed => (c.pkgs ++ if d.imports then c.wpkg else []).toFinset
   | .global => Finset.univ
 
-/-- Today's keys for a name: the qualifiers of the block import (charged to the client) and of
-the explicit import (with its selector's name), the parents, the wildcard import's qualifier when
-the class charged with it uses the name (or with F3), and the resolved owner. -/
-def nameKeys (d : Design) (c : Client Pkg N) (r : Res Pkg N) : List (CU Pkg N × K N) :=
-  c.blk.map (·, .has c.name) ++ c.sup.map (·, .api) ++ c.expl.map (·, .has c.name) ++
-  (if d.f3 || !c.first || !c.expl.isEmpty then c.wild.map (·, .has c.name) else []) ++
-  (match r with | .ok p => [probeKey p] | _ => [])
 
 /-- Today's keys for implicit search: an implicit change invalidates every member-ref dependent, so
 every import qualifier counts, whichever class is charged; the companion, which the client names. -/
@@ -275,7 +232,7 @@ def keysOf (lv : Client Pkg N → List (List (Probe Pkg N))) (gv : Bool) (d : De
   match o.client with
   | none => ∅
   | some c =>
-    ((if gv then givenKeys c o.res else nameKeys d c o.res).toFinset ∪
+    ((givenKeys c o.res).toFinset ∪
       (reach d d.cheap c).image (fun p => ((p, c.name), K.present)) ∪
       (reach d d.f2 c).image (fun p => ((p, pk), K.has c.name)) ∪
       (reach d d.g c).biUnion (fun p => ((pkgProbes pk files c.name p).map probeKey).toFinset)) ∪
@@ -295,10 +252,6 @@ def mk (lv : Client Pkg N → List (List (Probe Pkg N))) (gv : Bool) (a : Api) (
   keysOf := keysOf pk files lv gv d
   covers := covers
 
-/-- Name resolution under a bridge design. -/
-def names (a : Api) (d : Design) :
-    TCompiler (CU Pkg N) (Src Pkg N) (Out Pkg N) (Iface N) (K N) (Iface N) (Q N) Ans :=
-  mk pk files (levels pk) false a d
 
 /-- Implicit search under a bridge design; the client's `name` is the instance's (`imp`). -/
 def givens (a : Api) (d : Design) :
@@ -386,11 +339,6 @@ theorem obligations_searched (lv : Client Pkg N → List (List (Probe Pkg N))) (
 def Reaches (d : Design) (c : Client Pkg N) (p : Pkg) : Prop :=
   p ∈ reach d d.cheap c ∧ p ∈ reach d d.f2 c ∧ p ∈ reach d d.g c
 
-theorem mem_nameKeys {d : Design} {c : Client Pkg N} {r : Res Pkg N} {k : CU Pkg N × K N}
-    (h : k ∈ nameKeys d c r) :
-    k ∈ keysOf pk files (levels pk) false d ⟨some ([], []), some c, r⟩ := by
-  simp only [keysOf, Bool.false_eq_true, ite_false, Finset.mem_union, List.mem_toFinset]
-  exact .inl (.inl (.inl (.inl h)))
 
 theorem mem_givenKeys {lv : Client Pkg N → List (List (Probe Pkg N))} {d : Design} {c : Client Pkg N}
     {r : Res Pkg N} {k : CU Pkg N × K N} (h : k ∈ givenKeys c r) :
@@ -398,70 +346,8 @@ theorem mem_givenKeys {lv : Client Pkg N → List (List (Probe Pkg N))} {d : Des
   simp only [keysOf, ite_true, Finset.mem_union, List.mem_toFinset]
   exact .inl (.inl (.inl (.inl h)))
 
-/-- **The name rules cover the lookup** when F3 is on and #34 and F2 reach every searched package
-(the enclosing ones and the wildcard-imported ones). -/
-theorem names_coverage (d : Design) (h3 : d.f3 = true)
-    (hr : ∀ c : Client Pkg N, ∀ p ∈ c.pkgs ++ c.wpkg, p ∈ reach d d.cheap c ∧ p ∈ reach d d.f2 c) :
-    ∀ (s : Src Pkg N) (e : Env Pkg N), ∀ q ∈ (unit (levels pk) s).trace e,
-      ∃ k ∈ keysOf pk files (levels pk) false d ((unit (levels pk) s).run e), q.1 = k.1 ∧ covers q.2 k.2 := by
-  apply coverage_of
-  intro c r p hp
-  have hn : ∀ k ∈ nameKeys d c r, p.query.1 = k.1 → covers p.query.2 k.2 →
-      ∃ k ∈ keysOf pk files (levels pk) false d ⟨some ([], []), some c, r⟩, p.query.1 = k.1 ∧ covers p.query.2 k.2 :=
-    fun k hk h1 h2 => ⟨k, mem_nameKeys pk files hk, h1, h2⟩
-  have hcheap : ∀ q ∈ c.pkgs ++ c.wpkg, p = .top (q, c.name) →
-      ∃ k ∈ keysOf pk files (levels pk) false d ⟨some ([], []), some c, r⟩, p.query.1 = k.1 ∧ covers p.query.2 k.2 := by
-    intro q hq hpq
-    subst hpq
-    refine ⟨((q, c.name), .present), ?_, rfl, rfl⟩
-    simp only [keysOf, Finset.mem_union, Finset.mem_image]
-    exact .inl (.inl (.inl (.inr ⟨q, (hr c q hq).1, rfl⟩)))
-  have hf2 : ∀ q ∈ c.pkgs ++ c.wpkg, p = .mem (q, pk) c.name →
-      ∃ k ∈ keysOf pk files (levels pk) false d ⟨some ([], []), some c, r⟩, p.query.1 = k.1 ∧ covers p.query.2 k.2 := by
-    intro q hq hpq
-    subst hpq
-    refine ⟨((q, pk), .has c.name), ?_, rfl, by simp [covers, coversB, Probe.query]⟩
-    simp only [keysOf, Finset.mem_union, Finset.mem_image]
-    exact .inl (.inl (.inr ⟨q, (hr c q hq).2, rfl⟩))
-  simp only [probes, importChecks, levels, List.mem_append, List.mem_flatten, List.mem_cons,
-    List.mem_map, List.not_mem_nil, or_false] at hp
-  rcases hp with ⟨x, hx, rfl⟩ | ⟨l, hl, hp⟩
-  · exact hn (x, .has c.name) (by simp [nameKeys, hx]) rfl (by simp [covers, coversB, Probe.query])
-  · rcases hl with (rfl | rfl | rfl) | ⟨q, hq, rfl⟩
-    · simp only [List.mem_append, List.mem_map] at hp
-      rcases hp with ⟨x, hx, rfl⟩ | ⟨x, hx, rfl⟩
-      · exact hn (x, .has c.name) (by simp [nameKeys, hx]) rfl (by simp [covers, coversB, Probe.query])
-      · exact hn (x, .api) (by simp [nameKeys, hx]) rfl rfl
-    · simp only [List.mem_map] at hp
-      obtain ⟨x, hx, rfl⟩ := hp
-      exact hn (x, .has c.name) (by simp [nameKeys, hx]) rfl (by simp [covers, coversB, Probe.query])
-    · simp only [List.mem_append, List.mem_map] at hp
-      rcases hp with (⟨x, hx, rfl⟩ | ⟨q, hq, rfl⟩) | ⟨q, hq, rfl⟩
-      · exact hn (x, .has c.name) (by simp [nameKeys, h3, hx]) rfl (by simp [covers, coversB, Probe.query])
-      · exact hcheap q (by simp [hq]) rfl
-      · exact hf2 q (by simp [hq]) rfl
-    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
-      rcases hp with rfl | rfl
-      · exact hf2 q (by simp [hq]) rfl
-      · exact hcheap q (by simp [hq]) rfl
 
-/-- **#34 with F2 and F3, global** (every package): the obligations hold. -/
-theorem obligations_rules_global :
-    (names pk files (Pkg := Pkg) .full { cheap := .global, f2 := .global, f3 := true }).Obligations where
-  comp := obligations_comp pk files _ _ _ _
-  coverage := names_coverage pk files _ rfl fun _ _ _ => ⟨Finset.mem_univ _, Finset.mem_univ _⟩
-  abstraction := obligations_abstraction pk files _ _ _
 
-/-- **#34 with F2 and F3, narrowed** to the packages the lookup searches: the obligations hold
-when the bridge records wildcard imports of packages. -/
-theorem obligations_rules_narrowed :
-    (names pk files (Pkg := Pkg) .full
-      { cheap := .narrowed, f2 := .narrowed, f3 := true, imports := true }).Obligations where
-  comp := obligations_comp pk files _ _ _ _
-  coverage := names_coverage pk files _ rfl fun c p hp => by
-    simp only [reach, ite_true, List.mem_toFinset]
-    exact ⟨hp, hp⟩
-  abstraction := obligations_abstraction pk files _ _ _
 
 /-- **The G rule covers implicit search** when it reaches every searched package. -/
 theorem givens_coverage (d : Design)
@@ -587,61 +473,16 @@ theorem run_client_res (lv : Client Pkg N → List (List (Probe Pkg N))) (e : En
     simp only [probes, List.mem_append, List.mem_flatten]
     exact .inr ⟨l, hl, hp⟩
 
-/-- The narrowed name rules (#34, F2, F3, with recorded package imports) are **tight**. -/
-theorem narrowed_tight :
-    Tight (names pk files (Pkg := Pkg) .full
-      { cheap := .narrowed, f2 := .narrowed, f3 := true, imports := true }) (levels pk) := by
-  intro s e k hk
-  cases s with
-  | absent => simp [names, mk, unit, keysOf] at hk
-  | cls _ _ => simp [names, mk, unit, keysOf] at hk
-  | client c =>
-    refine ⟨c, rfl, ?_⟩
-    obtain ⟨r, hr, hres⟩ := run_client_res (levels pk) e c
-    simp only [names, mk] at hk
-    rw [hr] at hk
-    have lv : ∀ l ∈ levels pk c, ∀ p ∈ l, p ∈ probes (levels pk) c := fun l hl p hp => by
-      simp only [probes, List.mem_append, List.mem_flatten]; exact .inr ⟨l, hl, hp⟩
-    have pr : ∀ p ∈ probes (levels pk) c, p.query.1 = (probeKey p).1 → ∃ p' ∈ probes (levels pk) c,
-        p'.query.1 = (probeKey p).1 ∧ covers p'.query.2 (probeKey p).2 :=
-      fun p hp _ => ⟨p, hp, probeKey_covers p⟩
-    have l1 : c.blk.map (.mem · c.name) ++ c.sup.map (.mem · c.name) ∈ levels pk c := by simp [levels]
-    have l3 : c.wild.map (.mem · c.name) ++ c.wpkg.map (fun q => .top (q, c.name)) ++
-        c.wpkg.map (fun q => .mem (q, pk) c.name) ∈ levels pk c := by simp [levels]
-    have lp : ∀ q ∈ c.pkgs, [Probe.mem (q, pk) c.name, .top (q, c.name)] ∈ levels pk c := by
-      intro q hq; simp only [levels, List.mem_append, List.mem_map]; exact .inr ⟨q, hq, rfl⟩
-    simp only [keysOf, Bool.false_eq_true, ite_false,
-      Finset.mem_union, List.mem_toFinset, Finset.mem_image, Finset.mem_biUnion, reach, ite_true,
-      List.mem_append, Finset.notMem_empty, or_false, false_and, exists_false] at hk
-    rcases hk with ((hk | ⟨q, hq, rfl⟩) | ⟨q, hq, rfl⟩)
-    · simp only [nameKeys, Bool.true_or, ite_true, List.mem_append, List.mem_map] at hk
-      rcases hk with ((((⟨x, hx, rfl⟩ | ⟨x, hx, rfl⟩) | ⟨x, hx, rfl⟩) | ⟨x, hx, rfl⟩) | hk)
-      · exact ⟨.mem x c.name, lv _ l1 _ (by simp [hx]), rfl, by simp [covers, coversB, Probe.query]⟩
-      · exact ⟨.mem x c.name, lv _ l1 _ (by simp [hx]), rfl, rfl⟩
-      · exact ⟨.mem x c.name, by simp [probes, importChecks, hx], rfl, by simp [covers, coversB, Probe.query]⟩
-      · exact ⟨.mem x c.name, lv _ l3 _ (by simp [hx]), rfl, by simp [covers, coversB, Probe.query]⟩
-      · cases r with
-        | ok p =>
-          simp only [List.mem_cons, List.not_mem_nil, or_false] at hk
-          subst hk
-          exact ⟨p, hres p rfl, probeKey_covers p⟩
-        | _ => simp at hk
-    · rcases hq with hq | hq
-      · exact ⟨.top (q, c.name), lv _ (lp q hq) _ (by simp), rfl, rfl⟩
-      · exact ⟨.top (q, c.name), lv _ l3 _ (by simp [hq]), rfl, rfl⟩
-    · rcases hq with hq | hq
-      · exact ⟨.mem (q, pk) c.name, lv _ (lp q hq) _ (by simp), rfl, by simp [covers, coversB, Probe.query]⟩
-      · exact ⟨.mem (q, pk) c.name, lv _ l3 _ (by simp [hq]), rfl, by simp [covers, coversB, Probe.query]⟩
 
-end Zinc.NamesSpec
+end Zinc.GivensSpec
 
 /-! The witnesses, in packages `a.b` (0), `a` (1) and `a.q` (2), with the names `Foo` (0, also the
 summoned instance), `package` (1) and a third (2: the object `a.W`, `T`'s companion `a.T`, a file
 class `Inner$package`). -/
 
-namespace Zinc.NamesSpec.Witness
+namespace Zinc.GivensSpec.Witness
 
-open Zinc.NamesSpec Zinc.JavaSpec
+open Zinc.GivensSpec Zinc.JavaSpec
 
 abbrev P := Fin 3
 abbrev Nm := Fin 3
@@ -654,30 +495,9 @@ def env (yes : List (CU P Nm × Q Nm)) : Env P Nm := fun q => decide (q ∈ yes)
 
 def today : Design := {}
 
-/-- **F1, a class added in an inner package.** `package a; package b`, `Foo` resolves to `a.Foo`;
-the miss on `a.b.Foo` leaves no key. -/
-theorem f1_today : ¬ (names (1 : Nm) [2] (Pkg := P) .full today).Obligations :=
-  not_obligations_of 1 [2] _ _ _ _ (.client (client [0, 1])) (env [((1, 0), .present)]) ((0, 0), .present)
-    (by decide) (by decide)
 
-/-- **F2, a member added to a package object**, under #34 and F3: the miss on `package object b`'s
-`Foo` has no key (#34's keys are on classes named `Foo`). -/
-theorem f2_cheap : ¬ (names (1 : Nm) [2] (Pkg := P) .full { cheap := .global, f3 := true }).Obligations :=
-  not_obligations_of 1 [2] _ _ _ _ (.client (client [0, 1])) (env [((1, 0), .present)]) ((0, 1), .member 0)
-    (by decide) (by decide)
 
-/-- **F3, a member added to a wildcard-imported object, the import charged to another class** that
-does not use the name, under #34 and F2. -/
-theorem f3_cheap : ¬ (names (1 : Nm) [2] (Pkg := P) .full { cheap := .global, f2 := .global }).Obligations :=
-  not_obligations_of 1 [2] _ _ _ _ (.client { client [1] with wild := [(1, 2)], first := true })
-    (env [((1, 0), .present)]) ((1, 2), .member 0) (by decide) (by decide)
 
-/-- **The narrowed rules without recorded package imports**: `import a.q._`, and a class `a.q.Foo`
-added; the probe of `a.q` is outside the enclosing packages. -/
-theorem narrowed_without_imports :
-    ¬ (names (1 : Nm) [2] (Pkg := P) .full { cheap := .narrowed, f2 := .narrowed, f3 := true }).Obligations :=
-  not_obligations_of 1 [2] _ _ _ _ (.client { client [1] with wpkg := [2] }) (env [((1, 0), .present)])
-    ((2, 0), .present) (by decide) (by decide)
 
 /-- A givens client: `summon[a.T]` in `ps`, the companion `a.T` holding an instance. -/
 def gclient (ps : List P) : Client P Nm := { client ps with comp := [(1, 2)] }
@@ -700,16 +520,5 @@ theorem g_narrowed_without_imports :
   not_obligations_of 1 [2] _ _ _ _ (.client { gclient [1] with wpkg := [2] }) genv ((2, 1), .member 0)
     (by decide) (by decide)
 
-/-- **The global rules are not tight**: a client in package `a` that imports nothing records a key
-on `a.q.Foo`, which its lookup never asks about: adding `a.q.Foo` recompiles it. -/
-theorem global_not_tight :
-    ¬ Tight (names (1 : Nm) [2] (Pkg := P) .full { cheap := .global, f2 := .global, f3 := true }) (levels 1) := by
-  intro h
-  obtain ⟨c, hc, p, hp, h1, -⟩ :=
-    h (.client (client [1])) (env [((1, 0), .present)]) ((2, 0), .present) (by decide)
-  injection hc with hc
-  subst hc
-  have : ∀ p ∈ probes (levels (1 : Nm)) (client [1]), p.query.1 ≠ ((2 : P), (0 : Nm)) := by decide
-  exact this p hp h1
 
-end Zinc.NamesSpec.Witness
+end Zinc.GivensSpec.Witness

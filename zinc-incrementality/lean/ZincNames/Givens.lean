@@ -28,7 +28,7 @@ member-ref dependent of its class, used names or not (`MemberRefInvalidator`). S
 charged to the first class suffices here, and the misses are the scopes reached through no edge:
 the package object, and an added top-level given (an added source, `T$package`).
 
-The specification is `NamesSpec.lean` (`givens`); this file is the executable model, checked on a
+The specification is `GivensSpec.lean`; this file is the executable model, checked on a
 bounded space.
 -/
 

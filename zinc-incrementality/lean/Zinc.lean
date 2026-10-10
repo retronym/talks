@@ -32,6 +32,6 @@ import Zinc.JavaNames
 import Zinc.JavaSealed
 import Zinc.JavaSpec
 import Zinc.JavaSealedSpec
-import Zinc.NamesSpec
+import Zinc.GivensSpec
 import Zinc.JavaOrder
 import Zinc.Split

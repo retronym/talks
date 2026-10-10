@@ -7,7 +7,7 @@ import ZincNames.Givens
 Checks over every edit of `Names.lean`'s and `Givens.lean`'s bounded spaces (at most two bindings
 per base, single edits), run compiled by `native_decide` (the `ZincNames` library is precompiled).
 They are `example`s, not theorems: the general results, for every program and every edit, are in
-`NamesSpec.lean`. These check the enumerated model, which the harness checks against Zinc and the
+`SplitProof.Spec` (names) and `GivensSpec.lean` (implicits). These check the enumerated model, which the harness checks against Zinc and the
 compilers, and give the magnitudes (`conformance cost`).
 -/
 

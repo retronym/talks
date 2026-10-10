@@ -52,7 +52,7 @@ changed. The fixed extractor records every scope the lookup searched, misses inc
 `fixed`); the coarse fix invalidates the users of a name whenever a binding of it is added or
 removed.
 
-The specification is `NamesSpec.lean`: the lookup as a `TCompiler` instance, today's bridge and the
+The specification is `SplitProof.Spec`: the lookup as an `NCompiler` instance, today's bridge and the
 fixes as keys, with the obligations proved for every program. This file is the executable model
 checked against the compilers and Zinc on a bounded space; its results are `example`s.
 -/
@@ -187,7 +187,7 @@ inductive Api | full | decls | composed
 /-- How far a rule on names or implicits reaches: every user of the name, or every class
 (`global`, as #34 does); or only the classes of the package where the binding changed and of the
 packages nested in it, and (with `imports`, a bridge change) those that record a wildcard import of
-that package (`narrowed`). `NamesSpec.lean` proves the narrowed rules sound only with the recorded
+that package (`narrowed`). `SplitProof.Spec` proves the narrowed rules sound only with the recorded
 import. -/
 inductive Reach | global | narrowed
   deriving DecidableEq, Repr

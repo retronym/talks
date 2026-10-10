@@ -426,7 +426,7 @@ Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` 
 | F1 | A top-level class added (or renamed to, or moved) into a scope searched earlier: an inner package, a wildcard-imported package, the client's package over `scala._`. Zinc compiles only the added source. | `inner_added_today` (`Added.lean`: `added_today_wrong`) | `added-class-*` (P9.3) |
 | F2 | A member added to a package object over an outer binding; in Scala 3 also a top-level `export` gaining a forwarder. The client reached the package object through no symbol. | `pobj_added_today`, `export_added_today` | `added-member-package-object`, `-scala3`, `added-member-top-level-export-scala3` |
 | F3 | A member added to a wildcard-imported object, the import charged to another class of the file (Scala 2: the first; Scala 3: the last) that does not use the name. | `wild_first_today` | `added-member-wildcard-import-second-class`, `added-member-wildcard-import-last-class-scala3` |
-| F4 | Scala 2 only: a package object member (declared or inherited) beside a class of the same name; scalac's joint compilation leaves the class's mirror without its `ScalaSignature`, the separate one keeps it, and Zinc never recompiles the class's file for an edit of the member. Adding the member: bytes only. Removing it (found with the inherited factor, P10.7): a client that now resolves the class fails to compile incrementally (`not found: value Foo`) where a clean build succeeds; a declared member fails the same way under plain scalac. Not an invalidation Zinc misses: the class's file would have to be recompiled for an edit of another file it does not depend on. | `staleMirror` | none (bytes; the removal is reachable only through the inherited factor in this space) |
+| F4 | Scala 2 only: a package object member (declared or inherited) beside a class of the same name; scalac's joint compilation leaves the class's mirror without its `ScalaSignature`, the separate one keeps it, and Zinc never recompiles the class's file for an edit of the member. Adding the member: bytes only. Removing it (found with the inherited factor, P10.7): a client that now resolves the class fails to compile incrementally (`not found: value Foo`) where a clean build succeeds; a declared member fails the same way under plain scalac. Not an invalidation Zinc misses: the class's file would have to be recompiled for an edit of another file it does not depend on. | `staleMirror`; `SplitProof.Spec.joint_not_comp` | none (bytes; the removal is reachable only through the inherited factor in this space) |
 | F5 | Scala 3 only: a class and a package object member (or top-level export) of one name in one package; the double definition is reported only when both files compile together, and nothing connects them in Zinc (the member is `a.b.package$.Foo`). | `missedClash` | `package-object-member-clashes-with-class-scala3` |
 | G1 | An implicit or given added to a package object (Scala 2: `package object a` too), over the companion or making the search ambiguous. | `pobj_added_today_s2` | `added-implicit-package-object`, `added-given-package-object-scala3` |
 | G2 | Scala 3: a top-level given added in a new file. | `inner_added_today_s3` | `added-given-top-level-scala3` |
@@ -462,9 +462,9 @@ The harness ran the same cases as on develop (the same base selection, identical
 
 F1 is gone, as predicted; F2, F3, G1 and G2 stay, because none adds a class: the binding is a member of an existing package object, object or `$package` class (G2's added class is `Inner$package`, not a name the client uses). In Scala 3 the fix turns 300 of the harness's F1 cases into F6: a client extending `P`, whose resolution an added class does not change (the inherited member wins), is now recompiled, apart from `P`, and loses the `P.$init$` call (`Client$.class` bytes only; the model counts 7,752 such edits). The revert column moves the same way: names 2.13 988 → 148 (an added class is the revert of a delete, rename or move), names 3 430 → 618 (F6 again).
 
-### Extending #34: a rule per family, as a specification (P10.7, P10.9)
+### Extending #34: a rule per family, as a specification (P10.7, P10.9, P10.10)
 
-Each remaining family gets a rule, run after every cycle as #34's is. `NamesSpec.lean` states the rules as keys of a `TCompiler` instance (DESIGN-spec.md) and proves what they guarantee for every program. `Names.lean`/`Givens.lean` check the same rules on the bounded spaces, against the harness, and measure their cost.
+Each remaining family gets a rule, run after every cycle as #34's is. `SplitProof.Spec` (names) and `GivensSpec.lean` (implicits) state the rules as keys of the framework's compiler (DESIGN-spec.md) and prove what they guarantee for every program. `Names.lean`/`Givens.lean` check the same rules on the bounded spaces, against the harness, and measure their cost.
 
 The rules:
 
@@ -477,35 +477,30 @@ Each comes in two reaches. `global` covers every user of the name, or every clas
 
 Two new factors make the binding inherited rather than declared: `package object b extends a.PT` (`pinh`) and `object W extends a.WT` (`winh`). The givens space gets `pinh` and `wpkg` (an instance in `package object q` or a top-level given in `a.q`, imported with `import a.q._` / `import a.q.given`).
 
-#### The specification (`NamesSpec.lean`)
+#### The specification (`SplitProof.Spec`, `GivensSpec.lean`)
 
-The instance reuses `JavaSpec`'s lookup. Units are top-level classes `Pkg × N` over arbitrary types. The client's task asks probes grouped in Scala's scope levels: block import and parents, explicit import, the file's wildcard imports (objects; packages' classes and package objects), then each enclosing package's package object and class. The first level with a hit decides. Implicit search does the same with the instance of `T` as the member, every `$package` file class of a package, and the companion last.
+Name resolution is one `NCompiler` instance, shared with Phase 13: `SplitProof.Spec`.
 
-Bridge designs are `keysOf` functions:
+- **The client and its scopes.** One client looks the name up in `n` scopes in search order and stops at the first hit. Each scope's binding is a unit, so any program of the slot language is an instance, with any number of bindings.
+- **The rules extend it in place.** `Ext` adds three kinds of scope: a package-object member (F2), a wildcard import charged to a class that does not use the name (F3), and a scope reached through a package import. The `rules` design records today's keys, F3's existence keys, and one `rule` key. That key's hash reads the scopes #34 and F2 reach (`global`, or `narrowed`).
 
-* today: the owner of the resolved symbol with the used name, import qualifiers charged to one class, and inheritance as whole-API;
-* `searched`: a key per probe;
-* the rules: `present` keys on classes named `n` (#34), `has n` on package objects (F2), the wildcard qualifier with every used name in the file (F3), and `has imp` on package-level containers (G), each with a reach.
+Implicit search is `GivensSpec.lean`, a `TCompiler` instance, until the framework merge. The search reads the whole level of its hit, so its keys need the output, and `NCompiler.keys` reads only the trace.
 
-#24's declarations-only API is a `π`.
-
-Because the oracle is arbitrary, every proved result holds for any number of bindings in the searched scopes. Because T3a starts from any state satisfying the invariant, it covers edits of several files and sequences of edits. That answers the bound of the enumeration (at most two bindings, single edits).
+Because the oracle is arbitrary, the proofs hold for any number of bindings. T3a starts from any state satisfying the invariant, so it covers edit sequences. That answers the bound of the enumeration (at most two bindings, single edits).
 
 | Result | Status |
 |---|---|
-| The lookup reads only its probes (`mem_trace_client`); compositionality (`obligations_comp`) and abstraction on develop's API (`obligations_abstraction`) | proved, every program |
-| `obligations_rules_global`: #34 + F2 + F3 (global) meet the obligations, so T3a (`sound_of`) | proved, every program, edit sequence and sound policy |
-| `obligations_rules_narrowed`: the same narrowed, **given** recorded package imports | proved, every program |
-| `obligations_g_global`, `obligations_g_narrowed` (given recorded imports): the G rule | proved, every program |
-| `obligations_searched`: a key per probe, for names and implicits | proved, every program |
-| `f1_today`, `f2_cheap` (#34 + F3), `f3_cheap` (#34 + F2), `g1_cheap`, `g2_cheap`: today's keys and partial fixes fail coverage | proved, one witness each (kernel `decide`) |
-| `narrowed_without_imports`, `g_narrowed_without_imports`: the narrowed rules fail coverage without the recorded import | proved, one witness each |
-| `decls_violates_abstraction`: #24's declarations-only hash; composed from ancestors it is develop's `π` | proved |
-| `narrowed_tight`: every key of the narrowed rules is justified by a probe of the lookup; `global_not_tight`: the global ones record keys on packages never searched | proved; the witness by `decide` |
-| Resolution per version (Scala 2's precedence, ambiguities, the class-name alias), the stale mirror (F4), the clash (F5), the trait initialiser (F6), `writeReplace` (F7), the exact recompiled sets | checked, `Names.lean`/`Givens.lean` on the bounded space and on the harness |
-| Each rule closes its family and nothing else (`f2_leaves`, `f3_leaves`), today's families are F1–F3 (`today_families`), the rules together are clean (`all_clean`, `narrowed_clean`, `g_narrowed_clean`) | checked, `NamesRules.lean` `example`s by `native_decide` over the bounded spaces |
+| `rules_obligations`: the rules meet the obligations whenever every scope is pinned, a `wildOther` import under F3, or reached; so T3a″ (`NCompiler.zinc_sound`) | proved, every lookup |
+| `global_obligations`: #34 + F2 + F3, global, for every names lookup (`NamesScopes`) | proved |
+| `narrowed_obligations`: the same narrowed, **under the hypothesis** that the bridge records package imports (`imports`, being built for Scala 2 and dotc) | proved |
+| `f2_not_obligations` (#34 + F3), `f3_not_obligations` (#34 + F2), `narrowed_without_imports`; Phase 13's `today_not_obligations` (F1, upstream), `cheap_not_obligations` (#34 across subprojects) | proved, one witness each (kernel `decide`/`simp`) |
+| Precision: `Necessary`, `Invalidated`, `OverInvalidated` (after an edit `I → I'`); `necessary_invalidated` (sound keys invalidate every necessary unit); `searched_exact` (`searched` invalidates only necessary units); `narrowed_le_global`; `rules_over` (the rules over-invalidate when a scope searched after the hit gains a binding) | proved |
+| `joint_not_comp`: F4 (Scala 2's mirror without `ScalaSignature`) and F5 (Scala 3's missed clash) are failures of compositionality, not coverage, so no key fixes them | proved, one witness |
+| Givens: `obligations_g_global`, `obligations_g_narrowed` (given recorded imports), `obligations_searched`; `g1_cheap`, `g2_cheap`, `g_narrowed_without_imports`; `decls_violates_abstraction` (#24 without composition) | proved (`GivensSpec.lean`) |
+| Resolution per version (Scala 2's precedence, ambiguities, the class-name alias), F6 and F7, the exact recompiled sets, the bystanders of other clients | checked: `Names.lean`/`Givens.lean` on the bounded space and the harness; `Split.check_abstract` checks the slot mapping on the bases |
+| Each rule closes its family and nothing else, today's families are F1–F3, the rules together are clean | checked: `NamesRules.lean` `example`s over the bounded spaces |
 
-The general results need no bound because coverage is per query and the rules' keys are defined by the probes. Ambiguity, precedence and the compiler bugs (F4–F7) change *which* hit wins or what bytes come out, not what the lookup reads. Those remain checked, not proved.
+Precision across clients is not in one client's view. `global` and `narrowed`-with-imports cover the same scopes of this client, but `global` also invalidates every other user of the name. The enumeration's bystanders measure that difference (`User`, `Far` below).
 
 #### Cost
 
@@ -581,6 +576,7 @@ Case files for the Zinc sessions (develop: `all`, `all+narrowed+imports`; #24: `
 - [x] P10.7 #34's extensions as rules (F2, F3, G) with theorems per rule and combined; inherited bindings (`pinh`, `winh`); #24's declarations-only API, with and without composition; the cost per mode (`conformance cost`); a harness check of the new factors on #34, model and harness reconciled (Scala 2's inherited package-object member and class-name alias, F4 observable, F6 on `W`, F7).
 - [ ] P10.8 Harness runs of the rules: develop (`all`, `all+narrowed+imports`) and #24 (`all+decls`, `all+composed`), by the Zinc sessions.
 - [x] P10.9 `NamesSpec.lean`: names and implicit search as `TCompiler` instances; today's keys fail coverage per family; the rules (global, and narrowed given recorded package imports) and `searched` meet the obligations and inherit T3a; #24's declarations-only hash fails abstraction; tightness. Enumerations relabelled as checks; the per-cycle baseline dropped; global vs narrowed rules; the givens `wpkg` slot.
+- [x] P10.10 The names rules moved onto the shared instance `SplitProof.Spec` (talks#28): `Ext` kinds, the `rules` design, obligations global and narrowed (under the recorded-import hypothesis), witnesses, precision (`Necessary`, `OverInvalidated`, `searched_exact`, `narrowed_le_global`, `rules_over`), F4/F5 as `joint_not_comp`; givens in `GivensSpec.lean` until the framework merge.
 - [ ] Future: a pending scripted test for F7 (and a dotc issue); count the declaring classes the name rules reach; a G that reaches only classes whose implicit search could see the instance (needs the extractor); the `split` layout is Phase 13; members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
 
 ## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
