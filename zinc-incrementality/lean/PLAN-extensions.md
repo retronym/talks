@@ -47,6 +47,8 @@ The result type of `t.m` inferred in `C` and checked from another object (an asc
 
 The model's layout agrees with all but two rows, neither of which changes a result. Scala 2's block import is not an inner level for implicit views: its whole lexical scope is one level, as `SpecGivens` already has it for Scala 2. And within the implicit scope, `T`'s own companion beats an ancestor's by specificity, where the level-wise search would report both as hits at one level. Coverage depends on the scopes asked (both are), not on which wins, so `ext_rule_obligations` and the witnesses are unaffected; only `today`'s resolved key differs, and `T`'s companion is pinned anyway.
 
+The ancestor-companion witness is about keys alone. Inside one subproject Zinc's policy compensates: an implicit added to `P`'s companion changes `P`'s API in the implicit scope, `T` is invalidated as `P`'s inheritor, and its member-ref dependents are invalidated unconditionally (an implicit change). So the miss needs the split layout, where `T`'s API does not change and the downstream client depends on `T` and `Q`, not `P`. That is Phase 7's sbt/zinc#1845, and the pending test is written that way.
+
 ## Predicted tests (written on retronym/zinc)
 
 Each should fail on develop at its last step: an extension added to a package object over the companion's (`x.m` changes, Scala 2 implicit class and Scala 3 `extension`); a top-level `extension` in a new file (Scala 3); an extension in a wildcard-imported package's package object; an extension added to an ancestor's companion (`T extends P`, `object P { extension ... }`).
