@@ -170,9 +170,32 @@ def nestedClassMoved : Case where
   v1 := [{ name := "Top", obj := some { name := "Top", kind := .obj } }, cls "N" [dfn "n"]]
   sites := [new "Top$N", invokevirtual "Top$N" "n" "()I" "Top$N"]
 
+def colors (cs : List String) : Program :=
+  [{ name := "Color", cls := some { name := "Color", cases := cs.map fun c => { name := c } } }]
+
+/-- A case added to a Scala 3 enum: links, and an old client sees one more element in `values`
+(a match compiled against `v0` that was exhaustive is not any more: behaviour, not linkage). -/
+def enumCaseAdded : Case where
+  name := "enumCaseAdded"
+  mima := none
+  dl := .s3
+  v0 := colors ["Red", "Green"]
+  v1 := colors ["Red", "Green", "Blue"]
+  sites := [getstatic "Color$" "Red" "LColor;", invokestatic "Color" "values" "()[LColor;"]
+
+/-- A case removed: the client's `getstatic` of it finds no field. -/
+def enumCaseRemoved : Case where
+  name := "enumCaseRemoved"
+  mima := some "MissingFieldProblem"
+  dl := .s3
+  v0 := colors ["Red", "Green"]
+  v1 := colors ["Red"]
+  sites := [getstatic "Color$" "Green" "LColor;"]
+
 def all : List Case :=
   [concreteAddedToTrait, abstractAddedToTrait, valAddedToTrait, classBecomesTrait,
-   paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass, caseFieldAdded, nestedClassMoved]
+   paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass, caseFieldAdded, nestedClassMoved,
+   enumCaseAdded, enumCaseRemoved]
 
 example : caseFieldAdded.before = .ok (.ok ["P", "P", "P"]) ∧
     caseFieldAdded.after = .ok (.error .noSuchMethod) := by decide +kernel
@@ -196,5 +219,9 @@ example : (trace .s213 (cls "W" [{ name := "use", params := [.ref "V"], res := .
 
 example : nestedClassMoved.before = .ok (.ok ["Top$N", "Top$N"]) ∧
     nestedClassMoved.after = .ok (.error .noClassDef) := by decide +kernel
+
+example : enumCaseAdded.before = .ok (.ok ["Color$", "Color"]) ∧
+    enumCaseAdded.after = .ok (.ok ["Color$", "Color"]) := by decide +kernel
+example : enumCaseRemoved.after = .ok (.error .noSuchField) := by decide +kernel
 
 end Scala.Catalogue

@@ -232,7 +232,10 @@ def ClassOut.toJvm (c : ClassOut) : Jvm.Classfile String String String where
   header := { isInterface := c.itf, isAbstract := c.abs, isFinal := c.final, super := c.super,
               ifaces := c.ifaces }
   methods := c.methods.map fun m =>
-    (m.name, m.desc, { isStatic := m.static, isAbstract := m.abs, isFinal := m.final })
+    (m.name, m.desc, { isStatic := m.static, isAbstract := m.abs, isFinal := m.final,
+                       access := if m.priv then .priv else .pub })
+  fields := c.fields.map fun f =>
+    (f.name, f.desc, { isStatic := f.static, isFinal := f.final, access := if f.priv then .priv else .pub })
 
 def toWorld (cs : List ClassOut) : Jvm.World String String String :=
   fun n => (cs.find? (·.name == n)).map ClassOut.toJvm
