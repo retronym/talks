@@ -143,6 +143,7 @@ For track B, three cases are candidate MiMa false negatives:
   - value classes: extension methods, erased signatures.
 - [x] **S2. Scala 3 deltas.** Trait initialisers including F6 (separate compilation), `@static`, extension methods, `Serializable` objects. Enums and `inline`: TODO.
 - [x] **S3. Calibrate against scalac's own classfiles** (`probes/scala/probe.py`). Agreement below.
+- [ ] **S6. Case classes, enums, inline and opaque, nested classes**: lowering by desugaring onto a library prelude, calibrated per feature; catalogue edits for track B.
 - [x] **S5. Membership and overriding** (`Scala/Members.lean`): refchecks as a `Task`, calibrated on 4704 hierarchies including rejected ones; Java's rules written down for track V.
 - [x] **S4. Shared `AsSeenFrom`** (`Scala/AsSeenFrom.lean`), used by `Scala/Lower.lean` and, as an instance, by the TCK (retronym/scala-type-system-tck, branch `claude/shared-asf`). `Zinc/Hier` later.
 - [x] **Source-level edit catalogue** (`Scala/Catalogue.lean`), the bridge to B3.
@@ -186,6 +187,30 @@ Per pair: `other` final; `member` private; a concrete `other` without `override`
 **Calibration.** A space of small hierarchies (`T`, `U`, `B`, `C`) where each owner's `m` ranges over: none, abstract, concrete, `override`, `final`, `val`, `lazy val`, private. The probe compiles them in one batch per compiler, maps each error to its program, class and kind, and compares sets. scalac stops before refchecks when an earlier phase reports an error (dotc rejects `override private` in the namer). So the probe recompiles without the programs that already erred until a run is clean, and the model reports only the errors of the earliest phase. For accepted programs, a `main` calls `m` on each concrete class and prints which owner's body ran.
 
 **Java.** Not implemented (track V); a comparison of the rules goes in this section as the spec to diff `Java/` against.
+
+#### S6 design: case classes, enums, inline and opaque, nested classes
+
+**Problem.** The S1 subset leaves out the features whose lowering changes most under ordinary source edits: a case class's synthetic members, enum cases, inline bodies, and classes nested in classes. Without them the catalogue can't produce the edits track B wants MiMa to judge.
+
+**Desugaring plus a library prelude, not new lowering rules.** Each feature is written as a desugaring into the existing `Decl`/`Mem` AST, which lowering already handles: forwarders, bridges, statics, erasure.
+- A case class becomes a class with its accessors, `copy` and its default getters, the `Product` members, `equals`/`hashCode`/`toString`, and a companion with `apply`/`unapply`.
+- A Scala 3 enum becomes an abstract class, a companion with the cases, `values`, `valueOf` and `fromOrdinal`, and a class per parameterised case.
+
+What the compiler inherits from the library (`scala.Product`, `scala.Equals`, `scala.runtime.AbstractFunctionN`, `scala.deriving.Mirror`, `scala.reflect.Enum`) enters as declarations in a *prelude*: interfaces of the library's classes, read through `Q.decl` like any other parent. The mixin forwarders for `Product`'s concrete methods and the static forwarders for `AbstractFunction2.tupled` then come from the rules already calibrated, and the probe tests the desugaring and the prelude together. The dialect is still the only switch:
+- Scala 2: the companion extends `AbstractFunctionN`, and `unapply` returns an `Option`;
+- Scala 3: the companion extends `Mirror.Product`, `unapply` is the identity, and there are `_1`, `_2`, `fromProduct`.
+
+**Inline and opaque (Scala 3).** An `inline def` leaves no method in the classfile unless it must exist at runtime (retained: it implements or overrides a member). An opaque type is erased to its representation in every signature, and its companion object lowers like any nested object. Phase 11's `InlineOpaqueSpec` models what a *client* reads from these (the inline body, the alias); lowering supplies what the library's classfile then contains. The catalogue edit "inline body changed" shows the classfile unchanged while every client is stale: the case binary compatibility can't see and Zinc must.
+
+**Nested classes.** A class or object inside a class or object gets a mangled binary name (`Outer$Inner`, `Top$Nested`).
+- An inner class (inside a class) gets an `$outer` field, an accessor and a constructor parameter: Scala 2 makes the field public, Scala 3 makes it private with a `final` accessor.
+- An object nested in an object becomes a static field of the enclosing module class.
+
+The probe reads the `InnerClasses` attribute and compares its entries. `Jvm` needs nothing new for linking; `InnerClasses` matters only to reflection and javac. That stays a Scala-side output field, added to `ClassOut`, not to `Jvm.Classfile`.
+
+**Calibration.** One small family per feature in the classfile probe, on 2.12, 2.13 and 3.9, with agreement counts and divergences per family. The membership model checks the desugared case classes (a case class extending a class with a concrete `copy` or `equals` is where the rules bite).
+
+**Out of scope:** case classes with type parameters, multiple parameter lists or `private` constructors; enums with type parameters or mixed-in traits; macros; local and anonymous classes other than enum cases; `NestHost`/`NestMembers` (Scala 2.13 does not emit them).
 
 #### S status
 
