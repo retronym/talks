@@ -43,3 +43,4 @@ import Zinc.HashForms
 import Zinc.Annotations
 import Zinc.PipelineLifecycle
 import Zinc.Synthetic
+import Zinc.DerivedApi
