@@ -213,7 +213,21 @@ Not launched yet. Java name resolution, sealed hierarchies and compile order are
 - **B1. MiMa against the catalogue, at the JVM level.** MiMa reads classfiles, so J1's rendered jars are enough to start; it needs no front end. Per case, compare MiMa's problems with the model's verdict.
 - **B2. MiMa as a bridge design, in `DESIGN-spec.md`'s terms.** MiMa compares a set of facts per library class; those facts are its keys. Its check is sound if every linkage query any client can ask is covered by a compared key (coverage), and if equal facts give equal answers (abstraction). Prove this for a corrected rule set; for MiMa's actual rules, give a counterexample trace for each gap. Then check it on a space, as `FlatRules` checked the PoC's rules, to measure false negatives and false positives. `defaultConflict` is a candidate false negative to confirm.
 - **B3. Source-level spaces.** Once S1 and V1 exist: Scala and Java edits, lowered, linked, and checked against MiMa and HotSpot.
-- **B4. The Zinc ⇒ binary-compatible theorem above,** stated over `NCompiler`. It needs S1 or V1 to be a compiler instance.
+- [x] **B4. The Zinc ⇒ binary-compatible theorem above** (`BinCompat/ZincBridge.lean`).
+  - **The front end.** Scala lowering is an instance of the general form `XCompiler` (`General.lean`), not `NCompiler`, because its output carries the classfiles. A unit is a source unit, its task is `lowerSrc` with its queries renamed to `(unit, side)`, and its output is the unit's declarations plus its lowered classfiles. The interface is the declaration, so it is source-determined.
+  - **Faithfulness.** Every query is answered as if the definition were in the same run (`inRun = true`), which is faithful for Scala 2.12 and 2.13. For Scala 3, separate compilation differs (F6), a compositionality failure already witnessed in `Scala/Facts.lean`.
+  - **A sound bridge.** `searched`, a key per traced query hashed by the declaration it read, meets the obligations (`searched_obligations`).
+  - **`Zinc.XCompiler.untouched_eq_clean`.** After an edit, if Zinc's loop stops and a unit `c` was in none of its rounds (`c ∉ recompiled …`), then `c`'s old output equals its output in the clean build of the new sources. Its hypotheses are:
+    - the framework's `Obligations`;
+    - interfaces determined by the source (`iface (unit s run) = ifaceSrc s`, the explicit-interface case of T3b);
+    - a policy that is `Sound` and stays inside `S` (`InS`);
+    - an edit whose dirty set is in the first round, which is in `S`;
+    - the old build up to date except at the edit (`inv_of_edit`).
+
+    `must_recompile` is its contrapositive.
+  - **For lowering.** `after_eq_fresh`: the client's old classfiles next to the new library give the same `Jvm.outcome` as a fresh build. `compatible_of_untouched`: so `Jvm.Compatible` holds whenever the fresh build links.
+  - **The converse fails** (`gap_witness`, kernel `decide`). Adding a concrete method to a trait leaves the old `X extends T` linking (it selects the default method), so the edit is binary compatible. But `X`'s classfile changes, because a fresh build adds a mixin forwarder, so every sound bridge recompiles `X`. That gap, compatible but not Zinc-clean, is what MiMa does not report.
+  - **Left out.** Scala 3 separate compilation (F6). The `NCompiler` statement the roadmap first named (`XCompiler` subsumes it through `NCompiler.toX`). A bridge with Zinc's actual keys (name hashes) for lowering. The JVM program is linked over the units' lowered classfiles only, with no library jars.
 
 ### Later, single writer, after talks#21 merges
 
