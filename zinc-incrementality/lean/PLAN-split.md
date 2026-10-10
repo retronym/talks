@@ -24,7 +24,11 @@ Two files, separate from `Names.lean` and `Givens.lean`.
 * `proposed_sound`: under the proposal, for every client that compiles and every edit, the client is invalidated or it still compiles and resolves to the same scope.
 * `cheap_sound_of_local`: #34 has the same guarantee exactly when every unpinned scope is a top-level class of the client's own subproject.
 * Counterexamples, two scopes each, by evaluation (`decide`): `today_misses_added_class` (F1, either side), `cheap_misses_upstream_class` (#34 across subprojects), `cheap_misses_package_object` (F2, either side); `cheap_catches_local_class`, `proposed_catches`.
-* The framework (`Model.lean`, `Classpath.lean`) instantiated with the external path (`SplitProof.Inst`): upstream scopes and a downstream client whose lookup asks each scope in turn. Keys on every scope searched, misses included, meet the obligations (`searched_obligations`); keys on the resolved scope only do not (`not_resolved_obligations`). `ext_proposed`: whenever a searched key's hash moves between the snapshot and the new upstream, the proposed rule fires. So `proposed_downstream_sound`: a downstream loop started from the changed sources and the proposal's invalidations, from an up-to-date downstream with fresh snapshots, is sound when it stops — T5 (`downstream_sound`, via T3a″) applies without the downstream recording its misses.
+* The specification (`SplitProof.Spec`), per `DESIGN-spec.md`: an `NCompiler` over the client and `n` scopes with any flags, units split into `Up` and `S` as in `Classpath.lean`; the client's task asks `bound i` per scope and stops at the first hit. Designs are keys:
+  * `today` (an existence key on the scope the lookup stopped at and on pinned scopes) fails coverage on the upstream miss `bound a.b.Foo` (`today_not_obligations`);
+  * `cheap`, #34 as the key `named false` whose `covers` claims every top-level scope and whose hash reads the top-level scopes of `S` only, fails abstraction across subprojects: equal hash before and after the upstream adds `a.b.Foo`, different answer (`cheap_not_abstraction`, `cheap_not_obligations`, the trace of `added-class-upstream`); it meets the obligations within one subproject (`cheap_obligations_of_local`: every scope pinned or a top-level class, every top-level class in `S`);
+  * `cross`, the same key with its hash over every scope of `Up ∪ S`, meets the obligations (`cross_obligations`), and so inherits T5 (`cross_downstream_sound`, via `NCompiler.downstream_sound`); `searched` (a key per scope asked, Kotlin's `LookupTracker`) too (`searched_obligations`).
+* Precision: `cross` hashes every binding of the name, so it also fires on a deletion in a scope the lookup never reached; `proposed_sound` shows additions (and the resolved scope's key) are enough, so that is its over-invalidation.
 
 None of these use `native_decide` (`#print axioms`: `propext`, `Classical.choice`, `Quot.sound`).
 
@@ -54,7 +58,7 @@ Harness runs (retronym/zinc#36's `Conformance` with `--layouts split`), the same
 
 Model over the whole space (split): names 2.13 today 5,892 unclean (F1 3,228), #34 the same, proposal 1,296 (F4 only, beside resolution); names 3 today 17,392 (F1 6,400; no F6), #34 the same, proposal 8,256 (F5 only).
 
-#34 (scratch branch: `claude/names-conformance` + #34) on the split layout: a partial run (names 2.13 238 cases, names 3 175) agrees with the model, F1 still present (27 and 14).
+#34 (scratch branch: `claude/names-conformance` + #34) on the split layout: partial runs only (names 2.13 238 cases, names 3 175), stopped on purpose since they reconfirm the model and the scripted tests; they agree with the model, F1 still present (27 and 14).
 
 Pending scripted tests (retronym/zinc, stacked on `claude/names-conformance`): `added-class-upstream`, `added-class-upstream-scala3`; each fails only at its last step on develop and on #34.
 

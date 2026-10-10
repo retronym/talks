@@ -47,10 +47,17 @@ symbol. An edit changes any set of bindings.
   for every program and every edit.
 * `today_misses_added_class`, `cheap_misses_upstream_class`, `cheap_misses_package_object`: the
   counterexamples, two scopes each, decided by evaluation (`decide`).
-* `searched_obligations` and `proposed_downstream_sound` (below): the framework of `Model.lean` and
-  `Classpath.lean` instantiated with the external path. Keys on every scope the lookup searched,
-  misses included, meet the obligations, so T5 applies; the proposed rule invalidates whatever
-  those keys would, so it inherits T5.
+* `Spec` (below): the specification, an `NCompiler` (`NonLocalAns.lean`) whose units are split
+  into `Up` and `S` as in `Classpath.lean`. Today's keys fail coverage on the upstream miss
+  (`today_not_obligations`); #34's key fails abstraction across subprojects
+  (`cheap_not_obligations`, the trace of `added-class-upstream`) and meets the obligations within
+  one (`cheap_obligations_of_local`); the cross-subproject key meets them (`cross_obligations`), so
+  T5 applies (`cross_downstream_sound`).
+
+The slot language and `Spec` agree on what matters: `proposed` invalidates on an added binding,
+`cross` on any change of a binding of the name anywhere (its hash is symmetric), which also fires
+on a deletion in a scope the lookup did not reach. `proposed_sound` says the additions are enough;
+the deletions are `cross`'s over-invalidation.
 -/
 
 namespace Zinc.SplitProof
@@ -276,25 +283,35 @@ theorem cheap_sound_of_local (c : Client) (b b' : ℕ → Bool) (hok : c.ok b)
   · exact .inl (.inr ⟨j, hj, ha, hloc j hj hpin⟩)
   · exact .inr h
 
-/-! ## The framework of `Model.lean`, instantiated with the external path
+/-! ## The specification: an `NCompiler` with upstream and downstream units
 
-Units: the client (`none`, downstream) and scopes `some i` (upstream), `n` of them. A scope's
-interface is whether it binds; the client asks scope `0`, `1`, … in turn whether it binds and stops
-at the first that does. The hash of a key on a scope is its interface: whether it binds, which is
-the hash Zinc's name hashing gives the name in the scope's class (absent, or present). The
-`searched` extractor keys every scope asked, misses included; `resolved` keys only the last one
-asked, the scope the client resolved to (Zinc today).
+Units: the client (`none`) and scopes `some i`, `n` of them, each with its flags (`sc`). A scope is
+in `Up` (another subproject) or in `S` (the client's), as `Classpath.lean` splits units. A scope's
+interface is whether it binds `Foo`. The client's task is the lookup: ask `bound i` for scope
+`0, 1, …` and stop at the first hit; its trace is what it read, misses included.
 
-`searched_obligations`: the obligations hold, so T5 (`NCompiler.downstream_sound`) applies to the
-downstream. `ext_proposed`: whenever a key `searched` records moves, the proposed rule fires on the
-client. So a downstream loop started from the proposed rule's invalidations is sound
-(`proposed_downstream_sound`), without recording the misses. -/
+Keys (`Design`):
 
-namespace Inst
+* `today`: an existence key (`presence`) on the scope the lookup stopped at (the owner of the
+  resolved symbol) and on every pinned scope (inheritance, imports charged to a user of the name).
+* `cheap` (retronym/zinc#34): also `named false`, the users of the name `Foo` against the
+  top-level classes named `Foo`. It claims every top-level scope (`covers`), but its hash is
+  computed over one subproject's analysis: the top-level scopes of `S`.
+* `cross`: `named true`, the same key with its hash over every scope of `Up ∪ S`, any kind (a
+  top-level class or a package object member).
+* `searched`: an existence key on every scope asked.
 
-variable (n : ℕ)
+Results: `today` fails coverage on the upstream miss (`today_not_obligations`); `cheap` fails
+abstraction across subprojects (`cheap_not_abstraction`, the trace of the pending scripted test
+`added-class-upstream`) and meets the obligations when every top-level scope is local and every
+other scope pinned (`cheap_obligations_of_local`); `cross` and `searched` meet the obligations, so
+T3a″ and T5 apply (`cross_downstream_sound`). -/
 
-abbrev U := Option (Fin n)
+namespace Spec
+
+variable {n : ℕ}
+
+abbrev U (n : ℕ) := Option (Fin n)
 
 instance : Fintype (U n) := inferInstanceAs (Fintype (Option (Fin n)))
 instance : DecidableEq (U n) := inferInstanceAs (DecidableEq (Option (Fin n)))
@@ -305,7 +322,10 @@ inductive Src | bind (x : Bool) | client
 inductive Q | binds
   deriving DecidableEq
 
-inductive K | presence
+inductive K | presence | named (cross : Bool)
+  deriving DecidableEq
+
+inductive Design | today | cheap | cross | searched
   deriving DecidableEq
 
 structure Out where
@@ -313,8 +333,9 @@ structure Out where
   res : Option ℕ
   deriving DecidableEq
 
-abbrev T := Task (U n × Q) (fun _ => Bool) Out
+abbrev T (n : ℕ) := Task (U n × Q) (fun _ => Bool) Out
 
+variable (n) in
 /-- The client's lookup from scope `k` on. -/
 def search (k : ℕ) : T n :=
   if h : k < n then
@@ -322,6 +343,7 @@ def search (k : ℕ) : T n :=
   else .pure ⟨false, none⟩
 termination_by n - k
 
+variable (n) in
 def unit : Src → T n
   | .bind x => .pure ⟨x, none⟩
   | .client => search n 0
@@ -333,23 +355,58 @@ def ifaceSrc : Src → Bool
 def answer (I : U n → Bool) (q : U n × Q) : Bool := I q.1
 
 def group (G : Finset (U n)) (src : U n → Src) (I : U n → Bool) : U n → Out :=
-  fun u => (unit n (src u)).run (answer n fun v => if v ∈ G then ifaceSrc (src v) else I v)
+  fun u => (unit n (src u)).run (answer fun v => if v ∈ G then ifaceSrc (src v) else I v)
 
-inductive Extractor | searched | resolved
+variable (sc : Fin n → Scope)
 
-def keys : Extractor → U n → List (U n × Q) → Finset (U n × K)
+/-- The scopes a `named` key's hash reads: `cheap`'s, the top-level scopes of `S`; `cross`'s, all. -/
+def reads (cross : Bool) (i : Fin n) : Bool := cross || ((sc i).topLevel && !(sc i).upstream)
+
+def π (I : U n → Bool) : U n → K → List Bool
+  | u, .presence => [I u]
+  | none, .named b => (List.finRange n).map fun i => reads sc b i && I (some i)
+  | some _, .named _ => []
+
+def hashDeps (_ : U n → Bool) : U n → Finset (U n)
+  | none => Finset.univ
+  | some i => {some i}
+
+/-- The `named` key a design records: `cheap` the one-subproject key, `cross` the other. -/
+def namedOf : Design → Option Bool
+  | .cheap => some false
+  | .cross => some true
+  | _ => none
+
+/-- What a key claims to cover: an existence key its scope; the design's `named` key every
+top-level scope (#34's claim, whatever its hash reads) or, for `cross`, every scope. -/
+def covers (d : Design) (_ : U n → Bool) (q : U n × Q) : U n × K → Prop
+  | (u, .presence) => q.1 = u
+  | (none, .named b) => namedOf d = some b ∧ ∃ i, q.1 = some i ∧ (b = true ∨ (sc i).topLevel = true)
+  | (some _, .named _) => False
+
+def pinnedKeys : Finset (U n × K) :=
+  ((List.finRange n).filter fun i => (sc i).pinned).map (fun i => (some i, K.presence)) |>.toFinset
+
+/-- The keys a compilation records; a scope's compilation asks nothing, and records nothing. -/
+def keys : Design → U n → List (U n × Q) → Finset (U n × K)
+  | .today, _, tr => (tr.getLast?.map fun q => (q.1, K.presence)).toList.toFinset ∪ pinnedKeys sc
+  | .cheap, _, tr =>
+    (tr.getLast?.map fun q => (q.1, K.presence)).toList.toFinset ∪ pinnedKeys sc ∪ {(none, .named false)}
+  | .cross, _, tr =>
+    (tr.getLast?.map fun q => (q.1, K.presence)).toList.toFinset ∪ pinnedKeys sc ∪ {(none, .named true)}
   | .searched, _, tr => (tr.map fun q => (q.1, K.presence)).toFinset
-  | .resolved, _, tr => (tr.getLast?.map fun q => (q.1, K.presence)).toList.toFinset
 
-def compiler (x : Extractor) : NCompiler (U n) Src Out Bool K Bool Q (fun _ => Bool) where
+def compiler (d : Design) : NCompiler (U n) Src Out Bool K (List Bool) Q (fun _ => Bool) where
   unit := unit n
-  group := group n
+  group := group
   iface := Out.iface
-  answer := answer n
-  π := fun I c _ => I c
-  hashDeps := fun _ c => {c}
-  keys := keys n x
-  covers := fun _ q k => k.1 = q.1
+  answer := answer
+  π := π sc
+  hashDeps := hashDeps
+  keys := keys sc d
+  covers := covers sc d
+
+/-! ### The lookup's trace -/
 
 theorem iface_search (e : Task.Env (U n × Q) (fun _ => Bool)) :
     ∀ k, ((search n k).run e).iface = false := by
@@ -366,9 +423,9 @@ theorem iface_run (s : Src) (e : Task.Env (U n × Q) (fun _ => Bool)) :
     ((unit n s).run e).iface = ifaceSrc s := by
   cases s with
   | bind x => rfl
-  | client => exact iface_search n e 0
+  | client => exact iface_search e 0
 
-/-- Every query of the lookup from `k` asks a scope `i ≥ k` after misses on the scopes between. -/
+/-- Every query asks a scope `i ≥ k`, after misses on the scopes between. -/
 theorem trace_search (e : Task.Env (U n × Q) (fun _ => Bool)) :
     ∀ k, ∀ q ∈ (search n k).trace e, ∃ i, ∃ h : i < n, k ≤ i ∧ q = (some ⟨i, h⟩, .binds) ∧
       ∀ j, ∀ hj : j < n, k ≤ j → j < i → e (some ⟨j, hj⟩, .binds) = false := by
@@ -389,133 +446,236 @@ theorem trace_search (e : Task.Env (U n × Q) (fun _ => Bool)) :
         · exact hlt j hj h1 h2
   | case2 k h => intro q hq; rw [search, dite_eq_right_of_eq_false (eq_false h)] at hq; simp at hq
 
-theorem searched_obligations : (compiler n .searched).Obligations where
-  comp := by
-    intro G src I d _
-    have : NCompiler.override I G (Out.iface ∘ group n G src I) =
-        fun v => if v ∈ G then ifaceSrc (src v) else I v := by
-      funext v
-      simp only [NCompiler.override, Function.comp]
-      split
-      · simp only [group, iface_run]
-      · rfl
-    show group n G src I d = (unit n (src d)).run (answer n (NCompiler.override I G (Out.iface ∘ group n G src I)))
-    rw [this]
-    rfl
-  coverage := by
-    intro I d s q hq
-    refine ⟨(q.1, K.presence), ?_, rfl⟩
-    show (q.1, K.presence) ∈ (List.map _ _).toFinset
-    rw [List.mem_toFinset, List.mem_map]
-    exact ⟨q, hq, rfl⟩
-  abstraction := by
-    intro I I' k h q hc
-    refine ⟨?_, hc⟩
-    show I q.1 = I' q.1
-    rw [← show k.1 = q.1 from hc]
-    exact h
-  locality := by
-    intro I I' c h _
-    exact h c (Finset.mem_singleton_self c)
+/-- A hit ends the lookup: it is the last query. -/
+theorem hit_last (e : Task.Env (U n × Q) (fun _ => Bool)) :
+    ∀ k, ∀ q ∈ (search n k).trace e, e q = true → ((search n k).trace e).getLast? = some q := by
+  intro k
+  induction k using search.induct n with
+  | case1 k h ih =>
+    intro q hq hhit
+    rw [search, dite_eq_left_of_eq_true (eq_true h), Task.trace_ask] at hq ⊢
+    rcases List.mem_cons.1 hq with rfl | hq
+    · simp [hhit]
+    · split at hq
+      · simp at hq
+      · rename_i hmiss
+        simp only [hmiss, Bool.false_eq_true, ite_false]
+        have hl := ih q hq hhit
+        have hne : (search n (k + 1)).trace e ≠ [] := List.ne_nil_of_mem hq
+        rw [List.getLast?_cons, hl]
+        simp
+  | case2 k h => intro q hq; rw [search, dite_eq_right_of_eq_false (eq_false h)] at hq; simp at hq
 
-theorem trace_miss : (unit 2 .client).trace (answer 2 fun _ => false) =
-    [(some 0, .binds), (some 1, .binds)] := by
-  simp [unit, search, answer]
+/-! ### Obligations: compositionality, abstraction of the keys, coverage per design -/
 
-/-- Keying only the scope the client resolved to (Zinc today) misses the scopes it searched first. -/
-theorem not_resolved_obligations : ¬ (compiler 2 .resolved).Obligations := by
-  intro ob
-  have := ob.coverage (fun _ => false) none .client (some 0, .binds)
-    (by show _ ∈ (unit 2 .client).trace (answer 2 fun _ => false); rw [trace_miss]; simp)
-  obtain ⟨k, hk, hc⟩ := this
-  change k ∈ keys 2 .resolved none ((unit 2 .client).trace (answer 2 fun _ => false)) at hk
-  rw [trace_miss] at hk
-  simp [keys] at hk
-  change k.1 = some 0 at hc
-  rw [hk] at hc
-  simp at hc
+theorem comp (d : Design) : ∀ (G : Finset (U n)) (src : U n → Src) (I : U n → Bool), ∀ u ∈ G,
+    (compiler sc d).group G src I u =
+      ((compiler sc d).unit (src u)).run ((compiler sc d).answer
+        (NCompiler.override I G ((compiler sc d).iface ∘ (compiler sc d).group G src I))) := by
+  intro G src I u _
+  have : NCompiler.override I G (Out.iface ∘ group G src I) =
+      fun v => if v ∈ G then ifaceSrc (src v) else I v := by
+    funext v
+    simp only [NCompiler.override, Function.comp]
+    split
+    · simp only [group, iface_run]
+    · rfl
+  show group G src I u = (unit n (src u)).run (answer (NCompiler.override I G (Out.iface ∘ group G src I)))
+  rw [this]
+  rfl
 
-/-- The bindings an interface vector gives the slot language. -/
-def bits (I : U n → Bool) (j : ℕ) : Bool := if h : j < n then I (some ⟨j, h⟩) else false
+theorem locality (d : Design) : ∀ (I I' : U n → Bool) (c : U n),
+    (∀ u ∈ (compiler sc d).hashDeps I c, I u = I' u) → ∀ k, (compiler sc d).π I c k = (compiler sc d).π I' c k := by
+  intro I I' c h k
+  cases c with
+  | none =>
+    have hall : ∀ u, I u = I' u := fun u => h u (by simp [compiler, hashDeps])
+    cases k <;> simp [compiler, π, hall]
+  | some i =>
+    have hi : I (some i) = I' (some i) := h (some i) (by simp [compiler, hashDeps])
+    cases k <;> simp [compiler, π, hi]
 
-/-- **A searched key moved ⇒ the proposed rule fires.** If the client asked scope `i`, against `I`,
-and `i`'s binding differs in `I'`, then either `i` gained a binding, or `i` was the scope it
-resolved to and lost it. -/
-theorem ext_proposed (c : Client) (hn : c.n = n) (I I' : U n → Bool) (i : Fin n)
-    (hq : (some i, Q.binds) ∈ (unit n .client).trace (answer n I))
-    (hne : I (some i) ≠ I' (some i)) : c.proposed (bits n I) (bits n I') := by
-  obtain ⟨i', hi', -, heq, hmiss⟩ := trace_search n (answer n I) 0 _ hq
-  have hii : i = ⟨i', hi'⟩ := by
-    have := congrArg Prod.fst heq
-    simp only [Option.some.injEq] at this
-    exact this
-  subst hii
-  have hin : i' < c.n := hn ▸ hi'
-  have hb : ∀ J : U n → Bool, bits n J i' = J (some ⟨i', hi'⟩) := by
-    intro J; simp [bits, hi']
-  cases hI : I (some ⟨i', hi'⟩) with
-  | false =>
-    have hI' : I' (some ⟨i', hi'⟩) = true := by
-      cases h' : I' (some ⟨i', hi'⟩) <;> simp_all
-    have hadd : added (bits n I) (bits n I') i' := ⟨by rw [hb, hI], by rw [hb, hI']⟩
-    cases hpin : (c.sc i').pinned
-    · exact .inr ⟨i', hin, hadd, hpin⟩
-    · exact .inl ⟨i', hin, by simp [changed, hadd.1, hadd.2], .inl hpin⟩
-  | true =>
-    have hres : c.resolve (bits n I) = some i' := by
-      rw [Client.resolve, first_some]
-      refine ⟨hin, by rw [hb, hI], fun j hj => ?_⟩
-      have hjn : j < n := by omega
-      simp only [bits, hjn, dite_true]
-      exact hmiss j hjn (Nat.zero_le j) hj
-    refine .inl ⟨i', hin, ?_, .inr hres⟩
-    simp only [changed, hb, hI]
-    intro h; exact hne (by rw [hI, h])
+/-- The keys are honest where their hash reads what they cover: an existence key always; `cheap`'s
+`named` key when every top-level scope is one its hash reads (all in `S`). -/
+theorem abstraction_of (d : Design)
+    (hread : d = .cheap → ∀ i, (sc i).topLevel = true → reads sc false i = true) :
+    ∀ (I I' : U n → Bool) (k : U n × K), (compiler sc d).π I k.1 k.2 = (compiler sc d).π I' k.1 k.2 →
+      ∀ q, (compiler sc d).covers I q k →
+        (compiler sc d).answer I q = (compiler sc d).answer I' q ∧ (compiler sc d).covers I' q k := by
+  rintro I I' ⟨u, k⟩ h q hc
+  refine ⟨?_, hc⟩
+  show I q.1 = I' q.1
+  cases k with
+  | presence =>
+    simp only [compiler, π, List.cons.injEq, and_true] at h
+    simp only [compiler, covers] at hc
+    rw [hc]; exact h
+  | named b =>
+    cases u with
+    | some _ => simp [compiler, covers] at hc
+    | none =>
+      obtain ⟨hd, i, hq, hb⟩ := hc
+      rw [hq]
+      have hr : reads sc b i = true := by
+        cases b
+        · have : d = .cheap := by cases d <;> simp_all [namedOf]
+          exact hread this i (by simpa using hb)
+        · rfl
+      simp only [compiler, π] at h
+      have := (List.map_inj_left.1 h) i (List.mem_finRange i)
+      simpa [hr] using this
 
-abbrev Up : Finset (U n) := Finset.univ.filter (·.isSome)
-abbrev S : Finset (U n) := {none}
+theorem trace_unit (I : U n → Bool) (s : Src) :
+    ∀ q ∈ (unit n s).trace (answer I), ∃ i, q = (some i, Q.binds) ∧
+      (I (some i) = true → ((unit n s).trace (answer I)).getLast? = some q) := by
+  intro q hq
+  cases s with
+  | bind x => simp [unit] at hq
+  | client =>
+    obtain ⟨i, hi, -, rfl, -⟩ := trace_search (answer I) 0 q hq
+    exact ⟨⟨i, hi⟩, rfl, fun hhit => hit_last (answer I) 0 _ hq hhit⟩
 
-/-- **The proposed rule inherits T5.** From an up-to-date downstream with fresh snapshots, whose
-client recorded the keys of its last compilation, a new upstream (any number of scopes changed)
-and a downstream loop started from the changed sources and, when the proposed rule fires, the
-client: if the loop stops, the downstream is up to date against the new upstream. -/
-theorem proposed_downstream_sound (c : Client) (hn : c.n = n)
-    (src₀ src : U n → Src) (hcl : src₀ none = .client)
-    (s : Compiler.State (U n) Out K) (snap : U n → Bool) (o : U n → Out)
-    (D : Finset (U n)) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
-    (hInv : (compiler n .searched).Inv (S n) src₀ s ∅)
-    (hFresh : (compiler n .searched).Fresh (Up n) (S n) s snap ∅)
-    (hU : ∀ k ∈ s.U none, ∃ q ∈ (unit n .client).trace (answer n ((compiler n .searched).ifaces s)),
-      k.1 = q.1)
-    (P : Compiler.Policy (U n) Out K) (hP : P.Sound (S n)) (fuel : ℕ) (R₀ : Finset (U n))
-    (hRD : D ⊆ R₀)
-    (hRp : c.proposed (bits n ((compiler n .searched).ifaces s))
-      (bits n ((compiler n .searched).ifaces (NCompiler.withUpstream (Up n) s o))) → none ∈ R₀)
+theorem last_key (d : Design) (hd : d ≠ .searched) (u : U n) (tr : List (U n × Q)) (q : U n × Q)
+    (h : tr.getLast? = some q) : (q.1, K.presence) ∈ keys sc d u tr := by
+  cases d <;> simp_all [keys]
+
+theorem pinned_key (d : Design) (hd : d ≠ .searched) (u : U n) (tr : List (U n × Q)) (i : Fin n)
+    (h : (sc i).pinned = true) : (some i, K.presence) ∈ keys sc d u tr := by
+  have : (some i, K.presence) ∈ pinnedKeys sc := by simp [pinnedKeys, h]
+  cases d <;> simp_all [keys]
+
+theorem cross_coverage : ∀ (I : U n → Bool) (u : U n) (s : Src),
+    ∀ q ∈ ((compiler sc .cross).unit s).trace ((compiler sc .cross).answer I),
+      ∃ k ∈ (compiler sc .cross).keys u (((compiler sc .cross).unit s).trace ((compiler sc .cross).answer I)),
+        (compiler sc .cross).covers I q k := by
+  intro I u s q hq
+  obtain ⟨i, rfl, -⟩ := trace_unit I s q hq
+  exact ⟨(none, .named true), by simp [compiler, keys], rfl, i, rfl, .inl rfl⟩
+
+theorem searched_coverage : ∀ (I : U n → Bool) (u : U n) (s : Src),
+    ∀ q ∈ ((compiler sc .searched).unit s).trace ((compiler sc .searched).answer I),
+      ∃ k ∈ (compiler sc .searched).keys u (((compiler sc .searched).unit s).trace ((compiler sc .searched).answer I)),
+        (compiler sc .searched).covers I q k := by
+  intro I u s q hq
+  refine ⟨(q.1, .presence), ?_, rfl⟩
+  show (q.1, K.presence) ∈ (List.map _ _).toFinset
+  rw [List.mem_toFinset, List.mem_map]
+  exact ⟨q, hq, rfl⟩
+
+/-- #34's key covers a lookup when every scope is pinned or a top-level class. -/
+theorem cheap_coverage (hk : ∀ i, (sc i).pinned = true ∨ (sc i).topLevel = true) :
+    ∀ (I : U n → Bool) (u : U n) (s : Src),
+    ∀ q ∈ ((compiler sc .cheap).unit s).trace ((compiler sc .cheap).answer I),
+      ∃ k ∈ (compiler sc .cheap).keys u (((compiler sc .cheap).unit s).trace ((compiler sc .cheap).answer I)),
+        (compiler sc .cheap).covers I q k := by
+  intro I u s q hq
+  obtain ⟨i, rfl, hlast⟩ := trace_unit I s q hq
+  cases hI : I (some i)
+  · rcases hk i with hp | ht
+    · exact ⟨(some i, .presence), pinned_key sc .cheap (by decide) u _ i hp, rfl⟩
+    · exact ⟨(none, .named false), by simp [compiler, keys], rfl, i, rfl, .inr ht⟩
+  · exact ⟨(some i, .presence), last_key sc .cheap (by decide) u _ _ (hlast hI), rfl⟩
+
+/-- **The cross-subproject key meets the obligations.** -/
+theorem cross_obligations : (compiler sc .cross).Obligations where
+  comp := comp sc .cross
+  coverage := cross_coverage sc
+  abstraction := abstraction_of sc .cross (by simp)
+  locality := locality sc .cross
+
+theorem searched_obligations : (compiler sc .searched).Obligations where
+  comp := comp sc .searched
+  coverage := searched_coverage sc
+  abstraction := abstraction_of sc .searched (by simp)
+  locality := locality sc .searched
+
+/-- **#34 meets them inside one subproject**: every scope is pinned or a top-level class, and every
+top-level class is in `S`. -/
+theorem cheap_obligations_of_local (hk : ∀ i, (sc i).pinned = true ∨ (sc i).topLevel = true)
+    (hloc : ∀ i, (sc i).topLevel = true → (sc i).upstream = false) : (compiler sc .cheap).Obligations where
+  comp := comp sc .cheap
+  coverage := cheap_coverage sc hk
+  abstraction := abstraction_of sc .cheap (fun _ i ht => by simp [reads, ht, hloc i ht])
+  locality := locality sc .cheap
+
+/-! ### Across subprojects -/
+
+/-- The scopes in other subprojects. -/
+def Up : Finset (U n) := Finset.univ.filter fun u => u.elim false fun i => (sc i).upstream
+
+/-- The client's subproject: the client and the local scopes. -/
+def S : Finset (U n) := Finset.univ.filter fun u => !(u.elim false fun i => (sc i).upstream)
+
+theorem disjoint_Up_S : Disjoint (Up sc) (S sc) := by
+  rw [Finset.disjoint_left]
+  intro u hu hS
+  simp only [Up, S, Finset.mem_filter, Finset.mem_univ, true_and] at hu hS
+  simp_all
+
+/-- **T5 for the cross-subproject key.** From an up-to-date downstream with fresh snapshots of the
+upstream scopes, replacing the upstream outputs and running Zinc's loop from the changed sources and
+the units whose keys moved against the snapshot (`extInvalidated`): if the loop stops, every unit of
+the client's subproject is up to date against the new upstream, whatever the program, the edit and
+the (sound) policy. -/
+theorem cross_downstream_sound (src₀ src : U n → Src) (s : Compiler.State (U n) Out K)
+    (snap : U n → Bool) (o : U n → Out) (D : Finset (U n)) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
+    (hInv : (compiler sc .cross).Inv (S sc) src₀ s ∅)
+    (hFresh : (compiler sc .cross).Fresh (Up sc) (S sc) s snap ∅)
+    (P : Compiler.Policy (U n) Out K) (hP : P.Sound (S sc)) (fuel : ℕ) (R₀ : Finset (U n))
+    (hR₀ : D ∪ (compiler sc .cross).extInvalidated (Up sc) (S sc) s snap
+      (NCompiler.withUpstream (Up sc) s o) ⊆ R₀)
     (s' : Compiler.State (U n) Out K)
-    (h : (compiler n .searched).zinc (S n) src P fuel 0 R₀ (NCompiler.withUpstream (Up n) s o) = some s') :
-    (compiler n .searched).Inv (S n) src s' ∅ := by
-  have _ := hcl
-  refine (compiler n .searched).downstream_sound (searched_obligations n) (Up n) (S n) ?_
-    src₀ src s snap o D hD hInv hFresh P hP fuel R₀ ?_ s' h
-  · rw [Finset.disjoint_left]
-    intro u hu hS
-    simp only [S, Finset.mem_singleton] at hS
-    subst hS
-    simp at hu
-  · intro u hu
-    rcases Finset.mem_union.1 hu with hu | hu
-    · exact hRD hu
-    obtain ⟨huS, k, hk, hne⟩ := Finset.mem_filter.1 hu
-    simp only [S, Finset.mem_singleton] at huS
-    subst huS
-    obtain ⟨q, hq, hkq⟩ := hU k hk
-    obtain ⟨i, hi, -, rfl, -⟩ := trace_search n _ 0 q hq
-    have hfr := hFresh none (Finset.mem_singleton_self _) (Finset.notMem_empty _) k hk
-    rw [hfr] at hne
-    apply hRp
-    apply ext_proposed n c hn _ _ ⟨i, hi⟩ hq
-    simpa [compiler, hkq] using hne
+    (h : (compiler sc .cross).zinc (S sc) src P fuel 0 R₀ (NCompiler.withUpstream (Up sc) s o) = some s') :
+    (compiler sc .cross).Inv (S sc) src s' ∅ :=
+  (compiler sc .cross).downstream_sound (cross_obligations sc) (Up sc) (S sc) (disjoint_Up_S sc)
+    src₀ src s snap o D hD hInv hFresh P hP fuel R₀ hR₀ s' h
 
-end Inst
+/-! ### The witnesses: `added-class-upstream`
+
+Two upstream scopes: `a.b.Foo` (scope 0, a class of the inner package) and `a.Foo` (scope 1). Before,
+only `a.Foo` exists; after, both. -/
+
+/-- Both scopes are top-level classes upstream, neither pinned. -/
+def upClasses : Fin 2 → Scope := fun _ => ⟨false, false, true, true⟩
+
+def before : U 2 → Bool := fun u => u == some 1
+def after : U 2 → Bool := fun u => u == some 0 || u == some 1
+
+theorem trace_before : (unit 2 .client).trace (answer before) = [(some 0, .binds), (some 1, .binds)] := by
+  simp [unit, search, answer, before]
+
+/-- **Today's keys miss the upstream lookup**: the client asked `bound a.b.Foo` (no), and records an
+existence key on `a.Foo` only. -/
+theorem today_not_obligations : ¬ (compiler upClasses .today).Obligations := by
+  intro ob
+  obtain ⟨k, hk, hc⟩ := ob.coverage before none .client (some 0, .binds)
+    (by show _ ∈ (unit 2 .client).trace (answer before); rw [trace_before]; simp)
+  change k ∈ keys upClasses .today none ((unit 2 .client).trace (answer before)) at hk
+  rw [trace_before] at hk
+  simp [keys, pinnedKeys, upClasses] at hk
+  subst hk
+  simp [compiler, covers] at hc
+
+/-- **#34's key is not an abstraction across subprojects.** Its hash, over the client's subproject,
+is the same before and after the upstream adds `a.b.Foo`; the lookup it claims to cover, `bound
+a.b.Foo`, answers differently. -/
+theorem cheap_not_abstraction :
+    (compiler upClasses .cheap).π before none (.named false) = (compiler upClasses .cheap).π after none (.named false) ∧
+    (compiler upClasses .cheap).covers before (some 0, .binds) (none, .named false) ∧
+    (compiler upClasses .cheap).answer before (some 0, .binds) ≠ (compiler upClasses .cheap).answer after (some 0, .binds) := by
+  refine ⟨?_, ⟨rfl, 0, rfl, .inr rfl⟩, by simp [compiler, answer, before, after]⟩
+  simp [compiler, π, reads, upClasses]
+
+theorem cheap_not_obligations : ¬ (compiler upClasses .cheap).Obligations := by
+  intro ob
+  obtain ⟨hπ, hc, hne⟩ := cheap_not_abstraction
+  exact hne (ob.abstraction before after (none, .named false) hπ _ hc).1
+
+/-- The cross-subproject key's hash moves. -/
+theorem cross_moves :
+    (compiler upClasses .cross).π before none (.named true) ≠ (compiler upClasses .cross).π after none (.named true) := by
+  simp [compiler, π, reads, before, after, List.finRange]
+
+end Spec
 
 end Zinc.SplitProof
