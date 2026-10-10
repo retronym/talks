@@ -479,3 +479,5 @@ Extending #34 to the remaining families:
 - [ ] Future: extend #34 to names added to package objects and imported objects, and to implicits (above); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
 
 ## Phase 11 — Scala 3 `inline` and opaque types: see `PLAN-inline.md`
+
+## Phase 12 — Java in mixed builds, name resolution and sealed hierarchies: see `PLAN-java.md`

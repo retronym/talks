@@ -28,3 +28,7 @@ import Zinc.Names
 import Zinc.Givens
 import Zinc.InlineOpaque
 import Zinc.InlineOpaqueSound
+import Zinc.JavaNames
+import Zinc.JavaSealed
+import Zinc.JavaSpec
+import Zinc.JavaSealedSpec
