@@ -1,6 +1,7 @@
 """Selects bases from a `conformance names` dump, greedily, until every signature (the edit, the
 model's resolution before and after, the client's package clause, name, `extends`, block import,
-and `first` where a wildcard import makes it matter) has an edit; keeps every edit of a chosen
+`first` where a wildcard import makes it matter, and whether the package object or `W` inherits its
+member) has an edit; keeps every edit of a chosen
 base, since a base build costs more than an edit."""
 import json, sys
 
@@ -14,8 +15,9 @@ def sig(b, e):
     f = b['factors']
     first = f['first'] if f['wild'] == 'true' else '-'
     if narrow:
-        return (e['cfg'], first, f['pkg'], f.get('exp'))
-    return (e['cfg'], first, f['pkg'], f['opt'], f['inh'], f['blk'], f.get('exp'))
+        return (e['cfg'], first, f['pkg'], f.get('exp'), f.get('pinh'), f.get('winh'))
+    return (e['cfg'], first, f['pkg'], f['opt'], f['inh'], f['blk'], f.get('exp'), f.get('pinh'),
+            f.get('winh'))
 
 sigs = [{sig(b, e) for e in b['edits']} for b in bases]
 uncovered = set().union(*sigs)

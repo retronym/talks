@@ -2,6 +2,9 @@
 take the model's verdicts from) and reports:
 * where the model's resolution disagrees with the compiler's (read off the client's classfile);
 * where the model's verdict disagrees with the harness's;
+* where the classes the model recompiles beyond the edited files (the client, the bystanders
+  `User`, `Near`, `Mid`) differ from Zinc's, and the cost: the client recompiled though not
+  necessary, and the bystanders recompiled;
 * the divergences (incremental differs from clean), grouped by edit and resolution change."""
 import collections, json, re, sys
 
@@ -21,7 +24,8 @@ def slot_of(probe, name):
         return '+'.join(hits) if hits else '?'
     m = {f'a/V${name}$': 'blk', f'a/P${name}$': 'inh', f'a/X${name}$': 'expl', f'a/W${name}$': 'wild',
          f'a/q/{name}$': 'wpkg', f'a/b/{name}$': 'inner', f'a/b/package${name}$': 'pobj',
-         f'a/{name}$': 'outer', 'scala/Option$': 'lib', f'a/U${name}$': 'wild', f'a/U2${name}$': 'pobj'}
+         f'a/{name}$': 'outer', 'scala/Option$': 'lib', f'a/U${name}$': 'wild', f'a/U2${name}$': 'pobj',
+         f'a/PT${name}$': 'pobj', f'a/WT${name}$': 'wild'}
     hits = [s for k, s in m.items() if k in toks]
     return '+'.join(hits) if hits else '?'
 
@@ -46,6 +50,24 @@ if len(sys.argv) > 2:
         if e:
             r['modelClean'] = e['modelClean']
             r['edited'] = e['cfg']
+            for k in ('modelRecompiled', 'modelNecessary', 'modelFamily'):
+                if k in e:
+                    r[k] = e[k]
+BYSTANDERS = {'c.User': 'User', 'a.b.Near': 'Near', 'a.Mid': 'Mid'}
+
+def harness_recompiled(r):
+    """The classes the harness saw recompiled, among those the model predicts: the client's file
+    (`Client`, with `First` or `Last`) and the bystanders."""
+    out = set()
+    for c in r['recompiled']:
+        if c.split('.')[-1] in ('Client', 'First', 'Last'):
+            out.add('Client')
+        elif c in BYSTANDERS:
+            out.add(BYSTANDERS[c])
+    return out
+
+rec_mis = collections.Counter()
+cost = collections.Counter()
 res_mis = collections.Counter()
 verd_mis = collections.Counter()
 div = collections.defaultdict(list)
@@ -68,6 +90,17 @@ for r in rs:
     ok = r['verdict'] in ('same', 'same-fail')
     if r['revert'] not in ('same', 'same-fail'):
         rev[(r['edit'], r['revert'])] += 1
+    # a failed incremental build reports nothing recompiled
+    if 'modelRecompiled' in r and not r['incErrors']:
+        model = set(r['modelRecompiled'])
+        zinc = harness_recompiled(r)
+        if model != zinc:
+            rec_mis[(r['edited'], tuple(sorted(model)), tuple(sorted(zinc)))] += 1
+        cost['edits'] += 1
+        if 'Client' in zinc and not r.get('modelNecessary', True):
+            cost['client, not necessary'] += 1
+        for b in zinc - {'Client'}:
+            cost[b] += 1
     if ok != r.get('modelClean'):
         verd_mis[(r['edited'], r['verdict'], r['revert'], r['cfg'])] += 1
     if not ok:
@@ -79,6 +112,10 @@ for k, n in sorted(res_mis.items(), key=lambda x: -x[1])[:60]:
 print('\n== verdict: model vs harness', sum(verd_mis.values()))
 for k, n in sorted(verd_mis.items(), key=lambda x: -x[1])[:60]:
     print(n, k)
+print('\n== recompiled (client, bystanders): model vs harness', sum(rec_mis.values()))
+for k, n in sorted(rec_mis.items(), key=lambda x: -x[1])[:40]:
+    print(n, k)
+print('\n== cost (harness)', dict(cost))
 print('\n== revert divergences (the inverse edit)', sum(rev.values()))
 for k, n in sorted(rev.items(), key=lambda x: -x[1])[:20]:
     print(n, k)
@@ -95,7 +132,7 @@ for (e, res, v, rv), xs in div.items():
     b, a = res.split(' -> ')
     for r in xs:
         mb, ma = model_res(r['edited'])
-        fam[(givens_family if r['space'] == 'givens' else family)(r['edit'], mb, ma)] += 1
+        fam[r.get('modelFamily') or (givens_family if r['space'] == 'givens' else family)(r['edit'], mb, ma)] += 1
 print('\n== divergences by family')
 for k, n in sorted(fam.items()):
     print(n, k)

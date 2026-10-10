@@ -1,4 +1,3 @@
-import Mathlib.Data.List.Basic
 
 /-!
 # Name resolution: where a simple name can be bound, and what Zinc records
@@ -94,6 +93,12 @@ structure Client where
   object (`object W { export a.U.* }`, and `export a.U2.*` at the top level of `a.b`), whose
   member the edit adds or removes. -/
   exp : Bool := false
+  /-- The package object inherits its member: `package object b extends a.PT`, and the edit adds or
+  removes `Foo` in trait `a.PT`. -/
+  pinh : Bool := false
+  /-- `W` inherits its member: `object W extends a.WT`, and the edit adds or removes `Foo` in trait
+  `a.WT`. -/
+  winh : Bool := false
   deriving DecidableEq, Repr
 
 /-- What a slot holds: nothing, the name, or (top-level slots) a class `Bar`, to rename. -/
@@ -140,14 +145,22 @@ exceptions are the ambiguities, which both compilers report:
 An import beats a package member from another file in both (Scala 2's `lookupSymbol`:
 "imported symbols take precedence over package-owned symbols in different compilation units");
 an inherited member beats a package member without an ambiguity (Scala 3's `checkNoOuterDefs`
-skips package owners). -/
+skips package owners). Scala 3 reports the clash of a class `a.b.Foo` with a member of package `a.b`'s
+package object only when the package object declares it; one it inherits clashes with nothing, and
+the class wins. Scala 2 treats an inherited member of the package object as no package member at all
+(`isPackageOwnedInDifferentUnit` looks at its owner, the trait): it beats the file's imports, even two
+binding wildcards, and is ambiguous with the block import, like the client's own inherited member,
+which it loses to (probed with `scala-cli`, 2.13 and 3.3, and on the harness). -/
 def resolve (v : Ver) (p : Prog) : Res :=
   let vis := visible p.cl
   let b := fun s => vis.contains s && p.binds s
-  if v == .s3 && p.st .inner == .foo && p.st .pobj == .foo then .clash
+  let pin := v == .s2 && p.cl.pinh && b .pobj
+  if v == .s3 && p.st .inner == .foo && p.st .pobj == .foo && !p.cl.pinh then .clash
   else if p.cl.expl && !b .expl then .err "import"
   else if b .blk && b .inh then .err "ambiguous"
   else if b .blk && b .expl then .err "ambiguous"
+  else if b .blk && pin then .err "ambiguous"
+  else if pin then .ok (if b .inh then .inh else .pobj)
   else if !b .blk && !b .inh && !b .expl && b .wild && b .wpkg then .err "ambiguous"
   else
     -- Scala 2 looks in the package object before the package's own classes
@@ -157,6 +170,49 @@ def resolve (v : Ver) (p : Prog) : Res :=
     match vis.find? b with
     | some s => .ok s
     | none => .err "not found"
+
+/-- What Zinc stores of a class's API, for the rules that diff a class's names: develop's, with
+the inherited members (`mkStructureWithInherited`; Scala 3's bridge takes all bases); retronym/zinc#24's
+(Merkle), declarations only; or #24's with each class's names composed from its own and its
+ancestors' stored names (`MerkleHashes.composed`, over the stored linearization). Today's member-ref
+invalidation is the same under all three: #24 walks the descendants of a changed class and checks
+their member-ref dependents' used names against the ancestor's changed names. -/
+inductive Api | full | decls | composed
+  deriving DecidableEq, Repr
+
+/-- What a rule that diffs a class's names compares with: the analysis from before the run, or the
+one from before the cycle. -/
+inductive Baseline | run | cycle
+  deriving DecidableEq, Repr
+
+/-- The extensions of retronym/zinc#34, each a rule run after every cycle.
+
+* `cheap`: #34, the users of the simple name of an added top-level class.
+* `f2`: the users of a name that a package object (`a.b.package`, Scala 3's `F$package`) gained.
+* `f3`: an import's change checked against the used names of every class of the importing file,
+  not only the class it is charged to.
+* `g`: when a package object or `$package` class gains or loses an implicit (or is a new class with
+  one), the classes of its package and the packages nested in it (`Givens.lean`). -/
+structure Rules where
+  api : Api := .full
+  base : Baseline := .run
+  cheap : Bool := false
+  f2 : Bool := false
+  f3 : Bool := false
+  g : Bool := false
+  deriving DecidableEq, Repr
+
+/-- Does a name diff of a package object see a member it inherits? Develop stores it, and the
+package object is recompiled in the cycle after its parent (inheritance edge), so either baseline
+sees it appear. #24 stores declarations only, so without composition it never appears. Composed
+from the analysis, it appears in the cycle that recompiles the parent, before the package object is
+recompiled: diffed against the cycle before, the package object's recompilation shows no new name;
+diffed against the run's baseline, it does. -/
+def Rules.seesInherited (r : Rules) : Bool :=
+  match r.api, r.base with
+  | .full, _ => true
+  | .composed, .run => true
+  | _, _ => false
 
 /-- Which extractor or invalidation rule. -/
 inductive Mode
@@ -169,15 +225,51 @@ inductive Mode
   /-- Zinc today, and after each cycle the users of the simple name of a top-level class the cycle
   added (`invalidateByAddedClasses`, retronym/zinc#34). -/
   | cheap
+  /-- Zinc today, with the extensions of #34 that `Rules` selects. -/
+  | rules (r : Rules)
   deriving DecidableEq, Repr
+
+/-- A mode from `+`-separated tokens: `today`, `cheap`, `searched`, `names`, or rules from `cheap`,
+`f2`, `f3`, `g` (`all` for the four), `decls` or `composed` for #24's API, `cycle` for the cycle
+baseline; e.g. `all+composed+cycle`. -/
+def Mode.parse (s : String) : Option Mode :=
+  let ts := s.splitOn "+"
+  match ts with
+  | ["today"] => some .today
+  | ["cheap"] => some .cheap
+  | ["searched"] => some .searched
+  | ["names"] => some .names
+  | _ => ts.foldlM (init := .rules {}) fun m t =>
+    match m, t with
+    | .rules r, "cheap" => some (.rules { r with cheap := true })
+    | .rules r, "f2" => some (.rules { r with f2 := true })
+    | .rules r, "f3" => some (.rules { r with f3 := true })
+    | .rules r, "g" => some (.rules { r with g := true })
+    | .rules r, "all" => some (.rules { r with cheap := true, f2 := true, f3 := true, g := true })
+    | .rules r, "decls" => some (.rules { r with api := .decls })
+    | .rules r, "composed" => some (.rules { r with api := .composed })
+    | .rules r, "cycle" => some (.rules { r with base := .cycle })
+    | _, _ => none
+
+/-- The rules of a mode built on Zinc's invalidation (`searched` and `names` are not). -/
+def Mode.toRules : Mode → Rules
+  | .cheap => { cheap := true }
+  | .rules r => r
+  | _ => {}
 
 /-- The slots whose binding of the name changed. -/
 def changed (p p' : Prog) : List Slot :=
   (present p.cl).filter fun s => p.binds s != p'.binds s
 
+/-- Scala 2's bridge names a class by `fullName`, which skips `package`: to Zinc, `package object b`'s
+declared `object Foo` and the class `a.b.Foo` have one class name, `a.b.Foo`. A client that resolved
+either depends on that name, so a change to either file's `Foo` invalidates it; and a class `a.b.Foo`
+added beside the member is no new class name to #34 (seen on the harness). -/
+def aliased (v : Ver) (p : Prog) : Bool := v == .s2 && !p.cl.pinh && (present p.cl).contains .pobj
+
 /-- Does Zinc invalidate the client's file when slot `s` changed, given what the client resolved
 before (`r`)? -/
-def invalidates (p : Prog) (r : Res) (s : Slot) : Bool :=
+def invalidates (rs : Rules) (v : Ver) (p : Prog) (r : Res) (s : Slot) : Bool :=
   match s with
   -- inheritance edge
   | .inh => true
@@ -187,28 +279,43 @@ def invalidates (p : Prog) (r : Res) (s : Slot) : Bool :=
   | .expl => true
   -- `W` is charged to the first class (Scala 3: the last); it uses `Foo` if it is the client, or if
   -- the explicit import's selector is charged to it too; otherwise only a client that resolved
-  -- through `W` has its own edge to `W`
-  | .wild => !p.cl.first || p.cl.expl || r == .ok .wild
-  -- the package object is reached only through the resolved symbol
-  | .pobj => r == .ok .pobj
+  -- through `W` has its own edge to `W`; with `f3`, the client's file has a class that uses it.
+  -- `W`'s changed names include an inherited one (develop stores it; #24 walks `WT`'s descendants)
+  | .wild => rs.f3 || !p.cl.first || p.cl.expl || r == .ok .wild
+  -- the package object is reached only through the resolved symbol, or the name it shares with
+  -- `a.b.Foo` (Scala 2); Scala 3 records a dependency on an inherited member it saw and passed over
+  -- for the class `a.b.Foo` (seen on the harness)
+  | .pobj => r == .ok .pobj || (aliased v p && r == .ok .inner) ||
+      (v == .s3 && p.cl.pinh && r == .ok .inner && p.st .pobj == .foo)
   -- a top-level class: only a deleted class's dependents are invalidated
-  | .wpkg | .inner | .outer => r == .ok s && p.st s == .foo
+  | .inner => r == .ok .inner && p.st .inner == .foo || (aliased v p && r == .ok .pobj)
+  | .wpkg | .outer => r == .ok s && p.st s == .foo
   | .lib => false
 
 /-- Does the edit add a top-level class named as the client's name? A class is added when its
 fully qualified name is new: added, renamed to the name (`unrename`), or moved to another package.
 A package object is never one (`invalidateByAddedClasses` drops the name `package`), nor is a
 member of an object. The client uses its name, so `invalidateByAddedClasses` invalidates it. -/
-def addsClass (p p' : Prog) : Bool :=
-  (present p.cl).any fun s => s.topLevel && p.st s != .foo && p'.st s == .foo
+def addsClass (v : Ver) (p p' : Prog) : Bool :=
+  (present p.cl).any fun s => s.topLevel && p.st s != .foo && p'.st s == .foo &&
+    !(s == .inner && aliased v p && p.st .pobj == .foo)
+
+/-- Does a rule diffing the package object's names see it gain the client's name? Scala 2's
+`package object b`, Scala 3's `package object b` or the `PObj$package` class holding the top-level
+export (its forwarder is a declaration, recompiled in the cycle after `a.U2`). -/
+def pobjGains (rs : Rules) (p p' : Prog) : Bool :=
+  (present p.cl).contains .pobj && p.st .pobj != .foo && p'.st .pobj == .foo &&
+    (!p.cl.pinh || rs.seesInherited)
 
 def recompiles (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
   let r := resolve v p
   match m with
-  | .today => (changed p p').any (invalidates p r)
-  | .cheap => (changed p p').any (invalidates p r) || addsClass p p'
   | .searched => (changed p p').any (visible p.cl).contains
   | .names => !(changed p p').isEmpty
+  | m =>
+    let rs := m.toRules
+    (changed p p').any (invalidates rs v p r) || (rs.cheap && addsClass v p p') ||
+      (rs.f2 && pobjGains rs p p')
 
 /-- The verdict of an edit: the client's resolution before, after, whether Zinc recompiles it,
 and whether the incremental build equals the clean one. -/
@@ -219,11 +326,16 @@ structure Verdict where
   clean : Bool
   deriving DecidableEq, Repr
 
-/-- Scala 2 lets `package object b` hold an `object Foo` beside a class `a.b.Foo`, and the class's
-mirror (`a/b/Foo.class`, its static forwarders) comes out differently when the package object's
-member is compiled with it. Adding the member leaves the class's file alone, and its old mirror. -/
+/-- Scala 2 lets `package object b` hold an `object Foo` (declared or inherited) beside a class
+`a.b.Foo`, and the class's mirror (`a/b/Foo.class`) comes out without its `ScalaSignature` when the
+package object's member is compiled with it. An edit of the member leaves the class's file alone,
+and its mirror as it was. Adding the member leaves a mirror with the signature (bytes only);
+removing it leaves one without, and a client that now resolves `a.b.Foo` fails to compile
+(`not found: value Foo`) where a clean build succeeds. In this space only an inherited member
+reaches the removal (a declared one clashes in Scala 3, so no base has both), but a declared one
+fails the same way (probed with `scalac`). -/
 def staleMirror (v : Ver) (p p' : Prog) : Bool :=
-  v == .s2 && p.st .pobj != .foo && p'.st .pobj == .foo && p.st .inner == .foo && p'.st .inner == .foo
+  v == .s2 && (p.st .pobj == .foo) != (p'.st .pobj == .foo) && p.st .inner == .foo && p'.st .inner == .foo
 
 /-- Scala 3 reports the clash of a class `a.b.Foo` with a member `Foo` of package `a.b`'s package
 object (or a top-level export) only when it compiles both files together. An edit changes one of
@@ -241,8 +353,25 @@ compilation bug all the same: once a client has been compiled apart, a statement
 (pending scripted test `trait-initialiser-skipped-scala3`). -/
 def separateInit (v : Ver) (p' : Prog) (rc : Bool) : Bool := v == .s3 && p'.cl.inh && p'.st .inh == .foo && rc
 
+/-- F6 for `W` (Scala 3): `object W extends a.WT`, and `WT` gains `object Foo`, its only member.
+Zinc recompiles `W` in the cycle after `WT`, apart from it, and `W` loses the call to `WT.$init$`
+that a clean build emits (seen on the harness). -/
+def heirInit (v : Ver) (p p' : Prog) : Bool :=
+  v == .s3 && p.cl.winh && p.st .wild != .foo && p'.st .wild == .foo
+
+/-- Scala 3 compiles `object a.b.Foo` jointly with `package object b extends a.PT`, where `PT` has an
+`object Foo`, into a `writeReplace` that serialises `a.PT$Foo$`, the inherited member, instead of
+`a.b.Foo$`; compiled apart, it is right (probed with `scala-cli`, 3.3). The incremental build keeps the
+base's `Foo$.class` unless the edit is to `Inner.scala`, which it then compiles alone. -/
+def staleModule (v : Ver) (p p' : Prog) : Bool :=
+  let wrong (q : Prog) := q.st .pobj == .foo && q.st .inner == .foo
+  let incWrong := p.st .inner == p'.st .inner && wrong p
+  v == .s3 && p.cl.pinh && incWrong != wrong p'
+
 /-- The divergences that are not about the client's resolution. -/
-def besideResolution (v : Ver) (p p' : Prog) : Bool := staleMirror v p p' || missedClash v p'
+def besideResolution (v : Ver) (p p' : Prog) : Bool :=
+  staleMirror v p p' || missedClash v p' ||
+    ((heirInit v p p' || staleModule v p p') && resolve v p' matches .ok _)
 
 def verdict (m : Mode) (v : Ver) (p p' : Prog) : Verdict :=
   let r := resolve v p
@@ -274,11 +403,17 @@ def clients : List Client := Id.run do
                     for exp in [false, true] do
                       -- the export matters only where `W` or package `a.b` is in scope
                       if !exp || wild || pkg != .top then
-                        out := out ++ [⟨pkg, blk, inh, expl, wild, wpkg, first, opt, exp⟩]
+                        -- inherited members: in the package object (when the client sees it) or in
+                        -- `W`; the export already gets them from elsewhere
+                        for pinh in [false, true] do
+                          if !pinh || (pkg != .top && !exp) then
+                            for winh in [false, true] do
+                              if !winh || (wild && !exp) then
+                                out := out ++ [⟨pkg, blk, inh, expl, wild, wpkg, first, opt, exp, pinh, winh⟩]
   return out
 
 /-- Assignments of states to the given slots, with at most `k` slots holding the name. -/
-def assigns : List Slot → ℕ → List (List (Slot × St))
+def assigns : List Slot → Nat → List (List (Slot × St))
   | [], _ => [[]]
   | s :: ss, k =>
     (states s).flatMap fun x =>
@@ -331,7 +466,7 @@ def edits (p : Prog) : List (Edit × Prog) :=
 
 /-! ## Families, as checked examples -/
 
-def cl0 : Client := ⟨.nested, false, false, false, false, false, false, false, false⟩
+def cl0 : Client := ⟨.nested, false, false, false, false, false, false, false, false, false, false⟩
 
 /-- **Inner package** (retronym/zinc#32): `a.b.Foo` added over `a.Foo`. -/
 def innerBase : Prog := mkProg cl0 [(.outer, .foo)]
@@ -391,26 +526,105 @@ theorem wild_first_cheap :
     verdict .cheap .s2 wildBase (wildBase.set .wild .foo) = ⟨.ok .outer, .ok .wild, false, false⟩ := by
   native_decide
 
-/-- Under the cheap fix, every edit that adds a top-level class is clean, but for the divergences
-beside the client's resolution. -/
-theorem cheap_added_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    !addsClass p p' || [Ver.s2, .s3].all fun v => (verdict .cheap v p p').clean ||
-      besideResolution v p p' || separateInit v p' (recompiles .cheap v p p')) = true := by
+/-- Is every edit of the space clean in both versions under a mode, but for the divergences beside
+the client's resolution (the stale mirror, the missed clash) and the trait initialiser? -/
+def cleanOn (m : Mode) : Bool := bases.all fun p => (edits p).all fun (_, p') =>
+  [Ver.s2, .s3].all fun v => (verdict m v p p').clean || besideResolution v p p' ||
+    separateInit v p' (recompiles m v p p')
+
+/-! ## Extending #34: a rule per family
+
+Each rule closes its family and nothing else; together, on develop's API, they are clean on the
+whole space. -/
+
+/-- The edits a mode gets wrong, but for the divergences beside resolution and the trait initialiser. -/
+def wrong (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
+  !(verdict m v p p').clean && !besideResolution v p p' && !separateInit v p' (recompiles m v p p')
+
+/-- The families by edit: F1 adds a top-level class, F2 a member of the package object (or the
+export's forwarder), F3 a member of `W` (or the forwarder `W` exports). -/
+def f1 (p p' : Prog) : Bool := (present p.cl).any fun s => s.topLevel && p.st s != .foo && p'.st s == .foo
+def f2 (p p' : Prog) : Bool := (present p.cl).contains .pobj && p.st .pobj != .foo && p'.st .pobj == .foo
+def f3 (p p' : Prog) : Bool := p.cl.wild && p.st .wild != .foo && p'.st .wild == .foo
+
+/-- #34 with both: clean on the whole space, on develop's API. -/
+def allRules : Rules := { cheap := true, f2 := true, f3 := true, g := true }
+
+/-- The family of an unclean edit, as the dump reports it: the divergences beside resolution first. -/
+def family (m : Mode) (v : Ver) (p p' : Prog) : String :=
+  if (verdict m v p p').clean then "-"
+  else if staleMirror v p p' then "F4"
+  else if missedClash v p' then "F5"
+  else if separateInit v p' (recompiles m v p p') || besideResolution v p p' && heirInit v p p' then "F6"
+  else if staleModule v p p' then "F7"
+  else if f1 p p' then "F1" else if f2 p p' then "F2" else if f3 p p' then "F3" else "?"
+
+/-! ### Declarations only (retronym/zinc#24) -/
+
+/-- `package object b extends a.PT`, over `a.Foo`, and `a.PT` gains `Foo`. -/
+def pinhBase : Prog := mkProg { cl0 with pinh := true } [(.outer, .foo)]
+
+/-- Today misses it as it misses a declared member. -/
+theorem pobj_inherited_today :
+    verdict .today .s2 pinhBase (pinhBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
-/-- Every edit of the space, both versions, is clean when the lookup's misses are recorded, and
-when the users of a name are invalidated on every added or removed binding; the stale mirror, the
-missed clash and the trait initialiser are not about the client's resolution, and neither fix
-touches them. -/
-theorem searched_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .searched v p p').clean || besideResolution v p p' ||
-      separateInit v p' (recompiles .searched v p p')) = true := by
+/-- On develop the F2 rule sees the inherited member in the package object's stored API. -/
+theorem pobj_inherited_f2 :
+    (verdict (.rules allRules) .s2 pinhBase (pinhBase.set .pobj .foo)).clean = true := by native_decide
+
+/-- #24 stores the package object's declarations only, and it declares nothing: the rule sees no
+new name. -/
+theorem pobj_inherited_decls :
+    verdict (.rules { allRules with api := .decls }) .s2 pinhBase (pinhBase.set .pobj .foo) =
+      ⟨.ok .outer, .ok .pobj, false, false⟩ := by native_decide
+
+/-- Composed from the ancestors, against the run's baseline: clean. -/
+theorem pobj_inherited_composed :
+    (verdict (.rules { allRules with api := .composed }) .s2 pinhBase (pinhBase.set .pobj .foo)).clean = true := by
   native_decide
 
-theorem names_clean : (bases.all fun p => (edits p).all fun (_, p') =>
-    [Ver.s2, .s3].all fun v => (verdict .names v p p').clean || besideResolution v p p' ||
-      separateInit v p' (recompiles .names v p p')) = true := by
-  native_decide
+/-- Composed, against the cycle before: the name appears when `PT` is recompiled, before the
+package object is; the package object's own recompilation then shows nothing new. -/
+theorem pobj_inherited_composed_cycle :
+    verdict (.rules { allRules with api := .composed, base := .cycle }) .s2 pinhBase (pinhBase.set .pobj .foo) =
+      ⟨.ok .outer, .ok .pobj, false, false⟩ := by native_decide
+
+/-! ## Cost
+
+What a mode recompiles beyond the edited files and the classes that inherit from them (which every
+mode recompiles): the client's file, and a class elsewhere that uses the name, `c.User`
+(`a.Y.Foo`), standing for every user of the name in the build. The client's file is necessary
+when its resolution changes or it extends the edited trait; `User` never is. -/
+
+def necessary (v : Ver) (p p' : Prog) : Bool :=
+  resolve v p != resolve v p' || (changed p p').contains .inh
+
+/-- Does the mode recompile `c.User`? The rules on names reach every user of the name. -/
+def userRecompiled (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
+  match m with
+  | .searched => false
+  | .names => !(changed p p').isEmpty
+  | m => let rs := m.toRules; (rs.cheap && addsClass v p p') || (rs.f2 && pobjGains rs p p')
+
+/-- Counts over the space: edits, wrong edits, the client recompiled though not necessary, and
+`User` recompiled. -/
+structure Cost where
+  edits : Nat
+  wrong : Nat
+  client : Nat
+  user : Nat
+  deriving Repr
+
+def cost (m : Mode) (v : Ver) : Cost := Id.run do
+  let mut c : Cost := ⟨0, 0, 0, 0⟩
+  for p in bases.filter (fun p => v == .s3 || !p.cl.exp) do
+    for (_, p') in edits p do
+      let rc := recompiles m v p p'
+      c := ⟨c.edits + 1, c.wrong + (if wrong m v p p' then 1 else 0),
+        c.client + (if rc && !necessary v p p' then 1 else 0),
+        c.user + (if userRecompiled m v p p' then 1 else 0)⟩
+  return c
 
 end Zinc.Names
 
@@ -423,9 +637,9 @@ def Prog.name (p : Prog) : String := if p.cl.opt then "Option" else "Foo"
 /-- The file of each slot, and its source; `none` when the file does not exist. -/
 def slotFile (p : Prog) : Slot → String
   | .blk => "V.scala" | .inh => "P.scala" | .expl => "X.scala"
-  | .wild => if p.cl.exp then "U.scala" else "W.scala"
+  | .wild => if p.cl.exp then "U.scala" else if p.cl.winh then "WT.scala" else "W.scala"
   | .wpkg => "Q.scala" | .inner => "Inner.scala"
-  | .pobj => if p.cl.exp then "U2.scala" else "PObj.scala"
+  | .pobj => if p.cl.exp then "U2.scala" else if p.cl.pinh then "PT.scala" else "PObj.scala"
   | .outer => "Outer.scala"
   | .lib => ""
 
@@ -442,9 +656,10 @@ def slotSrc (p : Prog) : Slot → Option String
   | .blk => some ("package a\n\nobject V" ++ member p .blk)
   | .inh => some ("package a\n\ntrait P" ++ member p .inh)
   | .expl => some ("package a\n\nobject X" ++ member p .expl)
-  | .wild => some ((if p.cl.exp then "package a\n\nobject U" else "package a\n\nobject W") ++ member p .wild)
-  | .pobj => some ((if p.cl.exp then "package a\n\nobject U2" else "package a\n\npackage object b") ++
-      member p .pobj)
+  | .wild => some ((if p.cl.exp then "package a\n\nobject U" else if p.cl.winh then "package a\n\ntrait WT"
+      else "package a\n\nobject W") ++ member p .wild)
+  | .pobj => some ((if p.cl.exp then "package a\n\nobject U2" else if p.cl.pinh then "package a\n\ntrait PT"
+      else "package a\n\npackage object b") ++ member p .pobj)
   | .wpkg => topClass p .wpkg "a.q"
   | .inner => topClass p .inner "a.b"
   | .outer => topClass p .outer "a"
@@ -466,9 +681,14 @@ def clientSrc (v : Ver) (p : Prog) : String :=
 /-- The client's classfile, where the harness reads what the name resolved to. -/
 def clientClass (p : Prog) : String := if p.cl.pkg == .top then "a/Client$" else "a/b/Client$"
 
-/-- The program's files. `Other.scala` keeps package `a.q` in existence for its import. -/
+/-- The program's files. `Other.scala` keeps package `a.q` in existence for its import; `c.User`
+uses the name elsewhere, through `a.Y`, which no edit touches. -/
 def files (v : Ver) (p : Prog) : List (String × String) :=
-  [("Client.scala", clientSrc v p)] ++
+  [("Client.scala", clientSrc v p),
+   ("Y.scala", "package a\n\nobject Y {\n  object " ++ p.name ++ "\n}\n"),
+   ("User.scala", "package c\n\nobject User {\n  val use: Any = a.Y." ++ p.name ++ "\n}\n")] ++
+  (if p.cl.winh then [("W.scala", "package a\n\nobject W extends a.WT\n")] else []) ++
+  (if p.cl.pinh then [("PObj.scala", "package a\n\npackage object b extends a.PT\n")] else []) ++
   (if p.cl.wpkg then [("Other.scala", "package a.q\n\nobject Other\n")] else []) ++
   (if p.cl.exp && p.cl.wild then [("W.scala", "package a\n\nobject W {\n  export a.U.*\n}\n")] else []) ++
   (if p.cl.exp && p.cl.pkg != .top then [("PObj.scala", "package a.b\n\nexport a.U2.*\n")] else []) ++
