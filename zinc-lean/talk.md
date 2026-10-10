@@ -32,10 +32,10 @@ All Lean and tool output is shown as screenshots.
 | VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 the first counterexample | 9.5 |
 | VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §19 subprojects | 6.5 |
 | VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree | 9.5 |
-| IX. What we got out of it | §24 the obligations as a spec · §25 findings that changed Zinc · §26 exhaustive checks · §27 conformance · §27a verifying on Spark · §28 limits | 8 |
+| IX. What we got out of it | §24 the model as a specification · §25 findings that changed Zinc · §27 conformance · §27a verifying on Spark · §27b binary compatibility: the JVM and Scala layers · §28 limits | 8.5 |
 | Close | §29 next steps | 2 |
 
-Overflow (§18a, §23, §23d) holds the demoted slides. If still over: §2a to one sentence, then one of §23a–c.
+Overflow (§18a, §23, §23d, §26) holds the demoted slides. If still over: §2a to one sentence, then one of §23a–c.
 
 ---
 
@@ -925,25 +925,24 @@ Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231)
 
 ## Part IX — What we got out of it
 
-### 24. The obligations as a specification
+### 24. The model as a specification
 
-| feature | query | key | theorem |
+One framework: a compiler is a `Task` over queries; the bridge is `keys`, `π`, `covers`; three obligations (compositionality, coverage, abstraction) and a sound policy give T3a. Every variant (local, keys from the tree, non-local hash, upstream snapshots) lifts into one general form, `XCompiler`, and T2, T3a, T4, T5 are proved once (`General.lean`).
+
+Each language feature is then an *instance*: its lookup as the task, today's bridge as the keys, each historical bug as a failed obligation with a witness, each fix as a key with an `Obligations` proof. Precision is a definition next to soundness: the units a key invalidates beyond those whose traced answers changed.
+
+| instance | task | bugs as failed obligations | fix as a key |
 |---|---|---|---|
-| member lookup, misses, implicits, value classes | `lookup`, `underlying`, `implicitCandidates` | name, class name, implicit scope | `obligations_repaired` |
-| inherited members, three designs | `decl`, `parents`, `members` | per design | `D_obligations`, `W_obligations`, `Mk_obligations` |
-| descendant checks and codegen | `ovr`, `has`, `cfl`, `dfr`, `hdr`, `fwd`, `fhas`, `mirror`, `ext`, `all`, `under` | one kind each | `Fl_obligations` |
-| erasure through inheritance | erasure per context | name, class name, inheritance, `V` | `Er_obligations` |
-| implicit scope across subprojects | candidates per base class | implicit summary | `is_obligations` |
-| desugaring, post-typer phases | `lookup`, from the typed tree | failed lookups, `_N` and a sentinel | `TreeToy.obligations_fixed` |
-| inline bodies, constants | `member` with its body | the body | `Inline.obligations_withBodies` |
-| upstream subprojects, libraries | any, against a snapshot or stamp | as above | T5 `downstream_sound` |
-| sealed hierarchies, Java `permits` | the parent's children | children in the parent's hash | `Sealed.obligations_withChildren` |
+| names, givens, extensions (`SplitProof.Spec`, `SpecGivens`, `Extensions`) | lookup through the scopes, misses included; implicit search by level | F1–F3, G1–G2, upstream F1: coverage; #34 across projects: abstraction | recorded scopes; `<pkg>._`; the coarse `anyTopLevelNamed n` |
+| inline bodies, opaque types, macros (`InlineOpaqueSpec`, `MacroDeps`) | what dotc inlines, folds and reflects | I1–I3, O1, scala3#23852, #22999, #27125: coverage; reflected private members: abstraction | the denoted constant; references before folding; the transform body |
+| Java (`JavaSpec`, `JavaSealedSpec`, `JavaOrder`) | JLS 6.4.1 levels; `permits`; the two views of a Java class under `Mixed` and pipelining | J1–J4, S2: coverage; S1: abstraction; `Mixed` on disagreeing views: compositionality | used names and import edges; children in the hash; one view per key |
+| cycles, naming, hash forms, annotations, pipelining, synthetics, derived API, extraHash (`Cycles` … `ExtraHash`) | per feature | sbt/zinc#1284, #1812, #1782, #1842, #1843, scala3#19910, #26231, #87, #1796 | per feature; or no key, only a policy (cycles, pipelining rollback) |
 
-A change to the bridge can say which row it extends and which obligation it discharges.
+No theorem is proved by `native_decide`; CI checks the axioms of 41 theorems. Enumerations are `example`s: tests of an instance against the compiler.
 
 <div class="fn">
 
-Notes: 1 min. Files: `Zinc/Toy.lean`, `Zinc/HierSound.lean`, `Zinc/Flat.lean`, `Zinc/Erasure.lean`, `Zinc/ImplicitScope.lean`.
+Notes: 1.5 min. `DESIGN-spec.md`, `General.lean`, `PLAN.md`'s proved-vs-checked table, `REVIEW-2026-10-11.md`. The earlier per-feature table (`obligations_repaired`, `D/W/Mk_obligations`, `Fl_obligations`, `Er_obligations`, `is_obligations`) is unchanged underneath; those instances lift too.
 
 </div>
 
@@ -963,6 +962,14 @@ Notes: 1 min. Files: `Zinc/Toy.lean`, `Zinc/HierSound.lean`, `Zinc/Flat.lean`, `
 | an added class that shadows a resolved name is missed (inner package, wildcard import; 2.13 and 3; on Spark too) | `Added.lean` | tests [retronym/zinc#32](https://github.com/retronym/zinc/pull/32), fix [retronym/zinc#34](https://github.com/retronym/zinc/pull/34) |
 | without `transitiveStep`, three mutually inferred classes alternate forever | `PingPong.zinc_diverges` | scripted test, [retronym/zinc#33](https://github.com/retronym/zinc/pull/33) |
 | Zinc's loop formula; fixed points need not be unique | the T3/T4 proofs | `zinc-incrementality` §3–4 |
+| names added to package objects, wildcard-imported objects and top-level definitions, and implicits in them, are missed; a package wildcard import is recorded nowhere | `SplitProof.Spec`, `SpecGivens`: coverage failures F2, F3, G1, G2 | [retronym/zinc#47](https://github.com/retronym/zinc/pull/47): the bridges record `<pkg>._`, rules scoped to the classes that see the package; [retronym/scala3#11](https://github.com/retronym/scala3/pull/11) for dotc |
+| a client compiled apart from an all-lazy trait drops the `$init$` call (F6), also for a trait with an extension method | harness, every Scala 3 run | [retronym/scala3#10](https://github.com/retronym/scala3/pull/10) (NoInits read from TASTy); tests retronym/zinc#52 |
+| mutually inferred types: Zinc stops at a fixed point that is not the clean build's (T3a without T3); upstream's retry (sbt/zinc#1780) catches C2 but not C1 | `Cycles.lean`; predicted, then run | tests [retronym/zinc#49](https://github.com/retronym/zinc/pull/49), note for #1780 |
+| Zinc's exclusion of unchanged Java classes from change detection is exact but imprecise under pipelining (every edited Java class compares two views) | `JavaOrder.exclusion_exact`, `flip_spurious` | develop's pending `java-comment-change` is the case |
+| five "hash" bugs were precision defects; one (zinc#237) masked a difference | `HashForms.lean` | reclassified |
+| a Java class's dependencies on its own subproject's Scala classes went external under pipelining; on Merkle every edit recompiled ~1,700 catalyst classes | `IncBench` on #24 | [retronym/zinc#55](https://github.com/retronym/zinc/pull/55) |
+
+The bug map: 145 historical bugs and 208 scripted tests classified by the obligation they break (`BUG-MAP.md`: 18 covered, 42 partially, 84 gaps in 15 clusters, most now phases). The model predicted 15 untested failures; all 15 reproduced on develop as pending tests ([retronym/zinc#50](https://github.com/retronym/zinc/pull/50), [#51](https://github.com/retronym/zinc/pull/51), [#53](https://github.com/retronym/zinc/pull/53)).
 
 <!-- break -->
 
@@ -985,26 +992,7 @@ The rule fired only for names deferred in the edited class. `m` is deferred in `
 
 <div class="fn">
 
-Notes: 2 min. `Zinc/FlatRules.lean`; retronym/talks#5, #8, #9. A `Report` is (classes recompiled, rounds, equals clean build). The same edit, a member losing its body, is also a bug in plain Zinc on Scala 3: the bridge never marks a deferred `def` or `val` abstract, so `B` is not recompiled and fails at runtime with `AbstractMethodError` (since 2020; [scala/scala3#27270](https://github.com/scala/scala3/issues/27270), fix [scala/scala3#27271](https://github.com/scala/scala3/pull/27271)). Found while porting the PoC to Scala 3.
-
-</div>
-
-### 26. Exhaustive checks over bounded program spaces
-
-Proofs say "sound, given a cover". Running every program in a bounded space, with each rule removed in turn, says which cover. Main space: 216,000 programs × 27 edits.
-
-| rules | undercompiling runs |
-|---|---|
-| none | 3,874,336 |
-| PoC rules as first stated | 9,600 |
-| `abstract` widened | 0 |
-| widened, without `overrides` | 293,104 |
-| widened, without the macro keys | 437,696 |
-| widened, without `header` (extends clauses recorded) | 0 |
-
-<div class="fn">
-
-Notes: 1 min. `Exhaustive.lean` (`lake exe exhaustive`); full table in `PLAN.md` Phase 5. Each minimal counterexample becomes a checked `example` and a scripted test. Caveat: these are executions, not theorems; the space is bounded; hashes are modelled as injective. A whole-space `native_decide` is too slow for the build.
+Notes: 2.5 min. `Zinc/FlatRules.lean`; retronym/talks#5, #8, #9. A `Report` is (classes recompiled, rounds, equals clean build). The catalogue and map: `BUGS-catalogue.md`, `TESTS-catalogue.md`, `BUG-MAP.md`. The same edit, a member losing its body, is also a bug in plain Zinc on Scala 3: the bridge never marks a deferred `def` or `val` abstract, so `B` is not recompiled and fails at runtime with `AbstractMethodError` (since 2020; [scala/scala3#27270](https://github.com/scala/scala3/issues/27270), fix [scala/scala3#27271](https://github.com/scala/scala3/pull/27271)). Found while porting the PoC to Scala 3.
 
 </div>
 
@@ -1016,6 +1004,8 @@ flowchart LR
   D -- "no: Zinc bug" --> F1["fix Zinc"]
   D -- "no: model wrong" --> F2["fix the model"]
   F2 --> L
+  Z --> K{"keys the model<br/>expects recorded?"}
+  K -- "no: uncovered" --> F1
 ```
 
 Found in Zinc:
@@ -1026,6 +1016,8 @@ Found in Zinc:
 - `erasure-bridge-upstream-grandparent` across subprojects.
 
 Found in the model: a deferred declaration hides a concrete one in its own ancestors; a call's answer must include whether the receiver is a trait.
+
+Two stronger checks since: the harness compares *recompiled sets*, not only verdicts, and on the name and given spaces model and Zinc agree on every verdict and every set (2,331 + 2,372 cases, Scala 2.13, against [retronym/zinc#47](https://github.com/retronym/zinc/pull/47)); and it reads Zinc's Analysis after the build and checks that the keys the model expects were recorded, an `uncovered` verdict ([retronym/zinc#54](https://github.com/retronym/zinc/pull/54)) that flagged a coverage gap on a case whose build happened to be clean.
 
 <div class="fn">
 
@@ -1047,22 +1039,47 @@ The conformance harness checks generated programs. On real code the check is the
 | add an overload | 716 / 1,514 | 544 / 1,514 |
 | body only | 8 / 520 | 8 / 531 |
 
+The name rules, measured the same way ([retronym/zinc#47](https://github.com/retronym/zinc/pull/47), classes recompiled, #34 / global key / scoped):
+
+| edit to catalyst | #34 | global | scoped |
+|---|---|---|---|
+| `util` package object gains `def sql` | 631 | 2,527 | 831 |
+| `expressions` package object gains an implicit | 664 | 2,528 | 2,294 |
+| root package object gains an implicit | 243 | 2,528 | 2,477 |
+
+The scoped rule is exact for names (the root package object's audience drops from 2,137 classes to 130 once chained package clauses are recorded); the implicit rule stays wide in Scala 2 because scalac's implicit scope includes every enclosing package object of a type's prefix, which Scala 3 dropped.
+
 <div class="fn">
 
-Notes: 1.5 min. [retronym/zinc#31](https://github.com/retronym/zinc/pull/31) and its `CATALYST-DIFFERENTIAL.md`. Verdicts separate batch dependence from staleness: `signature` (type-variable names only), `java-context` (matches a clean build that reads the module's Java classes as classfiles), `fresh-mismatch`, `bytecode` (stale, missing or extra: what undercompilation produces). With a scalac carrying scala/scala#11289–#11293 (`2.13.19-stability-5`) and `javac -parameters`, every step verifies. Totals and the table are from the `stability-4` run. Machine shared, so times are noisy.
+Notes: 2 min. [retronym/zinc#31](https://github.com/retronym/zinc/pull/31) and its `CATALYST-DIFFERENTIAL.md`. Verdicts separate batch dependence from staleness: `signature` (type-variable names only), `java-context` (matches a clean build that reads the module's Java classes as classfiles), `fresh-mismatch`, `bytecode` (stale, missing or extra: what undercompilation produces). With a scalac carrying scala/scala#11289–#11293 (`2.13.19-stability-5`) and `javac -parameters`, every step verifies. Totals and the table are from the `stability-4` run. Machine shared, so times are noisy. The name-rule table is from #47 (develop) and #41 (the same rules on the PoC). Caveat for §18a: the Merkle headline (420 vs 1,371) was measured with pipelining off; with it on, the PoC recompiled ~1,700 classes on every edit until retronym/zinc#55.
+
+</div>
+
+### 27b. Binary compatibility: the JVM and Scala layers
+
+Zinc asks whether a client must be recompiled; MiMa asks whether its old classfile still links. Both are a task's trace against an edited environment, so T1 applies to linkage unchanged.
+
+- `Jvm/Link.lean`: JVM resolution and selection as a `Task`; a catalogue of 29 library edits (method removed, class becomes interface, default conflict, access changes, …) with the `LinkError` each produces and the client spaces that break (15,652 + 44,144 programs). Calibrated on HotSpot 21, 25 and 27: every program agrees, except two JDK 21 bugs the probe found (JDK-8356942, JDK-8350029).
+- `Scala/`: a scalac subset lowered to `Jvm.World` as a `Task`, calibrated against scalac 2.12, 2.13 and 3 (talks#39); one `asSeenFrom` shared with the IntelliJ type-system TCK (talks#56).
+- The theorem that ties them: for a front end meeting Zinc's obligations, a client Zinc does not invalidate links against the new library exactly as a fresh build would. Zinc-clean implies binary-compatible; the converse gap is what MiMa reports. MiMa is next.
+
+<div class="fn">
+
+Notes: 1 min. `ROADMAP.md` on `claude/bincompat-lean` (tracks J, S, B); talks#50, #39, #56. The layers live beside `Zinc/`, not in it.
 
 </div>
 
 ### 28. What the model does not show
 
-- That scalac or dotc meet the obligations. That is still a testing problem; §27 is one way to do it.
-- The source → class mapping (Zinc recompiles files, not classes).
-- Precision: that a design recompiles *no more* than another. The model computes it on examples; there is no theorem.
+- That scalac or dotc meet the obligations. Still a testing problem; §27's `uncovered` verdict checks the bridge's keys per case, and the calibrations (§27b) check the tasks, but neither is a proof.
+- Files: Zinc recompiles files, not classes. Designed (`PLAN-files.md`: a file per unit, rounds closed by the policy, imports charged to one class), not yet built; F3 becomes a framework statement with it.
+- Precision is now a definition (`Necessary`, `OverInvalidated`) and a theorem per key (`narrowed_le_global`), but still not a comparison of whole designs.
 - Hash collisions: hashes are modelled as injective.
+- The newest instances are narrow by their authors' own account: two-unit cycles; naming and hash forms prove coverage and abstraction but not full soundness of the renamed compiler; one annotation per definition; two pipelining bugs (scala3#27125, #20119) have no model; the Scala 3 fixes need dotty.
 
 <div class="fn">
 
-Notes: 30 s. `zinc-incrementality` §22 "Limits"; `PLAN.md` P2.6 (precision, parked).
+Notes: 45 s. `zinc-incrementality` §22 "Limits"; `PLAN.md`'s status table; the "Known limits" row of the dashboard.
 
 </div>
 
@@ -1106,7 +1123,7 @@ flowchart BT
 
 - The PoC (retronym/zinc#24) hashes each class's own declarations and composes along the linearization, so an ancestor edit no longer recompiles every subclass just to refresh its hashes.
 - Descendants that must recompile are chosen by six rules: header, overrides, conflicts, abstract, trait, mirror. Most of Part IX's findings are about these rules.
-- On Spark: adding an unused member to `TreeNode` recompiles 1,371 classes in catalyst today and 420 with the PoC; downstream, in `sql/core`, 518 today and 44 with the PoC.
+- On Spark: adding an unused member to `TreeNode` recompiles 1,371 classes in catalyst today and 420 with the PoC; downstream, in `sql/core`, 518 today and 44 with the PoC. Measured with pipelining off: with it on, a pipelined Java step recorded the subproject's own classes as external and the PoC recompiled ~1,700 classes on every edit until [retronym/zinc#55](https://github.com/retronym/zinc/pull/55).
 
 | edit (in catalyst) | catalyst today | PoC | `sql/core` today | PoC |
 |---|---|---|---|---|
@@ -1138,21 +1155,42 @@ Bugs of note: [sbt/zinc#1787](https://github.com/sbt/zinc/pull/1787) (trait `ext
 
 </div>
 
-### 23d. Further features the model does not cover yet
+### 26. Exhaustive checks over bounded program spaces
 
-| feature | what the model needs |
+Proofs say "sound, given a cover". Running every program in a bounded space, with each rule removed in turn, says which cover. Main space: 216,000 programs × 27 edits.
+
+| rules | undercompiling runs |
 |---|---|
-| SAM conversion | an inheritance edge that the source does not spell out |
-| exports, top-level definitions, package objects | units that are not classes: a source → class mapping |
-| class vs companion | keys with a namespace component |
-| annotations, parameter annotations, literal types | more of the declaration in the answer to a lookup |
-| Java sources | a second front end, and compositionality between the source and classfile views of Java |
+| none | 3,874,336 |
+| PoC rules as first stated | 9,600 |
+| `abstract` widened | 0 |
+| widened, without `overrides` | 293,104 |
+| widened, without the macro keys | 437,696 |
+| widened, without `header` (extends clauses recorded) | 0 |
 
 <div class="fn">
 
-Notes: 1 min. None of these is in the merged Lean yet; package objects, exports and givens are in retronym/talks#21 (open). The taxonomy is `zinc-incrementality` §16.
+Notes: 1 min, in overflow since the specification reframe: these are checks of an instance, not theorems. `Exhaustive.lean` (`lake exe exhaustive`); full table in `PLAN.md` Phase 5. Each minimal counterexample becomes a checked `example` and a scripted test. Caveat: these are executions, not theorems; the space is bounded; hashes are modelled as injective. A whole-space `native_decide` is too slow for the build.
 
-Bugs of note: [sbt/zinc#830](https://github.com/sbt/zinc/issues/830) (SAM) · [scala/scala3#11841](https://github.com/scala/scala3/issues/11841) (exports) · [scala/scala3#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994) (top-level definitions) · [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (class vs companion) · [retronym/zinc#18](https://github.com/retronym/zinc/pull/18), [#19](https://github.com/retronym/zinc/pull/19), [#20](https://github.com/retronym/zinc/pull/20) (literal types, annotations; #19 upstream as [sbt/zinc#1842](https://github.com/sbt/zinc/pull/1842)) · [retronym/zinc#35](https://github.com/retronym/zinc/pull/35) (package objects, exports, givens) · [retronym/zinc#21](https://github.com/retronym/zinc/pull/21), [#23](https://github.com/retronym/zinc/pull/23) (Java `permits`, parameter names)
+</div>
+
+### 23d. Further features the model does not cover yet
+
+What this slide listed on 9 October, and where it is now:
+
+| feature | then | now |
+|---|---|---|
+| exports, top-level definitions, package objects | needed a source → class mapping | names, exports and givens modelled (`SplitProof.Spec`, `SpecGivens`, `DerivedApi`); fixed in retronym/zinc#47 |
+| class vs companion | keys with a namespace component | `ExtraHash.lean`: the lineage #542 → #1796 as alternating soundness and precision fixes; namespaced keys are the condition #1796 must meet |
+| annotations, parameter annotations, literal types | more of the declaration in the answer | `Annotations.lean`: #1842 is coverage, scala3#22999 abstraction |
+| Java sources | a second front end and compositionality between views | `JavaSpec`, `JavaSealedSpec`, `JavaOrder`: `Mixed` is sound exactly when the source and classfile views agree |
+| inline, opaque, macros | — | `InlineOpaqueSpec`, `MacroDeps` |
+| SAM conversion | an inheritance edge the source does not spell out | still open (sbt/zinc#830, #1528) |
+| files as units | — | designed (`PLAN-files.md`), not built |
+
+<div class="fn">
+
+Notes: 1 min. `BUG-MAP.md` lists the remaining gap clusters: SAM and local classes, inner and path-dependent classes, phantom binary dependencies, import renames and given priority, case classes and enums beyond synthetics, files.
 
 </div>
 
@@ -1173,11 +1211,13 @@ My pick: 1 and 4, with 3 as a fallback.
 
 - §10 and §18 still quote the full model (`Zinc/Hier.lean`, `Zinc/Erasure.lean`, `Zinc/Flat.lean`); §11's `round` is simplified on the slide.
 - Screenshots: P1, P3/P4 infoview, the demos.
-- Port `lean/V2/Embed.lean` back to the full model.
+- `lean/V2/Embed.lean` is now subsumed by the full model's `General.lean` (every variant lifts into `XCompiler`); decide whether the talk's V1/V2 snapshots follow it or stay frozen.
 - §18: the Scala 2 row is split across two files (`Hier.W` for typing, `Erasure` `.asf` for codegen). One instance per scheme over one program space would make the slide's table a single comparison.
 - Stale docs: `zinc-incrementality` §22 says the model is about 1,100 lines (now about 8,300); `PLAN.md` P6.6/P6.8 cite `wit_obligations`, `wit_sound`, `vEdge_obligations`, `vEdge_sound`, which were replaced in P6.9.
-- Results the talk would like: precision theorems (P2.6).
-- Freeze the numbers from retronym/zinc#24, #25 and #31 at a commit (§27a's totals already moved once, between the 2.13.16 and `stability-4` runs).
+- Precision: definitions and per-key theorems exist now (`Necessary`, `OverInvalidated`, `narrowed_le_global`); a design-to-design theorem (P2.6) is still open.
+- Screenshots to add: the `uncovered` verdict (#54) on a clean-but-uncovered case; the C1-vs-#1780 test; `#print axioms` from the CI run.
+- Stale: §27a's "no undercompilation on either side" predates the name-resolution families; say "none in the hierarchy spaces".
+- Freeze the numbers from retronym/zinc#24, #25, #31, #41, #47 and #55 at a commit; the catalyst tables in §27a come from #47 and #41.
 - Lean syntax highlighting in `template.html` (highlight.js has no Lean grammar).
 
 ### T. A separate talk: joint ≡ separate compilation
