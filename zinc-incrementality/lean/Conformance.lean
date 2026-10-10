@@ -1,6 +1,7 @@
 import Zinc.FlatRules
-import Zinc.Names
-import Zinc.Givens
+import ZincNames.Names
+import ZincNames.Givens
+import Zinc.InlineOpaque
 import Zinc.Split
 
 /-! Dumps the program space of `Zinc/FlatRules.lean` as JSON lines, one line per base program
@@ -13,11 +14,23 @@ declared members, selections), so a later program space only has to supply its `
 Each edit carries the model's verdict under the widened default rules: the classes the policy
 recompiles besides the edited one, and whether the run equals the clean build.
 
-`conformance names 2|3`: the name-resolution space of `Zinc/Names.lean`, as source files, with the
-model's resolution before and after each edit and its verdict for that Scala version; with `cheap`,
-the verdict under retronym/zinc#34's invalidation of an added class's users. With `split`, the
-verdicts of `Zinc/Split.lean` with every binding upstream and the client downstream (each file's
-`tiers`, for the harness's `split` layout); `upstream` is #34 extended across subprojects, `proposed` the rule of `Zinc/SplitProof.lean`.
+`conformance names|givens 2|3 [mode]`: the name-resolution spaces of `ZincNames/Names.lean` and
+`ZincNames/Givens.lean`, as source files, with the model's resolution before and after each edit,
+its verdict for that Scala version under the mode (`Mode.parse`: `today` by default, `cheap` for
+retronym/zinc#34, `all` for #34 with the F2, F3 and G rules, `+narrowed+imports` for the rules
+narrowed to the searched packages with recorded package imports, `+decls` for #24's API without
+composition), and the classes it recompiles beyond the edited files and their heirs
+(`modelRecompiled`, among the client, `User`, `Near`, `Mid` and `Far`).
+
+`conformance cost`: per space, version and mode, the edits, the wrong ones, and the recompilations
+beyond the necessary, as a markdown table.
+
+`conformance inline|opaque [mode]`: the Scala 3 spaces of `Zinc/InlineOpaque.lean`, as source files
+with tiers (the client and descendants downstream), with the classes the model recompiles under
+`today` or the named fix.
+With `split`, the verdicts of `Zinc/Split.lean` with every binding upstream and the client
+downstream (each file's `tiers`, for the harness's `split` layout); `upstream` is #34 extended
+across subprojects, `proposed` the rule of `Zinc/SplitProof.lean`.
 
 `conformance [all]`: bases whose model build has no errors, resolves every selection and
 inherits one instance of each ancestor, or every base with `all`. -/
@@ -164,7 +177,8 @@ def namesFactors (p : Prog) : List (String × String) :=
   let c := p.cl
   [("pkg", c.pkg.str), ("blk", toString c.blk), ("inh", toString c.inh), ("expl", toString c.expl),
    ("wild", toString c.wild), ("wpkg", toString c.wpkg), ("first", toString c.first),
-   ("opt", toString c.opt), ("exp", toString c.exp)] ++
+   ("opt", toString c.opt), ("exp", toString c.exp), ("pinh", toString c.pinh),
+   ("winh", toString c.winh)] ++
   [Slot.blk, .inh, .expl, .wild, .wpkg, .inner, .pobj, .outer].map fun s => ("s." ++ s.str, stStr (p.st s))
 
 def jfactors (fs : List (String × String)) : String :=
@@ -185,8 +199,10 @@ def mainNames (m : Mode) (v : Ver) (split : Option Zinc.Split.Mode := none) : IO
         | none => verdict m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (namesFactors p') ++ ",\"files\":" ++ jfiles (fileEdits p p') ++
-        ",\"modelRecompiled\":" ++ (if r.recompiled then "[\"Client\"]" else "[]") ++
-        ",\"modelClean\":" ++ toString r.clean ++
+        ",\"modelRecompiled\":" ++ jarr (((if r.recompiled then ["Client"] else []) ++
+          (if userRecompiled m v p p' then ["User"] else [])).map jstr) ++
+        ",\"modelNecessary\":" ++ toString (necessary v p p') ++
+        ",\"modelClean\":" ++ toString r.clean ++ ",\"modelFamily\":" ++ jstr (family m v p p') ++
         ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
     out.putStrLn ("{\"space\":\"names\",\"id\":\"n" ++ toString i ++ "\",\"cfg\":" ++ jstr (namesCfg p) ++
       ",\"factors\":" ++ jfactors (namesFactors p) ++
@@ -202,7 +218,7 @@ open Zinc.Givens
 def givensFactors (v : Zinc.Names.Ver) (p : Prog) : List (String × String) :=
   let c := p.cl
   [("pkg", c.pkg.str), ("blk", toString c.blk), ("inh", toString c.inh), ("wild", toString c.wild),
-   ("first", toString c.first)] ++
+   ("first", toString c.first), ("pinh", toString c.pinh), ("wpkg", toString c.wpkg)] ++
   Slot.all.map fun s => ("s." ++ s.str, if (present v c).contains s then toString (p.has s) else "-")
 
 def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) (split : Option Zinc.Split.Mode := none) :
@@ -214,10 +230,14 @@ def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) (split : Option Zinc.S
       let r := match split with
         | some sm => Zinc.Split.givensVerdict sm .split v p p'
         | none => verdict m v p p'
+      let (near, mid, far) := bystanders m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (givensFactors v p') ++ ",\"files\":" ++ jfiles (fileEdits v p p') ++
-        ",\"modelRecompiled\":" ++ (if r.recompiled then "[\"Client\"]" else "[]") ++
-        ",\"modelClean\":" ++ toString r.clean ++
+        ",\"modelRecompiled\":" ++ jarr (((if r.recompiled then ["Client"] else []) ++
+          (if near then ["Near"] else []) ++ (if mid then ["Mid"] else []) ++
+          (if far then ["Far"] else [])).map jstr) ++
+        ",\"modelNecessary\":" ++ toString (necessary v p p') ++
+        ",\"modelClean\":" ++ toString r.clean ++ ",\"modelFamily\":" ++ jstr (family m v p p') ++
         ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
     out.putStrLn ("{\"space\":\"givens\",\"id\":\"g" ++ toString i ++ "\",\"cfg\":" ++
       jstr (" ".intercalate ((givensFactors v p).map (·.2))) ++
@@ -229,8 +249,75 @@ def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) (split : Option Zinc.S
 
 end givens
 
+/-- Per space, version and mode: the edits, the wrong ones (unsound), the client recompiled though
+its resolution did not change, and the bystanders recompiled (each stands for every class of its
+kind in a build). -/
+def mainCost : IO Unit := do
+  let out ← IO.getStdout
+  let vs : List (String × Zinc.Names.Ver) := [("2.13", .s2), ("3", .s3)]
+  out.putStrLn "| Space | Mode | Edits | Wrong | Client, resolution unchanged | `User` | `Near` | `Mid` | `Far` |"
+  out.putStrLn "|---|---|---|---|---|---|---|---|---|"
+  for (vn, v) in vs do
+    for ms in ["today", "cheap", "searched", "names", "f2", "f3", "cheap+f2+f3",
+        "cheap+f2+f3+narrowed", "cheap+f2+f3+narrowed+imports", "all+decls"] do
+      let some md := Zinc.Names.Mode.parse ms | continue
+      let c := Zinc.Names.cost md v
+      out.putStrLn s!"| names, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | {c.user} | | | |"
+  for (vn, v) in vs do
+    for ms in ["today", "cheap", "searched", "g", "g+narrowed", "g+narrowed+imports", "all",
+        "all+narrowed+imports", "all+decls"] do
+      let some md := Zinc.Names.Mode.parse ms | continue
+      let c := Zinc.Givens.cost md v
+      out.putStrLn s!"| givens, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | | {c.near} | {c.mid} | {c.far} |"
+
+section inlineOpaque
+open Zinc.InlineOpaque
+
+def ioEdit (cls cfg : String) (fs : List (String × String)) (files : List (String × Option String))
+    (v : Verdict) : String :=
+  "{\"cls\":" ++ jstr cls ++ ",\"cfg\":" ++ jstr cfg ++ ",\"factors\":" ++ jfactors fs ++
+    ",\"files\":" ++ jfiles files ++ ",\"modelRecompiled\":" ++ jarr (v.recompiled.map jstr) ++
+    ",\"modelClean\":" ++ toString v.clean ++ ",\"modelErrs\":[]}"
+
+def ioBase (space id : String) (fs : List (String × String)) (files : List (String × String))
+    (tiers : List (String × ℕ)) (es : List String) : String :=
+  "{\"space\":" ++ jstr space ++ ",\"id\":" ++ jstr id ++ ",\"cfg\":" ++
+    jstr (" ".intercalate (fs.map (·.2))) ++ ",\"factors\":" ++ jfactors fs ++
+    ",\"files\":" ++ jfiles (files.map fun (f, s) => (f, some s)) ++ ",\"tiers\":" ++ jtiers tiers ++
+    ",\"edits\":" ++ jarr es ++ "}"
+
+def mainInline (m : Inl.Mode) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in Inl.bases do
+    let es := (Inl.edits p).map fun (e, p') =>
+      ioEdit (Inl.editedFile p.ref) (e.str ++ ": " ++ " ".intercalate ((Inl.factors p).map (·.2)))
+        (Inl.factors p' ++ [("edit", e.str)]) (Inl.fileEdits p p') (Inl.check m p p')
+    out.putStrLn (ioBase "inline" ("i" ++ toString i) (Inl.factors p) (Inl.files p) (Inl.tiers p) es)
+    i := i + 1
+
+def mainOpaque (m : Opq.Mode) : IO Unit := do
+  let out ← IO.getStdout
+  let mut i := 0
+  for p in Opq.bases do
+    let es := (Opq.edits p).map fun (r, p') =>
+      let fe := ((Opq.files p').filter fun f => !(Opq.files p).contains f).map fun (n, s) => (n, some s)
+      ioEdit "O.scala" (p.rhs.str ++ " -> " ++ r.str ++ ": " ++ " ".intercalate ((Opq.factors p).map (·.2)))
+        (Opq.factors p') fe (Opq.check m p p')
+    out.putStrLn (ioBase "opaque" ("o" ++ toString i) (Opq.factors p) (Opq.files p) (Opq.tiers p) es)
+    i := i + 1
+
+end inlineOpaque
+
 def main (args : List String) : IO Unit := do
-  let m : Zinc.Names.Mode := if args.contains "cheap" then .cheap else .today
+  if args.contains "cost" then return (← mainCost)
+  if args.contains "inline" then
+    return (← mainInline (if args.contains "hashConsts" then .hashConsts
+      else if args.contains "bodyDeps" then .bodyDeps else .today))
+  if args.contains "opaque" then
+    return (← mainOpaque (if args.contains "dep" then .dep else if args.contains "refine" then .refine
+      else .today))
+  let m : Zinc.Names.Mode := ((args.drop 2).head?.bind Zinc.Names.Mode.parse).getD .today
   let split : Option Zinc.Split.Mode := if !args.contains "split" then none
     else some (if args.contains "proposed" then .names else if args.contains "upstream" then .upstream
       else if args.contains "cheap" then .cheap else .today)

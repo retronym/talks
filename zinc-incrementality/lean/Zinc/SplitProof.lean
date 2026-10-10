@@ -676,6 +676,355 @@ theorem cross_moves :
     (compiler upClasses .cross).π before none (.named true) ≠ (compiler upClasses .cross).π after none (.named true) := by
   simp [compiler, π, reads, before, after, List.finRange]
 
+/-! ## Phase 10: the rules for F1–F3, global or narrowed
+
+`Names.lean`'s families as kinds of scope, beside `Scope`'s flags (`Ext`): a member of a package
+object (F2, `pobj`); a wildcard import charged to a class of the file that does not use the name
+(F3, `wildOther`, the unpinned `W`); a scope in a package the client reaches through a wildcard
+import of the package (`imported`: `a.q.Foo`, `package object q`'s member). A top-level class is
+`Scope.topLevel` (F1).
+
+The rules record one key on the client, `rule`, whose hash reads the scopes the rules reach: #34
+the top-level classes, F2 the package-object members; `global` reaches all of them, `narrowed` only
+those of the enclosing packages and, when the bridge records `import q._` (`imports`), of the
+imported ones. F3 pins `wildOther` scopes (an existence key, as if the import were charged to every
+class of the file). In one client's view, `global` and `narrowed` with `imports` cover the same
+scopes; they differ in the classes of other clients, which the enumeration counts (`User`, `Far`). -/
+
+structure Ext where
+  pobj : Bool
+  wildOther : Bool
+  imported : Bool
+  deriving DecidableEq
+
+inductive Reach | off | narrowed | global
+  deriving DecidableEq
+
+structure Rules where
+  cheap : Reach := .off
+  f2 : Reach := .off
+  f3 : Bool := false
+  imports : Bool := false
+  deriving DecidableEq
+
+def Reach.at (rc : Reach) (imports : Bool) (x : Ext) : Bool :=
+  match rc with
+  | .off => false
+  | .global => true
+  | .narrowed => !x.imported || imports
+
+variable (sx : Fin n → Ext)
+
+/-- The scopes the rules' key covers and its hash reads. -/
+def ruled (r : Rules) (i : Fin n) : Bool :=
+  ((sc i).topLevel && r.cheap.at r.imports (sx i)) || ((sx i).pobj && r.f2.at r.imports (sx i))
+
+inductive KR | presence | rule
+  deriving DecidableEq
+
+def πR (r : Rules) (I : U n → Bool) : U n → KR → List Bool
+  | u, .presence => [I u]
+  | none, .rule => (List.finRange n).map fun i => ruled sc sx r i && I (some i)
+  | some _, .rule => []
+
+def coversR (r : Rules) (_ : U n → Bool) (q : U n × Q) : U n × KR → Prop
+  | (u, .presence) => q.1 = u
+  | (none, .rule) => ∃ i, q.1 = some i ∧ ruled sc sx r i = true
+  | (some _, .rule) => False
+
+/-- The `wildOther` scopes, pinned by F3. -/
+def f3Keys (r : Rules) : Finset (U n × KR) :=
+  if r.f3 then ((List.finRange n).filter fun i => (sx i).wildOther).map (fun i => (some i, KR.presence)) |>.toFinset
+  else ∅
+
+/-- Today's keys (the resolved scope, the pinned ones), F3's, and the rules' key. -/
+def keysR (r : Rules) (_ : U n) (tr : List (U n × Q)) : Finset (U n × KR) :=
+  (tr.getLast?.map fun q => (q.1, KR.presence)).toList.toFinset ∪
+  (((List.finRange n).filter fun i => (sc i).pinned).map (fun i => (some i, KR.presence))).toFinset ∪
+  f3Keys sx r ∪ {(none, KR.rule)}
+
+def rules (r : Rules) : NCompiler (U n) Src Out Bool KR (List Bool) Q (fun _ => Bool) where
+  unit := unit n
+  group := group
+  iface := Out.iface
+  answer := answer
+  π := πR sc sx r
+  hashDeps := hashDeps
+  keys := keysR sc sx r
+  covers := coversR sc sx r
+
+theorem rules_comp (r : Rules) : ∀ (G : Finset (U n)) (src : U n → Src) (I : U n → Bool), ∀ u ∈ G,
+    (rules sc sx r).group G src I u =
+      ((rules sc sx r).unit (src u)).run ((rules sc sx r).answer
+        (NCompiler.override I G ((rules sc sx r).iface ∘ (rules sc sx r).group G src I))) := by
+  intro G src I u _
+  have : NCompiler.override I G (Out.iface ∘ group G src I) =
+      fun v => if v ∈ G then ifaceSrc (src v) else I v := by
+    funext v
+    simp only [NCompiler.override, Function.comp]
+    split
+    · simp only [group, iface_run]
+    · rfl
+  show group G src I u = (unit n (src u)).run (answer (NCompiler.override I G (Out.iface ∘ group G src I)))
+  rw [this]
+  rfl
+
+theorem rules_locality (r : Rules) : ∀ (I I' : U n → Bool) (c : U n),
+    (∀ u ∈ (rules sc sx r).hashDeps I c, I u = I' u) → ∀ k, (rules sc sx r).π I c k = (rules sc sx r).π I' c k := by
+  intro I I' c h k
+  cases c with
+  | none =>
+    have hall : ∀ u, I u = I' u := fun u => h u (by simp [rules, hashDeps])
+    cases k <;> simp [rules, πR, hall]
+  | some i =>
+    have hi : I (some i) = I' (some i) := h (some i) (by simp [rules, hashDeps])
+    cases k <;> simp [rules, πR, hi]
+
+theorem rules_abstraction (r : Rules) : ∀ (I I' : U n → Bool) (k : U n × KR),
+    (rules sc sx r).π I k.1 k.2 = (rules sc sx r).π I' k.1 k.2 →
+      ∀ q, (rules sc sx r).covers I q k →
+        (rules sc sx r).answer I q = (rules sc sx r).answer I' q ∧ (rules sc sx r).covers I' q k := by
+  rintro I I' ⟨u, k⟩ h q hc
+  refine ⟨?_, hc⟩
+  show I q.1 = I' q.1
+  cases k with
+  | presence =>
+    simp only [rules, πR, List.cons.injEq, and_true] at h
+    simp only [rules, coversR] at hc
+    rw [hc]; exact h
+  | rule =>
+    cases u with
+    | some _ => simp [rules, coversR] at hc
+    | none =>
+      obtain ⟨i, hq, hr⟩ := hc
+      rw [hq]
+      simp only [rules, πR] at h
+      have := (List.map_inj_left.1 h) i (List.mem_finRange i)
+      simpa [hr] using this
+
+/-- **The rules cover the lookup** when every scope is pinned, pinned by F3, or reached. -/
+theorem rules_coverage (r : Rules)
+    (hk : ∀ i, (sc i).pinned = true ∨ (r.f3 = true ∧ (sx i).wildOther = true) ∨ ruled sc sx r i = true) :
+    ∀ (I : U n → Bool) (u : U n) (s : Src),
+    ∀ q ∈ ((rules sc sx r).unit s).trace ((rules sc sx r).answer I),
+      ∃ k ∈ (rules sc sx r).keys u (((rules sc sx r).unit s).trace ((rules sc sx r).answer I)),
+        (rules sc sx r).covers I q k := by
+  intro I u s q hq
+  obtain ⟨i, rfl, hlast⟩ := trace_unit I s q hq
+  cases hI : I (some i)
+  · rcases hk i with hp | ⟨h3, hw⟩ | hr
+    · refine ⟨(some i, .presence), ?_, rfl⟩
+      simp [rules, keysR, hp]
+    · refine ⟨(some i, .presence), ?_, rfl⟩
+      simp [rules, keysR, f3Keys, h3, hw]
+    · exact ⟨(none, .rule), by simp [rules, keysR], i, rfl, hr⟩
+  · refine ⟨(some i, .presence), ?_, rfl⟩
+    have := hlast hI
+    simp [rules, keysR, this]
+
+/-- **The rules meet the obligations** (and so T3a″, `NCompiler.zinc_sound`) whenever every scope
+of the lookup is pinned, a `wildOther` import with F3 on, or reached by #34 or F2. -/
+theorem rules_obligations (r : Rules)
+    (hk : ∀ i, (sc i).pinned = true ∨ (r.f3 = true ∧ (sx i).wildOther = true) ∨ ruled sc sx r i = true) :
+    (rules sc sx r).Obligations where
+  comp := rules_comp sc sx r
+  coverage := rules_coverage sc sx r hk
+  abstraction := rules_abstraction sc sx r
+  locality := rules_locality sc sx r
+
+/-- Names' slot language: every scope is pinned (`P`, `V`, `X`, `W` charged to a class that uses
+the name), a `wildOther` import, a top-level class, or a package-object member. -/
+def NamesScopes : Prop :=
+  ∀ i, (sc i).pinned = true ∨ (sx i).wildOther = true ∨ (sc i).topLevel = true ∨ (sx i).pobj = true
+
+/-- **#34 with F2 and F3, global**: the obligations hold for every names lookup. -/
+theorem global_obligations (h : NamesScopes sc sx) :
+    (rules sc sx { cheap := .global, f2 := .global, f3 := true }).Obligations :=
+  rules_obligations sc sx _ fun i => by
+    rcases h i with h | h | h | h
+    · exact .inl h
+    · exact .inr (.inl ⟨rfl, h⟩)
+    · exact .inr (.inr (by simp [ruled, Reach.at, h]))
+    · exact .inr (.inr (by simp [ruled, Reach.at, h]))
+
+/-- **Narrowed, given recorded package imports**: the obligations hold for every names lookup. The
+hypothesis `imports` is the bridge change (Scala 2's `Dependency`, dotc's `ExtractDependencies`). -/
+theorem narrowed_obligations (h : NamesScopes sc sx) :
+    (rules sc sx { cheap := .narrowed, f2 := .narrowed, f3 := true, imports := true }).Obligations :=
+  rules_obligations sc sx _ fun i => by
+    rcases h i with h | h | h | h
+    · exact .inl h
+    · exact .inr (.inl ⟨rfl, h⟩)
+    · exact .inr (.inr (by simp [ruled, Reach.at, h]))
+    · exact .inr (.inr (by simp [ruled, Reach.at, h]))
+
+/-! ### Precision
+
+After an edit from interfaces `I` to `I'`, a unit is **necessary** when an answer its lookup read
+changed (T1's converse, as a definition), and **invalidated** when a key it recorded changed hash.
+Sound keys invalidate every necessary unit; the **over-invalidation** is invalidated and not
+necessary. -/
+
+section Precision
+
+variable {CUnit Src' Out' Iface K' Hash Q' : Type} {A : Q' → Type} [DecidableEq CUnit]
+variable (C : NCompiler CUnit Src' Out' Iface K' Hash Q' A)
+
+/-- An answer the unit's lookup read changed: the unit must recompile. -/
+def Necessary (s : Src') (I I' : CUnit → Iface) : Prop :=
+  ∃ q ∈ (C.unit s).trace (C.answer I), C.answer I q ≠ C.answer I' q
+
+/-- A key the unit recorded changed hash: Zinc recompiles it. -/
+def Invalidated (d : CUnit) (s : Src') (I I' : CUnit → Iface) : Prop :=
+  ∃ k ∈ C.keys d ((C.unit s).trace (C.answer I)), C.π I k.1 k.2 ≠ C.π I' k.1 k.2
+
+def OverInvalidated (d : CUnit) (s : Src') (I I' : CUnit → Iface) : Prop :=
+  Invalidated C d s I I' ∧ ¬ Necessary C s I I'
+
+/-- Sound keys invalidate every necessary unit. -/
+theorem necessary_invalidated (ob : C.Obligations) (d : CUnit) (s : Src') (I I' : CUnit → Iface)
+    (h : Necessary C s I I') : Invalidated C d s I I' := by
+  obtain ⟨q, hq, hne⟩ := h
+  by_contra hno
+  obtain ⟨k, hk, hc⟩ := ob.coverage I d s q hq
+  have : C.π I k.1 k.2 = C.π I' k.1 k.2 := by
+    by_contra h'
+    exact hno ⟨k, hk, h'⟩
+  exact hne (ob.abstraction I I' k this q hc).1
+
+end Precision
+
+/-- **`searched` is exact**: it invalidates only when an answer the lookup read changed. -/
+theorem searched_exact (d : U n) (s : Src) (I I' : U n → Bool)
+    (h : Invalidated (compiler sc .searched) d s I I') : Necessary (compiler sc .searched) s I I' := by
+  obtain ⟨⟨u, k⟩, hk, hne⟩ := h
+  simp only [compiler, keys, List.mem_toFinset, List.mem_map] at hk
+  obtain ⟨q, hq, hqk⟩ := hk
+  simp only [Prod.mk.injEq] at hqk
+  obtain ⟨rfl, rfl⟩ := hqk
+  refine ⟨q, hq, fun he => hne ?_⟩
+  simp only [compiler, π]
+  simp only [compiler, answer] at he
+  rw [he]
+
+/-- **The narrowed rules invalidate no more than the global ones.** -/
+theorem narrowed_le_global (d : U n) (s : Src) (I I' : U n → Bool) (imports : Bool)
+    (h : Invalidated (rules sc sx { cheap := .narrowed, f2 := .narrowed, f3 := true, imports := imports }) d s I I') :
+    Invalidated (rules sc sx { cheap := .global, f2 := .global, f3 := true }) d s I I' := by
+  obtain ⟨⟨u, k⟩, hk, hne⟩ := h
+  cases k with
+  | presence =>
+    refine ⟨(u, .presence), ?_, hne⟩
+    simpa [rules, keysR, f3Keys] using hk
+  | rule =>
+    cases u with
+    | some _ => simp [rules, keysR, f3Keys] at hk
+    | none =>
+      refine ⟨(none, .rule), by simp [rules, keysR], fun heq => hne ?_⟩
+      simp only [rules, πR] at heq ⊢
+      apply List.map_congr_left
+      intro i _
+      have := (List.map_inj_left.1 heq) i (List.mem_finRange i)
+      by_cases hr : ruled sc sx { cheap := .narrowed, f2 := .narrowed, f3 := true, imports := imports } i = true
+      · have hg : ruled sc sx { cheap := .global, f2 := .global, f3 := true } i = true := by
+          simp only [ruled, Reach.at, Bool.or_eq_true, Bool.and_eq_true] at hr ⊢
+          rcases hr with ⟨h1, _⟩ | ⟨h1, _⟩
+          · simp [h1]
+          · simp [h1]
+        simpa [hr, hg] using this
+      · simp [hr]
+
+/-! ### F4 and F5 fail compositionality
+
+Scala 2 (F4) and Scala 3 (F5) compile a class `a.b.Foo` (scope `c`) differently when a member
+`Foo` of `package object b` (scope `m`) is compiled with it: Scala 3 reports a double definition,
+Scala 2 emits the class's mirror without its `ScalaSignature`, which a later compile cannot read
+as the class. Either way the class comes out unusable only from the joint compilation. That is a
+failure of `comp`, not of coverage, so no key fixes it. -/
+
+/-- Joint compilation where `c` and `m` interfere. -/
+def jointGroup (c m : U n) (G : Finset (U n)) (src : U n → Src) (I : U n → Bool) : U n → Out :=
+  fun u => if u = c ∧ c ∈ G ∧ m ∈ G ∧ ifaceSrc (src m) = true then ⟨false, none⟩ else group G src I u
+
+/-- **F4/F5 refute `comp`**: with `a.b.Foo` and the package object's `Foo` compiled together, the
+joint output differs from the per-unit compilation of the class against its group-mates. -/
+theorem joint_not_comp : ¬ ∀ (G : Finset (U 2)) (src : U 2 → Src) (I : U 2 → Bool), ∀ u ∈ G,
+    jointGroup (some 1) (some 0) G src I u =
+      (unit 2 (src u)).run (answer (NCompiler.override I G (Out.iface ∘ jointGroup (some 1) (some 0) G src I))) := by
+  intro h
+  have := h {some 0, some 1} (fun _ => .bind true) (fun _ => false) (some 1) (by simp)
+  simp [jointGroup, unit, ifaceSrc] at this
+
+/-! ### Witnesses: two scopes, scope 1 the class `a.Foo` that binds -/
+
+/-- Scope 0 of the kind given, scope 1 a top-level class `a.Foo`. -/
+def two (s₀ : Scope) (x₀ : Ext) : (Fin 2 → Scope) × (Fin 2 → Ext) :=
+  (fun i => if i = 0 then s₀ else ⟨false, false, true, false⟩,
+   fun i => if i = 0 then x₀ else ⟨false, false, false⟩)
+
+def only1 : U 2 → Bool := fun u => u == some 1
+
+theorem trace_only1 : (unit 2 .client).trace (answer only1) = [(some 0, .binds), (some 1, .binds)] := by
+  simp [unit, search, answer, only1]
+
+/-- A traced miss on scope 0 that no key of the design covers refutes the obligations. -/
+theorem not_obligations_of (sc' : Fin 2 → Scope) (sx' : Fin 2 → Ext) (r : Rules)
+    (h : ∀ k ∈ keysR sc' sx' r none [(some 0, .binds), (some 1, .binds)],
+      ¬ coversR sc' sx' r only1 (some 0, .binds) k) : ¬ (rules sc' sx' r).Obligations := by
+  intro ob
+  obtain ⟨k, hk, hc⟩ := ob.coverage only1 none .client (some 0, .binds)
+    (by show _ ∈ (unit 2 .client).trace (answer only1); rw [trace_only1]; simp)
+  change k ∈ keysR sc' sx' r none ((unit 2 .client).trace (answer only1)) at hk
+  rw [trace_only1] at hk
+  exact h k hk hc
+
+/-- **F2 under #34 and F3**: a member added to `package object b` (scope 0) over `a.Foo`. -/
+theorem f2_not_obligations :
+    ¬ (rules (two ⟨false, false, false, false⟩ ⟨true, false, false⟩).1
+      (two ⟨false, false, false, false⟩ ⟨true, false, false⟩).2 { cheap := .global, f3 := true }).Obligations :=
+  not_obligations_of _ _ _ (by
+    intro k hk
+    simp [keysR, f3Keys, two, List.finRange] at hk
+    rcases hk with rfl | rfl <;> simp [coversR, ruled, two, Reach.at])
+
+/-- **F3 under #34 and F2**: a member added to `W`, the import charged to a class that does not use
+the name (scope 0). -/
+theorem f3_not_obligations :
+    ¬ (rules (two ⟨false, false, false, false⟩ ⟨false, true, false⟩).1
+      (two ⟨false, false, false, false⟩ ⟨false, true, false⟩).2 { cheap := .global, f2 := .global }).Obligations :=
+  not_obligations_of _ _ _ (by
+    intro k hk
+    simp [keysR, f3Keys, two, List.finRange] at hk
+    rcases hk with rfl | rfl <;> simp [coversR, ruled, two, Reach.at])
+
+/-- **Narrowed without the recorded import**: a class added in a wildcard-imported package (scope
+0, `a.q.Foo`). -/
+theorem narrowed_without_imports :
+    ¬ (rules (two ⟨false, false, true, false⟩ ⟨false, false, true⟩).1
+      (two ⟨false, false, true, false⟩ ⟨false, false, true⟩).2
+      { cheap := .narrowed, f2 := .narrowed, f3 := true }).Obligations :=
+  not_obligations_of _ _ _ (by
+    intro k hk
+    simp [keysR, f3Keys, two, List.finRange] at hk
+    rcases hk with rfl | rfl <;> simp [coversR, ruled, two, Reach.at])
+
+/-- **The rules over-invalidate**: the client resolves `a.b.Foo` (scope 0); `a.Foo` (scope 1),
+searched only after it, is added. The rules' key moves, no answer the lookup read did. -/
+theorem rules_over :
+    OverInvalidated (rules (fun (_ : Fin 2) => ⟨false, false, true, false⟩) (fun (_ : Fin 2) => ⟨false, false, false⟩)
+      { cheap := .narrowed, f2 := .narrowed, f3 := true, imports := true })
+      none .client (fun u => u == some 0) (fun u => u == some 0 || u == some 1) := by
+  have ht : (unit 2 .client).trace (answer fun u => u == some 0) = [(some 0, .binds)] := by
+    simp [unit, search, answer]
+  refine ⟨⟨(none, .rule), by simp [rules, keysR], ?_⟩, ?_⟩
+  · simp [rules, πR, ruled, Reach.at, List.finRange]
+  · rintro ⟨q, hq, hne⟩
+    change q ∈ (unit 2 .client).trace (answer fun u => u == some 0) at hq
+    rw [ht] at hq
+    simp at hq
+    subst hq
+    simp [rules, answer] at hne
+
 end Spec
 
 end Zinc.SplitProof

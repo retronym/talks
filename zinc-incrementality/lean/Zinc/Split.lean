@@ -1,5 +1,5 @@
-import Zinc.Names
-import Zinc.Givens
+import ZincNames.Names
+import ZincNames.Givens
 import Zinc.SplitProof
 
 /-!
@@ -32,7 +32,7 @@ this model is an instance of that language on the bases.
 
 namespace Zinc.Split
 
-open Zinc.Names (Ver Slot Prog Res resolve changed invalidates addsClass besideResolution separateInit)
+open Zinc.Names (Ver Slot Prog Res resolve changed invalidates addsClass besideResolution separateInit aliased)
 
 inductive Layout | single | split
   deriving DecidableEq, Repr
@@ -68,15 +68,21 @@ def charged (p : Prog) : Cls := if p.cl.first then .other else .client
 /-- The edges of the client's file, given what the client resolved to (`ExtractDependencies`):
 the inheritance edge to `P`, the block import's edge to `V` from the client, the explicit and
 wildcard imports' edges charged to one class, and the edge from the client to the class that owns
-the symbol it resolved to. A package (`a.q`, `a.b`, `a`) records nothing. -/
-def edges (p : Prog) (r : Res) : List Edge :=
+the symbol it resolved to. A package (`a.q`, `a.b`, `a`) records nothing. Two more, from the
+client: Scala 2's bridge gives the package object's declared `object Foo` and the class `a.b.Foo`
+one name (`Names.aliased`), so resolving either is an edge to both; Scala 3 records the inherited
+package-object member it passed over for `a.b.Foo`. -/
+def edges (v : Ver) (p : Prog) (r : Res) : List Edge :=
   (if p.cl.inh then [⟨.client, .inh, true⟩] else []) ++
   (if p.cl.blk then [⟨.client, .blk, false⟩] else []) ++
   (if p.cl.expl then [⟨charged p, .expl, false⟩] else []) ++
   (if p.cl.wild then [⟨charged p, .wild, false⟩] else []) ++
   (match r with
     | .ok s => if s == .lib then [] else [⟨.client, s, false⟩]
-    | _ => [])
+    | _ => []) ++
+  (if aliased v p && r == .ok .pobj then [⟨.client, .inner, false⟩] else []) ++
+  (if aliased v p && r == .ok .inner then [⟨.client, .pobj, false⟩] else []) ++
+  (if v == .s3 && p.cl.pinh && r == .ok .inner && p.st .pobj == .foo then [⟨.client, .pobj, false⟩] else [])
 
 /-- Does a class of the client's file use the name? The client does; the other class does when the
 explicit import's selector is charged to it. -/
@@ -90,18 +96,19 @@ def known (p : Prog) (s : Slot) : Bool := !s.topLevel || p.st s == .foo
 
 /-- Zinc's external rule: a changed upstream class (its name hashes differ in `Foo`, the member or
 the class itself) invalidates the class of an edge to it that inherits from it or uses `Foo`. -/
-def extInvalidates (p : Prog) (r : Res) (s : Slot) : Bool :=
-  known p s && (edges p r).any fun e => e.dst == s && (e.inh || uses p e.frm)
+def extInvalidates (v : Ver) (p : Prog) (r : Res) (s : Slot) : Bool :=
+  (known p s || (edges v p r).any fun e => e.dst == s && s == .inner && aliased v p) &&
+    (edges v p r).any fun e => e.dst == s && (e.inh || uses p e.frm)
 
 def recompiles (m : Mode) (l : Layout) (v : Ver) (p p' : Prog) : Bool :=
   let r := resolve v p
   let base := match l with
-    | .single => (changed p p').any (invalidates p r)
-    | .split => (changed p p').any (extInvalidates p r)
+    | .single => (changed p p').any (invalidates {} v p r)
+    | .split => (changed p p').any (extInvalidates v p r)
   base || match m with
     | .today => false
-    | .cheap => l == .single && addsClass p p'
-    | .upstream => addsClass p p'
+    | .cheap => l == .single && addsClass {} v p p'
+    | .upstream => addsClass {} v p p'
     | .names => (changed p p').any fun s => !p.binds s && p'.binds s
 
 /-- The verdict; the trait initialiser counts only when the client and `P` share a subproject. -/
@@ -124,7 +131,7 @@ theorem check_single_is_names : (Zinc.Names.bases.all fun p => (Zinc.Names.edits
 /-- The external rule is the internal one on every slot an edit changes. -/
 theorem check_ext_eq_internal : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v => (changed p p').all fun s =>
-      extInvalidates p (resolve v p) s == invalidates p (resolve v p) s) = true := by
+      extInvalidates v p (resolve v p) s == invalidates {} v p (resolve v p) s) = true := by
   native_decide
 
 /-- #34 changes nothing across subprojects. -/
@@ -135,7 +142,7 @@ theorem check_split_cheap_is_today : (Zinc.Names.bases.all fun p => (Zinc.Names.
 /-- Extended across subprojects, it makes every edit that adds a class clean, but for the
 divergences beside resolution. -/
 theorem check_upstream_added_clean : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
-    !addsClass p p' || [Ver.s2, .s3].all fun v =>
+    [Ver.s2, .s3].all fun v => !addsClass {} v p p' ||
       (verdict .upstream .split v p p').clean || besideResolution v p p') = true := by
   native_decide
 
@@ -155,10 +162,16 @@ theorem check_names_clean : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).
 
 /-! ## This model as an instance of `SplitProof`'s slot language -/
 
-/-- The slots in search order: Scala 2 looks in the package object before the package's classes. -/
+/-- The slots in search order: Scala 2 looks in the package object before the package's classes,
+and an inherited member of the package object before the file's imports (`Names.resolve`). -/
 def order (v : Ver) (c : Zinc.Names.Client) : List Slot :=
   let vis := Zinc.Names.visible c
-  if v == .s2 then (vis.filter (· != .inner)).flatMap fun s => if s == .pobj then [.pobj, .inner] else [s]
+  if v == .s2 then
+    let o := (vis.filter (· != .inner)).flatMap fun s => if s == .pobj then [.pobj, .inner] else [s]
+    if c.pinh then
+      let o := o.filter (· != .pobj)
+      (o.filter (fun s => s == .blk || s == .inh)) ++ [.pobj] ++ o.filter (fun s => s != .blk && s != .inh)
+    else o
   else vis
 
 /-- A slot is pinned when the client's file has an edge to its class from a class that uses the
@@ -186,6 +199,9 @@ def absBits (v : Ver) (q : Prog) (o : List Slot) (j : ℕ) : Bool :=
 a binding added outside the client's scopes, which `SplitProof` does not model: over-invalidation). -/
 theorem check_abstract : (Zinc.Names.bases.all fun p => (Zinc.Names.edits p).all fun (_, p') =>
     [Ver.s2, .s3].all fun v =>
+      -- outside the slot language: the edges that depend on the resolution of another slot
+      -- (Scala 2's class-name alias, Scala 3's passed-over inherited member)
+      aliased v p || (v == .s3 && p.cl.pinh) ||
       let o := order v p.cl
       let c := absClient v p
       let b := absBits v p o
