@@ -22,6 +22,10 @@ def main (args : List String) : IO Unit := do
   else if args.contains "mima" then
     for e in edits do IO.println (problemsJson e.name (mima e.v0 e.v1))
     for k in all ++ j3 do IO.println (problemsJson k.name (mima k.v0 k.v1))
+  else if args.contains "unreported" then
+    for b in [1, 2] do
+      for c in [C.A, C.B, C.I, C.J] do
+        IO.println s!"{b} {repr c} {nVariants b c} {unreported b c}"
   else if args.contains "witness" then
     for e in edits do
       if args.contains e.name then
@@ -33,4 +37,4 @@ def main (args : List String) : IO Unit := do
       let k := e.case
       let br := breaking k spaceB
       let ch := changing k spaceB
-      IO.println s!"{e.name}\t{",".intercalate ((mima e.v0 e.v1).map Problem.name)}\t{br.isSome}\t{ch.isSome}"
+      IO.println s!"{e.name}\t{",".intercalate ((mima e.v0 e.v1).map Problem.name)}\t{br.isSome}\t{ch.isSome}\t{",".intercalate ((extra e.v0 e.v1).map Extra.name)}"

@@ -96,12 +96,15 @@ def editsOf (l : Lib) : List Lib :=
 
 structure Edit where
   name : String
+  /-- Which base, and the edit's index in it. -/
+  base : ℕ
+  idx : ℕ
   v0 : Lib
   v1 : Lib
 
 def edits : List Edit :=
-  ((editsOf base1).zipIdx.map fun (l, i) => { name := s!"b1-{i}", v0 := base1, v1 := l }) ++
-  ((editsOf base2).zipIdx.map fun (l, i) => { name := s!"b2-{i}", v0 := base2, v1 := l })
+  ((editsOf base1).zipIdx.map fun (l, i) => { name := s!"b1-{i}", base := 1, idx := i, v0 := base1, v1 := l }) ++
+  ((editsOf base2).zipIdx.map fun (l, i) => { name := s!"b2-{i}", base := 2, idx := i, v0 := base2, v1 := l })
 
 def Edit.case (e : Edit) : Case := { name := e.name, mima := none, v0 := e.v0, v1 := e.v1, prog := {} }
 
