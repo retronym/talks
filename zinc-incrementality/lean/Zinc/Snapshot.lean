@@ -168,10 +168,10 @@ example : ((build zincRule s₀ snap₀ 2).map fun r => (r.1.out U.X).2) = some 
 example : ((build zincRule s₀ snap₀ 2).map fun r => (r.2 U.A, r.2 U.C)) = some (1, 5) := by
   native_decide
 
-/-- **After the revert, `X` is stale**: it still observes `A = 2`; a clean build observes 1. -/
-theorem stale_after_revert : afterRevert zincRule = some (2, 5) := by native_decide
+/-- `stale_after_revert`: **After the revert, `X` is stale**: it still observes `A = 2`; a clean build observes 1. -/
+example : afterRevert zincRule = some (2, 5) := by native_decide
 
-/-- Refreshing every upstream unit recompiles `X` after the revert. -/
-theorem refreshAll_after_revert : afterRevert allRule = some (1, 5) := by native_decide
+/-- `refreshAll_after_revert`: Refreshing every upstream unit recompiles `X` after the revert. -/
+example : afterRevert allRule = some (1, 5) := by native_decide
 
 end Zinc.Snapshot

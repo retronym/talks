@@ -144,10 +144,10 @@ def src₁ : Cls → Src
 
 example : (clean src₁ M).missing = [C] := by native_decide
 
-/-- **The children not hashed**: `M` keeps an exhaustive match, with no warning. -/
-theorem java_permits_wrong : missingAfter .noChildren src₀ src₁ = some [] := by native_decide
+/-- `java_permits_wrong`: **The children not hashed**: `M` keeps an exhaustive match, with no warning. -/
+example : missingAfter .noChildren src₀ src₁ = some [] := by native_decide
 
-/-- The children hashed: `M` is recompiled and warns about `C`. -/
-theorem withChildren_clean : missingAfter .withChildren src₀ src₁ = some [C] := by native_decide
+/-- `withChildren_clean`: The children hashed: `M` is recompiled and warns about `C`. -/
+example : missingAfter .withChildren src₀ src₁ = some [C] := by native_decide
 
 end Zinc.Sealed
