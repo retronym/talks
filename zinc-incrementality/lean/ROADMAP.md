@@ -85,7 +85,7 @@ No track edits `Zinc/`; talks#21 and the PRs stacked on it own that directory. I
   - TODO: `Object`'s methods in interface resolution; transitive overriding through an intermediate package-private method (§5.4.5); clients in the library's package; a space over two client classes.
 - **J4. Behaviour.** TODO. Constants folded into the client. Method bodies, so that a library method's own calls link too. Which method runs is already observed by the probe and is part of the outcome; `changesSomeClient` is the first form of the "links, but runs different code" verdict.
 
-The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is expected to report, to be confirmed by track B. "HotSpot" is the result on `v1`; "same" means it links and runs the method the model predicts. The breaks and changes columns are counts over the clients that link on `v0`.
+The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the first problem MiMa 1.2.1 reports (§B). "HotSpot" is the result on `v1`; "same" means it links and runs the method the model predicts. The breaks and changes columns are counts over the clients that link on `v0`.
 
 | Case | MiMa | Model on `v1` | HotSpot | Breaks some client | Changes some client |
 |---|---|---|---|---|---|
@@ -97,7 +97,7 @@ The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is ex
 | `becomesFinal` | FinalClassProblem | `finalSuper` | `IncompatibleClassChangeError` | yes (8/17) | no |
 | `methodBecomesFinal` | FinalMethodProblem | `finalOverride` | `IncompatibleClassChangeError` | yes (5/29) | no |
 | `superclassRemoved` | MissingTypesProblem | `noSuchMethod` | `NoSuchMethodError` | yes (28/78) | no |
-| `defaultRemoved` | ReversedMissingMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (4/15) | no |
+| `defaultRemoved` | DirectAbstractMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (4/15) | no |
 | `defaultConflict` | — | `incompatibleClassChange` | `IncompatibleClassChangeError` (21: `AbstractMethodError`, JDK-8356942) | yes (4/30) | no |
 | `overrideAdded` | — | links, runs `B` | same | no | yes (26/78) |
 | `pulledUp` | — | links, runs `A` | same | no | yes (14/50) |
@@ -111,7 +111,7 @@ The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is ex
 | `overrideBecomesPrivate` | — | links, runs `A` | same | yes (22/110) | yes (15/110) |
 | `superCallPulledUp` | — | links, runs `A` | same | no | yes (20/69) |
 | `superCallRemoved` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (22/69) | no |
-| `superCallAbstract` | DirectAbstractMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (25/41) | no |
+| `superCallAbstract` | AbstractClassProblem | `abstractMethod` | `AbstractMethodError` | yes (25/41) | no |
 | `defaultSuperCallAbstract` | DirectAbstractMethodProblem | `abstractMethod` | `AbstractMethodError` | yes (7/23) | no |
 | `staticIfaceMethodRemoved` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (9/23) | no |
 | `staticMovedToIface` | DirectMissingMethodProblem | `noSuchMethod` | `NoSuchMethodError` | yes (11/34) | no |
@@ -125,12 +125,7 @@ The catalogue on HotSpot, with the J2 verdicts. "MiMa" is the problem MiMa is ex
 | `fieldIfaceBeforeSuper` | — | links, runs `I` | same | yes (37/224) | yes (37/224) |
 | `putstaticBecomesFinal` | — | `illegalAccess` | `IllegalAccessError` | yes (13/49) | no |
 
-For track B, three cases are candidate MiMa false negatives:
-- `defaultConflict` (no problem expected).
-- `overrideBecomesPrivate`: `B.m` becomes private while `A.m` is still inherited, so a client calling `B.m` gets `IllegalAccessError`, because resolution finds the private method first.
-- `fieldIfaceBeforeSuper`: an interface of `B` gains a static field. Field resolution searches superinterfaces before the superclass, so `putstatic B.m` now hits a final interface field and gets `IllegalAccessError`.
-
-`fieldBecomesFinal` and `putstaticBecomesFinal` may be further false negatives if MiMa has no final-field rule.
+MiMa 1.2.1 is silent on five cases that break some client (§B confirms them): `defaultConflict`, `overrideBecomesPrivate`, `fieldIfaceBeforeSuper`, `fieldBecomesFinal` and `putstaticBecomesFinal`.
 
 ### S — Scala (`Scala/`)
 
@@ -210,10 +205,64 @@ Not launched yet. Java name resolution, sealed hierarchies and compile order are
 
 ### B — Binary compatibility (`BinCompat/`, plus a scala-cli harness outside Lean)
 
-- **B1. MiMa against the catalogue, at the JVM level.** MiMa reads classfiles, so J1's rendered jars are enough to start; it needs no front end. Per case, compare MiMa's problems with the model's verdict.
-- **B2. MiMa as a bridge design, in `DESIGN-spec.md`'s terms.** MiMa compares a set of facts per library class; those facts are its keys. Its check is sound if every linkage query any client can ask is covered by a compared key (coverage), and if equal facts give equal answers (abstraction). Prove this for a corrected rule set; for MiMa's actual rules, give a counterexample trace for each gap. Then check it on a space, as `FlatRules` checked the PoC's rules, to measure false negatives and false positives. `defaultConflict` is a candidate false negative to confirm.
-- **B3. Source-level spaces.** Once S1 and V1 exist: Scala and Java edits, lowered, linked, and checked against MiMa and HotSpot.
-- **B4. The Zinc ⇒ binary-compatible theorem above,** stated over `NCompiler`. It needs S1 or V1 to be a compiler instance.
+- **B1. MiMa against the catalogue and an edit space.** DONE at the JVM level; the Scala catalogue is under B3.
+  - `probes/mima/Mima.scala` runs `mima-core` 1.2.1 (pinned, via scala-cli) on class directories. For the JVM layer it uses the `v0`/`v1` that `probes/jvm` renders (`OUT=dir`). For the Scala layer, `probes/mima/scala.sh` compiles each `Scala/Catalogue.lean` case's sources with scalac 2.13.18.
+  - **`BinCompat/Mima.lean` models MiMa's checker** (`Analyzer`, `TemplateChecker`, `FieldChecker`, `MethodChecker`), read from its sources. It agrees with MiMa itself, as a multiset of problems per library, on all 35 `Jvm` catalogue cases and all 302 edits of the edit space below (`probes/mima/compare.py`).
+  - **The edit space** (`BinCompat/Edits.lean`): every well-formed single edit of two base libraries. An edit changes one class's header (abstract, final, interface, public, superclass, interfaces), or sets one member slot (`m()V`, `m()I`, field `m`) to absent or to any combination of flags. That gives 302 edits.
+  - **The client space** (`spaceB`) is `Jvm.Clients.space3`, extended with `X implements J` and `X implements I, J` and with `m()I` sites.
+  - Per edit, MiMa's report is compared with `breaksSomeClient`:
+
+    | MiMa | some client breaks | only changes behaviour | neither |
+    |---|---|---|---|
+    | reports | 140 | 0 | 17 |
+    | silent | **40** | 4 | 101 |
+
+  - **The 40 false negatives** all break on HotSpot 21, 25 and 27 (each edit's breaking client, run by `probes/jvm`), and MiMa 1.2.1 reports nothing for them. They fall into four gaps (F1, M1, F2, D1, below). A fifth, P1, is outside the edit space because the bases have no protected member, and has its own witness.
+  - **The 17 reported edits that break no client** all report `ReversedMissingMethodProblem`: a new abstract method in a class or interface. The method can only be reached through library code that calls it on a client's subclass, and the model has no library method bodies (J4). So they are outside the model's client space, not false positives.
+  - **The 4 silent edits that change behaviour** are out of MiMa's scope: a new override in `B`, a new field in `B` that hides `A`'s, and similar. They link and run different code.
+  - **The catalogue.** On the 35 `Jvm` cases, the first problem MiMa reports is now each case's `mima` field, checked against the model by kernel `decide`. Two of the expected names in §J were wrong: `defaultRemoved` gets `DirectAbstractMethodProblem`, and `superCallAbstract` gets `AbstractClassProblem`. MiMa is silent on five cases that break some client: `defaultConflict`, `overrideBecomesPrivate`, `fieldIfaceBeforeSuper`, `fieldBecomesFinal` and `putstaticBecomesFinal`. It is also silent on the four that only change behaviour (`overrideAdded`, `pulledUp`, `superCallPulledUp`, `fieldShadowed`).
+- **B2. MiMa as a bridge design, in `DESIGN-spec.md`'s terms.** DONE, with soundness of the corrected rules checked on the space rather than proved for all libraries.
+  - **MiMa as keys.** `BinCompat/Mima.lean` writes MiMa as keys and checks, and `mima o n` is `(keys o).flatMap (check o n)`. The keys are per class public in the old library: `template c`, `field c n d`, `method c n d` and `newMethods c`. `BinCompat/Keys.lean` gives `covers`: which class-table entries (`Jvm.Q`) each key's comparison reads.
+  - **The obligation.** If no key reports a problem, every client that linked against the old library still links against the new one.
+  - **MiMa compares by a relation, not by equality.** An added method is a changed answer, and fine. So abstraction here means "the comparison is strong enough for linking", not "equal facts give equal answers".
+  - **`miss_changes_footprint`** (a general theorem, from `link_congr`): a client that stops linking has a footprint query whose answer changed. So every miss is one of two kinds:
+    - a **coverage gap**: no key covers the changed query;
+    - an **abstraction gap**: a key covers it and passes.
+  - **The gaps.** Each has a witness (library edit, client, changed query) checked by kernel `decide`; each witness is confirmed on HotSpot, and MiMa reports nothing for it.
+
+    | Gap | Edit | Client failure | Kind |
+    |---|---|---|---|
+    | F1, final fields | a public field becomes `final` | `putfield`/`putstatic`: `IllegalAccessError` | abstraction: the field key covers it, and `final` is not compared |
+    | M1, shadowing through a subclass | `B extends A` gains a member named like an inherited one, with any access and any of `static`/`final`, method or field; or `B`'s override becomes private | `invokevirtual B.m` / `getfield B.m`: ICCE, `IllegalAccessError`, or a final override at load | coverage: MiMa checks only members a class declares, so no key covers `B.m`. When `B` declared it, it is an abstraction gap instead: MiMa's class file parser drops private members, and its lookup finds `A.m` |
+    | F2, interface fields first | an interface gains a field | a client class extending `A` and implementing `I` resolves `X.m` to `I.m` (superinterfaces before superclass): `getfield` ICCE, `putfield`/`putstatic` `IllegalAccessError` | coverage: MiMa's field lookup never reads interfaces |
+    | D1, conflicting defaults | an interface gains a default that another public interface has | `invokeinterface`: ICCE (AME on JDK 21, JDK-8356942) | coverage: `checkNew` reads only abstract methods |
+    | P1, protected members | a protected method is removed | a subclass client's call: `NoSuchMethodError` | coverage: only `ACC_PUBLIC` members get keys |
+
+  - **The corrected rule set** (`BinCompat/Fixed.lean`) is MiMa plus four checks:
+    - the member a reference *through* each public class resolves to, by JVM resolution (private members and superinterfaces included), compared by access rank, `static`, `abstract` and `final`, for methods and for fields;
+    - an interface that newly sees a field;
+    - a new default that another unrelated public interface also has.
+  - **The corrected rules on the space.** They report all 40 false negatives, and nothing beyond MiMa's own 17 that breaks no client. `BinCompat/Sound.lean` checks, by kernel `decide`, that every unreported edit leaves every client of `spaceB` linking. That is 105 edits, each run against the full client space: about 30 minutes and 7 GB, so the module is built on demand (`lake build BinCompat.Sound`).
+  - **Not proved:** the corrected rules' soundness for all libraries. That needs a monotonicity argument about resolution and selection over the whole `Jvm` model, and is future work. The equality design (keys = every query, compared by equality) is sound for all libraries by `link_congr`, but it reports every edit.
+- **B3. Source-level spaces.** Started: the 7 `Scala/Catalogue.lean` cases, compiled by scalac 2.13.18 and run through MiMa (`probes/mima/scala.sh`). MiMa reports exactly the cases where the old client fails against `v1`.
+  - `abstractAddedToTrait` and `valAddedToTrait`: `ReversedMissingMethodProblem`; for the `val`, the getter and the mangled setter both.
+  - `classBecomesTrait`: `IncompatibleTemplateDefProblem`.
+  - `paramWithDefaultAdded`: `DirectMissingMethodProblem`.
+  - `widenedToValueClass`: `FinalClassProblem`, `DirectMissingMethodProblem` (the constructor) and `IncompatibleMethTypeProblem`.
+  - MiMa is silent on `concreteAddedToTrait`, which is compatible, and on `traitOverrideAdded`, which links but runs `B.m` where a fresh build runs `T.m`; that is out of MiMa's scope.
+  - TODO: a space of source edits, lowered, linked and checked against MiMa and HotSpot.
+- **B4. The Zinc ⇒ binary-compatible theorem above,** stated over `NCompiler`. It needs S1 or V1 to be a compiler instance. (`BinCompat/ZincBridge.lean`, another session.)
+
+#### Candidate MiMa issues (not filed)
+
+These are drafts, one per gap. Each needs a reproducer from the edit space (`lake exe bincompat witness <edit>`) turned into MiMa's functional-test layout.
+
+1. **A field that becomes `final` is not reported.** `FieldChecker` compares access, type and `static`, not `final`. A client's `putfield`/`putstatic` of the field fails with `IllegalAccessError` ("Update to … final field … attempted from a different class"). Suggested: a `FinalFieldProblem`, reported when the old field is not final and the new one is.
+2. **A member a subclass adds can hide an inherited one, and is not reported.** `B extends A`, and `A.m()` is public. If `B` adds a static, private, package-private or protected `m()`, or a field `m` with incompatible flags, then a client's `invokevirtual B.m` or `getfield B.m` resolves to the new member and fails. A public final `m()` breaks a client's override at load instead. MiMa checks only the members `B` declared in the old version, and so reports nothing. Changing an override `B.m` from public to private is the same failure, and is also unreported, because the class file parser drops private methods and the lookup then finds `A.m`. Suggested: for each class, check the resolution of every inherited public or protected member through that class, with private members included in the new version's lookup.
+3. **An interface field that a class's field resolution now reaches first is not reported.** Field resolution searches superinterfaces before the superclass (JVMS §5.4.3.2). If interface `I` gains a field `m`, a client `class X extends A implements I` that read `A.m` as `X.m` now gets `I.m`, which is static and final. `FieldChecker` looks fields up in the class and its superclasses only.
+4. **A default method that conflicts with another interface's is not reported.** If `J` gains a default `m()` that an unrelated `I` also has, a client implementing both gets `IncompatibleClassChangeError` (two maximally-specific defaults). Clients can declare their own interfaces, so in general any new default can conflict; MiMa treats new defaults as compatible by design. At least the conflict between two of the library's own interfaces can be reported.
+
+5. **Protected members are not checked.** `nonAccessible` is `!isBytecodePublic`, so a protected method that a client's subclass calls can be removed without a report (gap P1, witness `protectedRemoved`: `NoSuchMethodError` on HotSpot). Scala's `protected` is public in bytecode, so this affects Java-defined libraries.
 
 ### Later, single writer, after talks#21 merges
 
@@ -239,3 +288,4 @@ J, S and V can start at once; they share only the `Jvm` types. B1 can start as s
   - `link_congr` (T1 for linkage), `Compatible`, `compatible_of_footprint`.
 - `Jvm/Catalogue.lean`: 35 edits, each with MiMa's expected problem name, checked before and after by kernel `decide` and on HotSpot (§J).
 - `Jvm/Clients.lean`: the J2 verdicts over two client spaces, checked on HotSpot (§J).
+- `BinCompat/`: a model of MiMa 1.2.1, calibrated against it on 337 libraries; MiMa's gaps (F1, M1, F2, D1, P1) with witnesses; a corrected rule set, sound on the edit space (§B).
