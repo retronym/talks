@@ -1,4 +1,4 @@
-# Phase 12 — Java in mixed builds: name resolution and sealed hierarchies (`JavaNames.lean`, `JavaSealed.lean`)
+# Phase 12 — Java in mixed builds: name resolution and sealed hierarchies (`JavaSpec.lean`, `JavaSealedSpec.lean`; checks in `JavaNames.lean`, `JavaSealed.lean`)
 
 Phase 10 of `PLAN.md` covered Scala clients over Scala bindings. Java sources take another path through Zinc: javac compiles them, and `JavaAnalyze` reads the products back. The question is the same (does an edit change what a client resolved, or what it may assume about a sealed hierarchy, without Zinc invalidating the client?), but Java's rules and Zinc's Java-side edges differ.
 
@@ -29,6 +29,30 @@ Phase 10 of `PLAN.md` covered Scala clients over Scala bindings. Java sources ta
 
 Modes: `today`; for names `cheap` (#34) and `fix` (#34 with a Java class's used names, the simple names from the attributed tree that sbt/zinc#145's listener already walks, and an edge from a static import to its class); for sealed `permits` (#21), `desc` (#21 listing the transitive permitted subclasses, as the Scala bridge's `sealedDescendants` does) and `fix` (#21, and a change to a sealed class's children also invalidates the `PatMatTarget` users of its sealed ancestors). Each takes `pipe`.
 
+## Specification (`JavaSpec.lean`, `JavaSealedSpec.lean`)
+
+Following `DESIGN-spec.md`, each half is an instance of `Tree.lean`'s `TCompiler` (`Model.lean`'s `Compiler` with keys read off the output, which is where javac's dependencies come from: the classfile, and for the fix the attributed tree). Everything is over arbitrary finite packages, names and classes, and arbitrary programs and edits, not the bounded space.
+
+* **Names.** Units are top-level classes `Pkg × N`; queries ask whether a class exists and whether it has a member type `m`. The client's task is JLS 6.4.1/7.5 by levels (superinterfaces' member types; single-type and single-static imports; the package; on-demand imports with `java.lang`), every probe of a level asked, the first level with a hit deciding: one hit resolves (`shadows`), two are an error (`ambiguous`), none defers (`defers`). javac first checks that every single-type import exists. Keys: `today` is the constant pool (superinterfaces and the resolved class or its outer class), hashed as the whole interface since a Java dependent is not name-filtered; #34 adds nothing for a Java client (no used names), so `cheap` = `today`; `names` adds #34's key as existence keys on every unit with a used simple name; `fix` adds an edge to every imported class.
+* **Sealed.** Units are classes whose interface is their permitted subclasses; the client's task is the exhaustivity walk from the scrutinee (a case covers its subtree; a sealed class asks its children). Hashing `noChildren` (`ClassToAPI` before #21) or `children`; keys `cases` (Zinc's Scala client: scrutinee and pattern classes) or `visited` (every sealed class the walk descended through).
+
+The framework needed no change: `TCompiler` already takes keys from the output, which is how `JavaAnalyze` works.
+
+## Proved generally, and checked on a space
+
+| Result | Status |
+|---|---|
+| JLS 6.4.1 levels: `shadows`, `ambiguous`, `defers`; the trace stays among the probes (`mem_trace_client`) | proved, every program |
+| `obligations_fix`, `fix_sound` (T3a): used names + import edges | proved, every program, edit and sound policy |
+| `names_coverage_no_imports`: #34 with Java used names covers a client with only on-demand package imports (J1) | proved, every such client |
+| J1 `j1_today`, J2 `j2_today`/`j2_names`, J3 `j3_names`, J4 `j4_names`: today's and `names`' keys fail coverage | proved, one concrete witness each (kernel `decide`) |
+| `JavaSealedSpec.obligations_fix`, `fix_sound`: children hashed and visited sealed classes recorded | proved, every hierarchy |
+| S1 `s1_noChildren` (abstraction), S2 `s2_cases` (coverage, with #21's hashing) | proved; S1 for any three classes, S2 one witness |
+| Resolution per language and Zinc's verdict per mode agree with javac/scalac and Zinc on the harness | checked, `JavaNames.lean`/`JavaSealed.lean` `example`s by `native_decide` on the bounded space, and the harness runs below |
+| Scala clients (Scala 2/3 resolution, #34 and the `classOf` gap N1), pipelining, the one-file hierarchy, Java clients' #148 ancestor keys | checked only |
+
+J4 is new from the specification: an unused single-type import is checked by javac (deleting the class it names fails a clean build: probed with javac 21), and neither the constant pool nor used names record it. retronym/zinc#43 records static imports only; the single-type import edge is to add.
+
 ## Harness
 
 The harness needed no code for Java: a source-file base may hold `.java` files under `src/main/java/…` (a public class's file beside its package), and the runs pass `--inc-option pipelining=false`. retronym/zinc#44, on #36: the scaladoc says so, and the JSON results escape control characters (Scala 3's coloured messages broke the JSON lines). `scripts/jselect.py` picks bases until every signature (the edit, the resolution before and after, the package, the name, `implements`) has an edit; `scripts/janalyse.py` reads the client's classfile for its resolution and compares verdicts and recompilation.
@@ -37,12 +61,13 @@ The harness needed no code for Java: a source-file base may hold `.java` files u
 
 | | Family | Lean | Scripted (pending, retronym/zinc#42) |
 |---|---|---|---|
-| J1 | A Java class added to a Java client's package (or moved, or renamed to the name) over an on-demand import or `java.lang`. The client's classfile names only what it resolved, and it records no used names, so #34 does not reach it. A Scala client over a Java-added class is #34's F1: fixed. | `j1_today`, `j1_cheap` | `java-added-class-same-package`; `java-added-class-inner-package-scala-client` (fixed by #34) |
-| J2 | A member class added behind a single-static import (`import static a.X.Foo`, `X` had only a method `Foo`) shadows the package's or an on-demand `Foo`. An import leaves no trace in a classfile. | `j2` | `java-static-import-member-added` |
-| J3 | A second on-demand binding (`import static a.W.*` gains `W.Foo`, or `a.q.Foo`/`a.q.Process` appears beside another on-demand `Foo` or `java.lang.Process`): javac's ambiguity error, missed. | `j3`, `j3_lib` | `java-on-demand-import-ambiguity` |
-| N1 | Scala 2's bridge registers no used name for the type of a `classOf` literal (`Dependency` records the class; `ExtractUsedNames` skips the literal), so a name-filtered invalidation skips the client: `W.Foo` deleted from a wildcard-imported object, and #34. Not Java-specific; Scala 3 records it. | `n1` | `classof-used-name` |
-| S1 | A leaf added to a Java `permits`, no pipelining: `ClassToAPI` lists no children (retronym/zinc#21's case). | `s1`, `s1_pipe` | `java-sealed-permits-exhaustivity` (retronym/zinc#14, fixed by #21) |
-| S2 | A leaf added under a nested sealed `T` declared in a file of its own. `S` is not recompiled, and a Scala client depends on `S` and its patterns' classes, not `T`: missed with #21, and with pipelining. A Java client gets `T` through sbt/zinc#148's ancestors. With `T` in `S`'s file (inferred `permits`, or any Scala hierarchy) the descendants in `S`'s hash catch it, so #21 should list descendants too. | `s2` | `java-sealed-nested-permits` |
+| J1 | A Java class added to a Java client's package (or moved, or renamed to the name) over an on-demand import or `java.lang`. The client's classfile names only what it resolved, and it records no used names, so #34 does not reach it. A Scala client over a Java-added class is #34's F1: fixed. | `j1_today`; fixed by `names_coverage_no_imports` | `java-added-class-same-package`; `java-added-class-inner-package-scala-client` (fixed by #34) |
+| J2 | A member class added behind a single-static import (`import static a.X.Foo`, `X` had only a method `Foo`) shadows the package's or an on-demand `Foo`. An import leaves no trace in a classfile. | `j2_today`, `j2_names` | `java-static-import-member-added` |
+| J3 | A second on-demand binding (`import static a.W.*` gains `W.Foo`, or `a.q.Foo`/`a.q.Process` appears beside another on-demand `Foo` or `java.lang.Process`): javac's ambiguity error, missed. | `j3_names` | `java-on-demand-import-ambiguity` |
+| J4 | An unused single-type import `import a.q.Bar;` whose class is deleted: javac's error, missed (nothing records the import). | `j4_names` | not yet |
+| N1 | Scala 2's bridge registers no used name for the type of a `classOf` literal (`Dependency` records the class; `ExtractUsedNames` skips the literal), so a name-filtered invalidation skips the client: `W.Foo` deleted from a wildcard-imported object, and #34. Not Java-specific; Scala 3 records it. | checked only | `classof-used-name` |
+| S1 | A leaf added to a Java `permits`, no pipelining: `ClassToAPI` lists no children (retronym/zinc#21's case). | `s1_noChildren` | `java-sealed-permits-exhaustivity` (retronym/zinc#14, fixed by #21) |
+| S2 | A leaf added under a nested sealed `T` declared in a file of its own. `S` is not recompiled, and a Scala client depends on `S` and its patterns' classes, not `T`: missed with #21, and with pipelining. A Java client gets `T` through sbt/zinc#148's ancestors. With `T` in `S`'s file (inferred `permits`, or any Scala hierarchy) the descendants in `S`'s hash catch it, so #21 should list descendants too. | `s2_cases`; fixed by `JavaSealedSpec.obligations_fix` | `java-sealed-nested-permits` |
 
 With pipelining (scripted's default, not sbt's) every Java source is compiled in every cycle and J1–J3 and S1 vanish (`j1_pipe`, `s1_pipe`); S2 stays.
 
@@ -74,8 +99,9 @@ The fix for 1 and 2 (retronym/zinc#43, on #34): the listener that recovers inlin
 
 ## Steps
 
-- [x] P12.1 `JavaNames.lean`, `JavaSealed.lean`: rules (probed with javac 21, scalac 2.13.16 and 3.3.6), Zinc's Java edges, verdicts, families as checked examples; `fix_clean` (names, Java and Scala 3 clients), `cheap_clean_scala`, `JavaSealed.fix_clean`.
+- [x] P12.1 `JavaNames.lean`, `JavaSealed.lean`: rules (probed with javac 21, scalac 2.13.16 and 3.3.6), Zinc's Java edges, verdicts, families as checks (`example`s by `native_decide` on the bounded space).
+- [x] P12.1b `JavaSpec.lean`, `JavaSealedSpec.lean`: `TCompiler` instances; JLS 6.4.1 levels proved; coverage/abstraction counterexamples per family (J1–J4, S1, S2); the fixes' obligations and T3a, over every program.
 - [x] P12.2 `lake exe jconformance names|sealed java|2|3 [cheap|fix|permits|desc] [pipe]`; harness: Java files under `src/main/java`, `pipelining=false`, JSON escaping.
 - [x] P12.3 Runs on develop, develop+#34 and develop+#34+fix (names), develop and develop+#21, with and without pipelining (sealed); model and harness reconciled (Scala 2's `classOf`; the Scala bridge's descendants; pipelining's unchanged Java sources keep their API).
 - [x] P12.4 Pending scripted tests per family (retronym/zinc#42); the Java fix with its tests (retronym/zinc#43).
-- [ ] Future: the S2 fix; N1 in the Scala 2 bridge; the stale javac classfile after a failed compile; Java clients of Scala bindings (package objects are invisible to Java, but Scala `object` members are static forwarders); the `split` layout.
+- [ ] Future: the single-type import edge in retronym/zinc#43 (J4) and its scripted test; the S2 fix in Zinc; N1 in the Scala 2 bridge; the stale javac classfile after a failed compile; Java clients of Scala bindings (package objects are invisible to Java, but Scala `object` members are static forwarders); the `split` layout.

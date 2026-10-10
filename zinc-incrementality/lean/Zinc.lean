@@ -29,3 +29,5 @@ import Zinc.Givens
 import Zinc.InlineOpaque
 import Zinc.JavaNames
 import Zinc.JavaSealed
+import Zinc.JavaSpec
+import Zinc.JavaSealedSpec

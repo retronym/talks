@@ -38,6 +38,12 @@ its outer class into the constant pool (`InnerClasses`). A Java class has no use
 invalidated by any API change of a class it depends on, and retronym/zinc#34 (the users of an added
 class's simple name) never reaches it. With `pipelining` on, Zinc compiles every Java source in
 every cycle, which hides every Java client's miss.
+
+This file is the executable side: a resolver per language, Zinc's rule per mode as a predicate, and
+a bounded space (at most two bindings, single edits) dumped for the conformance harness. Its
+`example`s are checks by `native_decide` on that space, not theorems. The specification is
+`JavaSpec.lean`: a `TCompiler` whose task is JLS 6.4.1 resolution, Zinc's Java keys, coverage
+counterexamples per family, and the fix's obligations over every program.
 -/
 
 namespace Zinc.JavaNames
@@ -249,20 +255,20 @@ def cl0 : Client := ⟨.sub, false, false, false, false, false⟩
 `a.q.Foo` for a Java client. Zinc compiles the new source alone. -/
 def j1Base : Prog := mkProg { cl0 with wpkg := true } [(.wpkg, .foo)]
 
-theorem j1_today :
+example :
     verdict .today false .java j1Base (j1Base.set .inner .foo) = ⟨.ok .wpkg, .ok .inner, false, false⟩ := by
   native_decide
 
 /-- The same for a Scala client, where the wildcard import wins: `a.q.Foo` added over `a.b.Foo`. -/
 def j1sBase : Prog := mkProg { cl0 with wpkg := true } [(.inner, .foo)]
 
-theorem j1s_today : [Lang.s2, .s3].all (fun l =>
+example : [Lang.s2, .s3].all (fun l =>
     verdict .today false l j1sBase (j1sBase.set .wpkg .foo) == ⟨.ok .inner, .ok .wpkg, false, false⟩) := by
   native_decide
 
 /-- #34 fires for a class added in a Java source, so a Scala client is invalidated (it uses `Foo`);
 a Java client records no used names, and #34 does not reach it. -/
-theorem j1_cheap :
+example :
     verdict .cheap false .java j1Base (j1Base.set .inner .foo) = ⟨.ok .wpkg, .ok .inner, false, false⟩ ∧
     verdict .cheap false .s3 j1sBase (j1sBase.set .wpkg .foo) = ⟨.ok .inner, .ok .wpkg, true, true⟩ := by
   native_decide
@@ -272,14 +278,14 @@ a name-filtered invalidation skips the client: here #34, and `W.Foo` deleted fro
 object the client resolved through. -/
 def n1Base : Prog := mkProg { cl0 with wild := true } [(.wild, .foo), (.inner, .foo)]
 
-theorem n1 :
+example :
     verdict .cheap false .s2 j1sBase (j1sBase.set .wpkg .foo) = ⟨.ok .inner, .ok .wpkg, false, false⟩ ∧
     verdict .today false .s2 n1Base (n1Base.set .wild .none) = ⟨.ok .wild, .ok .inner, false, false⟩ ∧
     (verdict .today false .s3 n1Base (n1Base.set .wild .none)).clean = true := by
   native_decide
 
 /-- With pipelining, Zinc compiles every Java source in every cycle. -/
-theorem j1_pipe : (verdict .today true .java j1Base (j1Base.set .inner .foo)).clean = true := by
+example : (verdict .today true .java j1Base (j1Base.set .inner .foo)).clean = true := by
   native_decide
 
 /-- **J2, a member class added behind a static import**: `X.Foo` over `a.b.Foo`, through
@@ -287,7 +293,7 @@ theorem j1_pipe : (verdict .today true .java j1Base (j1Base.set .inner .foo)).cl
 client's classfile; a Scala client's import records `X` and the name. -/
 def j2Base : Prog := mkProg { cl0 with expl := true } [(.inner, .foo)]
 
-theorem j2 :
+example :
     verdict .today false .java j2Base (j2Base.set .expl .foo) = ⟨.ok .inner, .ok .expl, false, false⟩ ∧
     verdict .cheap false .java j2Base (j2Base.set .expl .foo) = ⟨.ok .inner, .ok .expl, false, false⟩ ∧
     verdict .today false .s2 j2Base (j2Base.set .expl .foo) = ⟨.ok .inner, .ok .expl, true, true⟩ := by
@@ -297,19 +303,19 @@ theorem j2 :
 beside `java.lang.Process`. Java reports an ambiguity; Zinc compiles `W` or the new source alone. -/
 def j3Base : Prog := mkProg { cl0 with wild := true, wpkg := true } [(.wpkg, .foo)]
 
-theorem j3 :
+example :
     verdict .today false .java j3Base (j3Base.set .wild .foo) = ⟨.ok .wpkg, .err "ambiguous", false, false⟩ := by
   native_decide
 
 def j3libBase : Prog := mkProg { cl0 with wpkg := true, opt := true } []
 
-theorem j3_lib :
+example :
     verdict .cheap false .java j3libBase (j3libBase.set .wpkg .foo) =
       ⟨.ok .lib, .err "ambiguous", false, false⟩ := by
   native_decide
 
 /-- A member class added to `P` reaches a Java client through its inheritance edge. -/
-theorem inh_today :
+example :
     (verdict .today false .java (mkProg { cl0 with inh := true } [(.inner, .foo)])
       ((mkProg { cl0 with inh := true } [(.inner, .foo)]).set .inh .foo)).clean = true := by
   native_decide
@@ -317,11 +323,11 @@ theorem inh_today :
 /-- The fix (Java used names for #34, an edge from a static import to its class) is clean on the
 whole space for Java and Scala 3 clients; #34 alone is clean for Scala 3 clients. Scala 2's are clean
 when they name `Foo` in a way the bridge records (here, with the explicit import). -/
-theorem fix_clean : [Lang.java, .s3].all (fun l => (bases l).all fun p => (edits p).all fun (_, p') =>
+example : [Lang.java, .s3].all (fun l => (bases l).all fun p => (edits p).all fun (_, p') =>
     (verdict .fix false l p p').clean) = true := by
   native_decide
 
-theorem cheap_clean_scala : [Lang.s2, .s3].all (fun l => (bases l).all fun p => (edits p).all fun (_, p') =>
+example : [Lang.s2, .s3].all (fun l => (bases l).all fun p => (edits p).all fun (_, p') =>
     !usesName l p.cl || (verdict .cheap false l p p').clean) = true := by
   native_decide
 
