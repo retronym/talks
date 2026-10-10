@@ -1,0 +1,36 @@
+name: Lean
+
+on:
+  push:
+    branches: [master]
+    paths: ["zinc-incrementality/lean/**", ".github/workflows/lean.yml"]
+  pull_request:
+    paths: ["zinc-incrementality/lean/**", ".github/workflows/lean.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: zinc-incrementality/lean
+    steps:
+      - uses: actions/checkout@v4
+      - name: No theorem is proved by native_decide
+        run: python3 -I scripts/lint_native_decide.py
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: zinc-incrementality/lean
+          use-mathlib-cache: true
+          build: true
+          test: false
+          lint: false
+      - name: Core theorems use only the standard axioms
+        run: python3 -I scripts/check_axioms.py

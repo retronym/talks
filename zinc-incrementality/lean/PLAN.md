@@ -25,10 +25,7 @@ Enumerations over bounded program spaces (`native_decide`) and the Zinc conforma
 
 Phases 4 and 5 are design notes; their results are in phases 6 to 8.
 
-Still stated as `theorem … := by native_decide`, to relabel as checks or prove (review item 16):
-- `Added` (3), `Inline` (1), `PingPong` (12), `Pipelining` (2), `Sealed` (2), `Snapshot` (2), `Stale` (2);
-- `InlineOpaque` (13, being ported);
-- `Split` (9, named `check_`).
+No `theorem` is proved by `native_decide`: the enumerated facts are `example`s (`InlineOpaque.lean`'s with talks#25). CI (`.github/workflows/lean.yml`) lints this (`scripts/lint_native_decide.py`) and checks that the core theorems T1–T5, per framework variant, use only `propext`, `Classical.choice` and `Quot.sound` (`scripts/Axioms.lean`, `scripts/check_axioms.py`). `PingPong.zinc_diverges` had leaned on `native_decide` through its step lemmas; they are now kernel `decide`.
 
 Every witness and obligation in the table uses kernel `decide` or a proof.
 
