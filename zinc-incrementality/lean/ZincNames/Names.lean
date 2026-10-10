@@ -51,6 +51,10 @@ So a change of resolution is missed when the client's file records no edge to th
 changed. The fixed extractor records every scope the lookup searched, misses included (`Added.lean`'s
 `fixed`); the coarse fix invalidates the users of a name whenever a binding of it is added or
 removed.
+
+The specification is `NamesSpec.lean`: the lookup as a `TCompiler` instance, today's bridge and the
+fixes as keys, with the obligations proved for every program. This file is the executable model
+checked against the compilers and Zinc on a bounded space; its results are `example`s.
 -/
 
 namespace Zinc.Names
@@ -180,9 +184,12 @@ their member-ref dependents' used names against the ancestor's changed names. -/
 inductive Api | full | decls | composed
   deriving DecidableEq, Repr
 
-/-- What a rule that diffs a class's names compares with: the analysis from before the run, or the
-one from before the cycle. -/
-inductive Baseline | run | cycle
+/-- How far a rule on names or implicits reaches: every user of the name, or every class
+(`global`, as #34 does); or only the classes of the package where the binding changed and of the
+packages nested in it, and (with `imports`, a bridge change) those that record a wildcard import of
+that package (`narrowed`). `NamesSpec.lean` proves the narrowed rules sound only with the recorded
+import. -/
+inductive Reach | global | narrowed
   deriving DecidableEq, Repr
 
 /-- The extensions of retronym/zinc#34, each a rule run after every cycle.
@@ -195,24 +202,22 @@ inductive Baseline | run | cycle
   one), the classes of its package and the packages nested in it (`Givens.lean`). -/
 structure Rules where
   api : Api := .full
-  base : Baseline := .run
+  reach : Reach := .global
+  imports : Bool := false
   cheap : Bool := false
   f2 : Bool := false
   f3 : Bool := false
   g : Bool := false
   deriving DecidableEq, Repr
 
-/-- Does a name diff of a package object see a member it inherits? Develop stores it, and the
-package object is recompiled in the cycle after its parent (inheritance edge), so either baseline
-sees it appear. #24 stores declarations only, so without composition it never appears. Composed
-from the analysis, it appears in the cycle that recompiles the parent, before the package object is
-recompiled: diffed against the cycle before, the package object's recompilation shows no new name;
-diffed against the run's baseline, it does. -/
-def Rules.seesInherited (r : Rules) : Bool :=
-  match r.api, r.base with
-  | .full, _ => true
-  | .composed, .run => true
-  | _, _ => false
+/-- Does a name diff of a package object see a member it inherits? Develop stores it; #24 stores
+declarations only, so without composition it never appears (`NamesSpec.decls_violates_abstraction`). -/
+def Rules.seesInherited (r : Rules) : Bool := r.api != .decls
+
+/-- Does a package-scoped rule, for a binding changed in slot `s`'s package, reach the client? The
+enclosing packages always; package `a.q` only through the wildcard import, when recorded. -/
+def Rules.reachesClient (r : Rules) (c : Client) (s : Slot) : Bool :=
+  r.reach == .global || s != .wpkg || r.imports
 
 /-- Which extractor or invalidation rule. -/
 inductive Mode
@@ -230,8 +235,8 @@ inductive Mode
   deriving DecidableEq, Repr
 
 /-- A mode from `+`-separated tokens: `today`, `cheap`, `searched`, `names`, or rules from `cheap`,
-`f2`, `f3`, `g` (`all` for the four), `decls` or `composed` for #24's API, `cycle` for the cycle
-baseline; e.g. `all+composed+cycle`. -/
+`f2`, `f3`, `g` (`all` for the four), `decls` or `composed` for #24's API, `narrowed` and
+`imports` for the narrowed rules with recorded package imports; e.g. `all+narrowed+imports`. -/
 def Mode.parse (s : String) : Option Mode :=
   let ts := s.splitOn "+"
   match ts with
@@ -248,7 +253,8 @@ def Mode.parse (s : String) : Option Mode :=
     | .rules r, "all" => some (.rules { r with cheap := true, f2 := true, f3 := true, g := true })
     | .rules r, "decls" => some (.rules { r with api := .decls })
     | .rules r, "composed" => some (.rules { r with api := .composed })
-    | .rules r, "cycle" => some (.rules { r with base := .cycle })
+    | .rules r, "narrowed" => some (.rules { r with reach := .narrowed })
+    | .rules r, "imports" => some (.rules { r with imports := true })
     | _, _ => none
 
 /-- The rules of a mode built on Zinc's invalidation (`searched` and `names` are not). -/
@@ -296,9 +302,9 @@ def invalidates (rs : Rules) (v : Ver) (p : Prog) (r : Res) (s : Slot) : Bool :=
 fully qualified name is new: added, renamed to the name (`unrename`), or moved to another package.
 A package object is never one (`invalidateByAddedClasses` drops the name `package`), nor is a
 member of an object. The client uses its name, so `invalidateByAddedClasses` invalidates it. -/
-def addsClass (v : Ver) (p p' : Prog) : Bool :=
+def addsClass (rs : Rules) (v : Ver) (p p' : Prog) : Bool :=
   (present p.cl).any fun s => s.topLevel && p.st s != .foo && p'.st s == .foo &&
-    !(s == .inner && aliased v p && p.st .pobj == .foo)
+    !(s == .inner && aliased v p && p.st .pobj == .foo) && rs.reachesClient p.cl s
 
 /-- Does a rule diffing the package object's names see it gain the client's name? Scala 2's
 `package object b`, Scala 3's `package object b` or the `PObj$package` class holding the top-level
@@ -314,7 +320,7 @@ def recompiles (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
   | .names => !(changed p p').isEmpty
   | m =>
     let rs := m.toRules
-    (changed p p').any (invalidates rs v p r) || (rs.cheap && addsClass v p p') ||
+    (changed p p').any (invalidates rs v p r) || (rs.cheap && addsClass rs v p p') ||
       (rs.f2 && pobjGains rs p p')
 
 /-- The verdict of an edit: the client's resolution before, after, whether Zinc recompiles it,
@@ -471,16 +477,18 @@ def cl0 : Client := ⟨.nested, false, false, false, false, false, false, false,
 /-- **Inner package** (retronym/zinc#32): `a.b.Foo` added over `a.Foo`. -/
 def innerBase : Prog := mkProg cl0 [(.outer, .foo)]
 
-theorem inner_added_today :
+/-- `inner_added_today`. -/
+example :
     verdict .today .s2 innerBase (innerBase.set .inner .foo) = ⟨.ok .outer, .ok .inner, false, false⟩ := by
   native_decide
 
-theorem inner_added_searched :
+/-- `inner_added_searched`. -/
+example :
     (verdict .searched .s2 innerBase (innerBase.set .inner .foo)).clean = true := by native_decide
 
-/-- **Package object**: `Foo` added to `package object b` over `a.Foo`. The client reached the
+/-- `pobj_added_today`: **Package object**: `Foo` added to `package object b` over `a.Foo`. The client reached the
 package object through no symbol. -/
-theorem pobj_added_today :
+example :
     verdict .today .s3 innerBase (innerBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
@@ -489,7 +497,8 @@ recompiles the exporting file (the wildcard export records an inheritance edge),
 forwarder shadows `a.Foo`, but the client has no edge to it: the package object's case. -/
 def expBase : Prog := mkProg { cl0 with exp := true } [(.outer, .foo)]
 
-theorem export_added_today :
+/-- `export_added_today`. -/
+example :
     verdict .today .s3 expBase (expBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
@@ -497,32 +506,35 @@ theorem export_added_today :
 `First`, which does not use `Foo`. -/
 def wildBase : Prog := mkProg { cl0 with wild := true, first := true } [(.outer, .foo)]
 
-theorem wild_first_today :
+/-- `wild_first_today`. -/
+example :
     verdict .today .s2 wildBase (wildBase.set .wild .foo) = ⟨.ok .outer, .ok .wild, false, false⟩ := by
   native_decide
 
-/-- Without `First` the client is charged with the import, and uses `Foo`. -/
-theorem wild_client_today :
+/-- `wild_client_today`: Without `First` the client is charged with the import, and uses `Foo`. -/
+example :
     (verdict .today .s2 { wildBase with cl := { wildBase.cl with first := false } }
       (({ wildBase with cl := { wildBase.cl with first := false } }).set .wild .foo)).clean = true := by
   native_decide
 
-/-- The cheap fix (retronym/zinc#34) on the inner package: the added `a.b.Foo` invalidates the
+/-- `inner_added_cheap`: The cheap fix (retronym/zinc#34) on the inner package: the added `a.b.Foo` invalidates the
 client, which uses `Foo`. -/
-theorem inner_added_cheap :
+example :
     verdict .cheap .s2 innerBase (innerBase.set .inner .foo) = ⟨.ok .outer, .ok .inner, true, true⟩ := by
   native_decide
 
-/-- It misses the package object and the wildcard-imported object: neither adds a class. -/
-theorem pobj_added_cheap :
+/-- `pobj_added_cheap`: It misses the package object and the wildcard-imported object: neither adds a class. -/
+example :
     verdict .cheap .s3 innerBase (innerBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
-theorem export_added_cheap :
+/-- `export_added_cheap`. -/
+example :
     verdict .cheap .s3 expBase (expBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
-theorem wild_first_cheap :
+/-- `wild_first_cheap`. -/
+example :
     verdict .cheap .s2 wildBase (wildBase.set .wild .foo) = ⟨.ok .outer, .ok .wild, false, false⟩ := by
   native_decide
 
@@ -564,31 +576,25 @@ def family (m : Mode) (v : Ver) (p p' : Prog) : String :=
 /-- `package object b extends a.PT`, over `a.Foo`, and `a.PT` gains `Foo`. -/
 def pinhBase : Prog := mkProg { cl0 with pinh := true } [(.outer, .foo)]
 
-/-- Today misses it as it misses a declared member. -/
-theorem pobj_inherited_today :
+/-- `pobj_inherited_today`: Today misses it as it misses a declared member. -/
+example :
     verdict .today .s2 pinhBase (pinhBase.set .pobj .foo) = ⟨.ok .outer, .ok .pobj, false, false⟩ := by
   native_decide
 
-/-- On develop the F2 rule sees the inherited member in the package object's stored API. -/
-theorem pobj_inherited_f2 :
+/-- `pobj_inherited_f2`: On develop the F2 rule sees the inherited member in the package object's stored API. -/
+example :
     (verdict (.rules allRules) .s2 pinhBase (pinhBase.set .pobj .foo)).clean = true := by native_decide
 
-/-- #24 stores the package object's declarations only, and it declares nothing: the rule sees no
+/-- `pobj_inherited_decls`: #24 stores the package object's declarations only, and it declares nothing: the rule sees no
 new name. -/
-theorem pobj_inherited_decls :
+example :
     verdict (.rules { allRules with api := .decls }) .s2 pinhBase (pinhBase.set .pobj .foo) =
       ⟨.ok .outer, .ok .pobj, false, false⟩ := by native_decide
 
-/-- Composed from the ancestors, against the run's baseline: clean. -/
-theorem pobj_inherited_composed :
+/-- `pobj_inherited_composed`: Composed from the ancestors, against the run's baseline: clean. -/
+example :
     (verdict (.rules { allRules with api := .composed }) .s2 pinhBase (pinhBase.set .pobj .foo)).clean = true := by
   native_decide
-
-/-- Composed, against the cycle before: the name appears when `PT` is recompiled, before the
-package object is; the package object's own recompilation then shows nothing new. -/
-theorem pobj_inherited_composed_cycle :
-    verdict (.rules { allRules with api := .composed, base := .cycle }) .s2 pinhBase (pinhBase.set .pobj .foo) =
-      ⟨.ok .outer, .ok .pobj, false, false⟩ := by native_decide
 
 /-! ## Cost
 
@@ -597,15 +603,16 @@ mode recompiles): the client's file, and a class elsewhere that uses the name, `
 (`a.Y.Foo`), standing for every user of the name in the build. The client's file is necessary
 when its resolution changes or it extends the edited trait; `User` never is. -/
 
-def necessary (v : Ver) (p p' : Prog) : Bool :=
-  resolve v p != resolve v p' || (changed p p').contains .inh
+def necessary (v : Ver) (p p' : Prog) : Bool := resolve v p != resolve v p'
 
 /-- Does the mode recompile `c.User`? The rules on names reach every user of the name. -/
 def userRecompiled (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
   match m with
   | .searched => false
   | .names => !(changed p p').isEmpty
-  | m => let rs := m.toRules; (rs.cheap && addsClass v p p') || (rs.f2 && pobjGains rs p p')
+  | m =>
+    let rs := m.toRules
+    rs.reach == .global && ((rs.cheap && addsClass rs v p p') || (rs.f2 && pobjGains rs p p'))
 
 /-- Counts over the space: edits, wrong edits, the client recompiled though not necessary, and
 `User` recompiled. -/

@@ -16,9 +16,10 @@ recompiles besides the edited one, and whether the run equals the clean build.
 `conformance names|givens 2|3 [mode]`: the name-resolution spaces of `ZincNames/Names.lean` and
 `ZincNames/Givens.lean`, as source files, with the model's resolution before and after each edit,
 its verdict for that Scala version under the mode (`Mode.parse`: `today` by default, `cheap` for
-retronym/zinc#34, `all` for #34 with the F2, F3 and G rules, `+decls` or `+composed` for #24's API,
-`+cycle` for the per-cycle baseline), and the classes it recompiles beyond the edited files and
-their heirs (`modelRecompiled`, among the client, `User`, `Near` and `Mid`).
+retronym/zinc#34, `all` for #34 with the F2, F3 and G rules, `+narrowed+imports` for the rules
+narrowed to the searched packages with recorded package imports, `+decls` for #24's API without
+composition), and the classes it recompiles beyond the edited files and their heirs
+(`modelRecompiled`, among the client, `User`, `Near`, `Mid` and `Far`).
 
 `conformance cost`: per space, version and mode, the edits, the wrong ones, and the recompilations
 beyond the necessary, as a markdown table.
@@ -207,7 +208,7 @@ open Zinc.Givens
 def givensFactors (v : Zinc.Names.Ver) (p : Prog) : List (String × String) :=
   let c := p.cl
   [("pkg", c.pkg.str), ("blk", toString c.blk), ("inh", toString c.inh), ("wild", toString c.wild),
-   ("first", toString c.first), ("pinh", toString c.pinh)] ++
+   ("first", toString c.first), ("pinh", toString c.pinh), ("wpkg", toString c.wpkg)] ++
   Slot.all.map fun s => ("s." ++ s.str, if (present v c).contains s then toString (p.has s) else "-")
 
 def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) : IO Unit := do
@@ -216,11 +217,12 @@ def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) : IO Unit := do
   for p in bases v do
     let es := (edits v p).map fun (e, p') =>
       let r := verdict m v p p'
-      let (near, mid) := bystanders m v p p'
+      let (near, mid, far) := bystanders m v p p'
       "{\"cls\":" ++ jstr e.str ++ ",\"cfg\":" ++ jstr (e.str ++ ": " ++ r.before.str ++ " -> " ++ r.after.str) ++
         ",\"factors\":" ++ jfactors (givensFactors v p') ++ ",\"files\":" ++ jfiles (fileEdits v p p') ++
         ",\"modelRecompiled\":" ++ jarr (((if r.recompiled then ["Client"] else []) ++
-          (if near then ["Near"] else []) ++ (if mid then ["Mid"] else [])).map jstr) ++
+          (if near then ["Near"] else []) ++ (if mid then ["Mid"] else []) ++
+          (if far then ["Far"] else [])).map jstr) ++
         ",\"modelNecessary\":" ++ toString (necessary v p p') ++
         ",\"modelClean\":" ++ toString r.clean ++ ",\"modelFamily\":" ++ jstr (family m v p p') ++
         ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
@@ -234,25 +236,25 @@ def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) : IO Unit := do
 end givens
 
 /-- Per space, version and mode: the edits, the wrong ones (unsound), the client recompiled though
-its resolution did not change and it does not extend the edited trait, and the bystanders
-recompiled (each stands for every class of its kind in a build). -/
+its resolution did not change, and the bystanders recompiled (each stands for every class of its
+kind in a build). -/
 def mainCost : IO Unit := do
   let out ← IO.getStdout
   let vs : List (String × Zinc.Names.Ver) := [("2.13", .s2), ("3", .s3)]
-  out.putStrLn "| Space | Mode | Edits | Wrong | Client, not necessary | `User` | `Near` | `Mid` |"
-  out.putStrLn "|---|---|---|---|---|---|---|---|"
+  out.putStrLn "| Space | Mode | Edits | Wrong | Client, resolution unchanged | `User` | `Near` | `Mid` | `Far` |"
+  out.putStrLn "|---|---|---|---|---|---|---|---|---|"
   for (vn, v) in vs do
-    for ms in ["today", "cheap", "searched", "names", "f2", "f3", "cheap+f2+f3", "all+cycle",
-        "all+decls", "all+composed", "all+composed+cycle"] do
+    for ms in ["today", "cheap", "searched", "names", "f2", "f3", "cheap+f2+f3",
+        "cheap+f2+f3+narrowed", "cheap+f2+f3+narrowed+imports", "all+decls"] do
       let some md := Zinc.Names.Mode.parse ms | continue
       let c := Zinc.Names.cost md v
-      out.putStrLn s!"| names, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | {c.user} | | |"
+      out.putStrLn s!"| names, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | {c.user} | | | |"
   for (vn, v) in vs do
-    for ms in ["today", "cheap", "searched", "g", "all", "all+cycle", "all+decls", "all+composed",
-        "all+composed+cycle"] do
+    for ms in ["today", "cheap", "searched", "g", "g+narrowed", "g+narrowed+imports", "all",
+        "all+narrowed+imports", "all+decls"] do
       let some md := Zinc.Names.Mode.parse ms | continue
       let c := Zinc.Givens.cost md v
-      out.putStrLn s!"| givens, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | | {c.near} | {c.mid} |"
+      out.putStrLn s!"| givens, {vn} | `{ms}` | {c.edits} | {c.wrong} | {c.client} | | {c.near} | {c.mid} | {c.far} |"
 
 section inlineOpaque
 open Zinc.InlineOpaque
