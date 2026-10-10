@@ -134,16 +134,66 @@ For track B, three cases are candidate MiMa false negatives:
 
 ### S — Scala (`Scala/`)
 
-- **S1. Lowering for Scala 2.12+** to `Jvm.World`:
+- [x] **S1. Lowering for Scala 2.12+** to `Jvm.World` (`Scala/Lower.lean`), as a `Task` over other definitions' interfaces, with `lower_congr` (T1 for lowering):
   - classes;
-  - traits: default methods, `$init$`, static `m$` impl methods;
-  - mixin forwarders, under the 2.12 vs 2.13 forwarder rules;
-  - objects: `MODULE$` and static forwarders;
+  - traits: default methods, `$init$`, static `m$` impl methods, trait fields (abstract getter and setter);
+  - mixin forwarders (2.12 and 2.13 agree on the space: forwarders for every concrete trait method the class mixes in itself);
+  - objects: `MODULE$`, static forwarders on the companion or mirror class;
   - bridges;
   - value classes: extension methods, erased signatures.
-- **S2. Scala 3 deltas.** Trait initialisers, which ties into F6 in talks#21. Also `@static`, enums, `inline`, and extension methods.
-- **S3. Calibrate against scalac's own classfiles.** For each source in a bounded space, compile with scalac 2.13 and 3, read the classfiles (`javap`, or the Classfile API), and diff the model's `World` against them.
-- **S4. Shared `AsSeenFrom` and linearization,** one model used by the TCK and later by `Zinc/Hier`.
+- [x] **S2. Scala 3 deltas.** Trait initialisers including F6 (separate compilation), `@static`, extension methods, `Serializable` objects. Enums and `inline`: TODO.
+- [x] **S3. Calibrate against scalac's own classfiles** (`probes/scala/probe.py`). Agreement below.
+- [ ] **S4. Shared `AsSeenFrom` and linearization,** one model used by the TCK and later by `Zinc/Hier`. `Scala.lin` and `Scala.lookup` are a start.
+- [x] **Source-level edit catalogue** (`Scala/Catalogue.lean`), the bridge to B3.
+
+#### S design
+
+**Source.** A typed, already-resolved AST, since lowering runs after the typer: top-level definitions (class, abstract class, final class, trait, object, value class) with a superclass, mixed-in traits, at most one type parameter and parents applied to type arguments. Members are `def`s with parameters and a result type, abstract or concrete, `final` or not, and `val`s in traits and classes. Types are `Int`, `Unit`, `String`, `Object`, the type parameter, and other definitions by name. A class and its companion object are one unit, as in a source file. Bodies are opaque: lowering only needs to know a member is concrete.
+
+**Lowering is a `Task`.** Its queries are other definitions' interfaces (`decl d`: kind, parents, members with signatures; no bodies), which is what scalac reads from pickles or TASTy. Lowering a unit asks for its own declaration, its ancestors' (linearization, mixin forwarders, bridges, which parent is a trait), each value class it mentions in a signature (erasure), and its companion (static forwarders). Its output is a list of classfiles: the `Jvm.Classfile` the JVM links against, plus what `Jvm` does not model yet (fields, access, `ACC_BRIDGE`, and for synthesized methods the invoke instructions of their bodies: a forwarder's `invokestatic T.m$`, a constructor's `T.$init$` calls). So a unit's lowering has a trace, and T1 says an edit to a definition outside that trace leaves its classfiles unchanged. That is the hook to `NCompiler` and to B4.
+
+**Scala 2.12, 2.13 and 3 are one parameter,** `Dialect`, read only where the compilers differ. The differences are found by the calibration probe, not assumed.
+
+**Calibration (S3).** A Lean exe enumerates a bounded space of programs, prints each as Scala source and as the model's classfiles. A script compiles them with scalac 2.12, 2.13 and 3 (one package per program, one compiler run per dialect, two runs for the separate-compilation cases), parses the classfiles directly (header, fields, methods with access and flags, and the invokes in synthesized methods), and diffs. Enumeration here is testing, per `DESIGN-spec.md`.
+
+**Out of scope** for S1–S3: method bodies and their call sites in user code, overloading, nested and local classes, inner-class attributes and generic `Signature` attributes, how a class implements a `lazy val`, `var`, `private[this]` and qualified access, specialization, case classes (catalogue only), Java-defined parents, Scala 3 `inline`, opaque types and given instances. Type checking is limited to what the space needs to stay well-typed (abstract members implemented, conflicting inherited members overridden).
+
+
+#### S status
+
+**Calibration.** `python3 probes/scala/probe.py OUT` (about a minute). Every program agrees with scalac on header, fields, methods with their flags, and the invokes of synthesized bodies:
+
+| scalac | programs | of which |
+|---|---|---|
+| 2.12.21 | 1320/1320 | mixin 1280, generic 24, value class 4, trait companion 2, misc 4, `$init$` joint 3 and separate 3 |
+| 2.13.18 | 1320/1320 | the same |
+| 3.9.0 | 1326/1326 | the same, plus `@static` and extension methods 4, `$init$` of a trait with an extension method, joint and separate |
+
+The model started from the textbook rules; the probe corrected it in these places, each now a rule in `Lower.lean`:
+
+- **Interfaces are minimised.** A direct trait parent that another direct parent already extends is not in the classfile's interface list (`class C extends B with T with U`, `U extends T`: `implements U`). All three versions.
+- **`$init$` is not universal.** Scala 2 omits it for a trait with no concrete member, and a subclass's constructor calls only the `$init$`s that exist. Scala 3 emits it only for a trait with initialisers (a concrete `val`); see F6 below.
+- **Objects changed in 2.13.** 2.12: instance fields, a non-final `MODULE$`, `$init$` calls in the constructor, trait-field implementations `final`. 2.13 and 3: static fields, `final MODULE$`, `$init$` calls in `<clinit>`, trait-field implementations not final.
+- **Static forwarders include inherited members,** not only the methods in the module class (an object extending a class gets forwarders for the class's methods).
+- **Scala 3 forwards more:** trait setters (Scala 2 skips them), and a bridge when the first member of that erased signature along the linearization is concrete. So `object O extends B with T` with an overriding `m(): String` gets a static `m()Object` forwarder when `B.m(): Object` is concrete and `T` does not declare `m`, but not when an abstract `T.m(): Object` comes first.
+- **Scala 3 objects** implement `java.io.Serializable` and have a private `writeReplace`; an object implementing a `lazy val` has a private `<clinit>`.
+- **Trait setter names carry the trait's full name,** with the package mangled: `p1$T$_setter_$v_$eq`. The model omits packages; the probe strips them.
+- A mixin forwarder for a `final` trait method is `final`. A Scala 3 `@static val` becomes a public static final field of the companion class, initialised in a private `<clinit>`, with no accessor.
+
+**F6, extended.** A Scala 3 trait whose only initialisers are a `lazy val`, *or which has any extension method* (even an abstract one), has an `$init$`. A subclass compiled in the same run calls it; one compiled against the trait's TASTy does not (the TASTy says `NoInits`). The extension-method case is new; it is likely the more common one (syntax traits for type classes). In the model, lowering depends on `View.inRun`, so this is a compositionality failure (review finding 3), witnessed by kernel `decide` in `Scala/Facts.lean`; the probe confirms both runs.
+
+**Catalogue.** Seven source edits, each linked before, after (old client classfiles, new library) and fresh (client recompiled), by kernel `decide`. Two show the gaps between Zinc and binary compatibility:
+- `traitOverrideAdded`: a trait gains a concrete override of a method the client's superclass has. The old client has no forwarder, so the JVM selects the superclass's method; a fresh build runs the trait's. Links either way, MiMa has nothing to say, Zinc must recompile. Confirmed on HotSpot with 2.13.18 (prints 1, fresh prints 2).
+- `widenedToValueClass`: `V` becomes a value class, and `W`'s classfile changes although `W`'s source did not; `W`'s lowering trace contains `V`.
+
+`valAddedToTrait` fails earlier on HotSpot than in the model: `new Y` already throws `AbstractMethodError`, since `$init$` calls the missing setter. The model needs static interface methods (J3) to see that.
+
+**TODO (future work)**
+- Enums. Observed (3.9.0): `enum Color { case Red, Green }` is an abstract class implementing `scala.reflect.Enum` with forwarders for `scala.Product`'s methods and static `values`/`valueOf`/`fromOrdinal`; the cases are public static final fields of `Color$` without accessors or static forwarders; simple cases are instances of one anonymous class. Needs library traits (`Product`, `Mirror`) in the environment.
+- Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading, nested classes, Java-defined parents.
+- Check the catalogue against MiMa and HotSpot for every case (B3), and add a client-space enumeration over source edits.
+- Lowering as an `NCompiler` instance, for B4; after the framework merge (review finding 1).
+- S4.
 
 ### V — Java (`Java/`), deferred
 
