@@ -37,4 +37,31 @@ example : ctorInits .s3 (initProgram 1) ["C"] = some [tInit] := by decide
 /-- Scala 2.13: no difference. -/
 example : ctorInits .s213 (initProgram 2) ["C"] = some [tInit] := by decide
 
+/-! ## `memberType` through the shared `AsSeenFrom`
+
+`K extends H[String]`, `H[X] extends G[X]`, `G[X] { def g(x: X): X }`: `K`'s base type `G` has
+argument `String`, computed by viewing `H`'s base type `G[X]` from `K` (scalac's `baseType`), and
+`K.this.memberType(g)` takes `X` of `G` to `String`. -/
+
+/-- `info.asSeenFrom(self.this, owner)` in program `p`. -/
+def memberTypeIn (p : Program) (self owner : String) (t : Ty) : Option Ty := do
+  let s ← p.find? (·.name == self)
+  let d ← s.cls
+  pure (seenFrom self (linIn p d) owner t)
+
+def throughH : Program := (asfSpace[0]?).getD []
+
+example : memberTypeIn throughH "K" "G" (Ty.X "G") = some .str := by decide
+example : memberTypeIn throughH "K" "H" (Ty.X "H") = some .str := by decide
+/-- A type parameter of a class that is not a base class is left alone. -/
+example : memberTypeIn throughH "H" "G" (Ty.X "G") = some (Ty.X "H") := by decide
+
+/-- An overload is not an override: `K extends G[String] { def g(x: Int): Int }` declares a second
+`g`, so lowering keeps two signature groups for `g` and emits no bridge between them. -/
+def overload : Program := (asfSpace[8]?).getD []
+
+example : (do
+    let d ← ((overload.find? (·.name == "K")).bind (·.cls))
+    pure (sigGroups "K" (linIn overload d)).length) = some 2 := by decide
+
 end Scala

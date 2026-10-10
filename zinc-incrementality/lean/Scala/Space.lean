@@ -1,4 +1,4 @@
-import Scala.Lower
+import Scala.Members
 
 /-!
 # Bounded program spaces for calibrating lowering against scalac
@@ -24,27 +24,16 @@ namespace Scala
 
 /-- Run lowering's linearization against a program, for the space's own legality checks. -/
 def linIn (p : Program) (d : Decl) : List Anc :=
-  match ((lin fuel d none).run.run p.env) with
+  match ((lin fuel d).run.run p.env) with
   | .ok l => l
   | .error _ => []
 
-/-- Does member `n` of `d` override an inherited one? (Printed as `override`.) -/
+/-- Does member `n` of `d` override an inherited one, by `memberType`? (Printed as `override`.) -/
 def overrides (p : Program) (d : Decl) (n : String) : Bool :=
-  !(hits (linIn p d).tail n).isEmpty
-
-/-- Scala's rule for inherited concrete members: the winner must override every other concrete
-member, which here means its owner must have the other's owner as an ancestor. -/
-def conflictFree (p : Program) (d : Decl) (n : String) : Bool :=
   let l := linIn p d
-  match (hits l n).filter (!·.2.abs) with
-  | [] => true
-  | ((w, _), _) :: rest =>
-    let lw := linIn p w
-    rest.all fun ((o, _), _) => lw.any (·.1.name == o.name)
-
-def needsAbstract (p : Program) (d : Decl) (n : String) : Bool :=
-  let hs := hits (linIn p d) n
-  !hs.isEmpty && hs.all (·.2.abs)
+  match (hits l n).head? with
+  | some h => (hitsAbove l n).any (overridesIn d.name l h)
+  | none => false
 
 def Src.show (p : Program) (s : Src) : String :=
   let one (d : Decl) := d.show (overrides p d)
@@ -92,8 +81,12 @@ def mixinProgram (tm : TM) (tv : Bool) (u : UK) (b : BK) (cm : Option Bool) (r :
   let lib : Program := [{ name := "T", cls := some t }] ++ (uD.toList.map fun d => { name := "U", cls := some d }) ++
     (bD.toList.map fun d => { name := "B", cls := some d })
   let base := lib ++ [{ name := "C", cls := some c0 }]
-  if !conflictFree base c0 "m" then failure
-  let c := { c0 with abs := needsAbstract base c0 "m" }
+  -- legal by the membership model (`Members`), made abstract if it must be
+  let es := match Members.errors .s213 base with
+    | .ok es => es
+    | .error _ => [{ cls := "C", kind := .conflicting }]
+  if es.any (·.kind != .needsAbstract) then failure
+  let c := { c0 with abs := es.any (·.kind == .needsAbstract) }
   let f : Mem := { name := "f", params := [.int], res := .int }
   let cSrc : Src := match o with
     | .comp => { name := "C", cls := some c, obj := some { name := "C", kind := .obj, members := [f] } }
@@ -119,7 +112,7 @@ def mixinSpace : List Program :=
 
 def genericProgram (gTrait : Bool) (gAbs : Bool) (hTrait : Bool) (hOv : Bool) (k : Bool) :
     Option Program := do
-  let g : Mem := { name := "g", params := [.tp], res := .tp, abs := gAbs }
+  let g : Mem := { name := "g", params := [Ty.X "G"], res := Ty.X "G", abs := gAbs }
   let gD : Decl := { name := "G", kind := (if gTrait then .trt else .cls), abs := gAbs && !gTrait,
                      tparam := true, members := [g] }
   let hm := if hOv then [{ name := "g", params := [.str], res := .str : Mem }] else []
@@ -204,6 +197,42 @@ def scala3Space : List Program :=
      { name := "CE", cls := some { name := "CE", traits := [("TE", none)],
                                    members := [{ len with }] } }] ]
 
+/-! ## Type arguments through several parents, value-class arguments, overloads
+
+Programs where a member's type must be viewed from the class (`memberType`) to decide overriding
+and bridges: a parameter passed through an intermediate generic class or trait, a value class as
+the argument, and an overload that a name-only rule would take for an override. -/
+
+def asfSpace : List Program :=
+  let g (o : String) (abs : Bool := false) : Mem := { name := "g", params := [Ty.X o], res := Ty.X o, abs := abs }
+  let gAt (t : Ty) : Mem := { name := "g", params := [t], res := t }
+  let cG : Src := { name := "G", cls := some { name := "G", tparam := true, members := [g "G"] } }
+  let tG : Src := { name := "G", cls := some { name := "G", kind := .trt, tparam := true, members := [g "G"] } }
+  let hOf (trt : Bool) : Src :=
+    let gx : Parent := ("G", some (Ty.X "H"))
+    let d : Decl := { name := "H", kind := (if trt then .trt else .cls), tparam := true,
+                      super := (if trt then none else some gx), traits := (if trt then [gx] else []) }
+    { name := "H", cls := some d }
+  let v : Src := { name := "V", cls := some { name := "V", kind := .vcls, under := some ("x", .int) } }
+  let k (sup : Option Parent) (ts : List Parent) (ms : List Mem) : Src :=
+    { name := "K", cls := some { name := "K", super := sup, traits := ts, members := ms } }
+  let o (sup : Option Parent) (ts : List Parent) (ms : List Mem) : Src :=
+    { name := "O", obj := some { name := "O", kind := .obj, super := sup, traits := ts, members := ms } }
+  -- through an intermediate generic class, with and without an override
+  [ [cG, hOf false, k (some ("H", some .str)) [] [gAt .str]],
+    [cG, hOf false, k (some ("H", some .str)) [] []],
+    [cG, hOf false, k (some ("H", some .int)) [] [gAt .int]],
+  -- through an intermediate generic trait
+    [tG, hOf true, k none [("H", some .str)] []],
+    [tG, hOf true, k none [("H", some .int)] [gAt .int]],
+    [tG, hOf true, k none [("H", some .str)] [gAt .str], o none [("H", some .str)] [gAt .str]],
+  -- a value class as the argument
+    [cG, v, k (some ("G", some (.ref "V"))) [] [gAt (.ref "V")]],
+    [tG, v, k none [("G", some (.ref "V"))] [], o none [("G", some (.ref "V"))] [gAt (.ref "V")]],
+  -- an overload, not an override: no bridge
+    [cG, k (some ("G", some .str)) [] [gAt .int]],
+    [tG, k none [("G", some .str)] [gAt .int]] ]
+
 structure Case where
   fam : String
   prog : Program
@@ -215,7 +244,7 @@ structure Case where
 def space : List Case :=
   (mixinSpace.map ({ fam := "mixin", prog := · })) ++ (genericSpace.map ({ fam := "generic", prog := · })) ++
   (vclsSpace.map ({ fam := "vcls", prog := · })) ++ (traitCompanionSpace.map ({ fam := "tcomp", prog := · })) ++
-  (miscSpace.map ({ fam := "misc", prog := · })) ++
+  (miscSpace.map ({ fam := "misc", prog := · })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
   ([0, 1, 2].map fun k => { fam := "init", prog := initProgram k }) ++
   ([0, 1, 2].map fun k => { fam := "initSep", prog := initProgram k, lib := ["T"] }) ++
   [{ fam := "init", prog := initProgram 3, only3 := true },

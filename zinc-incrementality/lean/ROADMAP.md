@@ -143,7 +143,8 @@ For track B, three cases are candidate MiMa false negatives:
   - value classes: extension methods, erased signatures.
 - [x] **S2. Scala 3 deltas.** Trait initialisers including F6 (separate compilation), `@static`, extension methods, `Serializable` objects. Enums and `inline`: TODO.
 - [x] **S3. Calibrate against scalac's own classfiles** (`probes/scala/probe.py`). Agreement below.
-- [ ] **S4. Shared `AsSeenFrom` and linearization,** one model used by the TCK and later by `Zinc/Hier`. `Scala.lin` and `Scala.lookup` are a start.
+- [x] **S5. Membership and overriding** (`Scala/Members.lean`): refchecks as a `Task`, calibrated on 4704 hierarchies including rejected ones; Java's rules written down for track V.
+- [x] **S4. Shared `AsSeenFrom`** (`Scala/AsSeenFrom.lean`), used by `Scala/Lower.lean` and, as an instance, by the TCK (retronym/scala-type-system-tck, branch `claude/shared-asf`). `Zinc/Hier` later.
 - [x] **Source-level edit catalogue** (`Scala/Catalogue.lean`), the bridge to B3.
 
 #### S design
@@ -156,8 +157,35 @@ For track B, three cases are candidate MiMa false negatives:
 
 **Calibration (S3).** A Lean exe enumerates a bounded space of programs, prints each as Scala source and as the model's classfiles. A script compiles them with scalac 2.12, 2.13 and 3 (one package per program, one compiler run per dialect, two runs for the separate-compilation cases), parses the classfiles directly (header, fields, methods with access and flags, and the invokes in synthesized methods), and diffs. Enumeration here is testing, per `DESIGN-spec.md`.
 
-**Out of scope** for S1–S3: method bodies and their call sites in user code, overloading, nested and local classes, inner-class attributes and generic `Signature` attributes, how a class implements a `lazy val`, `var`, `private[this]` and qualified access, specialization, case classes (catalogue only), Java-defined parents, Scala 3 `inline`, opaque types and given instances. Type checking is limited to what the space needs to stay well-typed (abstract members implemented, conflicting inherited members overridden).
+**Out of scope** for S1–S3: method bodies and their call sites in user code, overloading (beyond keeping overloads apart from overrides, S4), nested and local classes, inner-class attributes and generic `Signature` attributes, how a class implements a `lazy val`, `var`, `private[this]` and qualified access, specialization, case classes (catalogue only), Java-defined parents, Scala 3 `inline`, opaque types and given instances. Type checking is limited to what the space needs to stay well-typed (abstract members implemented, conflicting inherited members overridden).
 
+
+#### S4 design
+
+**Problem.** Three copies of "a member's type as seen from a prefix" exist: the TCK's (`scala-type-system-tck/lean/AsSeenFrom`: this-types along owner chains, against IntelliJ's substitutor chain), `Zinc/Hier.lean` and `Zinc/Erasure.lean` (type arguments along parents, private toys), and `Scala/Lower.lean` (an ad hoc `Ty.subst` in `lin`). They answer one question and can't be compared.
+
+**One map, generic in the type language.** `Scala/AsSeenFrom.lean` defines scalac's `asSeenFrom(pre, clazz)` once, over any type language with substitutable *leaves*: this-types `D.this` and class type parameters `D#i`, each anchored at a class given as its owner path. A type language provides `leaf`, `bind` (substitute every leaf) and `leaves`, with the monad laws; `asf pre c t` is `bind t` of the anchored walk (`thisTypeAsSeen` and `classParameterAsSeen` are one walk with two outcomes). The environment is the TCK's `World` plus `bargs` (a base type's arguments). The composition law and "a chain is one `asSeenFrom`" are proved once, from lockstep (the map commutes with `bpre`, `hasBase`, `bargs`). The file imports only Lean core, so a project without Mathlib can use it.
+
+**Consumers.**
+- `Scala/Lower.lean`: base types along the linearization become `asf` of the parent's arguments (scalac's `baseType`), and bridges pair an override with an overridden member only when their types match as seen from the class (`memberType`). The probe must still agree with scalac.
+- The TCK: its `Ty` is an instance (this-leaves only, no class parameters), and its `Scalac.asf` is proved equal to the shared map, so its `Chain` theorems follow from the shared ones. How the TCK depends on the file (vendored copy, or a Mathlib-free lake package in this repo that it `require`s by `subDir`) is a decision for Jason, prototyped below.
+- `Zinc/Hier` and `Zinc/Erasure`: not touched (other sessions own `Zinc/`); they can move to the shared map in the later single-writer port.
+
+**Out of scope:** existential capture of unstable prefixes, refinement classes, `baseType` itself (an input, as in the TCK).
+
+#### S5 design: membership and overriding
+
+**Problem.** Lowering resolves a member to the first concrete one in its signature group, and the probe's spaces avoid illegal programs with an ad hoc filter. Neither says which programs Scala accepts, or which member a selection runs. Java's rules (JLS 8.4.8) differ, and B3 needs both languages' verdicts on source edits.
+
+**Membership is refchecks, as a `Task`.** For a class `C` over its interfaces (`lin`, `sigGroups`, `memberType`), the verdict is either the compile errors scalac or dotc reports for `C`, or, per signature, the member a selection on `C` runs. The checks are scalac's `RefChecks.checkAllOverrides`, stated per *overriding pair* `(member, other)`:
+- both are in `C`'s base classes, `member`'s owner precedes `other`'s, and their types match as seen from `C`;
+- a pair is checked in the class where it first meets: it is skipped when some parent of `C` already has both owners as base classes.
+
+Per pair: `other` final; `member` private; a concrete `other` without `override` (in `C`: "needs `override`"; inherited: "inherits conflicting members"); `override` on a trait member that overrides a concrete member of a class it doesn't extend, with no third member overridden by both ("accidental override"); `def` over `val`; lazy against strict; result type conformance. Per class: `override` that overrides nothing, and an abstract member left in a concrete class. A concrete member is never overridden by an abstract one (concrete over deferred).
+
+**Calibration.** A space of small hierarchies (`T`, `U`, `B`, `C`) where each owner's `m` ranges over: none, abstract, concrete, `override`, `final`, `val`, `lazy val`, private. The probe compiles them in one batch per compiler, maps each error to its program, class and kind, and compares sets. scalac stops before refchecks when an earlier phase reports an error (dotc rejects `override private` in the namer). So the probe recompiles without the programs that already erred until a run is clean, and the model reports only the errors of the earliest phase. For accepted programs, a `main` calls `m` on each concrete class and prints which owner's body ran.
+
+**Java.** Not implemented (track V); a comparison of the rules goes in this section as the spec to diff `Java/` against.
 
 #### S status
 
@@ -165,9 +193,9 @@ For track B, three cases are candidate MiMa false negatives:
 
 | scalac | programs | of which |
 |---|---|---|
-| 2.12.21 | 1320/1320 | mixin 1280, generic 24, value class 4, trait companion 2, misc 4, `$init$` joint 3 and separate 3 |
-| 2.13.18 | 1320/1320 | the same |
-| 3.9.0 | 1326/1326 | the same, plus `@static` and extension methods 4, `$init$` of a trait with an extension method, joint and separate |
+| 2.12.21 | 1330/1330 | mixin 1280, generic 24, `asf` 10, value class 4, trait companion 2, misc 4, `$init$` joint 3 and separate 3 |
+| 2.13.18 | 1330/1330 | the same |
+| 3.9.0 | 1336/1336 | the same, plus `@static` and extension methods 4, `$init$` of a trait with an extension method, joint and separate |
 
 The model started from the textbook rules; the probe corrected it in these places, each now a rule in `Lower.lean`:
 
@@ -188,12 +216,56 @@ The model started from the textbook rules; the probe corrected it in these place
 
 `valAddedToTrait` fails earlier on HotSpot than in the model: `new Y` already throws `AbstractMethodError`, since `$init$` calls the missing setter. The model needs static interface methods (J3) to see that.
 
+**S4 status.** `Scala/AsSeenFrom.lean` is the walk once (`leafAsSeen`: this-types and class parameters), `asf` as `bind` of it, and `compose` and `chain_is_single` from lockstep; it imports only Lean core. In the Scala layer:
+- `Scala.Ty` is an instance (leaves `this` and `tp`, now anchored at their class);
+- `lin` computes each base type's argument as `asSeenFrom(C.this, P)` of the parent's (scalac's `baseType`), replacing `Ty.subst`;
+- members are looked up by signature (`sigGroups`: overriding-equivalence classes by `memberType`), and bridges, mixin forwarders and static forwarders work per group.
+
+The new `asf` family in the probe exercises this: an argument passed through an intermediate generic class or trait, a value class as argument, an overload next to an inherited generic method. Two corrections came out of it, both now agreeing with all three compilers:
+- A bridge to an override at a value class unboxes the argument (`V.x`) and boxes the result (`new V`).
+- An overload (`def g(x: Int)` next to an inherited `g(x: X)` at `X = String`) is not an override. Name-only lookup had dropped the mixin forwarder for the trait's `g`; scalac emits it.
+
+Witnesses by kernel `decide` in `Scala/Facts.lean` (`memberType` through two parents, overload groups). `scripts/Axioms.lean` checks `AsSeenFrom.compose`, `chain_is_single`, `Scala.lower_congr`.
+
+**The TCK.** On retronym/scala-type-system-tck branch `claude/shared-asf`: `lean/AsSeenFrom/Shared.lean` is a vendored copy, and `Port.lean` makes the TCK's `Ty` an instance (this-leaves only, empty `bargs`). It proves `Scalac.asf` *is* the shared map (`asf_eq`), and that the TCK's lockstep is the shared one. `Chain.compose` is now proved from the shared theorem; the other `Chain`, `Relaxations`, `IntelliJ` and `Cases` results build unchanged. **How the TCK should depend on the file is Jason's call:**
+- *Vendored copy* (the prototype): no build coupling. Drift is the cost; a TCK CI step could diff it against a pinned talks commit.
+- *A lake package:* move the file into a Mathlib-free package in this repo (say `zinc-incrementality/lean/asf/`, with `lean_lib AsSeenFromCore`, since the TCK's own library is already called `AsSeenFrom`). This repo `require`s it by path, and the TCK by `git … subDir`. One source, but the TCK pins a talks revision.
+
+Recommendation: keep the vendored copy until this branch reaches `master`, then switch to the package.
+
+**S5 status: membership and overriding** (`Scala/Members.lean`, `probes/scala/members.py`). Refchecks as a `Task` over interfaces, on the shared `asSeenFrom`. The space is 4704 hierarchies (`T`, `U`, `B`, `C`, each declaring `m` one of eleven ways; 3932 rejected by Scala 2, 4032 by Scala 3). Errors are compared per class and kind; for accepted programs a `main` checks which owner's `m` runs.
+
+| compiler | agree | accepted |
+|---|---|---|
+| 2.12.21 | 4700/4704 | 772 |
+| 2.13.18 | 4700/4704 | 772 |
+| 3.9.0 | 4704/4704 | 672 |
+
+The rules the probe forced, beyond the textbook ("concrete over abstract; `override` required for concrete; conflicting members"):
+- **One error per member.** `checkOverride` stops at the first failing check of a member's first failing pair. The order is access, `final`, missing `override`, accidental override, `def` over `val`, lazy against strict, result type.
+- **Which pairs.** The lower member of a pair is a member no earlier non-private concrete member overrides. A pair that a parent has was checked there; **2.13 checks it again** in the subclass (2.12 and 3 don't), so 2.13 reports a parent's error once more on each subclass.
+- **Private.** A private member isn't inherited and implements nothing. Scala 2 stops at it; Scala 3 also checks the inherited member it fails to hide. `override private` is a refchecks error in Scala 2 ("weaker access"), and an earlier-phase error in Scala 3 that hides every other program's refchecks errors in the run. The probe recompiles in rounds for that reason.
+- **Accidental override needs a real override.** An inherited `override` member that overrides nothing in its own class is reported as "inherits conflicting members"; only one that does override something gets the "third member" message.
+- **Re-abstraction.** An abstract member of a *class* that extends the concrete member's owner makes it abstract again ("needs to be abstract"); one in a *trait* does not. Scala 2 forms no pair from an abstract member over a concrete one; Scala 3 does when it re-abstracts (so `final`, `def` over `val`, and so on are checked there).
+
+**A scalac 2 bug found by the runtime check.** `trait T { val m = "T" }; abstract class B extends T { def m: String }; class C extends B with T { override val m = "C" }` compiles with 2.12.21 and 2.13.18, and `new C` throws `AbstractMethodError`: `T.$init$` calls `T$_setter_$m_$eq`, which `C` does not implement (`B`'s abstract `def` hid the trait field from the mixin phase). Scala 3 runs it. Four programs of the space; the nearest report is scala/bug#12456 (a Java abstract class in the middle). Not filed.
+
+**Java (JLS 8.4.8), the spec for `Java/`.** Where Java's rules differ from the above:
+- **Order.** Java has no linearization. A class method (inherited or declared) always beats an interface default. Among interfaces, the maximally specific default wins; two unrelated defaults are a compile error unless the class declares the method. Scala decides by linearization, with concrete over abstract.
+- **Same member.** Override-equivalence is by subsignature: same signature, or one equal to the erasure of the other, so a raw method overrides a generic one. Two methods with the same erasure and no override relation clash. Scala matches by `memberType` and uses erasure only for bridges.
+- **No `override` keyword.** `@Override` is optional; nothing like "needs `override`", "conflicting members" or the third-member rule. A class inheriting a concrete method from its superclass and an abstract one from an interface is fine (the class method implements it); in Scala the same shape needs no keyword either, but a concrete *trait* method against a class method is a conflict.
+- **Access and statics.** A package-private method is not overridden from another package: the subclass's method is a new one, and the JVM's selection follows the same rule (track J, J3). Static methods hide, they don't override; an instance method can't override a static one or the reverse. Narrowing access is an error in both languages.
+- **Abstract over concrete.** Java allows an abstract class to redeclare an inherited concrete method `abstract` (re-abstraction), like a Scala class, and an interface can redeclare a default abstract.
+- **Return types and exceptions.** Covariant returns in both; Java also checks `throws` clauses.
+
 **TODO (future work)**
 - Enums. Observed (3.9.0): `enum Color { case Red, Green }` is an abstract class implementing `scala.reflect.Enum` with forwarders for `scala.Product`'s methods and static `values`/`valueOf`/`fromOrdinal`; the cases are public static final fields of `Color$` without accessors or static forwarders; simple cases are instances of one anonymous class. Needs library traits (`Product`, `Mirror`) in the environment.
-- Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading, nested classes, Java-defined parents.
+- Membership: type members, `var`, `protected` and qualified access, `abstract override`, objects as overriders; a probe of the Java rules once `Java/` exists.
+- Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading in general, nested classes (the shared `asSeenFrom` already handles owner chains; the Scala layer's classes are top-level), Java-defined parents.
 - Check the catalogue against MiMa and HotSpot for every case (B3), and add a client-space enumeration over source edits.
 - Lowering as an `NCompiler` instance, for B4; after the framework merge (review finding 1).
-- S4.
+- The TCK's dependency on the shared file (below).
+- `Zinc/Hier` and `Zinc/Erasure` on the shared map, in the single-writer port.
 
 ### V — Java (`Java/`)
 
@@ -253,7 +325,21 @@ Not compared: the rest of the bytecode, `Signature`, `InnerClasses`, `NestHost`/
 - **B1. MiMa against the catalogue, at the JVM level.** MiMa reads classfiles, so J1's rendered jars are enough to start; it needs no front end. Per case, compare MiMa's problems with the model's verdict.
 - **B2. MiMa as a bridge design, in `DESIGN-spec.md`'s terms.** MiMa compares a set of facts per library class; those facts are its keys. Its check is sound if every linkage query any client can ask is covered by a compared key (coverage), and if equal facts give equal answers (abstraction). Prove this for a corrected rule set; for MiMa's actual rules, give a counterexample trace for each gap. Then check it on a space, as `FlatRules` checked the PoC's rules, to measure false negatives and false positives. `defaultConflict` is a candidate false negative to confirm.
 - **B3. Source-level spaces.** Once S1 and V1 exist: Scala and Java edits, lowered, linked, and checked against MiMa and HotSpot.
-- **B4. The Zinc ⇒ binary-compatible theorem above,** stated over `NCompiler`. It needs S1 or V1 to be a compiler instance.
+- [x] **B4. The Zinc ⇒ binary-compatible theorem above** (`BinCompat/ZincBridge.lean`).
+  - **The front end.** Scala lowering is an instance of the general form `XCompiler` (`General.lean`), not `NCompiler`, because its output carries the classfiles. A unit is a source unit, its task is `lowerSrc` with its queries renamed to `(unit, side)`, and its output is the unit's declarations plus its lowered classfiles. The interface is the declaration, so it is source-determined.
+  - **Faithfulness.** Every query is answered as if the definition were in the same run (`inRun = true`), which is faithful for Scala 2.12 and 2.13. For Scala 3, separate compilation differs (F6), a compositionality failure already witnessed in `Scala/Facts.lean`.
+  - **A sound bridge.** `searched`, a key per traced query hashed by the declaration it read, meets the obligations (`searched_obligations`).
+  - **`Zinc.XCompiler.untouched_eq_clean`.** After an edit, if Zinc's loop stops and a unit `c` was in none of its rounds (`c ∉ recompiled …`), then `c`'s old output equals its output in the clean build of the new sources. Its hypotheses are:
+    - the framework's `Obligations`;
+    - interfaces determined by the source (`iface (unit s run) = ifaceSrc s`, the explicit-interface case of T3b);
+    - a policy that is `Sound` and stays inside `S` (`InS`);
+    - an edit whose dirty set is in the first round, which is in `S`;
+    - the old build up to date except at the edit (`inv_of_edit`).
+
+    `must_recompile` is its contrapositive.
+  - **For lowering.** `after_eq_fresh`: the client's old classfiles next to the new library give the same `Jvm.outcome` as a fresh build. `compatible_of_untouched`: so `Jvm.Compatible` holds whenever the fresh build links.
+  - **The converse fails** (`gap_witness`, kernel `decide`). Adding a concrete method to a trait leaves the old `X extends T` linking (it selects the default method), so the edit is binary compatible. But `X`'s classfile changes, because a fresh build adds a mixin forwarder, so every sound bridge recompiles `X`. That gap, compatible but not Zinc-clean, is what MiMa does not report.
+  - **Left out.** Scala 3 separate compilation (F6). The `NCompiler` statement the roadmap first named (`XCompiler` subsumes it through `NCompiler.toX`). A bridge with Zinc's actual keys (name hashes) for lowering. The JVM program is linked over the units' lowered classfiles only, with no library jars.
 
 ### Later, single writer, after talks#21 merges
 

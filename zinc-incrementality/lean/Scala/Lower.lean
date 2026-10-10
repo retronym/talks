@@ -56,45 +56,91 @@ def need (n : String) : M Decl := (·.decl) <$> needView n
 
 /-! ## Linearization and member lookup -/
 
-/-- An ancestor with its type argument as seen from the class being lowered. -/
+/-- A base class with its type argument as the class being lowered sees it: `C.this baseType A`.
+The class itself comes first, applied to its own parameter. -/
 abbrev Anc := Decl × Option Ty
 
-def seen (outer : Option Ty) : Option Ty → Option Ty
-  | some t => some (match outer with | some a => t.subst a | none => t)
-  | none => none
+/-- The base-type facts of a top-level class `self` with base classes `l`, for `AsSeenFrom`. Only
+`self.this` has base types; the prefix of a top-level class is its package, where the walk stops. -/
+def classWorld (self : String) (l : List Anc) : AsSeenFrom.World String Ty where
+  bpre _ _ := .this []
+  hasBase p c := p == .this [self] && l.any fun (a, _) => [a.name] == c
+  bargs p c := if p == .this [self] then
+      ((l.find? fun (a, _) => [a.name] == c).bind (·.2)).toList
+    else []
 
-/-- Scala's linearization, the class first: `L(C) = C, L(Pn) +⃗ … +⃗ L(P1)`. -/
-def lin : ℕ → Decl → Option Ty → M (List Anc)
-  | 0, _, _ => throw "linearization too deep"
-  | k + 1, d, a => do
+/-- `info.asSeenFrom(self.this, owner)`. -/
+def seenFrom (self : String) (l : List Anc) (owner : String) (t : Ty) : Ty :=
+  AsSeenFrom.asf (classWorld self l) (.this [self]) [owner] t
+
+/-- Scala's linearization, the class first: `L(C) = C, L(Pn) +⃗ … +⃗ L(P1)`. A parent `P[a]`'s base
+types are viewed from `C` by `asSeenFrom(C.this, P)`, which replaces `P`'s parameter by `a`
+(scalac's `baseType`). -/
+def lin : ℕ → Decl → M (List Anc)
+  | 0, _ => throw "linearization too deep"
+  | k + 1, d => do
     let mut acc : List Anc := []
     for (p, pa) in d.parents do
-      let l ← lin k (← need p) (seen a pa)
-      acc := l.filter (fun e => !acc.any (·.1.name == e.1.name)) ++ acc
-    pure ((d, a) :: acc)
+      let pd ← need p
+      let lp ← lin k pd
+      let w := classWorld d.name [(pd, pa)]
+      let lp := lp.map fun (a, t) => (a, t.map (AsSeenFrom.asf w (.this [d.name]) [p]))
+      acc := lp.filter (fun e => !acc.any (·.1.name == e.1.name)) ++ acc
+    pure ((d, if d.tparam then some (Ty.X d.name) else none) :: acc)
 
 def fuel : ℕ := 8
 
 /-- A member as seen from the class: its owner, the owner's type argument, the member. -/
 abbrev Hit := Anc × Mem
 
+/-- The members named `n` along the linearization `l` of a class (the class first). A private
+member is not inherited: only the class's own private members are seen. -/
 def hits (l : List Anc) (n : String) : List Hit :=
-  l.filterMap fun (d, a) => (d.members.find? (·.name == n)).map fun m => ((d, a), m)
+  let self := (l.head?.map (·.1.name)).getD ""
+  l.filterMap fun (d, a) => ((d.members.find? (·.name == n)).filter fun m => !m.priv || d.name == self).map
+    fun m => ((d, a), m)
 
-/-- Scala member lookup: the first concrete definition along the linearization, else the first. -/
-def lookup (l : List Anc) (n : String) : Option Hit :=
-  let hs := hits l n
-  (hs.find? fun h => !h.2.abs).or hs.head?
+/-- The inherited members named `n`. -/
+def hitsAbove (l : List Anc) (n : String) : List Hit :=
+  let self := (l.head?.map (·.1.name)).getD ""
+  (hits l n).filter (·.1.1.name != self)
+
+/-- `C.this.memberType(m)`'s parameter types, for a member `m` of base class `owner` of `C`. -/
+def paramsSeen (self : String) (l : List Anc) (h : Hit) : List Ty :=
+  h.2.allParams.map (seenFrom self l h.1.1.name)
+
+/-- Does `h` override (or implement) `h'` in `C`? Same name, and the same parameter types as seen
+from `C` (`matches` after `memberType`); otherwise they are overloads. -/
+def overridesIn (self : String) (l : List Anc) (h h' : Hit) : Bool :=
+  h.2.name == h'.2.name && paramsSeen self l h == paramsSeen self l h'
 
 def memberNames (l : List Anc) : List String :=
   (l.flatMap fun (d, _) => d.members.map (·.name)).dedup
+
+def Hit.same (h h' : Hit) : Bool := h.1.1.name == h'.1.1.name && h.2 == h'.2
+
+/-- The members of `C` by signature: each name's hits, grouped by `overridesIn` (members that
+override one another as seen from `C`), in linearization order. Overloads are separate groups. -/
+def sigGroups (self : String) (l : List Anc) : List (List Hit) :=
+  (memberNames l).flatMap fun n =>
+    (hits l n).foldl (init := []) fun gs h =>
+      match gs.findIdx? fun g => (g.head?.map fun r => overridesIn self l r h).getD false with
+      | some i => gs.modify i (· ++ [h])
+      | none => gs ++ [[h]]
+
+/-- The member a group resolves to: the first concrete one, else the first. -/
+def winner (g : List Hit) : Option Hit := (g.find? (!·.2.abs)).or g.head?
+
+/-- Member lookup by signature: what `h`'s group resolves to in `C`. -/
+def lookupSig (self : String) (l : List Anc) (h : Hit) : Option Hit :=
+  ((sigGroups self l).find? fun g => g.any (Hit.same h)).bind winner
 
 /-- Traits mixed in by `d` itself: those before the superclass's linearization. -/
 def mixins (d : Decl) (l : List Anc) : M (List Anc) := do
   match d.super with
   | none => pure (l.tail.filter (·.1.kind == .trt))
-  | some (s, sa) =>
-    let ls ← lin fuel (← need s) sa
+  | some (s, _) =>
+    let ls ← lin fuel (← need s)
     pure (l.tail.filter fun e => e.1.kind == .trt && !ls.any (·.1.name == e.1.name))
 
 /-! ## Erasure -/
@@ -108,7 +154,8 @@ def erase : Ty → M String
   | .bool => pure "Z"
   | .unit => pure "V"
   | .str => pure "Ljava/lang/String;"
-  | .obj | .tp => pure "Ljava/lang/Object;"
+  | .obj | .tp .. => pure "Ljava/lang/Object;"
+  | .this c => pure (jname (c.headD ""))
   | .ref n => do
     let d ← need n
     match d.kind, d.under with
@@ -203,33 +250,50 @@ def hasInit (dl : Dialect) (inRun : Bool) (t : Decl) : Bool :=
 /-- The classfile's interfaces: the direct trait parents, minus those another direct parent
 already extends. -/
 def ifacesOf (d : Decl) : M (List String) := do
-  let ps ← d.parents.mapM fun (p, a) => do pure (p, ← lin fuel (← need p) a)
+  let ps ← d.parents.mapM fun (p, _) => do pure (p, ← lin fuel (← need p))
   pure (d.traits.map (·.1) |>.filter fun t =>
     !ps.any fun (p, l) => p != t && l.any (·.1.name == t))
 
-def ctorName : String := "<init>"
 
 /-- Add `m` unless a method of the same name and descriptor is already there. -/
 def addM (ms : List MOut) (m : MOut) : List MOut :=
   if ms.any fun x => x.name == m.name && x.desc == m.desc then ms else ms ++ [m]
 
+def ctorName : String := "<init>"
+
+/-- A value class: its name, field and erased underlying type. -/
+def vclsOf (t : Ty) : M (Option (String × String × String)) := do
+  match t with
+  | .ref n =>
+    let d ← need n
+    match d.kind, d.under with
+    | .vcls, some (x, u) => pure (some (n, x, ← erase u))
+    | _, _ => pure none
+  | _ => pure none
+
 /-- Bridges in class `d`: for each method `d` defines (its own and its mixin forwarders), an
-ancestor's member of the same name whose erasure differs, unless the superclass already pairs the
-two. -/
+ancestor's member it overrides (`overridesIn`, by `memberType`) whose erasure differs, unless the
+superclass already pairs the two. -/
 def bridges (self : String) (l : List Anc) (sup : List Anc) (ms : List MOut) :
     M (List MOut) := do
   let mut out := ms
-  for n in memberNames l do
-    let some ((o, _), m) := lookup l n | continue
+  for g in sigGroups self l do
+    let some ((o, _), m) := winner g | continue
     if m.abs then continue
+    let n := m.name
     let e ← m.desc
-    for ((a, _), m') in hits l.tail n do
+    for ((a, _), m') in g do
       if a.name == o.name then continue
       let e' ← m'.desc
       if e' == e then continue
       if sup.any (·.1.name == o.name) && sup.any (·.1.name == a.name) then continue
-      out := addM out { name := n, desc := e', bridge := true,
-                        calls := some [⟨"invokevirtual", self, n, e⟩] }
+      -- a value class in the target's signature is unboxed (argument) or boxed (result)
+      let unbox ← m.allParams.filterMapM vclsOf
+      let box ← (vclsOf m.res)
+      let call : Insn := ⟨"invokevirtual", self, n, e⟩
+      let calls : List Insn := unbox.map (fun (v, x, u) => ⟨"invokevirtual", v, x, s!"(){u}"⟩) ++ [call] ++
+        box.toList.map fun (v, _, u) => ⟨"invokespecial", v, ctorName, s!"({u})V"⟩
+      out := addM out { name := n, desc := e', bridge := true, calls := some calls }
   pure out
 
 /-- Members of a class, object or value class body: its own members and, for each trait it mixes
@@ -249,7 +313,7 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   for (t, _) in mx do
     for m in t.members do
       if m.lzy then continue
-      let some ((o, _), w) := lookup l m.name | continue
+      let some ((o, _), w) := lookupSig d.name l ((t, none), m) | continue
       if o.name != t.name || w.abs then continue
       let e ← m.desc
       if m.isVal then
@@ -291,10 +355,10 @@ def lowerTrait (dl : Dialect) (d : Decl) : M ClassOut := do
 def superLin (d : Decl) : M (List Anc) := do
   match d.super with
   | none => pure []
-  | some (s, sa) => lin fuel (← need s) sa
+  | some (s, _) => lin fuel (← need s)
 
 def lowerClass (dl : Dialect) (d : Decl) : M ClassOut := do
-  let l ← lin fuel d none
+  let l ← lin fuel d
   let (ms, fs, mx) ← classBody dl d false l
   let ctor : MOut := { name := ctorName, desc := "()V", calls := some (← initCalls dl mx) }
   let ms ← bridges d.name l (← superLin d) (ms ++ [ctor])
@@ -338,7 +402,7 @@ def extensions (d : Decl) : M (List MOut) := do
 
 def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
   let self := moduleName d.name
-  let l ← lin fuel d none
+  let l ← lin fuel d
   let (ms, fs, mx) ← classBody dl d true l
   let ms ← bridges self l (← superLin d) ms
   let ms := ms ++ (← match vc with | some v => extensions v | none => pure [])
@@ -363,7 +427,7 @@ def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
 its own and inherited, except those whose name the companion class also has. Scala 2 skips
 trait setters and bridges; Scala 3 forwards setters, and some bridges. -/
 def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String) : M (List MOut) := do
-  let l ← lin fuel od none
+  let l ← lin fuel od
   let mut cands := o.methods.filter fun m =>
     !m.static && !m.priv && !m.abs && !m.bridge && m.name != ctorName &&
     !(dl != .s3 && m.setter)
@@ -371,15 +435,17 @@ def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String
   -- the linearization is concrete: dotc looks members up by signature, and skips deferred ones.
   if dl == .s3 then
     for b in o.methods.filter (·.bridge) do
-      let sameSig ← (hits l.tail b.name).filterM fun (_, m) => do pure ((← m.desc) == b.desc)
+      let sameSig ← (hitsAbove l b.name).filterM fun (_, m) => do pure ((← m.desc) == b.desc)
       let concrete := match sameSig with
         | (_, m) :: _ => !m.abs
         | [] => false
       if concrete then cands := cands ++ [b]
-  for n in memberNames l do
-    let some ((w, _), m) := lookup l n | continue
-    if m.abs || m.static || cands.any (·.name == n) then continue
-    cands := cands ++ [{ name := n, desc := ← m.desc }]
+  for g in sigGroups od.name l do
+    let some ((w, _), m) := winner g | continue
+    let n := m.name
+    let e ← m.desc
+    if m.abs || m.static || cands.any (fun c => c.name == n && c.desc == e) then continue
+    cands := cands ++ [{ name := n, desc := e }]
     if dl == .s3 && m.isVal && !m.lzy then
       cands := cands ++ [{ name := setterName w.name n, desc := s!"({← erase m.res})V" }]
   pure <| (cands.filter fun m => !clsNames.contains m.name).map fun m =>
@@ -410,7 +476,7 @@ def lowerSrc (dl : Dialect) (s : Src) : M (List ClassOut) := do
     match c with
     | some c =>
       let clsNames := (← match s.cls with
-        | some d => do pure (memberNames (← lin fuel d none))
+        | some d => do pure (memberNames (← lin fuel d))
         | none => pure []) ++ c.methods.map (·.name)
       let fw ← forwarders dl od o clsNames
       let (sm, sf) ← statics od

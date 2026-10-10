@@ -1,4 +1,5 @@
 import Scala.Space
+import Scala.Members
 
 /-! `scalaprobe OUT`: write each case of `Scala.space` as Scala source, and the model's
 classfiles for each dialect as `OUT/expected-2.12.txt`, `OUT/expected-2.13.txt` and
@@ -32,5 +33,21 @@ def main (args : List String) : IO UInt32 := do
       | .ok cs => for k in cs do lines := lines ++ (k.dump s!"p{i}").toArray
       | .error e => IO.eprintln s!"p{i}: {e}"; return 1
     IO.FS.writeFile s!"{out}/expected-{tag}.txt" ("\n".intercalate lines.toList ++ "\n")
-  IO.println s!"{space.length} programs"
+  -- membership: sources in `srcm/`, the model's verdicts per dialect in `members-<tag>.txt`
+  IO.FS.createDirAll s!"{out}/srcm"
+  let mut mindex := ""
+  for ((desc, p), i) in Members.membersSpace.zipIdx do
+    IO.FS.writeFile s!"{out}/srcm/q{i}.scala" (p.show s!"q{i}")
+    mindex := mindex ++ s!"q{i}\t{desc}\n"
+  IO.FS.writeFile s!"{out}/members-index.txt" mindex
+  for (dl, tag) in [(Dialect.s212, "2.12"), (.s213, "2.13"), (.s3, "3")] do
+    let mut lines : Array String := #[]
+    for ((_, p), i) in Members.membersSpace.zipIdx do
+      match Members.errors dl p with
+      | .ok es =>
+        for e in es do lines := lines.push s!"q{i}\terr\t{e.cls}\t{e.kind.name}"
+        for (c, o) in Members.runs p do lines := lines.push s!"q{i}\trun\t{c}\t{o}"
+      | .error e => IO.eprintln s!"q{i}: {e}"; return 1
+    IO.FS.writeFile s!"{out}/members-{tag}.txt" ("\n".intercalate lines.toList ++ "\n")
+  IO.println s!"{space.length} programs, {Members.membersSpace.length} membership programs"
   return 0

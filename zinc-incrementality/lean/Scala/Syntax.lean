@@ -1,3 +1,5 @@
+import Scala.AsSeenFrom
+
 /-!
 # A typed Scala subset, as the back end sees it
 
@@ -13,14 +15,39 @@ namespace Scala
 inductive Dialect | s212 | s213 | s3
   deriving DecidableEq, Repr
 
-/-- Types: base types, a definition's own type parameter `X`, another definition by name. -/
-inductive Ty | int | bool | unit | str | obj | tp | ref (d : String)
+/-- Types: base types, another definition by name, a this-type `D.this`, and the `i`-th type
+parameter of a definition `D`. Classes are owner paths, innermost first, as in `AsSeenFrom`; a
+top-level definition `D` is `[D]`. -/
+inductive Ty
+  | int | bool | unit | str | obj
+  | ref (d : String)
+  | this (c : List String)
+  | tp (c : List String) (i : Nat)
   deriving DecidableEq, Repr
 
-/-- `X ↦ a`. -/
-def Ty.subst (a : Ty) : Ty → Ty
-  | .tp => a
-  | t => t
+/-- `X`, the type parameter of the top-level definition `d`. -/
+def Ty.X (d : String) : Ty := .tp [d] 0
+
+/-! `Ty` is a type language for `AsSeenFrom`: its leaves are `this` and `tp`. -/
+
+open AsSeenFrom in
+def Ty.bind : Ty → (Leaf String → Ty) → Ty
+  | .this c, f => f (.this c)
+  | .tp c i, f => f (.param c i)
+  | t, _ => t
+
+open AsSeenFrom in
+instance : Subst Ty (AsSeenFrom.Leaf String) where
+  leaf | .this c => .this c | .param c i => .tp c i
+  bind := Ty.bind
+  leaves | .this c => [.this c] | .tp c i => [.param c i] | _ => []
+
+open AsSeenFrom in
+instance : LawfulSubst Ty (AsSeenFrom.Leaf String) where
+  bind_leaf l f := by cases l <;> rfl
+  bind_bind t f g := by cases t <;> rfl
+  bind_congr t f g h := by
+    cases t <;> first | rfl | exact h _ (by simp [Subst.leaves])
 
 inductive Kind | cls | trt | obj | vcls
   deriving DecidableEq, Repr
@@ -38,6 +65,13 @@ structure Mem where
   static : Bool := false
   /-- Scala 3 `extension (x: T) def …`: the receiver, an extra first parameter. -/
   ext : Option Ty := none
+  /-- The `override` modifier, when written explicitly; `none`: printed iff it overrides. -/
+  ov : Option Bool := none
+  priv : Bool := false
+  /-- A `def` without parameters is written `def m: T`, not `def m(): T`. -/
+  nullary : Bool := false
+  /-- The body, when the source must say which definition ran. -/
+  rhs : Option String := none
   deriving DecidableEq, Repr
 
 def Mem.allParams (m : Mem) : List Ty := m.ext.toList ++ m.params
@@ -79,7 +113,9 @@ def Ty.show : Ty → String
   | .unit => "Unit"
   | .str => "String"
   | .obj => "Object"
-  | .tp => "X"
+  | .tp _ 0 => "X"
+  | .tp _ i => s!"X{i}"
+  | .this c => s!"{c.headD ""}.this.type"
   | .ref d => d
 
 def Parent.show : Parent → String
@@ -92,17 +128,19 @@ def body : Ty → String
   | .unit => "()"
   | .str => "\"\""
   | .obj => "null"
-  | .tp => "null.asInstanceOf[X]"
+  | .tp _ _ => "null.asInstanceOf[X]"
+  | .this _ => "this"
   | .ref _ => "???"
 
 def Mem.show (ov : Bool) (m : Mem) : String :=
   let mods := (match m.ext with | some t => s!"extension (self: {t.show}) " | none => "") ++
-    (if m.static then "@static " else "") ++ (if ov then "override " else "") ++
+    (if m.static then "@static " else "") ++ (if m.ov.getD ov then "override " else "") ++
+    (if m.priv then "private " else "") ++
     (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "")
   let kw := if m.isVal then "val" else "def"
-  let ps := if m.params.isEmpty && m.isVal then ""
+  let ps := if m.params.isEmpty && (m.isVal || m.nullary) then ""
     else "(" ++ ", ".intercalate ((m.params.zipIdx.map fun (t, i) => s!"x{i}: {t.show}")) ++ ")"
-  let rhs := if m.abs then "" else s!" = {body m.res}"
+  let rhs := if m.abs then "" else s!" = {m.rhs.getD (body m.res)}"
   s!"{mods}{kw} {m.name}{ps}: {m.res.show}{rhs}"
 
 /-- Print a definition; `ov n` says whether member `n` overrides an inherited one. -/
