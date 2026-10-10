@@ -91,7 +91,8 @@ def abstractAddedToTrait : Case where
   sites := [invokeinterface "T" "b" "()I" "X"]
 
 /-- A `val` added to a trait: its getter is abstract in the interface and implemented in each
-class that mixes the trait in, so an old client class lacks it. -/
+class that mixes the trait in, so an old client class lacks it. On HotSpot (2.13.18) the failure
+comes earlier, at `new X`: `T.$init$` calls the setter the old class lacks. -/
 def valAddedToTrait : Case where
   name := "valAddedToTrait"
   mima := some "ReversedMissingMethodProblem"
@@ -122,7 +123,7 @@ def paramWithDefaultAdded : Case where
 /-- A concrete method added to a trait, overriding a method the client's superclass already has.
 The old client class has no forwarder, so the JVM selects the superclass's method; a fresh
 compile adds a forwarder and runs the trait's. Links either way; MiMa has nothing to report;
-Zinc must recompile the client. -/
+Zinc must recompile the client. Confirmed on HotSpot with 2.13.18. -/
 def traitOverrideAdded : Case where
   name := "traitOverrideAdded"
   mima := none
