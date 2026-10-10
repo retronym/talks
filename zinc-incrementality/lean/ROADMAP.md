@@ -143,7 +143,7 @@ For track B, three cases are candidate MiMa false negatives:
   - value classes: extension methods, erased signatures.
 - [x] **S2. Scala 3 deltas.** Trait initialisers including F6 (separate compilation), `@static`, extension methods, `Serializable` objects. Enums and `inline`: TODO.
 - [x] **S3. Calibrate against scalac's own classfiles** (`probes/scala/probe.py`). Agreement below.
-- [ ] **S6. Case classes, enums, inline and opaque, nested classes**: lowering by desugaring onto a library prelude, calibrated per feature; catalogue edits for track B.
+- [x] **S6. Case classes, enums, inline and opaque, nested classes**: lowering by desugaring onto a library prelude (`Scala/Desugar.lean`), calibrated per feature; catalogue edits for track B.
 - [x] **S5. Membership and overriding** (`Scala/Members.lean`): refchecks as a `Task`, calibrated on 4704 hierarchies including rejected ones; Java's rules written down for track V.
 - [x] **S4. Shared `AsSeenFrom`** (`Scala/AsSeenFrom.lean`), used by `Scala/Lower.lean` and, as an instance, by the TCK (retronym/scala-type-system-tck, branch `claude/shared-asf`). `Zinc/Hier` later.
 - [x] **Source-level edit catalogue** (`Scala/Catalogue.lean`), the bridge to B3.
@@ -283,10 +283,52 @@ The rules the probe forced, beyond the textbook ("concrete over abstract; `overr
 - **Abstract over concrete.** Java allows an abstract class to redeclare an inherited concrete method `abstract` (re-abstraction), like a Scala class, and an interface can redeclare a default abstract.
 - **Return types and exceptions.** Covariant returns in both; Java also checks `throws` clauses.
 
+**S6 status: case classes, enums, inline and opaque, nested classes.** Desugaring onto a prelude of library interfaces (`Scala/Desugar.lean`); the existing forwarder, bridge and static-forwarder rules do the rest. New probe families, each agreeing on every program:
+
+| family | 2.12.21 | 2.13.18 | 3.9.0 |
+|---|---|---|---|
+| `case` (arity 0–2, explicit companion, case object, parent trait, members a superclass defines) | 14/14 | 14/14 | 14/14 |
+| `nest` (inner class and trait, class/object/trait in an object, companion with both) | 3/3 | 3/3 | 3/3 |
+| `sealed` (sealed trait with case objects) | 1/1 | 1/1 | 1/1 |
+| `enum` (simple cases, cases with arguments, class cases, mixed) | | | 4/4 |
+| `inline` (dropped, retained when implementing or overriding, opaque type with companion and extension) | | | 5/5 |
+
+The whole classfile probe now agrees on 1348/1348 programs (2.12, 2.13) and 1363/1363 (3.9). It compares `InnerClasses` entries too. The probe corrected these, each now a rule:
+- **Case classes.**
+  - Synthesized `copy`, `toString`, `hashCode`, `equals` and `canEqual` are skipped when a *superclass* defines one concretely; a trait's doesn't count, and `productPrefix` is always synthesized.
+  - With a superclass's `copy`, Scala 3 keeps `copy$default$N` and Scala 2 drops it.
+  - Only a synthesized companion extends `AbstractFunctionN` (Scala 2) and overrides `toString`.
+  - A serializable object gets `readResolve` in 2.12 and `writeReplace` in 2.13.
+  - Scala 3 makes every object, a case class's companion included, `Serializable`.
+- **Nesting.**
+  - A nested object gets no mirror class.
+  - Its module class has a public constructor, and is final only in Scala 3, where the enclosing module class also gets a static field for it.
+  - `InnerClasses` entries name the mirror or companion class as outer.
+  - A nested class and its companion list each other.
+  - A final nested class's entry is `final`.
+  - Scala 3 also lists the nested members in the module class.
+- **Enums.**
+  - `values`, `valueOf` and `$values` exist only when every case is a singleton.
+  - `$new` is private and gets no static forwarder.
+  - Anonymous case classes have `InnerClasses` entries with no outer class or name, listed in the module class.
+- **Inline.** An `inline def` is in the classfile only when it implements or overrides a member.
+
+`ClassOut.toJvm` now maps fields and access (track J's additions), so catalogue clients can use field sites.
+
+**Catalogue additions**, each linked before and after by kernel `decide`, for track B:
+- `caseFieldAdded`: the old accessor links; constructor, `apply` and `copy` don't.
+- `nestedClassMoved`: `NoClassDefFoundError`.
+- `enumCaseAdded`: links; behaviour changes for exhaustive matches.
+- `enumCaseRemoved`: `NoSuchFieldError`.
+- `inlineBodyChanged`: the library's classfiles are *equal* before and after, while every client holds the old body. This is the edit binary compatibility can't see, and Phase 11's `InlineOpaqueSpec` gives Zinc the keys for it.
+
+The membership model runs on desugared programs. A superclass's `final productPrefix` is an error against a case class (both compilers agree); a `final toString` is not, because `toString` is then not synthesized.
+
 **TODO (future work)**
 - Enums. Observed (3.9.0): `enum Color { case Red, Green }` is an abstract class implementing `scala.reflect.Enum` with forwarders for `scala.Product`'s methods and static `values`/`valueOf`/`fromOrdinal`; the cases are public static final fields of `Color$` without accessors or static forwarders; simple cases are instances of one anonymous class. Needs library traits (`Product`, `Mirror`) in the environment.
 - Membership: type members, `var`, `protected` and qualified access, `abstract override`, objects as overriders; a probe of the Java rules once `Java/` exists.
-- Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading in general, nested classes (the shared `asSeenFrom` already handles owner chains; the Scala layer's classes are top-level), Java-defined parents.
+- S6 remainders: case classes with type parameters or several parameter lists, enums with type parameters, objects nested in classes, local classes, a retained inline method in a trait mixed into a class.
+- Constructor parameters of plain classes (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading in general, nested classes (the shared `asSeenFrom` already handles owner chains; the Scala layer's classes are top-level), Java-defined parents.
 - Check the catalogue against MiMa and HotSpot for every case (B3), and add a client-space enumeration over source edits.
 - Lowering as an `NCompiler` instance, for B4; after the framework merge (review finding 1).
 - The TCK's dependency on the shared file (below).
