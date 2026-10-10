@@ -442,3 +442,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 14 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`
 
 ## Phase 15 — inferred types in a cycle, T3a without T3: see `PLAN-cycles.md`
+
+## Phase 16 — class-name agreement between the bridge and Zinc: see `PLAN-naming.md`
