@@ -35,14 +35,21 @@ def overrides (p : Program) (d : Decl) (n : String) : Bool :=
   | some h => (hitsAbove l n).any (overridesIn d.name l h)
   | none => false
 
+/-- Print a unit, with its nested definitions inside its class (inner) or object (static) body. -/
 def Src.show (p : Program) (s : Src) : String :=
-  let one (d : Decl) := d.show (overrides p d)
-  String.join (s.cls.toList.map one ++ s.obj.toList.map one)
+  go 4 s
+where
+  go : Nat → Src → String
+    | 0, _ => ""
+    | k + 1, s =>
+      let nested (inObj : Bool) := String.join ((p.filter fun n => n.outer == some s.name && n.inObj == inObj).map (go k))
+      let one (inObj : Bool) (d : Decl) := d.show (overrides p d) s.simple (nested inObj)
+      String.join (s.cls.toList.map (one false) ++ s.obj.toList.map (one true))
 
 def Program.show (pkg : String) (p : Program) : String :=
   let static := p.any fun s => (s.obj.map fun o => o.members.any (·.static)).getD false
   s!"package {pkg}\n\n" ++ (if static then "import scala.annotation.static\n\n" else "") ++
-    String.join (p.map (Src.show p))
+    String.join ((p.filter (·.outer.isNone)).map (Src.show p))
 
 /-! ## Mixins -/
 
@@ -263,6 +270,22 @@ def caseSpace : List Program :=
     [b [{ name := "productPrefix", res := .str, nullary := true },
         { name := "canEqual", params := [.any], res := .bool }], sub ("B", []) false] ]
 
+/-! ## Nested and inner classes -/
+
+def nestSpace : List Program :=
+  let d (n : String) (m : String) (k : Kind := .cls) : Decl :=
+    { name := n, kind := k, members := [{ name := m, res := .int, nullary := true }] }
+  [ [{ name := "Outer", cls := some { name := "Outer" } },
+     { name := "Outer$Inner", cls := some (d "Outer$Inner" "i"), outer := some "Outer" },
+     { name := "Outer$TI", cls := some (d "Outer$TI" "t" .trt), outer := some "Outer" }],
+    [{ name := "Top", obj := some { name := "Top", kind := .obj } },
+     { name := "Top$N", cls := some (d "Top$N" "n"), outer := some "Top", inObj := true },
+     { name := "Top$M", obj := some (d "Top$M" "m" .obj), outer := some "Top", inObj := true },
+     { name := "Top$TN", cls := some { name := "Top$TN", kind := .trt }, outer := some "Top", inObj := true }],
+    [{ name := "C", cls := some (d "C" "c"), obj := some { name := "C", kind := .obj } },
+     { name := "C$N", cls := some (d "C$N" "n"), outer := some "C", inObj := true },
+     { name := "C$I", cls := some (d "C$I" "i"), outer := some "C" }] ]
+
 structure Case where
   fam : String
   prog : Program
@@ -274,7 +297,8 @@ structure Case where
 def space : List Case :=
   (mixinSpace.map ({ fam := "mixin", prog := · })) ++ (genericSpace.map ({ fam := "generic", prog := · })) ++
   (vclsSpace.map ({ fam := "vcls", prog := · })) ++ (traitCompanionSpace.map ({ fam := "tcomp", prog := · })) ++
-  (miscSpace.map ({ fam := "misc", prog := · })) ++ (caseSpace.map ({ fam := "case", prog := · })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
+  (miscSpace.map ({ fam := "misc", prog := · })) ++ (caseSpace.map ({ fam := "case", prog := · })) ++
+  (nestSpace.map ({ fam := "nest", prog := · })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
   ([0, 1, 2].map fun k => { fam := "init", prog := initProgram k }) ++
   ([0, 1, 2].map fun k => { fam := "initSep", prog := initProgram k, lib := ["T"] }) ++
   [{ fam := "init", prog := initProgram 3, only3 := true },
@@ -300,6 +324,7 @@ def ClassOut.dump (pid : String) (c : ClassOut) : List String :=
      s!"super={c.super.getD "java/lang/Object"};ifaces={",".intercalate c.ifaces}"] ++
   c.fields.map (fun f => pre ++ s!"field {f.name} {f.desc}\t" ++
     flags [(if f.priv then "private" else "public", true), ("static", f.static), ("final", f.final)]) ++
+  c.inner.map (fun (i, o, n, fl) => pre ++ s!"inner {i}\t{" ".intercalate fl}\touter={o};name={n}") ++
   c.methods.map fun m => pre ++ s!"method {m.name} {m.desc}\t" ++
     flags [(if m.priv then "private" else "public", true), ("static", m.static), ("final", m.final),
            ("abstract", m.abs), ("bridge", m.bridge)] ++ "\t" ++

@@ -223,6 +223,8 @@ structure ClassOut where
   /-- Only part of the classfile is modelled (a class implementing a trait's `lazy val`); the
   probe compares only what is listed. -/
   partly : Bool := false
+  /-- `InnerClasses` entries: inner class, outer class, simple name, flags. Not part of linkage. -/
+  inner : List (String × String × String × List String) := []
   deriving DecidableEq, Repr
 
 def ClassOut.toJvm (c : ClassOut) : Jvm.Classfile String String String where
@@ -337,8 +339,13 @@ def initCalls (dl : Dialect) (mx : List Anc) : M (List Insn) := do
 /-- Does `d` implement a trait's `lazy val`? Its classfile is then only partly modelled. -/
 def implementsLazy (mx : List Anc) : Bool := mx.any fun (t, _) => t.members.any (·.lzy)
 
-def lowerTrait (dl : Dialect) (d : Decl) : M ClassOut := do
-  let mut ms : List MOut := []
+/-- The accessor of an inner class's outer instance, `Outer$Inner$$$outer`. -/
+def outerAccessor (cls : String) : String := cls ++ "$$$outer"
+
+def lowerTrait (dl : Dialect) (d : Decl) (outer : Option String := none) : M ClassOut := do
+  -- an inner trait declares its outer accessor, which implementing classes define
+  let mut ms : List MOut :=
+    (outer.toList.map fun o => { name := outerAccessor d.name, desc := s!"(){jname o}", abs := true })
   for m in d.members do
     let e ← m.desc
     if m.isVal && !m.lzy then
@@ -360,11 +367,19 @@ def superLin (d : Decl) : M (List Anc) := do
   | none => pure []
   | some (s, _) => lin fuel (← need s)
 
-def lowerClass (dl : Dialect) (d : Decl) : M ClassOut := do
+/-- An inner class (nested in a class or trait, `outer`) holds its outer instance: a field `$outer`
+(public in Scala 2, private in Scala 3), an accessor (`final` in Scala 3), and a constructor
+parameter before the others. -/
+def lowerClass (dl : Dialect) (d : Decl) (outer : Option String := none) : M ClassOut := do
   let l ← lin fuel d
   let (ms, fs, mx) ← classBody dl d false l
+  let (ms, fs) : List MOut × List FOut := match outer with
+    | some o => (ms ++ [({ name := outerAccessor d.name, desc := s!"(){jname o}", final := dl == .s3 } : MOut)],
+                 fs ++ [({ name := "$outer", desc := jname o, final := true, priv := dl == .s3 } : FOut)])
+    | none => (ms, fs)
   let cps ← d.ctor.mapM eraseP
-  let ctor : MOut := { name := ctorName, desc := s!"({String.join cps})V", calls := some (← initCalls dl mx) }
+  let ctor : MOut := { name := ctorName, desc := s!"({String.join (outer.toList.map jname ++ cps)})V",
+                       calls := some (← initCalls dl mx) }
   let ms ← bridges d.name l (← superLin d) (ms ++ [ctor])
   let part := implementsLazy mx
   pure { name := d.name, abs := d.abs, final := d.final, super := d.super.map (·.1),
@@ -404,7 +419,9 @@ def extensions (d : Decl) : M (List MOut) := do
     let r' ← erase r
     pure ({ name := n ++ "$extension", desc := s!"({eu}{String.join (← ps.mapM eraseP)}){r'}", final := true } : MOut)
 
-def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
+/-- An object nested in an object: its module class has a public constructor, and is final only in
+Scala 3. -/
+def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) (nested : Bool := false) : M ClassOut := do
   let self := moduleName d.name
   let l ← lin fuel d
   let (ms, fs, mx) ← classBody dl d true l
@@ -414,7 +431,7 @@ def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
   -- 2.12 initialises an object in its constructor, later versions in its static initialiser
   let inits ← initCalls dl mx
   let extra : List MOut :=
-    [{ name := ctorName, desc := "()V", priv := true, calls := some (if dl == .s212 then inits else []) },
+    [{ name := ctorName, desc := "()V", priv := !nested, calls := some (if dl == .s212 then inits else []) },
      { name := "<clinit>", desc := "()V", static := true, calls := some (if dl == .s212 then [] else inits) }] ++
     -- a serializable object resolves to its module instance: `readResolve` in 2.12, `writeReplace`
     -- later; Scala 3 makes every object serializable
@@ -425,7 +442,7 @@ def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
      else [])
   let ser := if dl == .s3 && !serialBase then ["java/io/Serializable"] else []
   let part := implementsLazy mx
-  pure { name := self, final := true, super := d.super.map (·.1), ifaces := (← ifacesOf d) ++ ser,
+  pure { name := self, final := !nested || dl == .s3, super := d.super.map (·.1), ifaces := (← ifacesOf d) ++ ser,
          -- (Scala 3's static initialiser of an object with a lazy val is private)
          methods := if part then (extra.take 2).map (fun m =>
              if m.name == "<clinit>" && dl == .s3 then { m with priv := true } else m)
@@ -473,16 +490,17 @@ def statics (od : Decl) : M (List MOut × List FOut) := do
   pure (ms ++ clinit, fs)
 
 def lowerSrc (dl : Dialect) (s : Src) : M (List ClassOut) := do
+  let innerOf := if s.inObj then none else s.outer
   let c ← match s.cls with
     | none => pure none
     | some d => match d.kind with
-      | .trt => some <$> lowerTrait dl d
+      | .trt => some <$> lowerTrait dl d innerOf
       | .vcls => some <$> lowerVcls d
-      | _ => some <$> lowerClass dl d
+      | _ => some <$> lowerClass dl d innerOf
   let vc := s.cls.filter (·.kind == .vcls)
   match s.obj with
   | some od =>
-    let o ← lowerObject dl od vc
+    let o ← lowerObject dl od vc (s.outer.isSome && s.inObj)
     match c with
     | some c =>
       let clsNames := (← match s.cls with
@@ -494,6 +512,8 @@ def lowerSrc (dl : Dialect) (s : Src) : M (List ClassOut) := do
                 !c.methods.any fun m => m.name == f.name && m.desc == f.desc),
                      fields := c.fields ++ sf }, o]
     | none =>
+      -- only a top-level object gets a mirror class of static forwarders
+      if s.outer.isSome then pure [o] else
       let (sm, sf) ← statics od
       pure [{ name := s.name, final := true, methods := sm ++ (← forwarders dl od o []), fields := sf }, o]
   | none =>
@@ -518,12 +538,47 @@ theorem lower_congr (dl : Dialect) (s : Src) (e e' : (q : Q) → Ans q)
     (h : ∀ q ∈ trace dl s e, e q = e' q) : lower dl s e = lower dl s e' :=
   (Zinc.Task.run_eq_of_trace _ e e' h).1
 
+/-- What nesting adds to the classfiles of a program, which `lowerSrc` cannot see unit by unit:
+`InnerClasses` entries (a nested class's own, and its unit's nested members in the class or
+mirror class, and in Scala 3 also in the module class), and in Scala 3 a static field in a module
+class for each object nested in it. -/
+def nesting (dl : Dialect) (q : Program) (cs : List ClassOut) : List ClassOut :=
+  let entry (n : Src) : List (String × String × String × List String) :=
+    match n.outer with
+    | none => []
+    | some o =>
+      let fl (obj : Bool) := ["public"] ++ (if n.inObj then ["static"] else []) ++
+        (if obj && dl == .s3 then ["final"] else []) ++
+        (if (n.cls.map (·.kind == .trt)).getD false && !obj then ["interface", "abstract"] else [])
+      (n.cls.toList.map fun _ => (n.name, o, n.simple, fl false)) ++
+      (n.obj.toList.map fun _ => (n.name ++ "$", o, n.simple ++ "$", fl true))
+  let membersOf (u : String) (inObjOnly : Bool) : List Src :=
+    q.filter fun n => n.outer == some u && (n.inObj || !inObjOnly)
+  cs.map fun c =>
+    -- which unit is `c` the class part (or mirror) of, or the module class of?
+    let asCls := q.find? fun u => u.name == c.name
+    let asMod := q.find? fun u => u.name ++ "$" == c.name && u.obj.isSome
+    let own := match asCls, asMod with
+      | some u, _ => if u.cls.isSome || u.obj.isNone then (entry u).filter (·.1 == c.name) else []
+      | _, some u => (entry u).filter (·.1 == c.name)
+      | _, _ => []
+    let members := match asCls, asMod with
+      | some u, _ => (membersOf u.name false).flatMap entry
+      | _, some u => if dl == .s3 then (membersOf u.name true).flatMap entry else []
+      | _, _ => []
+    let fields := match asMod with
+      | some u => if dl == .s3 then (membersOf u.name true).filter (·.obj.isSome) |>.map fun n =>
+          ({ name := n.simple, desc := jname (n.name ++ "$"), static := true, final := true, priv := false } : FOut)
+        else []
+      | none => []
+    { c with inner := own ++ members, fields := c.fields ++ fields }
+
 /-- Lower a program: desugared, against the prelude and its own definitions. -/
 def lowerProgram (dl : Dialect) (p : Program) : Except String (List ClassOut) := do
   let q := p.desugar dl
   let env := (prelude dl ++ q).env
   let cs ← q.mapM fun s => lower dl s env
-  pure cs.flatten
+  pure (nesting dl q cs.flatten)
 
 /-- The prelude's own classfiles: the standard library a client links against. -/
 def preludeClasses (dl : Dialect) : Except String (List ClassOut) := do

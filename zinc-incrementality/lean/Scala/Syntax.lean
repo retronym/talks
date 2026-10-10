@@ -106,7 +106,17 @@ structure Src where
   name : String
   cls : Option Decl := none
   obj : Option Decl := none
+  /-- The enclosing unit, for a nested definition: its name is `outer$Simple`. -/
+  outer : Option String := none
+  /-- Nested in the enclosing unit's object (static), rather than in its class or trait (inner). -/
+  inObj : Bool := false
   deriving DecidableEq, Repr
+
+/-- The name a nested definition has in source. -/
+def Src.simple (s : Src) : String :=
+  match s.outer with
+  | some o => String.ofList (s.name.toList.drop (o.length + 1))
+  | none => s.name
 
 abbrev Program := List Src
 
@@ -150,8 +160,9 @@ def Mem.show (ov : Bool) (m : Mem) : String :=
   let rhs := if m.abs then "" else s!" = {m.rhs.getD (body m.res)}"
   s!"{mods}{kw} {m.name}{ps}: {m.res.show}{rhs}"
 
-/-- Print a definition; `ov n` says whether member `n` overrides an inherited one. -/
-def Decl.show (ov : String → Bool) (d : Decl) : String :=
+/-- Print a definition, named `name` in source, with nested definitions `inner` in its body; `ov n`
+says whether member `n` overrides an inherited one. -/
+def Decl.show (ov : String → Bool) (d : Decl) (name : String := d.name) (inner : String := "") : String :=
   let kw := match d.kind with
     | .trt => "trait" | .obj => "object" | _ => "class"
   let mods := (if d.abs && d.kind == .cls then "abstract " else "") ++ (if d.final then "final " else "") ++
@@ -166,6 +177,6 @@ def Decl.show (ov : String → Bool) (d : Decl) : String :=
     | [] => ""
     | p :: rest => " extends " ++ " with ".intercalate (p :: rest)
   let ms := d.members.map fun m => "  " ++ m.show (ov m.name) ++ "\n"
-  s!"{mods}{kw} {d.name}{tps}{ctor}{ext} \{\n{String.join ms}}\n"
+  s!"{mods}{kw} {name}{tps}{ctor}{ext} \{\n{String.join ms}{inner}}\n"
 
 end Scala

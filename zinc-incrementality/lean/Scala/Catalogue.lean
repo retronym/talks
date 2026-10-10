@@ -159,9 +159,20 @@ def caseFieldAdded : Case where
   sites := [invokevirtual "P" "x0" "()I" "P", invokevirtual "P" "copy" "(I)LP;" "P",
             invokestatic "P" "apply" "(I)LP;"]
 
+/-- A class moved out of the object it was nested in: the source of a client that imports it may
+not change, but its binary name does (`Top$N` becomes `N`), so the old client's classfile names a
+class that is gone. -/
+def nestedClassMoved : Case where
+  name := "nestedClassMoved"
+  mima := some "MissingClassProblem"
+  v0 := [{ name := "Top", obj := some { name := "Top", kind := .obj } },
+         { name := "Top$N", cls := some { name := "Top$N", members := [dfn "n"] }, outer := some "Top", inObj := true }]
+  v1 := [{ name := "Top", obj := some { name := "Top", kind := .obj } }, cls "N" [dfn "n"]]
+  sites := [new "Top$N", invokevirtual "Top$N" "n" "()I" "Top$N"]
+
 def all : List Case :=
   [concreteAddedToTrait, abstractAddedToTrait, valAddedToTrait, classBecomesTrait,
-   paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass, caseFieldAdded]
+   paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass, caseFieldAdded, nestedClassMoved]
 
 example : caseFieldAdded.before = .ok (.ok ["P", "P", "P"]) ∧
     caseFieldAdded.after = .ok (.error .noSuchMethod) := by decide +kernel
@@ -182,5 +193,8 @@ example : widenedToValueClass.before = .ok (.ok ["W"]) ∧
 /-- `W` is the unit whose classfile changes, and its lowering trace shows why: it asked for `V`. -/
 example : (trace .s213 (cls "W" [{ name := "use", params := [.ref "V"], res := .int }])
     widenedToValueClass.v0.env).contains (.decl "V" false) = true := by decide +kernel
+
+example : nestedClassMoved.before = .ok (.ok ["Top$N", "Top$N"]) ∧
+    nestedClassMoved.after = .ok (.error .noClassDef) := by decide +kernel
 
 end Scala.Catalogue
