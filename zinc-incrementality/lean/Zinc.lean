@@ -35,3 +35,4 @@ import Zinc.JavaSealedSpec
 import Zinc.GivensSpec
 import Zinc.JavaOrder
 import Zinc.Split
+import Zinc.Cycles

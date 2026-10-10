@@ -440,3 +440,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 13 — name resolution and givens across subprojects (the `split` layout): see `PLAN-split.md`
 
 ## Phase 14 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`
+
+## Phase 15 — inferred types in a cycle, T3a without T3: see `PLAN-cycles.md`
