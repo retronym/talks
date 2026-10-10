@@ -22,6 +22,10 @@ names or not), so those scopes are `Scope.pinned`; and the scope the search reso
 keys the package-level containers, all of them (`global`), or those of the searched packages, the
 wildcard-imported ones only when the bridge records the import (`narrowed`).
 
+`narrowed` reaches the scopes the client's search reads, which is retronym/zinc#47's `sees`. In Scala
+2 the implicit scope also holds the package objects of the summoned type's prefix; they are scopes the
+search reads, so the narrowed rule reaches them, which in Zinc is the rule's Scala 2 referrer edges.
+
 Results: today's keys fail coverage on G1 (a package object's instance) and G2 (a top-level given in
 a new file); the G rule meets the obligations, global or narrowed given recorded imports, and so do
 `searched`'s; the narrowed rule without recorded imports fails coverage; a declarations-only hash
