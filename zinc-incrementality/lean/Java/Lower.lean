@@ -122,6 +122,9 @@ structure MOut where
   synthetic : Bool := false
   /-- The `getstatic`s and invokes of the body, on classes outside `java/`. -/
   calls : List Insn := []
+  /-- The `int` and `String` constants the body pushes (`iconst`, `bipush`, `sipush`, `ldc`), in
+  order: where a client's copy of another type's constant shows up (JLS §13.1). -/
+  pushes : List CVal := []
   deriving DecidableEq, Repr
 
 structure FOut where
@@ -183,6 +186,21 @@ def reads : ℕ → Expr → M (List Insn)
     | .add a b | .shl a b => pure ((← reads k a) ++ (← reads k b))
     | _ => pure []
 
+/-- The constants a body or initialiser pushes: a constant expression's value, folded, else those
+of its operands; `Integer.parseInt("1")` pushes `"1"`. -/
+def pushes : ℕ → Expr → M (List CVal)
+  | 0, _ => pure []
+  | k + 1, e => do
+    if let some v ← eval fuel e then return [v]
+    match e with
+    | .add a b | .shl a b => pure ((← pushes k a) ++ (← pushes k b))
+    | .call => pure [.str "1"]
+    | _ => pure []
+
+def defaultPushes : Ty → List CVal
+  | .int | .bool => [.int 0]
+  | _ => []
+
 /-- A supertype as seen from the type being lowered: its declaration and its type argument. -/
 abbrev Anc := Decl × Option Ty
 
@@ -227,8 +245,12 @@ def userMethod (m : Meth) : M MOut := do
   let calls ← match m.ret with
     | some e => reads fuel e
     | none => pure []
+  let ps ← match m.ret with
+    | some e => pushes fuel e
+    | none => pure (defaultPushes m.res)
   pure { name := m.name, desc := m.desc, acc := if m.priv then .priv else .pub, static := m.static,
-         abs := m.abs, final := m.final, calls := if m.abs then [] else calls }
+         abs := m.abs, final := m.final, calls := if m.abs then [] else calls,
+         pushes := if m.abs then [] else ps }
 
 def fieldOut (d : Decl) (f : Field) : M FOut := do
   let itf := d.kind == .iface
@@ -244,7 +266,10 @@ def clinit (d : Decl) (fs : List FOut) : M (List MOut) := do
   let calls ← dyn.flatMapM fun (f, _) => match f.init with
     | some e => reads fuel e
     | none => pure []
-  pure [{ name := "<clinit>", desc := "()V", acc := .pkg, static := true, calls := calls }]
+  let ps ← dyn.flatMapM fun (f, _) => match f.init with
+    | some e => pushes fuel e
+    | none => pure []
+  pure [{ name := "<clinit>", desc := "()V", acc := .pkg, static := true, calls := calls, pushes := ps }]
 
 def permitted (unit : List Decl) (d : Decl) : List String :=
   match d.sealing with
@@ -279,12 +304,17 @@ def lowerDecl (unit : List Decl) (pub : Bool) (d : Decl) : M ClassOut := do
        { name := "valueOf", desc := s!"(Ljava/lang/String;){self}", static := true },
        { name := "<init>", desc := ctorD, acc := .priv },
        { name := "$values", desc := s!"(){arr}", acc := .priv, static := true, synthetic := true,
-         calls := d.consts.map fun c => ⟨"getstatic", d.name, c, self⟩ },
+         calls := d.consts.map fun c => ⟨"getstatic", d.name, c, self⟩,
+         pushes := .int d.consts.length :: (List.range d.consts.length).map fun i => .int i },
        { name := "<clinit>", desc := "()V", acc := .pkg, static := true,
          calls := (d.consts.map fun _ => ⟨"invokespecial", d.name, "<init>", ctorD⟩) ++
                   [⟨"invokestatic", d.name, "$values", s!"(){arr}"⟩] ++
                   (← d.fields.flatMapM fun f => match f.init with
                      | some e => do if (← eval fuel e).isSome then pure [] else reads fuel e
+                     | none => pure []),
+         pushes := (d.consts.zipIdx.flatMap fun (c, i) => [.str c, .int i]) ++
+                   (← d.fields.flatMapM fun f => match f.init with
+                     | some e => do if (← eval fuel e).isSome then pure [] else pushes fuel e
                      | none => pure []) }]
     pure { base with final := true, enum := true, super := "java/lang/Enum",
                      methods := ms' ++ (← bridges d ms), fields := consts ++ fs ++ [values] }

@@ -11,8 +11,8 @@ prints the agreement counts. JDKs default to $JAVA<N>_HOME, then ~/.sdkman/candi
 The comparison: class header (public/interface/abstract/final/enum, superclass, interfaces,
 PermittedSubclasses, the Record attribute's components), fields (access, static, final, synthetic,
 enum, ConstantValue) and methods (access, static, final, abstract, bridge, synthetic) by name and
-descriptor, and every method's getstatic and invoke instructions on classes outside java/ and
-arrays. Package prefixes are stripped.
+descriptor, every method's getstatic and invoke instructions on classes outside java/ and
+arrays, and the int and String constants it pushes (where folded constants show up). Package prefixes are stripped.
 """
 import glob, os, re, struct, subprocess, sys
 from collections import defaultdict
@@ -104,7 +104,7 @@ def read_class(path):
                 elif utf(an) == 'ConstantValue':
                     cv = const(struct.unpack('>H', b[pos + 6:pos + 8])[0])
                 pos += 6 + al
-            calls = []
+            calls, pushes = [], []
             if code is not None:
                 pc = 0
                 while pc < len(code):
@@ -112,8 +112,18 @@ def read_class(path):
                     if op in OPS:
                         k, = struct.unpack('>H', code[pc + 1:pc + 3])
                         calls.append((OPS[op],) + ref(k))
+                    elif 0x02 <= op <= 0x08:
+                        pushes.append(f'int {op - 3}')
+                    elif op == 0x10:
+                        pushes.append(f'int {struct.unpack(">b", code[pc + 1:pc + 2])[0]}')
+                    elif op == 0x11:
+                        pushes.append(f'int {struct.unpack(">h", code[pc + 1:pc + 3])[0]}')
+                    elif op in (0x12, 0x13):
+                        k = code[pc + 1] if op == 0x12 else struct.unpack('>H', code[pc + 1:pc + 3])[0]
+                        if cp[k][0] in ('int', 8):
+                            pushes.append(const(k))
                     pc += opcode_len(code, pc)
-            out.append((a, utf(nn), utf(dd), calls, cv))
+            out.append((a, utf(nn), utf(dd), (calls, pushes), cv))
         return out
     fields = members()
     methods = members()
@@ -158,12 +168,13 @@ def dump(pid, c):
     for a, n, d, _, cv in c['fields']:
         out[(pid, name, f'field {n} {strip(d)}')] = (flags([(access(a), True), ('static', a & 8), ('final', a & 0x10),
             ('synthetic', a & 0x1000), ('enum', a & 0x4000)]), cv or '-')
-    for a, n, d, calls, _ in c['methods']:
+    for a, n, d, (calls, pushes), _ in c['methods']:
         cs = [(op, strip(o), nn, strip(dd)) for op, o, nn, dd in calls
               if not (o.startswith('java/') or o.startswith('['))]
         out[(pid, name, f'method {n} {strip(d)}')] = (flags([(access(a), True), ('static', a & 8), ('final', a & 0x10),
             ('abstract', a & 0x400), ('bridge', a & 0x40), ('synthetic', a & 0x1000)]),
-            '; '.join(f'{op} {o}.{nn}:{dd}' for op, o, nn, dd in cs))
+            '; '.join(f'{op} {o}.{nn}:{dd}' for op, o, nn, dd in cs) +
+            (' | ' + ', '.join(pushes) if pushes else ''))
     return out
 
 def read_expected(path):

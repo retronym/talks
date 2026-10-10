@@ -184,6 +184,7 @@ def ClassOut.dump (pid : String) (c : ClassOut) : List String :=
   c.methods.map fun m => pre ++ s!"method {m.name} {m.desc}\t" ++
     flags [(m.acc.show, true), ("static", m.static), ("final", m.final), ("abstract", m.abs),
            ("bridge", m.bridge), ("synthetic", m.synthetic)] ++ "\t" ++
-    "; ".intercalate (m.calls.map Insn.show)
+    "; ".intercalate (m.calls.map Insn.show) ++
+    (if m.pushes.isEmpty then "" else " | " ++ ", ".intercalate (m.pushes.map CVal.show))
 
 end Java
