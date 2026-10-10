@@ -8,7 +8,7 @@ lake exe cache get && lake build
 
 Lean `v4.34.1`, Mathlib tag `v4.34.1`. No `sorry`. The scripted examples use `native_decide`.
 
-**Start here.** `DESIGN-spec.md` says what the model is: a specification whose obligations a compiler bridge and Zinc's rules must meet. `PLAN.md` opens with a table of what is proved for every program and what is only checked on a space, phase by phase. The phase files (`PLAN-names.md`, `PLAN-inline.md`, `PLAN-java.md`, `PLAN-split.md`, `PLAN-order.md`) hold the details. `REVIEW-2026-10-11.md` is a review of the framework and its next steps.
+**Start here.** `DESIGN-spec.md` says what the model is: a specification whose obligations a compiler bridge and Zinc's rules must meet. `PLAN.md` opens with a table of what is proved for every program and what is only checked on a space, phase by phase. The phase files (`PLAN-names.md`, `PLAN-inline.md`, `PLAN-java.md`, `PLAN-split.md`, `PLAN-order.md`) hold the details. `REVIEW-2026-10-11.md` is a review of the framework and its next steps. `BUG-MAP.md` maps every catalogued bug and pending test to the instance that covers it, or to a gap.
 
 ## Layout
 
