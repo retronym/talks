@@ -192,10 +192,26 @@ def enumCaseRemoved : Case where
   v1 := colors ["Red"]
   sites := [getstatic "Color$" "Green" "LColor;"]
 
+def inlineLib (rhs : String) : Program :=
+  let ms : List Mem := [{ name := "h", params := [.int], res := .int, inline := true, rhs := some rhs },
+                        { name := "use", res := .int, nullary := true }]
+  [{ name := "O", obj := some { name := "O", kind := .obj, members := ms } }]
+
+/-- An inline method's body changes. The library's classfiles do not change at all (the method is
+not in them), so binary compatibility sees nothing; a client compiled against `v0` has the old
+body inlined. Only recompiling the client (Zinc, with Phase 11's keys) brings the new body in. -/
+def inlineBodyChanged : Case where
+  name := "inlineBodyChanged"
+  mima := none
+  dl := .s3
+  v0 := inlineLib "x0"
+  v1 := inlineLib "x0 + 1"
+  sites := [invokestatic "O" "use" "()I"]
+
 def all : List Case :=
   [concreteAddedToTrait, abstractAddedToTrait, valAddedToTrait, classBecomesTrait,
    paramWithDefaultAdded, traitOverrideAdded, widenedToValueClass, caseFieldAdded, nestedClassMoved,
-   enumCaseAdded, enumCaseRemoved]
+   enumCaseAdded, enumCaseRemoved, inlineBodyChanged]
 
 example : caseFieldAdded.before = .ok (.ok ["P", "P", "P"]) ∧
     caseFieldAdded.after = .ok (.error .noSuchMethod) := by decide +kernel
@@ -223,5 +239,9 @@ example : nestedClassMoved.before = .ok (.ok ["Top$N", "Top$N"]) ∧
 example : enumCaseAdded.before = .ok (.ok ["Color$", "Color"]) ∧
     enumCaseAdded.after = .ok (.ok ["Color$", "Color"]) := by decide +kernel
 example : enumCaseRemoved.after = .ok (.error .noSuchField) := by decide +kernel
+
+/-- The library's classfiles are equal before and after the edit. -/
+example : lowerProgram .s3 inlineBodyChanged.v0 = lowerProgram .s3 inlineBodyChanged.v1 := by decide +kernel
+example : inlineBodyChanged.after = .ok (.ok ["O"]) := by decide +kernel
 
 end Scala.Catalogue
