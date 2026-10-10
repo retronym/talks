@@ -454,3 +454,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 20 — constructors and synthetic case-class members: see `PLAN-synthetic.md`
 
 ## Phase 21 — derived API, export forwarders and used types' supertypes: see `PLAN-derived.md`
+
+## Phase 23 — the extraHash lineage and the companion namespace: see `PLAN-extrahash.md`
