@@ -1,3 +1,4 @@
+import Scala.AsSeenFrom
 import Scala.Syntax
 import Scala.Lower
 import Scala.Space
