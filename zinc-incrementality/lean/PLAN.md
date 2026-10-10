@@ -451,3 +451,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 17 — hash stability across source, pickle and classfile forms: see `PLAN-hash.md`
 
 ## Phase 18 — annotations as API and as dependencies: see `PLAN-annotations.md`
+
+## Phase 19 — pipelining's early-output lifecycle: see `PLAN-pipelining.md`
