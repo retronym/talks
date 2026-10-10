@@ -401,7 +401,7 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 - [x] P9.4 `Sealed.lean`: exhaustivity reads a sealed parent's children; the same-file rule (and Java's `permits`) keeps the query local to the parent, and a hash covering the children meets the obligations. A hash without them (Zinc's `ClassToAPI` for Java before retronym/zinc#21) fails abstraction; adding a permitted subclass leaves the client without its warning (`java_permits_wrong`).
 - [ ] Future: files as recompilation units (Zinc recompiles every class of an invalidated file); a scripted variant of P9.3 under Scala 3 and with an explicit import (precedence rules differ); class vs companion keys (sbt/zinc#1796).
 
-## Phase 10 — name resolution, mechanically (`Names.lean`, `Givens.lean`)
+## Phase 10 — name resolution, mechanically (`ZincNames/Names.lean`, `ZincNames/Givens.lean`, `Zinc/NamesRules.lean`)
 
 P9.3 found one way an edit changes what a name resolves to without Zinc noticing. This phase searches the family mechanically: a program space over Scala's scopes, the model's verdict per edit, the conformance harness on Zinc `develop`, and a pending scripted test per family.
 
@@ -426,11 +426,12 @@ Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` 
 | F1 | A top-level class added (or renamed to, or moved) into a scope searched earlier: an inner package, a wildcard-imported package, the client's package over `scala._`. Zinc compiles only the added source. | `inner_added_today` (`Added.lean`: `added_today_wrong`) | `added-class-*` (P9.3) |
 | F2 | A member added to a package object over an outer binding; in Scala 3 also a top-level `export` gaining a forwarder. The client reached the package object through no symbol. | `pobj_added_today`, `export_added_today` | `added-member-package-object`, `-scala3`, `added-member-top-level-export-scala3` |
 | F3 | A member added to a wildcard-imported object, the import charged to another class of the file (Scala 2: the first; Scala 3: the last) that does not use the name. | `wild_first_today` | `added-member-wildcard-import-second-class`, `added-member-wildcard-import-last-class-scala3` |
-| F4 | Scala 2 only: a package object member added beside a class of the same name; scalac's joint compilation leaves the class's mirror without its `ScalaSignature`, the incremental one keeps it. Classfile bytes only: downstream resolution is the same either way, and it is scalac's joint/separate difference, not an invalidation Zinc misses. | `staleMirror` | none (not observable in scripted) |
+| F4 | Scala 2 only: a package object member (declared or inherited) beside a class of the same name; scalac's joint compilation leaves the class's mirror without its `ScalaSignature`, the separate one keeps it, and Zinc never recompiles the class's file for an edit of the member. Adding the member: bytes only. Removing it (found with the inherited factor, P10.7): a client that now resolves the class fails to compile incrementally (`not found: value Foo`) where a clean build succeeds; a declared member fails the same way under plain scalac. Not an invalidation Zinc misses: the class's file would have to be recompiled for an edit of another file it does not depend on. | `staleMirror` | none (bytes; the removal is reachable only through the inherited factor in this space) |
 | F5 | Scala 3 only: a class and a package object member (or top-level export) of one name in one package; the double definition is reported only when both files compile together, and nothing connects them in Zinc (the member is `a.b.package$.Foo`). | `missedClash` | `package-object-member-clashes-with-class-scala3` |
 | G1 | An implicit or given added to a package object (Scala 2: `package object a` too), over the companion or making the search ambiguous. | `pobj_added_today_s2` | `added-implicit-package-object`, `added-given-package-object-scala3` |
 | G2 | Scala 3: a top-level given added in a new file. | `inner_added_today_s3` | `added-given-top-level-scala3` |
 | F6, G3 | Scala 3 only: a client extending a trait whose members are all lazy (`object Foo`, a given alias) compiles without the call to the trait's `$init$` when compiled apart from it (the trait read from TASTy has no initialiser); Zinc recompiles the client in a later round than the trait or without it. In the space the `$init$` is empty, so only bytes differ; but it is a separate compilation bug in dotc: once a client has been compiled apart, a statement later added to the trait (not API, so Zinc recompiles the trait alone) never runs for it, where a clean build runs it. | `Names.separateInit`, `Givens.separateInit` | `trait-initialiser-skipped-scala3` (behavioural: `run` fails) |
+| F7 | Scala 3 only, found with the inherited factor (P10.7): `object a.b.Foo` compiled jointly with `package object b extends a.PT`, where `PT` has an `object Foo`, gets a `writeReplace` that serialises `a.PT$Foo$`, the inherited member, instead of `a.b.Foo$`; compiled apart it is right. A dotc bug (the clean build is the wrong one); incremental and clean differ whenever the edit changes which. | `staleModule` | none yet |
 
 ### Counts
 
@@ -441,7 +442,7 @@ Pending scripted tests on retronym/zinc branch `claude/name-resolution-pending` 
 | givens, 2.13 | 1,076 | 256 (G1: package object `b` 128, package object `a` 128) | 1,076 | 0 | 256 |
 | givens, 3 | 2,355 | 645 (G1 148, G2 208, G3 289) | 2,355 | 0 | 645 |
 
-Model unclean counts are over the whole space; the harness ran every edit of the givens spaces and a greedy selection of bases for the names spaces. Resolution agreed with the compiler on every case run.
+Model unclean counts are over the whole space; the harness ran every edit of the givens spaces and a greedy selection of bases for the names spaces. These counts predate P10.7's inherited factors and bystanders, which enlarge the spaces. Resolution agreed with the compiler on every case run.
 
 ### The cheap fix (retronym/zinc#34)
 
@@ -461,12 +462,71 @@ The harness ran the same cases as on develop (the same base selection, identical
 
 F1 is gone, as predicted; F2, F3, G1 and G2 stay, because none adds a class: the binding is a member of an existing package object, object or `$package` class (G2's added class is `Inner$package`, not a name the client uses). In Scala 3 the fix turns 300 of the harness's F1 cases into F6: a client extending `P`, whose resolution an added class does not change (the inherited member wins), is now recompiled, apart from `P`, and loses the `P.$init$` call (`Client$.class` bytes only; the model counts 7,752 such edits). The revert column moves the same way: names 2.13 988 → 148 (an added class is the revert of a delete, rename or move), names 3 430 → 618 (F6 again).
 
-Extending #34 to the remaining families:
+### Extending #34: a rule per family (P10.7)
 
-* F2 (package object member, Scala 3 top-level export): the same rule on names instead of classes. After each cycle, diff the member names of each recompiled package object (`a.b.package`; in Scala 3 also the `F$package` class holding top-level definitions and export forwarders) against the previous API, and invalidate the users of each added name. Zinc's name hashes already give the added names (a name with no previous hash).
-* F3 (member added to a wildcard-imported object, the import charged to another class): not a scope Zinc misses but a used-name check on the wrong class. Checking the used names of every class in the dependent's file (or charging an import to every class of its file) fixes it; or apply the F2 rule to every class whose API gains a name, which covers F1–F3 at once (the model's `names` mode restricted to additions) at the cost of invalidating every user of a common name.
-* G1, G2 (implicit added to a package object or as a top-level given): a name does not help, since the client never named the new instance. When a package object or `$package` class gains or loses an implicit member (or a new `$package` class has one), invalidate the classes of that package and the packages nested in it; Zinc can enumerate them by class name. The alternative is in the extractor: record an edge from every implicit search to the package objects of the enclosing packages.
-* F4, F5, F6/G3 are not about the client's resolution; #34 does not touch them, and F6 grows with every extra recompilation.
+Each remaining family gets a rule run after every cycle, as #34's is, and the model checks each rule alone, all together, and on the API #24 stores. Two new factors make the binding inherited rather than declared: `package object b extends a.PT` (`pinh`) and `object W extends a.WT` (`winh`), with the edit adding or removing `Foo` in the trait (Scala 3's `export` was already there); `Givens.lean` gets `pinh` too. The rules (`Rules`, `Mode.rules`):
+
+* **F2**: after each cycle, the users of every name a package object (`a.b.package`, Scala 3's `F$package`) gained since *before the run*. A new `$package` class counts as gaining all its names.
+* **F3**: an import's change is checked against the used names of every class of the importing file, not only the class it is charged to.
+* **G**: when a package object or `$package` class gains or loses an implicit (or is a new class with one), the classes of its package and the packages nested in it. A name does not help: the client never names the instance.
+
+What they close (`Zinc/NamesRules.lean`, every edit of both spaces, both versions; the divergences beside resolution, F4–F7 and G3, excluded):
+
+* `today_families`: today every wrong edit is F1, F2 or F3, inherited bindings included.
+* `f2_leaves`, `f3_leaves`: each rule closes its family and nothing else.
+* `all_clean` (names and givens): #34 with the F2, F3 and G rules is clean on develop's API.
+* `all_cycle_clean`: on develop the baseline does not matter in this space. A package object's stored API includes inherited members but changes only when it is recompiled, which is in the cycle after its parent, so the per-cycle diff sees the name appear.
+* #24 stores declarations only. `pobj_inherited_decls`: the F2 rule sees no new name when `PT` gains `Foo`. `composed_clean`: with names composed from the ancestors (`MerkleHashes.composed`) and diffed against the run's baseline, clean. `decls_leaves`, `composed_cycle_leaves`: without composition, or composed but diffed against the previous cycle, exactly the inherited package-object member is left (names and givens). Composed per cycle fails because the name appears when `PT` is recompiled, before the package object is, so the package object's own recompilation shows nothing new. A rule that looks only at *recompiled* package objects can also miss under #24, whose descendant rules may skip recompiling the package object; the composed rule should diff every package object.
+
+#### Cost
+
+Correctness first, but a rule that invalidates the world on common edits is no use. `conformance cost` counts, per mode, the wrong edits (soundness) and two kinds of excess recompilation (precision): the client recompiled though its resolution did not change and it does not extend the edited trait, and bystanders that stand for every class of their kind in a real build. Names has `c.User`, a user of the name elsewhere (`a.Y.Foo`); givens has `a.b.Near` and `a.Mid`, which summon nothing. Edits are over the whole space: every edit in it touches a binding of the client's name, so the rates are worst cases, not frequencies.
+
+| Space | Mode | Edits | Wrong | Client, not necessary | `User` | `Near` | `Mid` |
+|---|---|---|---|---|---|---|---|
+| names, 2.13 | `today` | 209,552 | 19,008 | 14,432 | 0 | | |
+| | `cheap` (#34) | | 9,712 | 77,368 | 74,792 | | |
+| | `f2` | | 11,904 | 25,088 | 20,464 | | |
+| | `f3` | | 16,400 | 19,120 | 0 | | |
+| | `cheap+f2+f3` | | 0 | 92,712 | 95,256 | | |
+| | `searched` | | 0 | 102,808 | 0 | | |
+| | `names` | | 0 | 119,832 | 209,552 | | |
+| | `all+decls` (#24) | | 6,264 | 90,728 | 85,024 | | |
+| | `all+composed` (#24) | | 0 | 92,712 | 95,256 | | |
+| names, 3 | `today` | 270,268 | 19,628 | 15,096 | 0 | | |
+| | `cheap` | | 5,208 | 90,160 | 102,948 | | |
+| | `f2` | | 17,444 | 35,688 | 26,296 | | |
+| | `f3` | | 16,604 | 19,472 | 0 | | |
+| | `cheap+f2+f3` | | 0 | 115,128 | 129,244 | | |
+| | `searched` | | 0 | 125,176 | 0 | | |
+| | `names` | | 0 | 147,096 | 270,268 | | |
+| | `all+decls` | | 840 | 105,736 | 119,012 | | |
+| | `all+composed` | | 0 | 115,128 | 129,244 | | |
+| givens, 2.13 | `today` | 1,856 | 460 | 368 | | 0 | 0 |
+| | `g` | | 0 | 368 | | 628 | 276 |
+| | `all+decls` | | 128 | 368 | | 452 | 276 |
+| givens, 3 | `today` | 4,314 | 684 | 933 | | 0 | 0 |
+| | `g` | | 0 | 1,882 | | 2,041 | 689 |
+| | `all+decls` | | 148 | 1,752 | | 1,703 | 689 |
+
+Reading it:
+
+* F3's rule is free: it recompiles nothing outside the client's file, and the client only when the import changed.
+* The name rules reach every user of the name. #34 is most of the cost (an added top-level class is common: every new file), and F2 adds a fifth more (a new package-object member is rarer). Precise alternatives exist: `searched` recompiles no bystander, at the price of recompiling the client on any change to a scope it searched; that needs the extractor change, not a rule.
+* G is the blunt one. It reaches every class of a package tree, and for `package object a` (Scala 2) or a top-level given in `a` (Scala 3) that is the whole of `a` (`Mid`). Implicits in a root package object are rare but not exotic. A tighter G would invalidate only classes that ran an implicit search for the instance's type; Zinc does not record that, so the cost here is the honest one until it does.
+* Every extra recompilation grows F6 in Scala 3, the dotc trait-initialiser bug (names 3: 24,980 today, 48,428 under `cheap+f2+f3`). That is dotc's to fix, but until then precision matters for correctness too.
+
+#### Harness check of the new factors
+
+On the #34 scratch build (`cheap` mode), 60-base subsets weighted to the new factors (names 2.13: 407 cases, names 3: 411, givens 2.13: 257, givens 3: 337). After the fixes below, model and harness agree on every resolution, every verdict, and every recompiled client and bystander set (`analyse.py` now compares those). What the run taught the model:
+
+* Scala 2 treats an inherited package-object member as no package member (`isPackageOwnedInDifferentUnit` looks at the trait). It beats the file's imports, even two binding wildcards, and is ambiguous with a block import. Scala 3 reports no clash between `a.b.Foo` and an inherited member, and the class wins.
+* Scala 2's bridge names a class by `fullName`, which skips `package`. To Zinc, the package object's declared `object Foo` and the class `a.b.Foo` are one class name, so a change to either file invalidates the clients of both, and #34 does not see `a.b.Foo` added beside the member (`aliased`).
+* F4 is observable (above). F6 also hits `W`, recompiled apart from `WT` (`heirInit`). F7 is new.
+* Scala 3 records a dependency on an inherited package-object member that the lookup passed over for `a.b.Foo`.
+* Not modelled: under #34, classes that *declare* a member named as the added class (`a.Y`, `a.V`) are recompiled too. Real cost is higher than the `User` column.
+
+Case files for the Zinc sessions (develop: `all`; #24: `all+decls`, `all+composed`, `all+composed+cycle`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary` and `modelFamily`.
 
 ### Steps
 
@@ -476,4 +536,6 @@ Extending #34 to the remaining families:
 - [x] P10.4 Runs on develop, model and harness reconciled (Scala 2's block/explicit ambiguity, the package object searched before the package's classes, Scala 3's last-class import charge, the explicit selector's name charged to the import's class, the missed clash, the trait initialiser).
 - [x] P10.5 Pending scripted tests per family.
 - [x] P10.6 The cheap fix (retronym/zinc#34) in the model (`Mode.cheap`) and the harness: F1 gone, F6 grows, the rest unchanged.
-- [ ] Future: extend #34 to names added to package objects and imported objects, and to implicits (above); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
+- [x] P10.7 #34's extensions as rules (F2, F3, G) with theorems per rule and combined; inherited bindings (`pinh`, `winh`); #24's declarations-only API, with and without composition, and the per-cycle baseline; the cost per mode (`conformance cost`); a harness check of the new factors on #34, model and harness reconciled (Scala 2's inherited package-object member and class-name alias, F4 observable, F6 on `W`, F7).
+- [ ] P10.8 Harness runs of the rules: develop (`all`) and #24 (`all+decls`, `all+composed`), by the Zinc sessions.
+- [ ] Future: a pending scripted test for F7 (and a dotc issue); count the declaring classes the name rules reach; a G that reaches only classes whose implicit search could see the instance (needs the extractor); the `split` layout (the binding upstream: external invalidation goes through the same `apiHash` gate); members renamed inside a container (the model has add and delete); F5's fix needs the definitions of a name in a package, not its users.
