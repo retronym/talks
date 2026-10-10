@@ -58,7 +58,7 @@ def need (n : String) : M Decl := (·.decl) <$> needView n
 
 /-- A base class with its type argument as the class being lowered sees it: `C.this baseType A`.
 The class itself comes first, applied to its own parameter. -/
-abbrev Anc := Decl × Option Ty
+abbrev Anc := Decl × List Ty
 
 /-- The base-type facts of a top-level class `self` with base classes `l`, for `AsSeenFrom`. Only
 `self.this` has base types; the prefix of a top-level class is its package, where the walk stops. -/
@@ -66,7 +66,7 @@ def classWorld (self : String) (l : List Anc) : AsSeenFrom.World String Ty where
   bpre _ _ := .this []
   hasBase p c := p == .this [self] && l.any fun (a, _) => [a.name] == c
   bargs p c := if p == .this [self] then
-      ((l.find? fun (a, _) => [a.name] == c).bind (·.2)).toList
+      ((l.find? fun (a, _) => [a.name] == c).map (·.2)).getD []
     else []
 
 /-- `info.asSeenFrom(self.this, owner)`. -/
@@ -84,9 +84,9 @@ def lin : ℕ → Decl → M (List Anc)
       let pd ← need p
       let lp ← lin k pd
       let w := classWorld d.name [(pd, pa)]
-      let lp := lp.map fun (a, t) => (a, t.map (AsSeenFrom.asf w (.this [d.name]) [p]))
+      let lp := lp.map fun (a, ts) => (a, ts.map (AsSeenFrom.asf w (.this [d.name]) [p]))
       acc := lp.filter (fun e => !acc.any (·.1.name == e.1.name)) ++ acc
-    pure ((d, if d.tparam then some (Ty.X d.name) else none) :: acc)
+    pure ((d, (List.range d.tparams).map (Ty.tp [d.name])) :: acc)
 
 def fuel : ℕ := 8
 
@@ -313,7 +313,7 @@ def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
   for (t, _) in mx do
     for m in t.members do
       if m.lzy then continue
-      let some ((o, _), w) := lookupSig d.name l ((t, none), m) | continue
+      let some ((o, _), w) := lookupSig d.name l ((t, []), m) | continue
       if o.name != t.name || w.abs then continue
       let e ← m.desc
       if m.isVal then

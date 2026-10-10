@@ -65,18 +65,18 @@ def mixinProgram (tm : TM) (tv : Bool) (u : UK) (b : BK) (cm : Option Bool) (r :
                     members := tms ++ (if tv then [{ name := "v", res := .int, isVal := true }] else []) }
   let uD : Option Decl := match u with
     | .none => none
-    | .sub => some { name := "U", kind := .trt, traits := [("T", none)], members := [mem "m" r false] }
+    | .sub => some { name := "U", kind := .trt, traits := [("T", [])], members := [mem "m" r false] }
     | .sib => some { name := "U", kind := .trt, members := [mem "m" r false] }
   let bD : Option Decl := match b with
     | .none => none
     | .abs => some { name := "B", abs := true, members := [mem "m" r true] }
     | .conc => some { name := "B", members := [mem "m" r false] }
-    | .extT => some { name := "B", abs := tm == .abs, traits := [("T", none)] }
+    | .extT => some { name := "B", abs := tm == .abs, traits := [("T", [])] }
   let cms := match cm with
     | none => []
     | some narrow => [mem "m" (if narrow then .str else r) false]
   let parents : Option Parent × List Parent :=
-    (bD.map fun _ => ("B", none), [("T", none)] ++ (uD.toList.map fun _ => ("U", none)))
+    (bD.map fun _ => ("B", []), [("T", [])] ++ (uD.toList.map fun _ => ("U", [])))
   let c0 : Decl := { name := "C", super := parents.1, traits := parents.2, members := cms }
   let lib : Program := [{ name := "T", cls := some t }] ++ (uD.toList.map fun d => { name := "U", cls := some d }) ++
     (bD.toList.map fun d => { name := "B", cls := some d })
@@ -114,15 +114,15 @@ def genericProgram (gTrait : Bool) (gAbs : Bool) (hTrait : Bool) (hOv : Bool) (k
     Option Program := do
   let g : Mem := { name := "g", params := [Ty.X "G"], res := Ty.X "G", abs := gAbs }
   let gD : Decl := { name := "G", kind := (if gTrait then .trt else .cls), abs := gAbs && !gTrait,
-                     tparam := true, members := [g] }
+                     tparams := 1, members := [g] }
   let hm := if hOv then [{ name := "g", params := [.str], res := .str : Mem }] else []
   let hParents : Option Parent × List Parent :=
-    if gTrait then (none, [("G", some .str)]) else (some ("G", some .str), [])
+    if gTrait then (none, [("G", [.str])]) else (some ("G", [.str]), [])
   if hTrait && !gTrait then failure
   let hD : Decl := { name := "H", kind := (if hTrait then .trt else .cls), abs := gAbs && !hOv && !hTrait,
                      super := hParents.1, traits := hParents.2, members := hm }
   let kDecl : Decl := { name := "K", abs := gAbs && !hOv,
-                        super := (if hTrait then none else some ("H", none)), traits := (if hTrait then [("H", none)] else []) }
+                        super := (if hTrait then none else some ("H", [])), traits := (if hTrait then [("H", [])] else []) }
   let kD : List Src := if k || hTrait then [{ name := "K", cls := some kDecl }] else []
   pure ([{ name := "G", cls := some gD }, { name := "H", cls := some hD }] ++ kD)
 
@@ -158,14 +158,14 @@ def miscSpace : List Program :=
   let k (n : String) : Mem := { name := n, res := .int, isVal := true }
   let fobj : Mem := { name := "f", params := [.int], res := .int, final := true }
   [ [{ name := "T", cls := some { name := "T", kind := .trt, members := [fm] } },
-     { name := "C", cls := some { name := "C", traits := [("T", none)] } }],
+     { name := "C", cls := some { name := "C", traits := [("T", [])] } }],
     [{ name := "B", cls := some { name := "B", members := [fm] } },
-     { name := "C", cls := some { name := "C", super := some ("B", none) } }],
+     { name := "C", cls := some { name := "C", super := some ("B", []) } }],
     [{ name := "C", cls := some { name := "C", members := [k "k"] },
        obj := some { name := "C", kind := .obj, members := [k "k2", fobj] } },
      { name := "O", obj := some { name := "O", kind := .obj, members := [k "k", fobj] } }],
     [{ name := "T", cls := some { name := "T", kind := .trt, members := [fm, k "v"] } },
-     { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", none)] } }] ]
+     { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", [])] } }] ]
 
 /-! ## Trait initialisers, compiled together and apart -/
 
@@ -179,8 +179,8 @@ def initProgram (k : Nat) : Program :=
     | _ => { name := "e", res := .int, ext := some .int, abs := true }
   let cms : List Mem := if k == 3 then [{ m with abs := false }] else []
   [{ name := "T", cls := some { name := "T", kind := .trt, members := [m] } },
-   { name := "C", cls := some { name := "C", traits := [("T", none)], members := cms } },
-   { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", none)], members := cms } }]
+   { name := "C", cls := some { name := "C", traits := [("T", [])], members := cms } },
+   { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", [])], members := cms } }]
 
 /-! ## Scala 3: `@static` and extension methods -/
 
@@ -194,7 +194,7 @@ def scala3Space : List Program :=
     [{ name := "S", cls := some { name := "S" }, obj := some { name := "S", kind := .obj, members := [sf, g] } }],
     [{ name := "E", obj := some { name := "E", kind := .obj, members := [twice, len] } }],
     [{ name := "TE", cls := some { name := "TE", kind := .trt, members := [twice, { len with abs := true }] } },
-     { name := "CE", cls := some { name := "CE", traits := [("TE", none)],
+     { name := "CE", cls := some { name := "CE", traits := [("TE", [])],
                                    members := [{ len with }] } }] ]
 
 /-! ## Type arguments through several parents, value-class arguments, overloads
@@ -206,11 +206,11 @@ the argument, and an overload that a name-only rule would take for an override. 
 def asfSpace : List Program :=
   let g (o : String) (abs : Bool := false) : Mem := { name := "g", params := [Ty.X o], res := Ty.X o, abs := abs }
   let gAt (t : Ty) : Mem := { name := "g", params := [t], res := t }
-  let cG : Src := { name := "G", cls := some { name := "G", tparam := true, members := [g "G"] } }
-  let tG : Src := { name := "G", cls := some { name := "G", kind := .trt, tparam := true, members := [g "G"] } }
+  let cG : Src := { name := "G", cls := some { name := "G", tparams := 1, members := [g "G"] } }
+  let tG : Src := { name := "G", cls := some { name := "G", kind := .trt, tparams := 1, members := [g "G"] } }
   let hOf (trt : Bool) : Src :=
-    let gx : Parent := ("G", some (Ty.X "H"))
-    let d : Decl := { name := "H", kind := (if trt then .trt else .cls), tparam := true,
+    let gx : Parent := ("G", [(Ty.X "H")])
+    let d : Decl := { name := "H", kind := (if trt then .trt else .cls), tparams := 1,
                       super := (if trt then none else some gx), traits := (if trt then [gx] else []) }
     { name := "H", cls := some d }
   let v : Src := { name := "V", cls := some { name := "V", kind := .vcls, under := some ("x", .int) } }
@@ -219,19 +219,19 @@ def asfSpace : List Program :=
   let o (sup : Option Parent) (ts : List Parent) (ms : List Mem) : Src :=
     { name := "O", obj := some { name := "O", kind := .obj, super := sup, traits := ts, members := ms } }
   -- through an intermediate generic class, with and without an override
-  [ [cG, hOf false, k (some ("H", some .str)) [] [gAt .str]],
-    [cG, hOf false, k (some ("H", some .str)) [] []],
-    [cG, hOf false, k (some ("H", some .int)) [] [gAt .int]],
+  [ [cG, hOf false, k (some ("H", [.str])) [] [gAt .str]],
+    [cG, hOf false, k (some ("H", [.str])) [] []],
+    [cG, hOf false, k (some ("H", [.int])) [] [gAt .int]],
   -- through an intermediate generic trait
-    [tG, hOf true, k none [("H", some .str)] []],
-    [tG, hOf true, k none [("H", some .int)] [gAt .int]],
-    [tG, hOf true, k none [("H", some .str)] [gAt .str], o none [("H", some .str)] [gAt .str]],
+    [tG, hOf true, k none [("H", [.str])] []],
+    [tG, hOf true, k none [("H", [.int])] [gAt .int]],
+    [tG, hOf true, k none [("H", [.str])] [gAt .str], o none [("H", [.str])] [gAt .str]],
   -- a value class as the argument
-    [cG, v, k (some ("G", some (.ref "V"))) [] [gAt (.ref "V")]],
-    [tG, v, k none [("G", some (.ref "V"))] [], o none [("G", some (.ref "V"))] [gAt (.ref "V")]],
+    [cG, v, k (some ("G", [(.ref "V")])) [] [gAt (.ref "V")]],
+    [tG, v, k none [("G", [(.ref "V")])] [], o none [("G", [(.ref "V")])] [gAt (.ref "V")]],
   -- an overload, not an override: no bridge
-    [cG, k (some ("G", some .str)) [] [gAt .int]],
-    [tG, k none [("G", some .str)] [gAt .int]] ]
+    [cG, k (some ("G", [.str])) [] [gAt .int]],
+    [tG, k none [("G", [.str])] [gAt .int]] ]
 
 structure Case where
   fam : String

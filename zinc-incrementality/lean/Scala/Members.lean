@@ -115,7 +115,7 @@ def checkDecl (dl : Dialect) (d : Decl) : M (List Err) := do
       let lmo ← lin fuel mo
       -- `override` counts only if it overrides something in the owner (else "overrides nothing")
       let ov ← hasOverride mo m
-      let overridesInOwner := (hitsAbove lmo m.name).any (overridesIn mo.name lmo ((mo, none), m))
+      let overridesInOwner := (hitsAbove lmo m.name).any (overridesIn mo.name lmo ((mo, []), m))
       -- `checkOverride`: the first failing check of the first failing pair
       let mut found : Option Kind := none
       for oh in g.drop (i + 1) do
@@ -204,12 +204,12 @@ def V.mem (owner : String) : V → Option Mem
 def program (t u : V) (uExt : Bool) (b : V) (bExt : Bool) (c : V) : Program :=
   let tD : Decl := { name := "T", kind := .trt, members := (t.mem "T").toList }
   let uD : Decl := { name := "U", kind := .trt, members := (u.mem "U").toList,
-                     traits := if uExt then [("T", none)] else [] }
+                     traits := if uExt then [("T", [])] else [] }
   let bD : Decl := { name := "B", abs := true, members := (b.mem "B").toList,
-                     traits := if bExt then [("T", none)] else [] }
+                     traits := if bExt then [("T", [])] else [] }
   let cD : Decl := { name := "C", abs := c == .abs, members := (c.mem "C").toList,
-                     super := some ("B", none),
-                     traits := [("T", none)] ++ (if u == .none then [] else [("U", none)]) }
+                     super := some ("B", []),
+                     traits := [("T", [])] ++ (if u == .none then [] else [("U", [])]) }
   [{ name := "T", cls := some tD }] ++ (if u == .none then [] else [{ name := "U", cls := some uD }]) ++
     [{ name := "B", cls := some bD }, { name := "C", cls := some cD }]
 

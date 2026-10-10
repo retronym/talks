@@ -75,7 +75,7 @@ def concreteAddedToTrait : Case where
   mima := none
   v0 := [trt "T" [dfn "a"]]
   v1 := [trt "T" [dfn "a", dfn "b"]]
-  client := [cls "X" [] none [("T", none)]]
+  client := [cls "X" [] none [("T", [])]]
   loads := ["X"]
   sites := [new "X", invokevirtual "X" "a" "()I" "X", invokeinterface "T" "b" "()I" "X"]
 
@@ -86,7 +86,7 @@ def abstractAddedToTrait : Case where
   mima := some "ReversedMissingMethodProblem"
   v0 := [trt "T" [dfn "a"]]
   v1 := [trt "T" [dfn "a", dfn "b" true]]
-  client := [cls "X" [] none [("T", none)]]
+  client := [cls "X" [] none [("T", [])]]
   loads := ["X"]
   sites := [invokeinterface "T" "b" "()I" "X"]
 
@@ -98,7 +98,7 @@ def valAddedToTrait : Case where
   mima := some "ReversedMissingMethodProblem"
   v0 := [trt "T" [dfn "a"]]
   v1 := [trt "T" [dfn "a", { name := "v", res := .int, isVal := true }]]
-  client := [cls "X" [] none [("T", none)]]
+  client := [cls "X" [] none [("T", [])]]
   loads := ["X"]
   sites := [invokeinterface "T" "v" "()I" "X"]
 
@@ -108,7 +108,7 @@ def classBecomesTrait : Case where
   mima := some "IncompatibleTemplateDefProblem"
   v0 := [cls "C" [dfn "m"]]
   v1 := [trt "C" [dfn "m"]]
-  client := [cls "X" [] (some ("C", none))]
+  client := [cls "X" [] (some ("C", []))]
   loads := ["X"]
 
 /-- A parameter with a default added to an object's method: the descriptor changes (plus a
@@ -127,9 +127,9 @@ Zinc must recompile the client. Confirmed on HotSpot with 2.13.18. -/
 def traitOverrideAdded : Case where
   name := "traitOverrideAdded"
   mima := none
-  v0 := [trt "R" [dfn "m" true], cls "B" [dfn "m"] none [("R", none)], trt "T" [] [("R", none)]]
-  v1 := [trt "R" [dfn "m" true], cls "B" [dfn "m"] none [("R", none)], trt "T" [dfn "m"] [("R", none)]]
-  client := [cls "X" [] (some ("B", none)) [("T", none)]]
+  v0 := [trt "R" [dfn "m" true], cls "B" [dfn "m"] none [("R", [])], trt "T" [] [("R", [])]]
+  v1 := [trt "R" [dfn "m" true], cls "B" [dfn "m"] none [("R", [])], trt "T" [dfn "m"] [("R", [])]]
+  client := [cls "X" [] (some ("B", [])) [("T", [])]]
   loads := ["X"]
   sites := [invokevirtual "X" "m" "()I" "X"]
 

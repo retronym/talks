@@ -76,16 +76,16 @@ structure Mem where
 
 def Mem.allParams (m : Mem) : List Ty := m.ext.toList ++ m.params
 
-/-- A parent: a definition, applied to a type argument if it has a type parameter. -/
-abbrev Parent := String × Option Ty
+/-- A parent: a definition, applied to type arguments if it has type parameters. -/
+abbrev Parent := String × List Ty
 
 structure Decl where
   name : String
   kind : Kind := .cls
   abs : Bool := false
   final : Bool := false
-  /-- One type parameter `X`. -/
-  tparam : Bool := false
+  /-- The number of type parameters (`X`, `X1`, …; `Ty.tp [d] i`). -/
+  tparams : Nat := 0
   super : Option Parent := none
   traits : List Parent := []
   members : List Mem := []
@@ -119,8 +119,8 @@ def Ty.show : Ty → String
   | .ref d => d
 
 def Parent.show : Parent → String
-  | (p, none) => p
-  | (p, some a) => s!"{p}[{a.show}]"
+  | (p, []) => p
+  | (p, as) => s!"{p}[{", ".intercalate (as.map Ty.show)}]"
 
 def body : Ty → String
   | .int => "0"
@@ -148,7 +148,7 @@ def Decl.show (ov : String → Bool) (d : Decl) : String :=
   let kw := match d.kind with
     | .trt => "trait" | .obj => "object" | _ => "class"
   let mods := (if d.abs && d.kind == .cls then "abstract " else "") ++ (if d.final then "final " else "")
-  let tps := if d.tparam then "[X]" else ""
+  let tps := if d.tparams == 0 then "" else "[" ++ ", ".intercalate ((List.range d.tparams).map fun i => (Ty.tp [d.name] i).show) ++ "]"
   let ctor := match d.under with
     | some (x, t) => s!"(val {x}: {t.show})"
     | none => ""
