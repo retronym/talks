@@ -19,7 +19,7 @@ inductive Dialect | s212 | s213 | s3
 parameter of a definition `D`. Classes are owner paths, innermost first, as in `AsSeenFrom`; a
 top-level definition `D` is `[D]`. -/
 inductive Ty
-  | int | bool | unit | str | obj
+  | int | bool | unit | str | obj | any
   | ref (d : String)
   | this (c : List String)
   | tp (c : List String) (i : Nat)
@@ -91,6 +91,11 @@ structure Decl where
   members : List Mem := []
   /-- A value class's parameter, `class V(val x: U) extends AnyVal`. -/
   under : Option (String × Ty) := none
+  /-- `case class` or `case object`; a case class's parameters are `cparams`. -/
+  isCase : Bool := false
+  cparams : List (String × Ty) := []
+  /-- The constructor's parameter types (after desugaring). -/
+  ctor : List Ty := []
   deriving DecidableEq, Repr
 
 def Decl.parents (d : Decl) : List Parent := d.super.toList ++ d.traits
@@ -113,6 +118,7 @@ def Ty.show : Ty → String
   | .unit => "Unit"
   | .str => "String"
   | .obj => "Object"
+  | .any => "Any"
   | .tp _ 0 => "X"
   | .tp _ i => s!"X{i}"
   | .this c => s!"{c.headD ""}.this.type"
@@ -128,6 +134,7 @@ def body : Ty → String
   | .unit => "()"
   | .str => "\"\""
   | .obj => "null"
+  | .any => "null"
   | .tp _ _ => "null.asInstanceOf[X]"
   | .this _ => "this"
   | .ref _ => "???"
@@ -147,11 +154,13 @@ def Mem.show (ov : Bool) (m : Mem) : String :=
 def Decl.show (ov : String → Bool) (d : Decl) : String :=
   let kw := match d.kind with
     | .trt => "trait" | .obj => "object" | _ => "class"
-  let mods := (if d.abs && d.kind == .cls then "abstract " else "") ++ (if d.final then "final " else "")
+  let mods := (if d.abs && d.kind == .cls then "abstract " else "") ++ (if d.final then "final " else "") ++
+    (if d.isCase then "case " else "")
   let tps := if d.tparams == 0 then "" else "[" ++ ", ".intercalate ((List.range d.tparams).map fun i => (Ty.tp [d.name] i).show) ++ "]"
   let ctor := match d.under with
     | some (x, t) => s!"(val {x}: {t.show})"
-    | none => ""
+    | none => if d.isCase && d.kind != Kind.obj then
+        "(" ++ ", ".intercalate (d.cparams.map fun (p : String × Ty) => s!"{p.1}: {p.2.show}") ++ ")" else ""
   let ps := (match d.kind with | .vcls => ["AnyVal"] | _ => []) ++ d.parents.map Parent.show
   let ext := match ps with
     | [] => ""

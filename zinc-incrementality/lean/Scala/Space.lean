@@ -233,6 +233,36 @@ def asfSpace : List Program :=
     [cG, k (some ("G", [.str])) [] [gAt .int]],
     [tG, k none [("G", [.str])] [gAt .int]] ]
 
+/-! ## Case classes and case objects -/
+
+def caseSpace : List Program :=
+  let cc (ps : List Ty) (traits : List Parent := []) : Decl :=
+    { name := "P", isCase := true, cparams := ps.zipIdx.map (fun (t, i) => (s!"x{i}", t)), traits := traits }
+  let comp : Decl := { name := "P", kind := .obj, members := [{ name := "f", res := .int, nullary := true }] }
+  let t : Src := { name := "T", cls := some { name := "T", kind := .trt, members := [{ name := "t", res := .int, nullary := true }] } }
+  [ [{ name := "P", cls := some (cc []) }],
+    [{ name := "P", cls := some (cc [.int]) }],
+    [{ name := "P", cls := some (cc [.int, .str]) }],
+    [{ name := "P", cls := some (cc [.int]), obj := some comp }],
+    [{ name := "P", cls := some (cc [.int, .str]), obj := some comp }],
+    [{ name := "O", obj := some { name := "O", kind := .obj, isCase := true } }],
+    [t, { name := "P", cls := some (cc [.int] [("T", [])]) }],
+    [t, { name := "O", obj := some { name := "O", kind := .obj, isCase := true, traits := [("T", [])] } }] ] ++
+  -- members a parent already defines are not synthesized
+  let str (rhs : String) : Mem := { name := "toString", res := .str, nullary := true, rhs := some rhs, ov := some true }
+  let b (ms : List Mem) : Src := { name := "B", cls := some { name := "B", abs := true, members := ms } }
+  let tr (ms : List Mem) : Src := { name := "B", cls := some { name := "B", kind := .trt, members := ms } }
+  let sub (p : Parent) (isTrait : Bool) : Src :=
+    { name := "P", cls := some { cc [.int] with super := (if isTrait then none else some p), traits := (if isTrait then [p] else []) } }
+  [ [b [str "\"B\""], sub ("B", []) false],
+    [tr [str "\"B\""], sub ("B", []) true],
+    [b [{ name := "hashCode", res := .int, nullary := true, ov := some true },
+        { name := "equals", params := [.any], res := .bool, ov := some true }], sub ("B", []) false],
+    [b [{ name := "copy", params := [.int], res := .ref "B", rhs := some "this" }], sub ("B", []) false],
+    [b [{ str "\"B\"" with final := true }], sub ("B", []) false],
+    [b [{ name := "productPrefix", res := .str, nullary := true },
+        { name := "canEqual", params := [.any], res := .bool }], sub ("B", []) false] ]
+
 structure Case where
   fam : String
   prog : Program
@@ -244,7 +274,7 @@ structure Case where
 def space : List Case :=
   (mixinSpace.map ({ fam := "mixin", prog := · })) ++ (genericSpace.map ({ fam := "generic", prog := · })) ++
   (vclsSpace.map ({ fam := "vcls", prog := · })) ++ (traitCompanionSpace.map ({ fam := "tcomp", prog := · })) ++
-  (miscSpace.map ({ fam := "misc", prog := · })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
+  (miscSpace.map ({ fam := "misc", prog := · })) ++ (caseSpace.map ({ fam := "case", prog := · })) ++ (asfSpace.map ({ fam := "asf", prog := · })) ++
   ([0, 1, 2].map fun k => { fam := "init", prog := initProgram k }) ++
   ([0, 1, 2].map fun k => { fam := "initSep", prog := initProgram k, lib := ["T"] }) ++
   [{ fam := "init", prog := initProgram 3, only3 := true },
@@ -260,6 +290,9 @@ def flags (ws : List (String × Bool)) : String := " ".intercalate (ws.filter (�
 
 def Insn.show (i : Insn) : String := s!"{i.op} {i.owner}.{i.name}:{i.desc}"
 
+/-- The probe compares only invokes of the program's own classes, not the library's. -/
+def Insn.own (i : Insn) : Bool := !(i.owner.startsWith "scala/" || i.owner.startsWith "java/")
+
 def ClassOut.dump (pid : String) (c : ClassOut) : List String :=
   let pre := s!"{pid}\t{c.name}\t"
   (if c.partly then [pre ++ "partly"] else []) ++
@@ -270,6 +303,6 @@ def ClassOut.dump (pid : String) (c : ClassOut) : List String :=
   c.methods.map fun m => pre ++ s!"method {m.name} {m.desc}\t" ++
     flags [(if m.priv then "private" else "public", true), ("static", m.static), ("final", m.final),
            ("abstract", m.abs), ("bridge", m.bridge)] ++ "\t" ++
-    (match m.calls with | none => "*" | some cs => "; ".intercalate (cs.map Insn.show))
+    (match m.calls with | none => "*" | some cs => "; ".intercalate ((cs.filter Insn.own).map Insn.show))
 
 end Scala

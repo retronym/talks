@@ -155,8 +155,11 @@ def checkDecl (dl : Dialect) (d : Decl) : M (List Err) := do
 
 /-- The errors the compiler reports for a program: those of the earliest phase that has any. -/
 def errors (dl : Dialect) (p : Program) : Except String (List Err) := do
-  let es ← p.flatMap (fun s => s.cls.toList ++ s.obj.toList) |>.mapM fun d =>
-    (checkDecl dl d).run.run p.env
+  -- the program as the back end sees it: desugared, against the library prelude
+  let q := p.desugar dl
+  let env := (prelude dl ++ q).env
+  let es ← q.flatMap (fun s => s.cls.toList ++ s.obj.toList) |>.mapM fun d =>
+    (checkDecl dl d).run.run env
   let es := es.flatten
   match (es.map (·.kind.phase)).min? with
   | some ph => pure (es.filter (·.kind.phase == ph))

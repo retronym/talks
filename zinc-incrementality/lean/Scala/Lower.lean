@@ -1,6 +1,7 @@
 import Zinc.Task
 import Jvm.Link
 import Scala.Syntax
+import Scala.Desugar
 
 /-!
 # Lowering a Scala subset to classfiles, as a `Task`
@@ -154,10 +155,12 @@ def erase : Ty → M String
   | .bool => pure "Z"
   | .unit => pure "V"
   | .str => pure "Ljava/lang/String;"
-  | .obj | .tp .. => pure "Ljava/lang/Object;"
+  | .obj | .any | .tp .. => pure "Ljava/lang/Object;"
   | .this c => pure (jname (c.headD ""))
   | .ref n => do
-    let d ← need n
+    -- a library class outside the prelude erases to itself
+    let some v ← askDecl n false | pure (jname n)
+    let d := v.decl
     match d.kind, d.under with
     | .vcls, some (_, .int) => pure "I"
     | .vcls, some (_, .str) => pure "Ljava/lang/String;"
@@ -360,7 +363,8 @@ def superLin (d : Decl) : M (List Anc) := do
 def lowerClass (dl : Dialect) (d : Decl) : M ClassOut := do
   let l ← lin fuel d
   let (ms, fs, mx) ← classBody dl d false l
-  let ctor : MOut := { name := ctorName, desc := "()V", calls := some (← initCalls dl mx) }
+  let cps ← d.ctor.mapM eraseP
+  let ctor : MOut := { name := ctorName, desc := s!"({String.join cps})V", calls := some (← initCalls dl mx) }
   let ms ← bridges d.name l (← superLin d) (ms ++ [ctor])
   let part := implementsLazy mx
   pure { name := d.name, abs := d.abs, final := d.final, super := d.super.map (·.1),
@@ -406,14 +410,20 @@ def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
   let (ms, fs, mx) ← classBody dl d true l
   let ms ← bridges self l (← superLin d) ms
   let ms := ms ++ (← match vc with | some v => extensions v | none => pure [])
+  let serialBase := l.any fun (a, _) => a.name == "java/io/Serializable" || a.name == "scala/Serializable"
   -- 2.12 initialises an object in its constructor, later versions in its static initialiser
   let inits ← initCalls dl mx
   let extra : List MOut :=
     [{ name := ctorName, desc := "()V", priv := true, calls := some (if dl == .s212 then inits else []) },
      { name := "<clinit>", desc := "()V", static := true, calls := some (if dl == .s212 then [] else inits) }] ++
-    (if dl == .s3 then [{ name := "writeReplace", desc := "()Ljava/lang/Object;", priv := true }] else [])
-  -- Scala 3 objects are serializable.
-  let ser := if dl == .s3 then ["java/io/Serializable"] else []
+    -- a serializable object resolves to its module instance: `readResolve` in 2.12, `writeReplace`
+    -- later; Scala 3 makes every object serializable
+    (if dl == .s3 || (dl == .s213 && serialBase) then
+      [{ name := "writeReplace", desc := "()Ljava/lang/Object;", priv := true }]
+     else if dl == .s212 && serialBase then
+      [{ name := "readResolve", desc := "()Ljava/lang/Object;", priv := true }]
+     else [])
+  let ser := if dl == .s3 && !serialBase then ["java/io/Serializable"] else []
   let part := implementsLazy mx
   pure { name := self, final := true, super := d.super.map (·.1), ifaces := (← ifacesOf d) ++ ser,
          -- (Scala 3's static initialiser of an object with a lazy val is private)
@@ -508,8 +518,11 @@ theorem lower_congr (dl : Dialect) (s : Src) (e e' : (q : Q) → Ans q)
     (h : ∀ q ∈ trace dl s e, e q = e' q) : lower dl s e = lower dl s e' :=
   (Zinc.Task.run_eq_of_trace _ e e' h).1
 
+/-- Lower a program: desugared, against the prelude and its own definitions. -/
 def lowerProgram (dl : Dialect) (p : Program) : Except String (List ClassOut) := do
-  let cs ← p.mapM fun s => lower dl s p.env
+  let q := p.desugar dl
+  let env := (prelude dl ++ q).env
+  let cs ← q.mapM fun s => lower dl s env
   pure cs.flatten
 
 /-- Separate compilation: the units `lib` in one run, then the rest in a second run that reads

@@ -40,7 +40,8 @@ structure Case where
 /-- Lower the library alone, and the client against the library. -/
 def build (dl : Dialect) (lib client : Program) : Except String (List ClassOut) := do
   let l ← lowerProgram dl lib
-  let c ← client.mapM fun s => lower dl s (lib ++ client).env
+  let env := (prelude dl ++ (lib ++ client).desugar dl).env
+  let c ← (client.desugar dl).mapM fun s => lower dl s env
   pure (c.flatten ++ l)
 
 def Case.prog (k : Case) : Jvm.Program String String String := { loads := k.loads, sites := k.sites }
