@@ -1,4 +1,4 @@
-import Scala.Lower
+import Scala.Members
 
 /-!
 # Bounded program spaces for calibrating lowering against scalac
@@ -32,22 +32,8 @@ def linIn (p : Program) (d : Decl) : List Anc :=
 def overrides (p : Program) (d : Decl) (n : String) : Bool :=
   let l := linIn p d
   match (hits l n).head? with
-  | some h => (hits l.tail n).any (overridesIn d.name l h)
+  | some h => (hitsAbove l n).any (overridesIn d.name l h)
   | none => false
-
-/-- Scala's rule for inherited concrete members: the winner must override every other concrete
-member, which here means its owner must have the other's owner as an ancestor. -/
-def conflictFree (p : Program) (d : Decl) (n : String) : Bool :=
-  let l := linIn p d
-  match (hits l n).filter (!·.2.abs) with
-  | [] => true
-  | ((w, _), _) :: rest =>
-    let lw := linIn p w
-    rest.all fun ((o, _), _) => lw.any (·.1.name == o.name)
-
-def needsAbstract (p : Program) (d : Decl) (n : String) : Bool :=
-  let hs := hits (linIn p d) n
-  !hs.isEmpty && hs.all (·.2.abs)
 
 def Src.show (p : Program) (s : Src) : String :=
   let one (d : Decl) := d.show (overrides p d)
@@ -95,8 +81,12 @@ def mixinProgram (tm : TM) (tv : Bool) (u : UK) (b : BK) (cm : Option Bool) (r :
   let lib : Program := [{ name := "T", cls := some t }] ++ (uD.toList.map fun d => { name := "U", cls := some d }) ++
     (bD.toList.map fun d => { name := "B", cls := some d })
   let base := lib ++ [{ name := "C", cls := some c0 }]
-  if !conflictFree base c0 "m" then failure
-  let c := { c0 with abs := needsAbstract base c0 "m" }
+  -- legal by the membership model (`Members`), made abstract if it must be
+  let es := match Members.errors .s213 base with
+    | .ok es => es
+    | .error _ => [{ cls := "C", kind := .conflicting }]
+  if es.any (·.kind != .needsAbstract) then failure
+  let c := { c0 with abs := es.any (·.kind == .needsAbstract) }
   let f : Mem := { name := "f", params := [.int], res := .int }
   let cSrc : Src := match o with
     | .comp => { name := "C", cls := some c, obj := some { name := "C", kind := .obj, members := [f] } }

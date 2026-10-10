@@ -143,6 +143,7 @@ For track B, three cases are candidate MiMa false negatives:
   - value classes: extension methods, erased signatures.
 - [x] **S2. Scala 3 deltas.** Trait initialisers including F6 (separate compilation), `@static`, extension methods, `Serializable` objects. Enums and `inline`: TODO.
 - [x] **S3. Calibrate against scalac's own classfiles** (`probes/scala/probe.py`). Agreement below.
+- [x] **S5. Membership and overriding** (`Scala/Members.lean`): refchecks as a `Task`, calibrated on 4704 hierarchies including rejected ones; Java's rules written down for track V.
 - [x] **S4. Shared `AsSeenFrom`** (`Scala/AsSeenFrom.lean`), used by `Scala/Lower.lean` and, as an instance, by the TCK (retronym/scala-type-system-tck, branch `claude/shared-asf`). `Zinc/Hier` later.
 - [x] **Source-level edit catalogue** (`Scala/Catalogue.lean`), the bridge to B3.
 
@@ -171,6 +172,20 @@ For track B, three cases are candidate MiMa false negatives:
 - `Zinc/Hier` and `Zinc/Erasure`: not touched (other sessions own `Zinc/`); they can move to the shared map in the later single-writer port.
 
 **Out of scope:** existential capture of unstable prefixes, refinement classes, `baseType` itself (an input, as in the TCK).
+
+#### S5 design: membership and overriding
+
+**Problem.** Lowering resolves a member to the first concrete one in its signature group, and the probe's spaces avoid illegal programs with an ad hoc filter. Neither says which programs Scala accepts, or which member a selection runs. Java's rules (JLS 8.4.8) differ, and B3 needs both languages' verdicts on source edits.
+
+**Membership is refchecks, as a `Task`.** For a class `C` over its interfaces (`lin`, `sigGroups`, `memberType`), the verdict is either the compile errors scalac or dotc reports for `C`, or, per signature, the member a selection on `C` runs. The checks are scalac's `RefChecks.checkAllOverrides`, stated per *overriding pair* `(member, other)`:
+- both are in `C`'s base classes, `member`'s owner precedes `other`'s, and their types match as seen from `C`;
+- a pair is checked in the class where it first meets: it is skipped when some parent of `C` already has both owners as base classes.
+
+Per pair: `other` final; `member` private; a concrete `other` without `override` (in `C`: "needs `override`"; inherited: "inherits conflicting members"); `override` on a trait member that overrides a concrete member of a class it doesn't extend, with no third member overridden by both ("accidental override"); `def` over `val`; lazy against strict; result type conformance. Per class: `override` that overrides nothing, and an abstract member left in a concrete class. A concrete member is never overridden by an abstract one (concrete over deferred).
+
+**Calibration.** A space of small hierarchies (`T`, `U`, `B`, `C`) where each owner's `m` ranges over: none, abstract, concrete, `override`, `final`, `val`, `lazy val`, private. The probe compiles them in one batch per compiler, maps each error to its program, class and kind, and compares sets. scalac stops before refchecks when an earlier phase reports an error (dotc rejects `override private` in the namer). So the probe recompiles without the programs that already erred until a run is clean, and the model reports only the errors of the earliest phase. For accepted programs, a `main` calls `m` on each concrete class and prints which owner's body ran.
+
+**Java.** Not implemented (track V); a comparison of the rules goes in this section as the spec to diff `Java/` against.
 
 #### S status
 
@@ -218,8 +233,34 @@ Witnesses by kernel `decide` in `Scala/Facts.lean` (`memberType` through two par
 
 Recommendation: keep the vendored copy until this branch reaches `master`, then switch to the package.
 
+**S5 status: membership and overriding** (`Scala/Members.lean`, `probes/scala/members.py`). Refchecks as a `Task` over interfaces, on the shared `asSeenFrom`. The space is 4704 hierarchies (`T`, `U`, `B`, `C`, each declaring `m` one of eleven ways; 3932 rejected by Scala 2, 4032 by Scala 3). Errors are compared per class and kind; for accepted programs a `main` checks which owner's `m` runs.
+
+| compiler | agree | accepted |
+|---|---|---|
+| 2.12.21 | 4700/4704 | 772 |
+| 2.13.18 | 4700/4704 | 772 |
+| 3.9.0 | 4704/4704 | 672 |
+
+The rules the probe forced, beyond the textbook ("concrete over abstract; `override` required for concrete; conflicting members"):
+- **One error per member.** `checkOverride` stops at the first failing check of a member's first failing pair. The order is access, `final`, missing `override`, accidental override, `def` over `val`, lazy against strict, result type.
+- **Which pairs.** The lower member of a pair is a member no earlier non-private concrete member overrides. A pair that a parent has was checked there; **2.13 checks it again** in the subclass (2.12 and 3 don't), so 2.13 reports a parent's error once more on each subclass.
+- **Private.** A private member isn't inherited and implements nothing. Scala 2 stops at it; Scala 3 also checks the inherited member it fails to hide. `override private` is a refchecks error in Scala 2 ("weaker access"), and an earlier-phase error in Scala 3 that hides every other program's refchecks errors in the run. The probe recompiles in rounds for that reason.
+- **Accidental override needs a real override.** An inherited `override` member that overrides nothing in its own class is reported as "inherits conflicting members"; only one that does override something gets the "third member" message.
+- **Re-abstraction.** An abstract member of a *class* that extends the concrete member's owner makes it abstract again ("needs to be abstract"); one in a *trait* does not. Scala 2 forms no pair from an abstract member over a concrete one; Scala 3 does when it re-abstracts (so `final`, `def` over `val`, and so on are checked there).
+
+**A scalac 2 bug found by the runtime check.** `trait T { val m = "T" }; abstract class B extends T { def m: String }; class C extends B with T { override val m = "C" }` compiles with 2.12.21 and 2.13.18, and `new C` throws `AbstractMethodError`: `T.$init$` calls `T$_setter_$m_$eq`, which `C` does not implement (`B`'s abstract `def` hid the trait field from the mixin phase). Scala 3 runs it. Four programs of the space; the nearest report is scala/bug#12456 (a Java abstract class in the middle). Not filed.
+
+**Java (JLS 8.4.8), the spec for `Java/`.** Where Java's rules differ from the above:
+- **Order.** Java has no linearization. A class method (inherited or declared) always beats an interface default. Among interfaces, the maximally specific default wins; two unrelated defaults are a compile error unless the class declares the method. Scala decides by linearization, with concrete over abstract.
+- **Same member.** Override-equivalence is by subsignature: same signature, or one equal to the erasure of the other, so a raw method overrides a generic one. Two methods with the same erasure and no override relation clash. Scala matches by `memberType` and uses erasure only for bridges.
+- **No `override` keyword.** `@Override` is optional; nothing like "needs `override`", "conflicting members" or the third-member rule. A class inheriting a concrete method from its superclass and an abstract one from an interface is fine (the class method implements it); in Scala the same shape needs no keyword either, but a concrete *trait* method against a class method is a conflict.
+- **Access and statics.** A package-private method is not overridden from another package: the subclass's method is a new one, and the JVM's selection follows the same rule (track J, J3). Static methods hide, they don't override; an instance method can't override a static one or the reverse. Narrowing access is an error in both languages.
+- **Abstract over concrete.** Java allows an abstract class to redeclare an inherited concrete method `abstract` (re-abstraction), like a Scala class, and an interface can redeclare a default abstract.
+- **Return types and exceptions.** Covariant returns in both; Java also checks `throws` clauses.
+
 **TODO (future work)**
 - Enums. Observed (3.9.0): `enum Color { case Red, Green }` is an abstract class implementing `scala.reflect.Enum` with forwarders for `scala.Product`'s methods and static `values`/`valueOf`/`fromOrdinal`; the cases are public static final fields of `Color$` without accessors or static forwarders; simple cases are instances of one anonymous class. Needs library traits (`Product`, `Mirror`) in the environment.
+- Membership: type members, `var`, `protected` and qualified access, `abstract override`, objects as overriders; a probe of the Java rules once `Java/` exists.
 - Case classes, constructor parameters (and `Jvm` constructor sites), default getters, `lazy val` implementation in classes, `var`, overloading in general, nested classes (the shared `asSeenFrom` already handles owner chains; the Scala layer's classes are top-level), Java-defined parents.
 - Check the catalogue against MiMa and HotSpot for every case (B3), and add a client-space enumeration over source edits.
 - Lowering as an `NCompiler` instance, for B4; after the framework merge (review finding 1).

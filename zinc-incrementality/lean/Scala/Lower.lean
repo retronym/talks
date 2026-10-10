@@ -93,8 +93,17 @@ def fuel : ℕ := 8
 /-- A member as seen from the class: its owner, the owner's type argument, the member. -/
 abbrev Hit := Anc × Mem
 
+/-- The members named `n` along the linearization `l` of a class (the class first). A private
+member is not inherited: only the class's own private members are seen. -/
 def hits (l : List Anc) (n : String) : List Hit :=
-  l.filterMap fun (d, a) => (d.members.find? (·.name == n)).map fun m => ((d, a), m)
+  let self := (l.head?.map (·.1.name)).getD ""
+  l.filterMap fun (d, a) => ((d.members.find? (·.name == n)).filter fun m => !m.priv || d.name == self).map
+    fun m => ((d, a), m)
+
+/-- The inherited members named `n`. -/
+def hitsAbove (l : List Anc) (n : String) : List Hit :=
+  let self := (l.head?.map (·.1.name)).getD ""
+  (hits l n).filter (·.1.1.name != self)
 
 /-- `C.this.memberType(m)`'s parameter types, for a member `m` of base class `owner` of `C`. -/
 def paramsSeen (self : String) (l : List Anc) (h : Hit) : List Ty :=
@@ -426,7 +435,7 @@ def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String
   -- the linearization is concrete: dotc looks members up by signature, and skips deferred ones.
   if dl == .s3 then
     for b in o.methods.filter (·.bridge) do
-      let sameSig ← (hits l.tail b.name).filterM fun (_, m) => do pure ((← m.desc) == b.desc)
+      let sameSig ← (hitsAbove l b.name).filterM fun (_, m) => do pure ((← m.desc) == b.desc)
       let concrete := match sameSig with
         | (_, m) :: _ => !m.abs
         | [] => false
