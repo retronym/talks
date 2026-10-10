@@ -159,6 +159,19 @@ For track B, three cases are candidate MiMa false negatives:
 **Out of scope** for S1–S3: method bodies and their call sites in user code, overloading, nested and local classes, inner-class attributes and generic `Signature` attributes, how a class implements a `lazy val`, `var`, `private[this]` and qualified access, specialization, case classes (catalogue only), Java-defined parents, Scala 3 `inline`, opaque types and given instances. Type checking is limited to what the space needs to stay well-typed (abstract members implemented, conflicting inherited members overridden).
 
 
+#### S4 design
+
+**Problem.** Three copies of "a member's type as seen from a prefix" exist: the TCK's (`scala-type-system-tck/lean/AsSeenFrom`: this-types along owner chains, against IntelliJ's substitutor chain), `Zinc/Hier.lean` and `Zinc/Erasure.lean` (type arguments along parents, private toys), and `Scala/Lower.lean` (an ad hoc `Ty.subst` in `lin`). They answer one question and can't be compared.
+
+**One map, generic in the type language.** `Scala/AsSeenFrom.lean` defines scalac's `asSeenFrom(pre, clazz)` once, over any type language with substitutable *leaves*: this-types `D.this` and class type parameters `D#i`, each anchored at a class given as its owner path. A type language provides `leaf`, `bind` (substitute every leaf) and `leaves`, with the monad laws; `asf pre c t` is `bind t` of the anchored walk (`thisTypeAsSeen` and `classParameterAsSeen` are one walk with two outcomes). The environment is the TCK's `World` plus `bargs` (a base type's arguments). The composition law and "a chain is one `asSeenFrom`" are proved once, from lockstep (the map commutes with `bpre`, `hasBase`, `bargs`). The file imports only Lean core, so a project without Mathlib can use it.
+
+**Consumers.**
+- `Scala/Lower.lean`: base types along the linearization become `asf` of the parent's arguments (scalac's `baseType`), and bridges pair an override with an overridden member only when their types match as seen from the class (`memberType`). The probe must still agree with scalac.
+- The TCK: its `Ty` is an instance (this-leaves only, no class parameters), and its `Scalac.asf` is proved equal to the shared map, so its `Chain` theorems follow from the shared ones. How the TCK depends on the file (vendored copy, or a Mathlib-free lake package in this repo that it `require`s by `subDir`) is a decision for Jason, prototyped below.
+- `Zinc/Hier` and `Zinc/Erasure`: not touched (other sessions own `Zinc/`); they can move to the shared map in the later single-writer port.
+
+**Out of scope:** existential capture of unstable prefixes, refinement classes, `baseType` itself (an input, as in the TCK).
+
 #### S status
 
 **Calibration.** `python3 probes/scala/probe.py OUT` (about a minute). Every program agrees with scalac on header, fields, methods with their flags, and the invokes of synthesized bodies:
