@@ -9,7 +9,8 @@ member is identified by its name.
 
 namespace Scala
 
-inductive Dialect | s213 | s3
+/-- scalac 2.12, 2.13, and Scala 3. -/
+inductive Dialect | s212 | s213 | s3
   deriving DecidableEq, Repr
 
 /-- Types: base types, a definition's own type parameter `X`, another definition by name. -/

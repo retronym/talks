@@ -152,9 +152,25 @@ def traitCompanionSpace : List Program :=
     [{ name := "T", cls := some { name := "T", kind := .trt, members := [mem "m" .int !conc] },
        obj := some { name := "T", kind := .obj, members := [{ name := "f", params := [.int], res := .int }] } }]
 
+/-! ## `final` members and fields of classes and objects -/
+
+def miscSpace : List Program :=
+  let fm : Mem := { name := "m", res := .int, final := true }
+  let k (n : String) : Mem := { name := n, res := .int, isVal := true }
+  let fobj : Mem := { name := "f", params := [.int], res := .int, final := true }
+  [ [{ name := "T", cls := some { name := "T", kind := .trt, members := [fm] } },
+     { name := "C", cls := some { name := "C", traits := [("T", none)] } }],
+    [{ name := "B", cls := some { name := "B", members := [fm] } },
+     { name := "C", cls := some { name := "C", super := some ("B", none) } }],
+    [{ name := "C", cls := some { name := "C", members := [k "k"] },
+       obj := some { name := "C", kind := .obj, members := [k "k2", fobj] } },
+     { name := "O", obj := some { name := "O", kind := .obj, members := [k "k", fobj] } }],
+    [{ name := "T", cls := some { name := "T", kind := .trt, members := [fm, k "v"] } },
+     { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", none)] } }] ]
+
 def space : List (String × Program) :=
   (mixinSpace.map ("mixin", ·)) ++ (genericSpace.map ("generic", ·)) ++ (vclsSpace.map ("vcls", ·)) ++
-    (traitCompanionSpace.map ("tcomp", ·))
+    (traitCompanionSpace.map ("tcomp", ·)) ++ (miscSpace.map ("misc", ·))
 
 /-! ## Dumping classfiles in the probe's format -/
 

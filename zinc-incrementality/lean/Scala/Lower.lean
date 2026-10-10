@@ -15,7 +15,7 @@ access, `ACC_BRIDGE`, and the invoke instructions of synthesized bodies (forward
 `$init$` calls). Those are compared with scalac's classfiles by the calibration probe
 (`probes/scala`).
 
-The rules are scalac 2.13's; where Scala 3 differs, the code branches on `Dialect` and says so.
+The rules are scalac 2.13's; where 2.12 or Scala 3 differs, the code branches on `Dialect` and says so.
 -/
 
 namespace Scala
@@ -174,7 +174,7 @@ def setterName (t : String) (v : String) : String := s!"{t}$_setter_${v}_$eq"
 or a field to initialise; here, a concrete `val`. -/
 def hasInit (dl : Dialect) (t : Decl) : Bool :=
   match dl with
-  | .s213 => t.members.any (!·.abs)
+  | .s212 | .s213 => t.members.any (!·.abs)
   | .s3 => t.members.any fun m => m.isVal && !m.abs
 
 /-- The classfile's interfaces: the direct trait parents, minus those another direct parent
@@ -210,15 +210,16 @@ def bridges (self : String) (l : List Anc) (sup : List Anc) (ms : List MOut) :
   pure out
 
 /-- Members of a class, object or value class body: its own members and, for each trait it mixes
-in, forwarders to the trait's concrete methods and implementations of the trait's fields. -/
-def classBody (d : Decl) (isObj : Bool) (l : List Anc) :
+in, forwarders to the trait's concrete methods and implementations of the trait's fields. Fields of an
+object are static from 2.13 on; a trait's field implemented in a class is final in 2.12 only. -/
+def classBody (dl : Dialect) (d : Decl) (isObj : Bool) (l : List Anc) :
     M (List MOut × List FOut × List Anc) := do
   let mut ms : List MOut := []
   let mut fs : List FOut := []
   for m in d.members do
     let e ← m.desc
     if m.isVal && !m.abs then
-      fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj, final := true }]
+      fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := true }]
     ms := addM ms { name := m.name, desc := e, abs := m.abs, final := m.final }
   let mx ← mixins d l
   for (t, _) in mx do
@@ -227,13 +228,13 @@ def classBody (d : Decl) (isObj : Bool) (l : List Anc) :
       if o.name != t.name || w.abs then continue
       let e ← m.desc
       if m.isVal then
-        fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj }]
+        fs := fs ++ [{ name := m.name, desc := ← erase m.res, static := isObj && dl != .s212, final := dl == .s212 }]
         ms := addM ms { name := m.name, desc := e }
         ms := addM ms { name := setterName t.name m.name, desc := s!"({← erase m.res})V" }
       else
         let sd ← descOf [jname t.name] m.params m.res
         let call : Insn := ⟨"invokestatic", t.name, m.name ++ "$", sd⟩
-        ms := addM ms { name := m.name, desc := e, calls := some [call] }
+        ms := addM ms { name := m.name, desc := e, final := m.final, calls := some [call] }
   pure (ms, fs, mx)
 
 /-- The `$init$` calls of a constructor: the mixed-in traits, base first. -/
@@ -266,7 +267,7 @@ def superLin (d : Decl) : M (List Anc) := do
 
 def lowerClass (dl : Dialect) (d : Decl) : M ClassOut := do
   let l ← lin fuel d none
-  let (ms, fs, mx) ← classBody d false l
+  let (ms, fs, mx) ← classBody dl d false l
   let ctor : MOut := { name := ctorName, desc := "()V", calls := some (initCalls dl mx) }
   let ms ← bridges d.name l (← superLin d) (ms ++ [ctor])
   pure { name := d.name, abs := d.abs, final := d.final, super := d.super.map (·.1),
@@ -308,27 +309,29 @@ def extensions (d : Decl) : M (List MOut) := do
 def lowerObject (dl : Dialect) (d : Decl) (vc : Option Decl) : M ClassOut := do
   let self := moduleName d.name
   let l ← lin fuel d none
-  let (ms, fs, mx) ← classBody d true l
+  let (ms, fs, mx) ← classBody dl d true l
   let ms ← bridges self l (← superLin d) ms
   let ms := ms ++ (← match vc with | some v => extensions v | none => pure [])
   let extra : List MOut :=
-    [{ name := ctorName, desc := "()V", priv := true, calls := some [] },
-     { name := "<clinit>", desc := "()V", static := true, calls := some (initCalls dl mx) }] ++
+    -- 2.12 initialises an object in its constructor, later versions in its static initialiser
+    let inits := initCalls dl mx
+    [{ name := ctorName, desc := "()V", priv := true, calls := some (if dl == .s212 then inits else []) },
+     { name := "<clinit>", desc := "()V", static := true, calls := some (if dl == .s212 then [] else inits) }] ++
     (if dl == .s3 then [{ name := "writeReplace", desc := "()Ljava/lang/Object;", priv := true }] else [])
   -- Scala 3 objects are serializable.
   let ser := if dl == .s3 then ["java/io/Serializable"] else []
   pure { name := self, final := true, super := d.super.map (·.1), ifaces := (← ifacesOf d) ++ ser,
          methods := ms ++ extra,
-         fields := [{ name := "MODULE$", desc := jname self, static := true, final := true, priv := false }] ++ fs }
+         fields := [{ name := "MODULE$", desc := jname self, static := true, final := dl != .s212, priv := false }] ++ fs }
 
 /-- Static forwarders in the companion class (or a mirror class) for the object's public methods,
-its own and inherited, except those whose name the companion class also has. Scala 2.13 skips
+its own and inherited, except those whose name the companion class also has. Scala 2 skips
 trait setters and bridges; Scala 3 forwards setters, and some bridges. -/
 def forwarders (dl : Dialect) (od : Decl) (o : ClassOut) (clsNames : List String) : M (List MOut) := do
   let l ← lin fuel od none
   let mut cands := o.methods.filter fun m =>
     !m.static && !m.priv && !m.abs && !m.bridge && m.name != ctorName &&
-    !(dl == .s213 && (m.name.splitOn "$_setter_$").length > 1)
+    !(dl != .s3 && (m.name.splitOn "$_setter_$").length > 1)
   -- Scala 3 forwards a bridge too, when the member of that erased signature found first along
   -- the linearization is concrete: dotc looks members up by signature, and skips deferred ones.
   if dl == .s3 then

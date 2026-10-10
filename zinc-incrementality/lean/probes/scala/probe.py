@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Calibrate Scala/Lower.lean against scalac.
 
-    probe.py OUT [--scala2 2.13.18] [--scala3 3.9.0]
+    probe.py OUT [--scala212 2.12.21] [--scala2 2.13.18] [--scala3 3.9.0]
 
 Runs `lake exe scalaprobe OUT` (sources and the model's classfiles), compiles OUT/src with scalac
-2.13 and 3 via scala-cli, reads the classfiles, and diffs them against the model. Writes
+2.12, 2.13 and 3 via scala-cli, reads the classfiles, and diffs them against the model. Writes
 OUT/report-<dialect>.txt with every divergence grouped by shape, and prints the agreement counts.
 
 The comparison: class header (interface/abstract/final, superclass, interfaces), fields and
 methods by name and descriptor with access (public/private), static, final, abstract and
 ACC_BRIDGE, and, for methods whose body the model synthesizes, the invoke/getstatic instructions
-on classes outside java/ and scala/ (for a constructor, only `$init$` calls). Package prefixes
+on classes outside java/ and scala/ (for a constructor or static initialiser, only `$init$` calls). Package prefixes
 are stripped.
 """
 import os, re, struct, subprocess, sys
@@ -199,15 +199,17 @@ def diff(exp, act, fam):
 def main():
     args = sys.argv[1:]
     out = os.path.abspath(args[0] if args else 'out')
-    versions = {'2.13': '2.13.18', '3': '3.9.0'}
+    # run tag -> (scalac version, the model's dialect)
+    versions = {'2.12': ('2.12.21', '2.12'), '2.13': ('2.13.18', '2.13'), '3': ('3.9.0', '3')}
     for i, a in enumerate(args):
-        if a == '--scala2': versions['2.13'] = args[i + 1]
-        if a == '--scala3': versions['3'] = args[i + 1]
+        if a == '--scala212': versions['2.12'] = (args[i + 1], '2.12')
+        if a == '--scala2': versions['2.13'] = (args[i + 1], '2.13')
+        if a == '--scala3': versions['3'] = (args[i + 1], '3')
     subprocess.run(['lake', 'exe', 'scalaprobe', out], cwd=LEAN, check=True)
     fam = dict(l.split('\t') for l in open(os.path.join(out, 'index.txt')).read().split('\n') if l)
-    for tag, version in versions.items():
+    for tag, (version, dialect) in versions.items():
         dest = compile_all(out, version, tag)
-        exp = read_expected(os.path.join(out, f'expected-{tag}.txt'))
+        exp = read_expected(os.path.join(out, f'expected-{dialect}.txt'))
         act = actual(dest)
         by_prog = diff(exp, act, fam)
         groups = defaultdict(list)
