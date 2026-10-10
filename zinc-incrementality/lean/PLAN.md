@@ -457,3 +457,7 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 21 — derived API, export forwarders and used types' supertypes: see `PLAN-derived.md`
 
 ## Phase 22 — Scala 3 macro dependencies: see `PLAN-macros.md`
+
+## Phase 23 — the extraHash lineage and the companion namespace: see `PLAN-extrahash.md`
+
+## Phase 24 — member selection through extensions: see `PLAN-extensions.md`

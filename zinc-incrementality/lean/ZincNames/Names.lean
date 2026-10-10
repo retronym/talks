@@ -214,10 +214,16 @@ structure Rules where
 declarations only, so without composition it never appears (`NamesSpec.decls_violates_abstraction`). -/
 def Rules.seesInherited (r : Rules) : Bool := r.api != .decls
 
-/-- Does a package-scoped rule, for a binding changed in slot `s`'s package, reach the client? The
-enclosing packages always; package `a.q` only through the wildcard import, when recorded. -/
+/-- Does a package-scoped rule, for a binding changed in slot `s`'s package, reach the client? A
+class sees its own package, and the packages its source records as `p._`: a wildcard import of the
+package (when the bridge records it, `imports`), and the outer clause of a chained package clause
+(`package a; package b` records `a._`; `package a.b` records nothing), which is exactly the
+packages the lookup searches (retronym/zinc#47's `sees`). -/
 def Rules.reachesClient (r : Rules) (c : Client) (s : Slot) : Bool :=
-  r.reach == .global || s != .wpkg || r.imports
+  r.reach == .global || match s with
+    | .wpkg => r.imports
+    | .outer => c.pkg != .flat
+    | _ => true
 
 /-- Which extractor or invalidation rule. -/
 inductive Mode

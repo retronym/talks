@@ -158,10 +158,13 @@ def implicitPkgs (rs : Rules) (v : Ver) (p p' : Prog) : List Where :=
     if s == .pobj && p.cl.pinh && !rs.seesInherited then none else s.where?
 
 /-- Does the G rule, for an implicit changed in package `w`, reach a class of package clause `c`
-that imports `a.q` (`wpkg`)? Global: every class. Narrowed: the classes of `w` and of the packages
-nested in it, and those that record a wildcard import of `w` (with `imports`). -/
-def reachesG (rs : Rules) (c : Pkg) (wpkg : Bool) : Where → Bool
-  | .a => true
+that imports `a.q` (`wpkg`) and refers to `a.T` (`refsT`)? Global: every class. Narrowed
+(retronym/zinc#47): the classes that see `w` (of `w` itself, or whose source records `w._`: a
+wildcard import when recorded, the outer clause of a chained clause), and in Scala 2 the classes that
+refer to a type under `w`, since Scala 2's implicit scope includes the package objects of a type's
+prefix (`companionImplicitMap`; dropped by Scala 3). -/
+def reachesG (rs : Rules) (v : Ver) (c : Pkg) (wpkg refsT : Bool) : Where → Bool
+  | .a => rs.reach == .global || c != .flat || (v == .s2 && refsT)
   | .ab => rs.reach == .global || c != .top
   | .aq => rs.reach == .global || (rs.imports && wpkg)
 
@@ -173,7 +176,7 @@ def recompiles (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Bool :=
     let rs := m.toRules
     (changed v p p').any (invalidates v p (resolve v p)) ||
       (rs.cheap && (addedClasses v p p').any clientUses) ||
-      (rs.g && (implicitPkgs rs v p p').any (reachesG rs p.cl.pkg p.cl.wpkg))
+      (rs.g && (implicitPkgs rs v p p').any (reachesG rs v p.cl.pkg p.cl.wpkg true))
 
 /-- Scala 3 compiles a class that extends a trait whose members are all lazy (a given alias is a
 lazy val) differently alone than with the trait: read from TASTy, the trait has no initialiser, and
@@ -299,7 +302,7 @@ def bystanders (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : Bool × Bool × B
   | m =>
     let rs := m.toRules
     let ws := if rs.g then implicitPkgs rs v p p' else []
-    (ws.any (reachesG rs .flat false), ws.any (reachesG rs .top false),
+    (ws.any (reachesG rs v .flat false false), ws.any (reachesG rs v .top false false),
       rs.reach == .global && !ws.isEmpty)
 
 structure Cost where
