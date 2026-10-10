@@ -482,4 +482,4 @@ Extending #34 to the remaining families:
 
 ## Phase 12 — Java in mixed builds, name resolution and sealed hierarchies: see `PLAN-java.md`
 
-## Phase 13 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`
+## Phase 14 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`

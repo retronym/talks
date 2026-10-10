@@ -198,6 +198,105 @@ theorem early_view (t : JavaSpec.T Pkg N (Out Pkg N)) (up : CU Pkg N → Src Pkg
 
 end Zinc.JavaOrder
 
+/-! ## Zinc's exclusion of passed-in Java classes (pipelining)
+
+Under pipelining Zinc hands every Java source to every scalac cycle (`nextChangedSources`), and the
+API it computes for a Java class there is the bridge's, from the source view; the API it stored
+after the last run is `ClassToAPI`'s, from javac's classfile. The two are different
+representations, so comparing them would report a change for every passed-in class. Zinc therefore
+drops from API change detection the passed-in Java classes it did not otherwise schedule
+(`IncrementalCommon`: `unchangedJavaClasses = pipelinedJavaSources.flatMap(classNames) --
+classesToRecompile`).
+
+**Soundness** (`exclusion_exact`): a unit recompiled in a round although none of its recorded keys
+changed recompiles to the output it had. Whatever representation the fresh hash is in, there is no
+change to report, so dropping it hides nothing. The argument is T2's (abstraction on the keys, then
+trace soundness, then `comp`), for a unit inside the round instead of outside it; it needs the
+obligations, and so, for a Java class read by Scala units, view agreement (V1). The exclusion is
+exact only because Zinc subtracts `classesToRecompile`: a class it did invalidate keeps its
+comparison.
+
+**Precision** (`flip_spurious`): the comparison that remains, for an edited or invalidated Java
+class, is between the stored classfile-view hash and the fresh source-view hash. When the two
+representations never coincide (Zinc's comment: "never equals the one from scalac"), every such
+class reports an API change, also for an edit that changes neither view (a comment), so its
+dependents are invalidated: Java dependents always (no name filter), Scala dependents on the names
+whose hashes differ. Without pipelining both hashes are `ClassToAPI`'s and the edit invalidates
+nothing.
+
+**The two consistent-view policies** (`abstraction_single_view`, `abstraction_both_views`): hashing
+a Java class from one view only (scalac's, `-Ypickle-java` in every order; or javac's, deferring
+change detection for Java until after javac) makes the comparison meaningful, and the exclusion
+unnecessary, but each hash determines the answers of its own view only: a Scala reader of the
+source view behind a classfile hash, or a javac reader of the classfile behind a source hash, is
+covered only under view agreement. A key per view (hash both) meets abstraction for both readers
+without it. Costs: scalac's view needs scalac to parse every Java source of the round in every
+order (`JavaThenScala` does not today); javac's view needs javac's output before change detection,
+so pipelining's cycles would wait for javac, which is what pipelining avoids; both views need both.
+-/
+
+namespace Zinc.TCompiler
+
+open Compiler (State)
+
+variable {CUnit Src Out Iface K Hash Q : Type} {A : Q → Type}
+variable (C : TCompiler CUnit Src Out Iface K Hash Q A) [DecidableEq CUnit]
+
+/-- **The exclusion is exact.** A unit `u` in the round `R` whose recorded keys (before the round)
+all keep their hashes recompiles to its previous output. -/
+theorem exclusion_exact (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
+    (s : State CUnit Out K) (D R : Finset CUnit) (hInv : C.Inv S src s D) (u : CUnit)
+    (huS : u ∈ S) (huD : u ∉ D) (huR : u ∈ R)
+    (hkeys : ∀ p ∈ s.U u, p.1 ∈ R →
+      C.π (C.iface (s.out p.1)) p.2 = C.π (C.iface ((C.round src R s).out p.1)) p.2) :
+    (C.round src R s).out u = s.out u := by
+  set s' := C.round src R s with hs'
+  obtain ⟨hout, hcov⟩ := hInv u huS huD
+  have hagree : ∀ q ∈ (C.unit (src u)).trace (C.env s), C.env s q = C.env s' q := by
+    intro q hq
+    obtain ⟨k, hk, hqk, hcovers⟩ := hcov q hq
+    simp only [env, envOf, Function.comp]
+    by_cases hqR : q.1 ∈ R
+    · have := hkeys k hk (hqk ▸ hqR)
+      rw [← hqk] at this
+      exact ob.abstraction _ _ k.2 this q.2 hcovers
+    · have : s'.out q.1 = s.out q.1 := by simp only [hs', round, hqR, ite_false]
+      rw [this]
+  have hrun := (Task.run_eq_of_trace _ _ _ hagree).1
+  have h2 : s'.out u = C.group R src (C.env s) u := by simp only [hs', round, huR, ite_true]
+  rw [h2, ob.comp R src (C.env s) u huR, ← env_round, ← hs', hout, hrun]
+
+end Zinc.TCompiler
+
+namespace Zinc.JavaOrder
+
+/-- **The flip is spurious.** The stored hash of a Java class is `ClassToAPI`'s (`hc`, from the
+classfile) and the fresh one in a pipelined cycle is the bridge's (`hs`, from the source); if the
+two never coincide, an edit that keeps both views (here: the class unchanged) still reports a
+change. -/
+theorem flip_spurious {Iv H : Type} (hc hs : Iv → H) (hne : ∀ i, hc i ≠ hs i) (sv cv : Iv)
+    (hagree : sv = cv) : hc cv ≠ hs sv := by
+  rw [hagree]; exact hne cv
+
+variable {Pkg N : Type} [DecidableEq N]
+
+/-- **One view's hash covers one view's readers.** Equal classfile views give equal classfile
+answers, but not equal source-view answers unless the views agree. -/
+theorem abstraction_single_view :
+    (∀ (sv cv sv' cv' : List N), cv = cv' → ∀ q : JavaSpec.Q N,
+      JavaSpec.answer (some cv) q = JavaSpec.answer (some cv') q) ∧
+    (∀ (sv cv sv' cv' : List N), sv = cv → sv' = cv' → cv = cv' → ∀ q : JavaSpec.Q N,
+      JavaSpec.answer (some sv) q = JavaSpec.answer (some sv') q) := by
+  refine ⟨fun _ _ _ _ h _ => by rw [h], fun _ _ _ _ h1 h2 h3 _ => by rw [h1, h2, h3]⟩
+
+/-- A key per view (the pair hashed) determines both readers' answers. -/
+theorem abstraction_both_views (sv cv sv' cv' : List N) (h : (sv, cv) = (sv', cv')) (q : JavaSpec.Q N) :
+    JavaSpec.answer (some sv) q = JavaSpec.answer (some sv') q ∧
+      JavaSpec.answer (some cv) q = JavaSpec.answer (some cv') q := by
+  cases h; exact ⟨rfl, rfl⟩
+
+end Zinc.JavaOrder
+
 /-! Witnesses in packages `a.b` (0), `a.q` (1), `java.lang` (2), names `Foo` (0), `Bar` (1). The
 Java class `a.q.Bar` (unit `(1, 1)`) has a member `Foo` in its classfile view and not in its source
 view; the client `a.b.C` (unit `(0, 1)`) imports `a.q.Bar.Foo` statically and finds `a.b.Foo`
@@ -235,6 +334,13 @@ theorem mixed_not_comp :
 
 /-- A Java client in the same round reads the classfile in both builds: no difference. -/
 example : (group (2 : P) .mixed G (prog false) e0 (0, 1)).res = .ok (.mem (1, 1) 0) := by decide
+
+/-- A classfile hash does not determine the source view: two versions of `a.q.Bar` with the same
+classfile view and different source views. -/
+theorem single_view_not_abstraction :
+    JavaSpec.answer (srcIface (JavaOrder.Src.java [] [0] : JavaOrder.Src P Nm)) (.member 0) ≠
+      JavaSpec.answer (srcIface (JavaOrder.Src.java [0] [0] : JavaOrder.Src P Nm)) (.member 0) := by
+  decide
 
 /-- **V2, pipelining's early output**: a downstream client compiled against `a.q.Bar`'s pickle
 (source view) and one compiled against its classfile resolve differently. -/
