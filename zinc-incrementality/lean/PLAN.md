@@ -22,8 +22,11 @@ Enumerations over bounded program spaces (`native_decide`) and the Zinc conforma
 | 12 | Java in mixed builds (`PLAN-java.md`) | `JavaSpec`: `obligations_fix`, `fix_sound`, witnesses J1–J4; `JavaSealedSpec` | `JavaNames`, `JavaSealed`; the harness |
 | 13 | The split layout (`PLAN-split.md`) | `SplitProof`: `proposed_sound`, `cheap_sound_of_local`; `Spec`: `today_not_obligations`, `cheap_not_obligations`, `cross_obligations`, `cross_downstream_sound` (T5) | `Split.check_*` (the slot language matches the concrete model on the bases); the harness |
 | 14 | Compile order and pipelining (`PLAN-order.md`) | `JavaOrder`: `obligations_mixed`, `mixed_sound`, `exclusion_exact`, `flip_spurious`; witnesses V1, V2, O1, O2 | none needed so far |
+| 15 | Inferred types in a cycle (`PLAN-cycles.md`, talks#31) | `Cycles`: `obligations`; `zinc_ne_clean` (Zinc stops at a per-unit fixed point that is not the clean build, C1, C2), `two_fixpoints`; `annotated_eq_clean` (T3 with every member annotated) | sbt/zinc#1284's and #1780's rules on Zinc's real loop; the harness (36 edits) |
 
 Phases 4 and 5 are design notes; their results are in phases 6 to 8.
+
+Against Zinc's bug tracker (`BUG-MAP.md`): of 145 catalogued bugs, 18 are covered by an instance, 42 partially, and 84 are gaps, which fall into 15 candidate phases. Had the instances existed, 14 would have been predicted before they were filed, and 29 partially. 17 pending and 3 disabled scripted tests are mapped the same way.
 
 Still stated as `theorem … := by native_decide`, to relabel as checks or prove (review item 16):
 - `Added` (3), `Inline` (1), `PingPong` (12), `Pipelining` (2), `Sealed` (2), `Snapshot` (2), `Stale` (2);
@@ -440,3 +443,15 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 13 — name resolution and givens across subprojects (the `split` layout): see `PLAN-split.md`
 
 ## Phase 14 — compile order and pipelining, a Java unit's two interfaces: see `PLAN-order.md`
+
+## Phase 15 — inferred types in a cycle, T3a without T3: see `PLAN-cycles.md`
+
+## Phase 16 — class-name agreement between the bridge and Zinc: see `PLAN-naming.md`
+
+## Phase 17 — hash stability across source, pickle and classfile forms: see `PLAN-hash.md`
+
+## Phase 18 — annotations as API and as dependencies: see `PLAN-annotations.md`
+
+## Phase 19 — pipelining's early-output lifecycle: see `PLAN-pipelining.md`
+
+## Phase 20 — constructors and synthetic case-class members: see `PLAN-synthetic.md`

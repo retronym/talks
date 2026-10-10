@@ -339,9 +339,13 @@ and its mirror as it was. Adding the member leaves a mirror with the signature (
 removing it leaves one without, and a client that now resolves `a.b.Foo` fails to compile
 (`not found: value Foo`) where a clean build succeeds. In this space only an inherited member
 reaches the removal (a declared one clashes in Scala 3, so no base has both), but a declared one
-fails the same way (probed with `scalac`). -/
-def staleMirror (v : Ver) (p p' : Prog) : Bool :=
-  v == .s2 && (p.st .pobj == .foo) != (p'.st .pobj == .foo) && p.st .inner == .foo && p'.st .inner == .foo
+fails the same way (probed with `scalac`). What decides the mirror is whether the package object
+has the member when `Inner.scala` is compiled, jointly or apart (probed): a rule that recompiles
+`a.b.Foo` after the edit (`fresh`, `innerRecompiled`) leaves it as a clean build does (seen on the
+harness with the F2 rule, which reaches `a.b.Foo` as a user of its own name). -/
+def staleMirror (v : Ver) (p p' : Prog) (fresh : Bool := false) : Bool :=
+  v == .s2 && !fresh && (p.st .pobj == .foo) != (p'.st .pobj == .foo) && p.st .inner == .foo &&
+    p'.st .inner == .foo
 
 /-- Scala 3 reports the clash of a class `a.b.Foo` with a member `Foo` of package `a.b`'s package
 object (or a top-level export) only when it compiles both files together. An edit changes one of
@@ -368,23 +372,38 @@ def heirInit (v : Ver) (p p' : Prog) : Bool :=
 /-- Scala 3 compiles `object a.b.Foo` jointly with `package object b extends a.PT`, where `PT` has an
 `object Foo`, into a `writeReplace` that serialises `a.PT$Foo$`, the inherited member, instead of
 `a.b.Foo$`; compiled apart, it is right (probed with `scala-cli`, 3.3). The incremental build keeps the
-base's `Foo$.class` unless the edit is to `Inner.scala`, which it then compiles alone. -/
-def staleModule (v : Ver) (p p' : Prog) : Bool :=
+base's `Foo$.class` unless it recompiles `Inner.scala`, alone: because the edit is to it, or because
+a rule reaches `a.b.Foo` (`fresh`). -/
+def staleModule (v : Ver) (p p' : Prog) (fresh : Bool := false) : Bool :=
   let wrong (q : Prog) := q.st .pobj == .foo && q.st .inner == .foo
-  let incWrong := p.st .inner == p'.st .inner && wrong p
+  let incWrong := !fresh && p.st .inner == p'.st .inner && wrong p
   v == .s3 && p.cl.pinh && incWrong != wrong p'
 
-/-- The divergences that are not about the client's resolution. -/
-def besideResolution (v : Ver) (p p' : Prog) : Bool :=
-  staleMirror v p p' || missedClash v p' ||
-    ((heirInit v p p' || staleModule v p p') && resolve v p' matches .ok _)
+/-- Does the mode recompile `a.b.Foo` (`Inner.scala`) after the edit? The F2 rule reaches it when
+the package object gains the name (it uses its own name, and is in `a.b`); `names` on any change.
+Not under Scala 2's class-name alias (`aliased`): there Zinc's `a.b.Foo` is the package object's
+member, and `Inner.scala` stays as it was (seen on the harness). -/
+def innerRecompiled (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
+  !aliased v p && match m with
+    | .names => !(changed p p').isEmpty
+    | .searched => false
+    | m => let rs := m.toRules; rs.f2 && pobjGains rs p p'
+
+/-- The divergences that are not about the client's resolution, under a mode. -/
+def beside (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
+  let f := innerRecompiled m v p p'
+  staleMirror v p p' f || missedClash v p' ||
+    ((heirInit v p p' || staleModule v p p' f) && resolve v p' matches .ok _)
+
+/-- The divergences that are not about the client's resolution, under Zinc today. -/
+def besideResolution (v : Ver) (p p' : Prog) : Bool := beside .today v p p'
 
 def verdict (m : Mode) (v : Ver) (p p' : Prog) : Verdict :=
   let r := resolve v p
   let r' := resolve v p'
   let rc := recompiles m v p p'
   let bytes := separateInit v p' rc && r' matches .ok _
-  ⟨r, r', rc, (rc || r == r') && !besideResolution v p p' && !bytes⟩
+  ⟨r, r', rc, (rc || r == r') && !beside m v p p' && !bytes⟩
 
 /-! ## The program space -/
 
@@ -541,7 +560,7 @@ example :
 /-- Is every edit of the space clean in both versions under a mode, but for the divergences beside
 the client's resolution (the stale mirror, the missed clash) and the trait initialiser? -/
 def cleanOn (m : Mode) : Bool := bases.all fun p => (edits p).all fun (_, p') =>
-  [Ver.s2, .s3].all fun v => (verdict m v p p').clean || besideResolution v p p' ||
+  [Ver.s2, .s3].all fun v => (verdict m v p p').clean || beside m v p p' ||
     separateInit v p' (recompiles m v p p')
 
 /-! ## Extending #34: a rule per family
@@ -551,7 +570,7 @@ whole space. -/
 
 /-- The edits a mode gets wrong, but for the divergences beside resolution and the trait initialiser. -/
 def wrong (m : Mode) (v : Ver) (p p' : Prog) : Bool :=
-  !(verdict m v p p').clean && !besideResolution v p p' && !separateInit v p' (recompiles m v p p')
+  !(verdict m v p p').clean && !beside m v p p' && !separateInit v p' (recompiles m v p p')
 
 /-- The families by edit: F1 adds a top-level class, F2 a member of the package object (or the
 export's forwarder), F3 a member of `W` (or the forwarder `W` exports). -/
@@ -565,10 +584,10 @@ def allRules : Rules := { cheap := true, f2 := true, f3 := true, g := true }
 /-- The family of an unclean edit, as the dump reports it: the divergences beside resolution first. -/
 def family (m : Mode) (v : Ver) (p p' : Prog) : String :=
   if (verdict m v p p').clean then "-"
-  else if staleMirror v p p' then "F4"
+  else if staleMirror v p p' (innerRecompiled m v p p') then "F4"
   else if missedClash v p' then "F5"
-  else if separateInit v p' (recompiles m v p p') || besideResolution v p p' && heirInit v p p' then "F6"
-  else if staleModule v p p' then "F7"
+  else if separateInit v p' (recompiles m v p p') || beside m v p p' && heirInit v p p' then "F6"
+  else if staleModule v p p' (innerRecompiled m v p p') then "F7"
   else if f1 p p' then "F1" else if f2 p p' then "F2" else if f3 p p' then "F3" else "?"
 
 /-! ### Declarations only (retronym/zinc#24) -/
