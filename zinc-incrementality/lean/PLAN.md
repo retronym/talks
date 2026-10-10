@@ -447,3 +447,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 15 — inferred types in a cycle, T3a without T3: see `PLAN-cycles.md`
 
 ## Phase 16 — class-name agreement between the bridge and Zinc: see `PLAN-naming.md`
+
+## Phase 17 — hash stability across source, pickle and classfile forms: see `PLAN-hash.md`
