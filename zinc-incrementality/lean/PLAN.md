@@ -23,6 +23,7 @@ Enumerations over bounded program spaces (`native_decide`) and the Zinc conforma
 | 13 | The split layout (`PLAN-split.md`) | `SplitProof`: `proposed_sound`, `cheap_sound_of_local`; `Spec`: `today_not_obligations`, `cheap_not_obligations`, `cross_obligations`, `cross_downstream_sound` (T5) | `Split.check_*` (the slot language matches the concrete model on the bases); the harness |
 | 14 | Compile order and pipelining (`PLAN-order.md`) | `JavaOrder`: `obligations_mixed`, `mixed_sound`, `exclusion_exact`, `flip_spurious`; witnesses V1, V2, O1, O2 | none needed so far |
 | 15 | Inferred types in a cycle (`PLAN-cycles.md`, talks#31) | `Cycles`: `obligations`; `zinc_ne_clean` (Zinc stops at a per-unit fixed point that is not the clean build, C1, C2), `two_fixpoints`; `annotated_eq_clean` (T3 with every member annotated) | sbt/zinc#1284's and #1780's rules on Zinc's real loop; the harness (36 edits) |
+| 22 | Scala 3 macro dependencies (`PLAN-macros.md`) | `MacroDeps` (a `TCompiler`): `faithful`, `obligations_fix`, `fix_sound`; witnesses `gen_pre24969` (#23852), `targ_pre23900`, `private_today` (abstraction), `annot_today` (#22999), `crossProject_today` (sbt/zinc#1478), `early_violates` (#27125); cost `bytecode_coarse`, `private_coarse` | the `today` rules against dotc 3.9 and Zinc `develop` (sources, not the harness) |
 
 Phases 4 and 5 are design notes; their results are in phases 6 to 8.
 
@@ -454,3 +455,5 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 ## Phase 20 — constructors and synthetic case-class members: see `PLAN-synthetic.md`
 
 ## Phase 21 — derived API, export forwarders and used types' supertypes: see `PLAN-derived.md`
+
+## Phase 22 — Scala 3 macro dependencies: see `PLAN-macros.md`
