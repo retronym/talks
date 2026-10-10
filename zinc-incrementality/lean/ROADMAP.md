@@ -20,6 +20,22 @@ Those toys are private to one consumer. The same knowledge would answer other qu
 | JVM semantics | erasure and forwarders, inside Zinc toys | linkage: methods, fields, access, constants, which method runs |
 | People | Jason plus agents | outside contributors, through the tiers in the contributor proposal |
 
+## Relation to `DESIGN-spec.md` and `REVIEW-2026-10-11.md`
+
+This roadmap follows the specification framing of `DESIGN-spec.md`:
+- every observable is a query, and a unit's task is the compiler's own algorithm;
+- a design is a `keys`/`π`/`covers` triple with an `Obligations` proof;
+- enumeration is for testing, and is labelled as such.
+
+`Jvm/Link.lean` already has that shape. Linking is the JVM's own resolution and selection algorithm, written as a `Task`, and its trace is the linkage footprint.
+
+Three of the review's findings apply to these tracks:
+- **Finding 1.** The Zinc ⇒ binary-compatible theorem (B4) waits for the framework merge, which unifies four near-copies of the compiler framework into one structure.
+- **Finding 7.** Witnesses use kernel `decide`, never `native_decide`, wherever it terminates.
+- **Finding 8.** The new layers live beside `Zinc/` (`Jvm/`, `Scala/`), not in it.
+
+The tracks use letters (J, S, V, B), not phase numbers, so they don't collide with `PLAN.md`'s phases.
+
 ## Architecture
 
 ```
@@ -40,7 +56,12 @@ So Zinc-clean implies binary-compatible for that client. The converse fails, and
 
 ## Tracks
 
-Each track owns one directory and one `lean_lib`, works on its own branch off `claude/bincompat-lean`, and edits only its own section of this file. Tracks never edit `Zinc/` (talks#21 is open on it). Integration happens on `claude/bincompat-lean`.
+Each track:
+- owns one directory and one `lean_lib`;
+- works on its own branch off `claude/bincompat-lean`;
+- edits only its own section of this file.
+
+No track edits `Zinc/`; talks#21 and the PRs stacked on it own that directory. Integration happens on `claude/bincompat-lean`, which is based on talks#21's branch.
 
 ### J — JVM (`Jvm/`)
 
@@ -67,7 +88,9 @@ Each track owns one directory and one `lean_lib`, works on its own branch off `c
 - **S3. Calibrate against scalac's own classfiles.** For each source in a bounded space, compile with scalac 2.13 and 3, read the classfiles (`javap`, or the Classfile API), and diff the model's `World` against them.
 - **S4. Shared `AsSeenFrom` and linearization,** one model used by the TCK and later by `Zinc/Hier`.
 
-### V — Java (`Java/`)
+### V — Java (`Java/`), deferred
+
+Not launched yet. Java name resolution, sealed hierarchies and compile order are already Phases 12 and 14 (`PLAN-java.md`, `PLAN-order.md`). Lowering javac's output to `Jvm.World` comes after J and S, and reuses those phases' probes.
 
 - **V1. Lowering for a javac subset:**
   - classes and interfaces;
@@ -81,7 +104,7 @@ Each track owns one directory and one `lean_lib`, works on its own branch off `c
 ### B — Binary compatibility (`BinCompat/`, plus a scala-cli harness outside Lean)
 
 - **B1. MiMa against the catalogue, at the JVM level.** MiMa reads classfiles, so J1's rendered jars are enough to start; it needs no front end. Per case, compare MiMa's problems with the model's verdict.
-- **B2. MiMa's rules as a policy.** Like `FlatRules` checked the PoC's rules: false negatives (the model breaks a client and MiMa is silent) and false positives. `defaultConflict` is a candidate false negative to confirm.
+- **B2. MiMa as a bridge design, in `DESIGN-spec.md`'s terms.** MiMa compares a set of facts per library class; those facts are its keys. Its check is sound if every linkage query any client can ask is covered by a compared key (coverage), and if equal facts give equal answers (abstraction). Prove this for a corrected rule set; for MiMa's actual rules, give a counterexample trace for each gap. Then check it on a space, as `FlatRules` checked the PoC's rules, to measure false negatives and false positives. `defaultConflict` is a candidate false negative to confirm.
 - **B3. Source-level spaces.** Once S1 and V1 exist: Scala and Java edits, lowered, linked, and checked against MiMa and HotSpot.
 - **B4. The Zinc ⇒ binary-compatible theorem above,** stated over `NCompiler`. It needs S1 or V1 to be a compiler instance.
 
