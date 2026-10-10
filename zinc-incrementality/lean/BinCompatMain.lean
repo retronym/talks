@@ -22,6 +22,12 @@ def main (args : List String) : IO Unit := do
   else if args.contains "mima" then
     for e in edits do IO.println (problemsJson e.name (mima e.v0 e.v1))
     for k in all ++ j3 do IO.println (problemsJson k.name (mima k.v0 k.v1))
+  else if args.contains "witness" then
+    for e in edits do
+      if args.contains e.name then
+        match breaking e.case spaceB with
+        | some cl => IO.println s!"{e.name}\t{Jvm.Dump.caseJson (e.case.withClient cl)}"
+        | none => IO.println s!"{e.name}\tnone"
   else if args.contains "verdicts" then
     for e in edits do
       let k := e.case
