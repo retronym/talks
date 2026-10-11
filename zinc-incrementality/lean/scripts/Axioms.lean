@@ -1,4 +1,5 @@
 import Zinc
+import Scala
 
 /-! The core theorems' axioms, checked by `scripts/check_axioms.py`: only `propext`,
 `Classical.choice` and `Quot.sound` are allowed (no `sorryAx`, no `Lean.ofReduceBool` from
@@ -54,3 +55,7 @@ import Zinc
 #print axioms Zinc.SplitProof.Spec.g_narrowed_obligations
 #print axioms Zinc.SplitProof.Spec.g12_today
 #print axioms Zinc.TCompiler.downstream_sound
+-- the shared asSeenFrom (Scala/AsSeenFrom.lean) and T1 for lowering
+#print axioms AsSeenFrom.compose
+#print axioms AsSeenFrom.chain_is_single
+#print axioms Scala.lower_congr
