@@ -20,6 +20,9 @@ Zinc recompiles source files and records keys per class. This file adds files to
   exactly when the representative is, and the representative is recompiled with it. For an
   instance meeting the plain obligations, `XCompiler.zinc_sound` applies unchanged, whatever the
   file map and the policy.
+* **T5 under charging** (`inv_external_charged`, `downstream_sound_charged`): the snapshot results
+  with the charged invariant. Freshness is the plain one, and Zinc's per-class external
+  invalidation, closed under files, contains the charged one (`extInvalidatedCharged_subset`).
 
 Two witnesses, both kernel `decide` or `simp` on concrete programs:
 
@@ -34,7 +37,9 @@ Two witnesses, both kernel `decide` or `simp` on concrete programs:
   bridge drops the inheritance edge between `A` and `B`, so `C`'s inheritance key on `B` does not
   reach `A`, which lowering `C` reads (`fi_not_covered`; the dropped edge is a same-file one). With
   the edge kept, the key covers it. From an up-to-date build, an edit to `A` recompiles `A` and `B`
-  (a file-closed round) and stops: `C` keeps output computed against the old `A` (`fi_loop`).
+  (a file-closed round) and stops: `C` keeps output computed against the old `A` (`fi_loop`); with
+  the edge kept, the loop recompiles `C` (`fi_loop_kept`). Keeping the edge meets the plain
+  obligations for every program (`kept_obligations`), hence T3a (`kept_sound`).
 -/
 
 namespace Zinc.XCompiler
@@ -209,6 +214,93 @@ theorem zinc_sound_charged (ob : C.Charged file charge) (hcf : ∀ f, file (char
       rcases hsplit d hd hdR with h | ⟨h, hc⟩
       · exact hP _ _ _ _ _ hIS (Finset.mem_sdiff.2 ⟨h, hdR⟩)
       · exact hPF _ _ _ _ _ _ d (hcf _) (hP _ _ _ _ _ hIS (Finset.mem_sdiff.2 ⟨h, hc⟩))
+
+/-! ## T5 under charging -/
+
+/-- Zinc's initial external invalidation under charging: downstream classes holding, themselves or
+through their representative, a key whose hash over the snapshot differs from its hash over the
+new classpath. -/
+def extInvalidatedCharged (Up S : Finset CUnit) (s : State CUnit Out K) (snap : CUnit → Iface)
+    (s₁ : State CUnit Out K) : Finset CUnit :=
+  S.filter fun d => ∃ k ∈ s.U d ∪ s.U (charge (file d)),
+    C.π (C.snapView Up s snap) k.1 k.2 ≠ C.π (C.ifaces s₁) k.1 k.2
+
+/-- Zinc's per-class external invalidation, closed under files, contains the charged one. -/
+theorem extInvalidatedCharged_subset (hcf : ∀ f, file (charge f) = f) (Up S : Finset CUnit)
+    (hS : ∀ d ∈ S, charge (file d) ∈ S) (s : State CUnit Out K) (snap : CUnit → Iface)
+    (s₁ : State CUnit Out K) (R : Finset CUnit) (hR : Closed file R)
+    (h : C.extInvalidated Up S s snap s₁ ⊆ R) :
+    C.extInvalidatedCharged file charge Up S s snap s₁ ⊆ R := by
+  intro d hd
+  obtain ⟨hdS, k, hk, hne⟩ := Finset.mem_filter.1 hd
+  rcases Finset.mem_union.1 hk with hk | hk
+  · exact h (Finset.mem_filter.2 ⟨hdS, k, hk, hne⟩)
+  · exact hR _ d (hcf _) (h (Finset.mem_filter.2 ⟨hS d hdS, k, hk, hne⟩))
+
+/-- **T5a under charging.** From a downstream up to date under charging, with fresh snapshots, the
+new classpath leaves dirty only the changed sources and the classes whose own or charged keys
+moved. Freshness is the plain one: a representative is a class of `S`. -/
+theorem inv_external_charged (hab : C.Abstraction) (Up S : Finset CUnit) (hdisj : Disjoint Up S)
+    (hS : ∀ d ∈ S, charge (file d) ∈ S)
+    (src₀ src : CUnit → Src) (s : State CUnit Out K) (snap : CUnit → Iface) (o : CUnit → Out)
+    (D : Finset CUnit) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
+    (hInv : C.InvCharged file charge S src₀ s ∅) (hFresh : C.Fresh Up S s snap ∅) :
+    C.InvCharged file charge S src (withUpstream Up s o)
+      (D ∪ C.extInvalidatedCharged file charge Up S s snap (withUpstream Up s o)) := by
+  intro u huS hu
+  set s₁ := withUpstream Up s o
+  set c := charge (file u)
+  have huD : u ∉ D := fun h => hu (Finset.mem_union_left _ h)
+  have huE : u ∉ C.extInvalidatedCharged file charge Up S s snap s₁ :=
+    fun h => hu (Finset.mem_union_right _ h)
+  have hsrc : src₀ u = src u := by by_contra h; exact huD (hD u h)
+  obtain ⟨hout, hcov⟩ := hInv u huS (Finset.notMem_empty u)
+  rw [hsrc] at hout hcov
+  have hfresh : ∀ k ∈ s.U u ∪ s.U c,
+      C.π (C.snapView Up s snap) k.1 k.2 = C.π (C.ifaces s) k.1 k.2 := by
+    intro k hk
+    rcases Finset.mem_union.1 hk with hk | hk
+    · exact hFresh u huS (Finset.notMem_empty u) k hk
+    · exact hFresh c (hS u huS) (Finset.notMem_empty c) k hk
+  have hhash : ∀ k ∈ s.U u ∪ s.U c, C.π (C.ifaces s) k.1 k.2 = C.π (C.ifaces s₁) k.1 k.2 := by
+    intro k hk
+    rw [← hfresh k hk]
+    by_contra hne
+    exact huE (Finset.mem_filter.2 ⟨huS, k, hk, hne⟩)
+  have hagree : ∀ q ∈ (C.unit (src u)).trace (C.answer (C.ifaces s)),
+      C.answer (C.ifaces s) q = C.answer (C.ifaces s₁) q := by
+    intro q hq
+    obtain ⟨k, hk, hc⟩ := hcov q hq
+    exact (hab _ _ k (hhash k hk) q hc).1
+  obtain ⟨hrun, htrace⟩ := Task.run_eq_of_trace _ _ _ hagree
+  have huUp : u ∉ Up := fun h => Finset.disjoint_left.1 hdisj h huS
+  refine ⟨?_, ?_⟩
+  · show s₁.out u = _
+    rw [withUpstream_out_of_not_mem Up s o u huUp, hout, hrun]
+  · rw [← htrace]
+    intro q hq
+    obtain ⟨k, hk, hc⟩ := hcov q hq
+    exact ⟨k, hk, (hab _ _ k (hhash k hk) q hc).2⟩
+
+/-- **T5 under charging.** Hypotheses as `zinc_sound_charged`'s, with the first round containing
+the changed sources and Zinc's per-class external invalidations, and closed under files. If the
+downstream loop stops, every downstream class is up to date against the new classpath. -/
+theorem downstream_sound_charged (ob : C.Charged file charge) (hcf : ∀ f, file (charge f) = f)
+    (Up S : Finset CUnit) (hdisj : Disjoint Up S) (hS : ∀ d ∈ S, charge (file d) ∈ S)
+    (src₀ src : CUnit → Src) (s : State CUnit Out K) (snap : CUnit → Iface) (o : CUnit → Out)
+    (D : Finset CUnit) (hD : ∀ u, src₀ u ≠ src u → u ∈ D)
+    (hInv : C.InvCharged file charge S src₀ s ∅) (hFresh : C.Fresh Up S s snap ∅)
+    (P : Policy CUnit Out K) (hP : P.Sound S) (hPF : P.FileClosed file) (fuel : ℕ)
+    (R₀ : Finset CUnit) (hR₀ : D ∪ C.extInvalidated Up S s snap (withUpstream Up s o) ⊆ R₀)
+    (hR₀F : Closed file R₀)
+    (s' : State CUnit Out K) (h : C.zinc S src P fuel 0 R₀ (withUpstream Up s o) = some s') :
+    C.InvCharged file charge S src s' ∅ :=
+  C.zinc_sound_charged file charge ob hcf S hS src P hP hPF fuel 0 R₀ _ _
+    (Finset.union_subset (Finset.union_subset_left hR₀)
+      (C.extInvalidatedCharged_subset file charge hcf Up S hS s snap _ R₀ hR₀F
+        (Finset.union_subset_right hR₀)))
+    hR₀F (C.inv_external_charged file charge ob.abstraction Up S hdisj hS src₀ src s snap o D hD
+      hInv hFresh) s' h
 
 end Zinc.XCompiler
 
@@ -506,5 +598,164 @@ theorem fi_loop :
     ((compiler true).zinc S src₁ P 3 0 {.a, .b} old).map (fun s => (s.out .c).2) = some [0, 0] ∧
     (group S src₁ src₁ .c).2 = [0, 1] := by
   decide +kernel
+
+/-- With the edge kept, the same edit invalidates `C` and the loop recompiles it. -/
+theorem fi_loop_kept :
+    ((compiler false).zinc S src₁ P 3 0 {.a, .b} old).map (fun s => (s.out .c).2) = some [0, 1] := by
+  decide +kernel
+
+/-! ### Keeping the edge meets the obligations, for every program
+
+`walk` and `anc` read to the same depth, so every class lowering asks for is an ancestor its
+inheritance key covers. A hierarchy deeper than the fuel is truncated alike in a clean and an
+incremental build; no program is excluded. -/
+
+theorem anc_succ (I : Cls → CSrc) (k : ℕ) (u : Cls) :
+    anc false I (k + 1) u = u :: (I u).parents.flatMap (anc false I k) := by
+  simp [anc]
+
+theorem walk_cons (k : ℕ) (p : Cls) (ps : List Cls) :
+    walk (k + 1) (p :: ps) = .ask (p, ()) fun sp => (walk k sp.parents).bind fun l₁ =>
+      (walk (k + 1) ps).bind fun l₂ => .pure (sp.body :: l₁ ++ l₂) := rfl
+
+/-- Every class `walk` asks for is an ancestor of one of the classes it started from. -/
+theorem walk_trace (I : Cls → CSrc) (k : ℕ) :
+    ∀ (ps : List Cls), ∀ q ∈ (walk k ps).trace (answer I), ∃ p ∈ ps, q.1 ∈ anc false I k p := by
+  induction k with
+  | zero => intro ps q hq; simp [walk] at hq
+  | succ k ih =>
+    intro ps
+    induction ps with
+    | nil => intro q hq; simp [walk] at hq
+    | cons p ps ihps =>
+      intro q hq
+      rw [walk_cons, Task.trace_ask, Task.trace_bind, Task.trace_bind, Task.trace_pure,
+        List.append_nil] at hq
+      rcases List.mem_cons.1 hq with rfl | hq
+      · exact ⟨p, List.mem_cons_self .., by simp [anc_succ]⟩
+      rcases List.mem_append.1 hq with hq | hq
+      · obtain ⟨p', hp', hq'⟩ := ih (I p).parents q hq
+        exact ⟨p, List.mem_cons_self .., by
+          rw [anc_succ]; exact List.mem_cons_of_mem _ (List.mem_flatMap.2 ⟨p', hp', hq'⟩)⟩
+      · obtain ⟨p', hp', hq'⟩ := ihps q hq
+        exact ⟨p', List.mem_cons_of_mem _ hp', hq'⟩
+
+theorem iface_run (s : CSrc) (e : Task.Env (Cls × Unit) (fun _ => CSrc)) :
+    ((unit s).run e).1 = s := by
+  simp [unit]
+
+theorem comp (drop : Bool) : ∀ (G : Finset Cls) (src : Cls → CSrc) (I : Cls → CSrc), ∀ u ∈ G,
+    (compiler drop).group G src I u =
+      ((compiler drop).unit (src u)).run ((compiler drop).answer
+        (XCompiler.override I G ((compiler drop).iface ∘ (compiler drop).group G src I))) := by
+  intro G src I u _
+  simp only [compiler, group]
+  congr 2
+  funext v
+  simp only [XCompiler.override, Function.comp, group, iface_run]
+
+theorem coverage (I : Cls → CSrc) (d : Cls) (s : CSrc) :
+    ∀ q ∈ ((compiler false).unit s).trace ((compiler false).answer I),
+      ∃ k ∈ (compiler false).keys d (((compiler false).unit s).run ((compiler false).answer I))
+          (((compiler false).unit s).trace ((compiler false).answer I)),
+        (compiler false).covers I q k := by
+  intro q hq
+  change q ∈ (unit s).trace (answer I) at hq
+  simp only [unit, Task.trace_bind, Task.trace_pure, List.append_nil] at hq
+  obtain ⟨p, hp, hq⟩ := walk_trace I 3 s.parents q hq
+  refine ⟨(p, ()), ?_, hq⟩
+  change (p, ()) ∈ (((unit s).run (answer I)).1.parents.map fun p => (p, ())).toFinset
+  rw [iface_run]
+  simp [hp]
+
+/-- The values along an ancestor list, followed by anything, determine the list: each value
+carries its class's parents. -/
+theorem parse_flatMap {f g : Cls → List Cls} (I I' : Cls → CSrc)
+    (h : ∀ u (l l' : List CSrc), (f u).map I ++ l = (g u).map I' ++ l' →
+      f u = g u ∧ (∀ v ∈ f u, I v = I' v) ∧ l = l') :
+    ∀ (ps : List Cls) (l l' : List CSrc),
+      (ps.flatMap f).map I ++ l = (ps.flatMap g).map I' ++ l' →
+      ps.flatMap f = ps.flatMap g ∧ (∀ v ∈ ps.flatMap f, I v = I' v) ∧ l = l'
+  | [], l, l', hl => by simpa using hl
+  | p :: ps, l, l', hl => by
+    simp only [List.flatMap_cons, List.map_append, List.append_assoc] at hl ⊢
+    obtain ⟨h1, h2, h3⟩ := h p _ _ hl
+    obtain ⟨h4, h5, h6⟩ := parse_flatMap I I' h ps l l' h3
+    refine ⟨by rw [h1, h4], fun v hv => ?_, h6⟩
+    rcases List.mem_append.1 hv with hv | hv
+    · exact h2 v hv
+    · exact h5 v hv
+
+theorem anc_parse (I I' : Cls → CSrc) : ∀ (k : ℕ) (u : Cls) (l l' : List CSrc),
+    (anc false I k u).map I ++ l = (anc false I' k u).map I' ++ l' →
+    anc false I k u = anc false I' k u ∧ (∀ v ∈ anc false I k u, I v = I' v) ∧ l = l'
+  | 0, u, l, l', h => by
+    simp only [anc, List.map_cons, List.map_nil, List.cons_append, List.nil_append,
+      List.cons.injEq] at h
+    refine ⟨rfl, fun v hv => ?_, h.2⟩
+    simp only [anc, List.mem_singleton] at hv
+    exact hv ▸ h.1
+  | k + 1, u, l, l', h => by
+    rw [anc_succ, anc_succ] at h ⊢
+    simp only [List.map_cons, List.cons_append, List.cons.injEq] at h
+    obtain ⟨hu, h⟩ := h
+    rw [← hu] at h
+    obtain ⟨h1, h2, h3⟩ := parse_flatMap I I' (anc_parse I I' k) _ l l' h
+    refine ⟨by rw [← hu, h1], fun v hv => ?_, h3⟩
+    rcases List.mem_cons.1 hv with rfl | hv
+    · exact hu
+    · exact h2 v hv
+
+theorem abstraction : (compiler false).Abstraction := by
+  intro I I' k h q hc
+  change (anc false I 3 k.1).map I = (anc false I' 3 k.1).map I' at h
+  change q.1 ∈ anc false I 3 k.1 at hc
+  obtain ⟨h1, h2, -⟩ := anc_parse I I' 3 k.1 [] [] (by simpa using h)
+  exact ⟨h2 _ hc, by change q.1 ∈ anc false I' 3 k.1; rw [← h1]; exact hc⟩
+
+theorem anc_congr (I I' : Cls → CSrc) :
+    ∀ (k : ℕ) (u : Cls), (∀ v ∈ anc false I k u, I v = I' v) → anc false I k u = anc false I' k u
+  | 0, _, _ => rfl
+  | k + 1, u, h => by
+    have hu : I u = I' u := h u (by simp [anc_succ])
+    rw [anc_succ, anc_succ, ← hu]
+    congr 1
+    have : ∀ ps : List Cls, (∀ p ∈ ps, ∀ v ∈ anc false I k p, I v = I' v) →
+        ps.flatMap (anc false I k) = ps.flatMap (anc false I' k) := by
+      intro ps hps
+      induction ps with
+      | nil => rfl
+      | cons p ps ih =>
+        simp only [List.flatMap_cons]
+        rw [anc_congr I I' k p (hps p (List.mem_cons_self ..)),
+          ih fun p' hp' => hps p' (List.mem_cons_of_mem _ hp')]
+    apply this
+    intro p hp v hv
+    apply h
+    rw [anc_succ]
+    exact List.mem_cons_of_mem _ (List.mem_flatMap.2 ⟨p, hp, hv⟩)
+
+theorem locality (I I' : Cls → CSrc) (u : Cls)
+    (h : ∀ d ∈ (compiler false).hashDeps I u, I d = I' d) (k : Unit) :
+    (compiler false).π I u k = (compiler false).π I' u k := by
+  have h' : ∀ v ∈ anc false I 3 u, I v = I' v := fun v hv => h v (List.mem_toFinset.2 hv)
+  change (anc false I 3 u).map I = (anc false I' 3 u).map I'
+  rw [← anc_congr I I' 3 u h']
+  exact List.map_congr_left h'
+
+/-- **The fix meets the obligations**: with the same-file edge kept, for every program. -/
+theorem kept_obligations : (compiler false).Obligations where
+  comp := comp false
+  coverage := coverage
+  abstraction := abstraction
+  locality := locality
+
+/-- T3a for the fix, `XCompiler.zinc_sound` unchanged: no file-closed policy is needed. -/
+theorem kept_sound (S : Finset Cls) (src : Cls → CSrc) (P : Compiler.Policy Cls Out Unit)
+    (hP : P.Sound S) (fuel : ℕ) (R : Finset Cls) (s : Compiler.State Cls Out Unit) (D : Finset Cls)
+    (hD : D ⊆ R) (hInv : (compiler false).Inv S src s D) (s' : Compiler.State Cls Out Unit)
+    (h : (compiler false).zinc S src P fuel 0 R s = some s') :
+    (compiler false).Inv S src s' ∅ :=
+  (compiler false).zinc_sound kept_obligations S src P hP fuel 0 R s D hD hInv s' h
 
 end Zinc.Fi
