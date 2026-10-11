@@ -1,0 +1,16 @@
+<<<<<<<
+# Client, in `package a; package b`, resolves Foo to a.Foo (another file).
+> p/compile
+# A member Foo of `package object b` shadows a.Foo, and its v is a String: a clean build fails.
+# Client reached the package object through no symbol, so Zinc records no edge to it, but the package
+# object gains the name Foo, which Client uses, so Zinc recompiles it and the incremental build fails too.
+$ copy-file changes/PObj.scala p/PObj.scala
+-> p/compile
+=======
+# Client, in `package a; package b`, resolves Foo to a.Foo (another file).
+> p/compile
+# A member Foo of `package object b` shadows a.Foo, and its v is a String: a clean build fails.
+# Client reached the package object through no symbol, so Zinc records no edge to it.
+$ copy-file changes/PObj.scala p/PObj.scala
+-> p/compile
+>>>>>>>

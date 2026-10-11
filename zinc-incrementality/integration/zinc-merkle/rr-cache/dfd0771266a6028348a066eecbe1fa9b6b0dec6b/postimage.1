@@ -1,0 +1,6 @@
+# Client, in `package a; package b`, finds the given a.T through `import w.W.given`.
+> p/compile
+# A new file gives a.T at the top level of a.b, at the import's nesting level: ambiguous, so a clean
+# build fails. Zinc compiles only the added source (its class G$package has no dependents yet).
+$ copy-file changes/G.scala p/G.scala
+-> p/compile
