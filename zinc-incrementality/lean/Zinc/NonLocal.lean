@@ -1,4 +1,5 @@
 import Zinc.Soundness
+import Zinc.General
 import Mathlib.Data.Finset.Union
 
 /-!
@@ -120,63 +121,53 @@ theorem env_round (src : CUnit → Src) (R : Finset CUnit) (s : State CUnit Out 
 
 variable [DecidableEq K] [DecidableEq Hash]
 
+/-- The lift into the general form: answers read one interface, keys come from the trace. -/
+def toX : XCompiler CUnit Src Out Iface K Hash Q A where
+  unit := C.unit
+  group G src I := C.group G src (C.envOf I)
+  iface := C.iface
+  answer I q := C.answer (I q.1) q.2
+  π := C.π
+  hashDeps _ c := C.hashDeps c
+  keys _ _ tr := C.keys tr
+  covers := C.covers
+
+omit [DecidableEq K] [DecidableEq Hash] in
+theorem toX_obligations (ob : C.Obligations) : C.toX.Obligations where
+  comp G src I d hd := by
+    show C.group G src (C.envOf I) d = (C.unit (src d)).run _
+    rw [ob.comp G src (C.envOf I) d hd, C.override_envOf]
+    rfl
+  coverage I _ s q hq := ob.coverage I s q hq
+  abstraction := ob.abstraction
+  locality := ob.locality
+
+/-- With `hashRevDeps` containing the reverse of `hashDeps`, the general form's affected units are
+among `affected R`, so its `inv(ΔAPI)` is among this one. -/
+theorem invalidated_toX_subset (ob : C.Obligations) (S R : Finset CUnit) (s s' : State CUnit Out K) :
+    C.toX.invalidated S R s s' ⊆ C.invalidated S (C.affected R) s s' := by
+  intro d hd
+  simp only [XCompiler.invalidated, invalidated, Finset.mem_filter] at hd ⊢
+  obtain ⟨hS, p, hp, haff, hne⟩ := hd
+  refine ⟨hS, p, hp, ?_, hne⟩
+  simp only [affected, Finset.mem_union, Finset.mem_biUnion]
+  rcases haff with h | ⟨e, he, heR⟩
+  · exact .inl h
+  · exact .inr ⟨e, heR, ob.rev _ _ he⟩
+
 /-- **T2′.** With `Δ` over `affected R`, one round preserves the invariant. -/
 theorem round_preserves (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
     (s : State CUnit Out K) (D R : Finset CUnit) (hD : D ⊆ R)
     (hInv : C.Inv S src s D) :
     C.Inv S src (C.round src R s)
       (C.invalidated S (C.affected R) s (C.round src R s) \ R) := by
-  intro u huS hu
-  set s' := C.round src R s with hs'
-  by_cases huR : u ∈ R
-  · refine ⟨?_, ?_⟩
-    · have h1 := ob.comp R src (C.env s) u huR
-      have h2 : s'.out u = C.group R src (C.env s) u := by
-        simp only [hs', round, huR, ite_true]
-      rw [h2, h1, ← env_round]
-    · intro q hq
-      have hU : s'.U u = C.keys ((C.unit (src u)).trace (C.env s')) := by
-        simp only [hs', round, huR, ite_true]; rfl
-      rw [hU]
-      exact ob.coverage _ _ q hq
-  · have huI : u ∉ C.invalidated S (C.affected R) s s' :=
-      fun h => hu (Finset.mem_sdiff.2 ⟨h, huR⟩)
-    have huD : u ∉ D := fun h => huR (hD h)
-    obtain ⟨hout, hcov⟩ := hInv u huS huD
-    have hU : s'.U u = s.U u := by simp only [hs', round, huR, ite_false]
-    have hout' : s'.out u = s.out u := by simp only [hs', round, huR, ite_false]
-    have hiface : ∀ d, d ∉ R → C.iface (s.out d) = C.iface (s'.out d) := by
-      intro d hd
-      simp only [hs', round, hd, ite_false]
-    -- every recorded key has an unchanged hash
-    have hhash : ∀ p ∈ s.U u, C.π (C.iface ∘ s.out) p.1 p.2 = C.π (C.iface ∘ s'.out) p.1 p.2 := by
-      intro p hp
-      by_cases haff : p.1 ∈ C.affected R
-      · by_contra hne
-        apply huI
-        simp only [invalidated, Finset.mem_filter]
-        exact ⟨huS, p, hU ▸ hp, haff, hne⟩
-      · -- not affected: none of its read set was recompiled
-        apply ob.locality
-        intro d hd
-        simp only [Function.comp]
-        apply hiface
-        intro hdR
-        apply haff
-        simp only [affected, Finset.mem_union, Finset.mem_biUnion]
-        exact Or.inr ⟨d, hdR, ob.rev _ _ hd⟩
-    have hagree : ∀ q ∈ (C.unit (src u)).trace (C.env s), C.env s q = C.env s' q := by
-      intro q hq
-      obtain ⟨k, hk, hcovers⟩ := hcov q hq
-      simp only [env, envOf]
-      exact (ob.abstraction _ _ k (hhash k hk) q hcovers).1
-    obtain ⟨hrun, htrace⟩ := Task.run_eq_of_trace _ _ _ hagree
-    refine ⟨?_, ?_⟩
-    · rw [hout', hout, hrun]
-    · rw [← htrace, hU]
-      intro q hq
-      obtain ⟨k, hk, hcovers⟩ := hcov q hq
-      exact ⟨k, hk, (ob.abstraction _ _ k (hhash k hk) q hcovers).2⟩
+  have h := C.toX.round_preserves (C.toX_obligations ob) S src s D R hD hInv
+  intro u hu hnot
+  apply h u hu
+  intro hmem
+  apply hnot
+  rw [Finset.mem_sdiff] at hmem ⊢
+  exact ⟨C.invalidated_toX_subset ob S R s _ hmem.1, hmem.2⟩
 
 end GCompiler
 end Zinc

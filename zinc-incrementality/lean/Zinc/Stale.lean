@@ -127,12 +127,12 @@ def s₁ : State U Out K := compiler.round src₁ {U.P} s₀
 /-- `Δ` over the recompiled set only: nothing is invalidated… -/
 example : compiler.invalidated S {U.P} s₀ s₁ = ∅ := by native_decide
 
-/-- …and `C`'s output is stale: it still carries `P`'s old value. -/
-theorem stale_unsound : s₁.out U.C = 1 ∧ (compiler.unit (src₁ U.C)).run (compiler.env s₁) = 2 := by
+/-- `stale_unsound`: …and `C`'s output is stale: it still carries `P`'s old value. -/
+example : s₁.out U.C = 1 ∧ (compiler.unit (src₁ U.C)).run (compiler.env s₁) = 2 := by
   native_decide
 
-/-- `Δ` over `affected {P}`: `C` is invalidated, as T2′ requires. -/
-theorem stale_affected : compiler.invalidated S (compiler.affected {U.P}) s₀ s₁ = {U.C} := by
+/-- `stale_affected`: `Δ` over `affected {P}`: `C` is invalidated, as T2′ requires. -/
+example : compiler.invalidated S (compiler.affected {U.P}) s₀ s₁ = {U.C} := by
   native_decide
 
 /-- And after recompiling it, the build is right. -/

@@ -191,13 +191,13 @@ def after : Cls → Src
 example : (clean before client).value = some 1 := by native_decide
 example : (clean after client).value = some 2 := by native_decide
 
-/-- **Adding `a.b.Foo`**: with Zinc's extractor the client keeps `a.Foo`. -/
-theorem added_today_wrong : clientValue .today {inner} before after = some (some 1) := by native_decide
+/-- `added_today_wrong`: **Adding `a.b.Foo`**: with Zinc's extractor the client keeps `a.Foo`. -/
+example : clientValue .today {inner} before after = some (some 1) := by native_decide
 
-/-- Recording the scopes searched recompiles it. -/
-theorem added_fixed_clean : clientValue .fixed {inner} before after = some (some 2) := by native_decide
+/-- `added_fixed_clean`: Recording the scopes searched recompiles it. -/
+example : clientValue .fixed {inner} before after = some (some 2) := by native_decide
 
-/-- **Deleting `a.b.Foo`** is caught by the key on the class the client resolved. -/
-theorem deleted_today_clean : clientValue .today {inner} after before = some (some 1) := by native_decide
+/-- `deleted_today_clean`: **Deleting `a.b.Foo`** is caught by the key on the class the client resolved. -/
+example : clientValue .today {inner} after before = some (some 1) := by native_decide
 
 end Zinc.Added

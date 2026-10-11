@@ -1,4 +1,5 @@
 import Zinc.Soundness
+import Zinc.General
 import Mathlib.Data.Fintype.Basic
 
 /-!
@@ -106,59 +107,39 @@ theorem ifaces_round (src : CUnit → Src) (R : Finset CUnit) (s : State CUnit O
 
 variable [DecidableEq K] [DecidableEq Hash]
 
-/-- **T2″.** With `Δ` over `affected R s`, one round preserves the invariant. -/
+/-- The lift into the general form (`General.lean`): the extractor ignores the output. -/
+def toX : XCompiler CUnit Src Out Iface K Hash Q A where
+  unit := C.unit
+  group := C.group
+  iface := C.iface
+  answer := C.answer
+  π := C.π
+  hashDeps := C.hashDeps
+  keys u _ tr := C.keys u tr
+  covers := C.covers
+
+omit [Fintype CUnit] [DecidableEq K] [DecidableEq Hash] in
+theorem toX_obligations (ob : C.Obligations) : C.toX.Obligations :=
+  ⟨ob.comp, ob.coverage, ob.abstraction, ob.locality⟩
+
+/-- The lift's `inv(ΔAPI)` is this one: its affected units are `affected`. -/
+theorem invalidated_toX (S R : Finset CUnit) (s s' : State CUnit Out K) :
+    C.toX.invalidated S R s s' = C.invalidated S (C.affected R s) s s' := by
+  unfold XCompiler.invalidated invalidated
+  apply Finset.filter_congr
+  intro d _
+  simp only [XCompiler.changed, changed, XCompiler.Affected, affected, Finset.mem_union,
+    Finset.mem_filter, Finset.mem_univ, true_and]
+  rfl
+
+/-- **T2″.** With `Δ` over `affected R s`, one round preserves the invariant
+(`XCompiler.round_preserves` on the lift). -/
 theorem round_preserves (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
     (s : State CUnit Out K) (D R : Finset CUnit) (hD : D ⊆ R) (hInv : C.Inv S src s D) :
     C.Inv S src (C.round src R s)
       (C.invalidated S (C.affected R s) s (C.round src R s) \ R) := by
-  intro u huS hu
-  set s' := C.round src R s with hs'
-  by_cases huR : u ∈ R
-  · refine ⟨?_, ?_⟩
-    · have h1 := ob.comp R src (C.ifaces s) u huR
-      have h2 : s'.out u = C.group R src (C.ifaces s) u := by
-        simp only [hs', round, huR, ite_true]
-      rw [h2, h1, ← ifaces_round]
-    · intro q hq
-      have hU : s'.U u = C.keys u ((C.unit (src u)).trace (C.answer (C.ifaces s'))) := by
-        simp only [hs', round, huR, ite_true]; rfl
-      rw [hU]
-      exact ob.coverage _ u _ q hq
-  · have huI : u ∉ C.invalidated S (C.affected R s) s s' :=
-      fun h => hu (Finset.mem_sdiff.2 ⟨h, huR⟩)
-    have huD : u ∉ D := fun h => huR (hD h)
-    obtain ⟨hout, hcov⟩ := hInv u huS huD
-    have hU : s'.U u = s.U u := by simp only [hs', round, huR, ite_false]
-    have hout' : s'.out u = s.out u := by simp only [hs', round, huR, ite_false]
-    have hiface : ∀ d, d ∉ R → C.ifaces s d = C.ifaces s' d := by
-      intro d hd
-      simp only [hs', ifaces, round, hd, ite_false, Function.comp]
-    have hhash : ∀ p ∈ s.U u, C.π (C.ifaces s) p.1 p.2 = C.π (C.ifaces s') p.1 p.2 := by
-      intro p hp
-      by_cases haff : p.1 ∈ C.affected R s
-      · by_contra hne
-        apply huI
-        simp only [invalidated, Finset.mem_filter]
-        exact ⟨huS, p, hU ▸ hp, haff, hne⟩
-      · apply ob.locality
-        intro d hd
-        apply hiface
-        intro hdR
-        apply haff
-        simp only [affected, Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and]
-        exact Or.inr ⟨d, hd, hdR⟩
-    have hagree : ∀ q ∈ (C.unit (src u)).trace (C.answer (C.ifaces s)),
-        C.answer (C.ifaces s) q = C.answer (C.ifaces s') q := by
-      intro q hq
-      obtain ⟨k, hk, hcovers⟩ := hcov q hq
-      exact (ob.abstraction _ _ k (hhash k hk) q hcovers).1
-    obtain ⟨hrun, htrace⟩ := Task.run_eq_of_trace _ _ _ hagree
-    refine ⟨?_, ?_⟩
-    · rw [hout', hout, hrun]
-    · rw [← htrace, hU]
-      intro q hq
-      obtain ⟨k, hk, hcovers⟩ := hcov q hq
-      exact ⟨k, hk, (ob.abstraction _ _ k (hhash k hk) q hcovers).2⟩
+  have := C.toX.round_preserves (C.toX_obligations ob) S src s D R hD hInv
+  rwa [invalidated_toX] at this
 
 /-- Zinc's loop with `Δ` over `affected`. -/
 def zinc (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K) :
@@ -169,27 +150,26 @@ def zinc (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K) :
     let I := C.invalidated S (C.affected R s) s s'
     if I ⊆ R then some s' else zinc S src P fuel (n + 1) (P n R s s' I) s'
 
-/-- **T3a″.** If the loop stops, no unit is dirty. -/
+/-- The loop on the lift is this loop. -/
+theorem zinc_toX (S : Finset CUnit) (src : CUnit → Src) (P : Policy CUnit Out K) :
+    ∀ fuel n R s, C.toX.zinc S src P fuel n R s = C.zinc S src P fuel n R s := by
+  intro fuel
+  induction fuel with
+  | zero => intro n R s; rfl
+  | succ fuel ih =>
+    intro n R s
+    simp only [XCompiler.zinc, zinc, ih, invalidated_toX]
+    rfl
+
+/-- **T3a″.** If the loop stops, no unit is dirty (`XCompiler.zinc_sound` on the lift). -/
 theorem zinc_sound (ob : C.Obligations) (S : Finset CUnit) (src : CUnit → Src)
     (P : Policy CUnit Out K) (hP : P.Sound S) :
     ∀ (fuel n : ℕ) (R : Finset CUnit) (s : State CUnit Out K) (D : Finset CUnit),
       D ⊆ R → C.Inv S src s D →
       ∀ s', C.zinc S src P fuel n R s = some s' → C.Inv S src s' ∅ := by
-  intro fuel
-  induction fuel with
-  | zero => intro n R s D _ _ s' h; simp [zinc] at h
-  | succ fuel ih =>
-    intro n R s D hD hInv s' h
-    simp only [zinc] at h
-    have hstep := C.round_preserves ob S src s D R hD hInv
-    split at h
-    · rename_i hsub
-      cases h
-      have : C.invalidated S (C.affected R s) s (C.round src R s) \ R = ∅ :=
-        Finset.sdiff_eq_empty_iff_subset.2 hsub
-      rw [this] at hstep
-      exact hstep
-    · exact ih _ _ _ _ (hP _ _ _ _ _ (Finset.filter_subset _ _)) hstep s' h
+  intro fuel n R s D hD hInv s' h
+  rw [← zinc_toX] at h
+  exact C.toX.zinc_sound (C.toX_obligations ob) S src P hP fuel n R s D hD hInv s' h
 
 end NCompiler
 end Zinc

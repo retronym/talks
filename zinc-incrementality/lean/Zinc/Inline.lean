@@ -230,8 +230,8 @@ example : agrees .final .today src₀ src₁ = true := by native_decide
 /-- Pipelined: the early view shows only the Scala 3 `inline` body. -/
 example : (clean .early src₁ C).code = [.call A f, .inlined 2, .call A k] := by native_decide
 
-/-- **A pipelined and a non-pipelined build of the same sources differ.** -/
-theorem pipelined_ne_final : clean .early src₁ C ≠ clean .final src₁ C := by native_decide
+/-- `pipelined_ne_final`: **A pipelined and a non-pipelined build of the same sources differ.** -/
+example : clean .early src₁ C ≠ clean .final src₁ C := by native_decide
 
 /-- Each view is sound on its own. -/
 example : agrees .early .withBodies src₀ src₁ = true := by native_decide
