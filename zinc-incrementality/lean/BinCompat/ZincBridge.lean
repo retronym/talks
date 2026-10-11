@@ -311,7 +311,7 @@ theorem compatible_of_untouched (dl : Dialect) (us : List String) (S : Finset St
 /-- `T` gains a concrete `b`; `X extends T`. -/
 def t0 : Scala.Src := Catalogue.trt "T" [Catalogue.dfn "a"]
 def t1 : Scala.Src := Catalogue.trt "T" [Catalogue.dfn "a", Catalogue.dfn "b"]
-def x : Scala.Src := Catalogue.cls "X" [] none [("T", none)]
+def x : Scala.Src := Catalogue.cls "X" [] none [("T", [])]
 
 def src0 : String → Option Scala.Src := fun u => if u = "T" then some t0 else if u = "X" then some x else none
 def src1 : String → Option Scala.Src := fun u => if u = "T" then some t1 else if u = "X" then some x else none

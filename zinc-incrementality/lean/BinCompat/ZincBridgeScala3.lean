@@ -54,7 +54,7 @@ theorem iface_group3 (G : Finset String) (src : String → Option Scala.Src) (I 
 /-- `T` has only a `lazy val`; `C extends T` (`Scala.initProgram 2`). -/
 def lazyZ : Mem := { name := "z", res := .int, isVal := true, lzy := true }
 def tz : Scala.Src := { name := "T", cls := some { name := "T", kind := .trt, members := [lazyZ] } }
-def cz : Scala.Src := { name := "C", cls := some { name := "C", traits := [("T", none)] } }
+def cz : Scala.Src := { name := "C", cls := some { name := "C", traits := [("T", [])] } }
 
 def src : String → Option Scala.Src := fun u => if u = "T" then some tz else if u = "C" then some cz else none
 

@@ -74,12 +74,14 @@ def π (I : String → Iface) (u : String) : ZKey → List Iface
 
 def tyRefs : Ty → List String
   | .ref n => [n]
+  | .arr n => [n]
+  | .opq _ r => tyRefs r
   | _ => []
 
 /-- The classes a declaration names: its parents and their type arguments, the types in its
 members' signatures, a value class's underlying type. -/
 def named (d : Decl) : List String :=
-  d.parents.flatMap (fun (p, a) => p :: (a.map tyRefs).getD []) ++
+  d.parents.flatMap (fun (p, a) => p :: a.flatMap tyRefs) ++
     d.members.flatMap (fun m => (m.res :: m.allParams).flatMap tyRefs) ++
     (d.under.map fun (_, t) => tyRefs t).getD []
 
@@ -118,7 +120,7 @@ def v0 : Scala.Src := Catalogue.cls "V" []
 def v1 : Scala.Src := { name := "V", cls := some { name := "V", kind := .vcls, under := some ("x", .int) } }
 def fV : Mem := { name := "f", params := [.ref "V"], res := .int }
 def t : Scala.Src := Catalogue.trt "T" [fV]
-def o : Scala.Src := { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", none)] } }
+def o : Scala.Src := { name := "O", obj := some { name := "O", kind := .obj, traits := [("T", [])] } }
 
 def src0 : String → Option Scala.Src := fun u =>
   if u = "V" then some v0 else if u = "T" then some t else if u = "O" then some o else none
