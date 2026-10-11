@@ -1351,7 +1351,7 @@ flowchart LR
 
 ### 22. Zinc's loop, proved sound relative to the compiler
 
-**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful result: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: `lean/` in this directory, Lean 4 + Mathlib, about 27,000 lines, no `sorry`. `zinc-lean` presents it in full; this section is the summary. Theorem names below refer to it.
+**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful result: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: `lean/` in this directory, Lean 4 + Mathlib, about 27,000 lines, no `sorry`. `zinc-lean` presents it in full (its §24a breaks the 27,000 lines down by language feature); this section is the summary. Theorem names below refer to it.
 
 ```mermaid
 flowchart TB

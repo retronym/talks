@@ -34,7 +34,7 @@ All Lean and tool output is shown as screenshots.
 | VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in detail · §15 name hashing misses implicit search | 9.5 |
 | VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §19 subprojects | 6.5 |
 | VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree | 9.5 |
-| IX. Results | §24 the model as a specification · §25 findings that changed Zinc · §27 conformance · §27a verifying on Spark · §27b binary compatibility: the JVM and Scala layers · §28 limits | 8.5 |
+| IX. Results | §24 the model as a specification · §24a where the 27,000 lines go · §25 findings that changed Zinc · §27 conformance · §27a verifying on Spark · §27b binary compatibility: the JVM and Scala layers · §28 limits | 10 |
 | Close | §29 next steps | 2 |
 
 Overflow (§18a, §23, §23d, §26) holds the demoted slides. If still over: §2a to one sentence, then one of §23a–c.
@@ -1110,6 +1110,36 @@ No theorem is proved by `native_decide`; CI checks the axioms of 74 theorems. En
 <div class="fn">
 
 Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug families F1–F3, G1–G2, upstream F1); `InlineOpaqueSpec`, `MacroDeps` (I1–I3, O1, [scala3#23852](https://github.com/scala/scala3/issues/23852), [#22999](https://github.com/scala/scala3/issues/22999), [#27125](https://github.com/scala/scala3/issues/27125)); `JavaSpec`, `JavaSealedSpec`, `JavaOrder` (J1–J4, S1–S2); `Cycles` … `ExtraHash` ([sbt/zinc#1284](https://github.com/sbt/zinc/issues/1284), [#1812](https://github.com/sbt/zinc/issues/1812), [#1782](https://github.com/sbt/zinc/issues/1782), [#1842](https://github.com/sbt/zinc/issues/1842), [#1843](https://github.com/sbt/zinc/issues/1843), [scala3#19910](https://github.com/scala/scala3/issues/19910), [#26231](https://github.com/scala/scala3/issues/26231), [sbt/zinc#87](https://github.com/sbt/zinc/issues/87), [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796)). `DESIGN-spec.md`, `General.lean`, `PLAN.md`'s proved-vs-checked table, `REVIEW-2026-10-11.md`. The earlier per-feature table (`obligations_repaired`, `D/W/Mk_obligations`, `Fl_obligations`, `Er_obligations`, `is_obligations`) is unchanged underneath; those instances lift too.
+
+</div>
+
+### 24a. Where the 27,000 lines go
+
+The framework that the earlier parts present is 7% of the model. The rest is one instance per language feature, and a second layer for the JVM and binary compatibility.
+
+| facet | lines | theorems | checked examples |
+|---|---|---|---|
+| framework: `Task`, the loop, T1–T5, non-local hashes | 1,887 | 84 | 0 |
+| the first toy compiler (§9, §15) | 377 | 10 | 9 |
+| inheritance: three hierarchy designs, the Merkle rules, sealed | 2,406 | 36 | 72 |
+| erasure | 1,512 | 36 | 25 |
+| name resolution: implicits, givens, extensions, added classes, desugaring | 5,067 | 134 | 100 |
+| inline, opaque types, macros, annotations, synthetic members, SAM | 3,948 | 149 | 30 |
+| Java in mixed builds | 1,709 | 54 | 16 |
+| termination and cycles | 610 | 28 | 5 |
+| subprojects, classpath, pipelining, files | 1,171 | 51 | 5 |
+| hash forms, naming, companions | 737 | 23 | 12 |
+| JVM linkage, Scala and Java lowering, binary compatibility | 6,480 | 44 | 263 |
+| drivers: exhaustive checks, conformance dumps, probes | 1,286 | 0 | 0 |
+| **total** | **27,190** | **649** | **537** |
+
+- The feature instances are mostly theorems: each states the bridge's keys for that feature and proves the obligations, or proves the counterexample.
+- The JVM and binary-compatibility layer is mostly examples: each is a program checked against scalac, javac or HotSpot (§27b).
+- It was written in four days. The Lake project was created on 8 October; the model was about 7,000 lines by the end of 9 October and about 27,000 by 11 October, after a day and a night of parallel agent sessions, mostly one per feature (retronym/talks#23–#69).
+
+<div class="fn">
+
+Notes: 1.5 min. Counted at `master` on 12 October, excluding `.lake/` and `scratch/`: lines with `wc -l`, theorems as `theorem`/`lemma` declarations, examples as `example`s. Facet by file: framework = `Task`, `Model`, `General`, `Soundness`, `Uniqueness`, `Termination`, `Tree`, `NonLocal`, `NonLocalAns`, `Stale`; name resolution includes `ZincNames/`; the JVM layer is `Jvm/`, `Scala/`, `Java/`, `BinCompat/`. The point for the audience: the obligations are small and reusable, and the cost is in stating each feature precisely, which is the specification work feature authors would otherwise skip. Caveat: lines measure what was written, not what was needed; the central review lists duplicated toy Scalas (`Hier`, `Erasure`, `Flat`, `ImplicitScope` each have their own).
 
 </div>
 
