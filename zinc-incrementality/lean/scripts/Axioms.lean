@@ -70,3 +70,6 @@ import BinCompat.ZincBridgeLibs
 #print axioms BinCompat.ZincBridgeKeys.coverage_fails
 #print axioms BinCompat.ZincBridgeKeys.loop_witness
 #print axioms BinCompat.ZincBridgeLibs.library_client
+-- SAM conversion and local classes
+#print axioms Zinc.Sam.fix_sound
+#print axioms Zinc.Sam.today_sound_argFree
