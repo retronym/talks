@@ -1,23 +1,31 @@
 # Zinc: incrementality as a language-design concern
 
+**Status:** draft of the slides. Each card is one slide (a few are split with `<!-- break -->`). Evidence and links stay on the slides here, because this talk doubles as a reference; the two companion talks put them in notes under each slide.
+
 **Audience:** maintainers of scalac / dotc, IDEs (Metals, IntelliJ), build tools (sbt, Mill, Bazel, Pants, Gradle). They know the compilers; most don't know Zinc's internals.
 
 **Thesis:** every language feature has consequences for incremental compilation, whether or not its designer considered them. Incremental soundness is a property of the *compiler's* API summary, which now lives in the compiler repos. So it should be designed, specified and tested alongside each feature, not reverse-engineered from user bug reports years later.
 
 <!-- break -->
 
-**Arc:**
+**Companion talks:** `zinc-lean` (the Lean model and its proofs) and `zinc-testing` (how testing of Zinc and the model evolved together). This talk is the overview; Part VII is a teaser for `zinc-lean`.
 
-1. What incremental compilation *is*, precisely, so that under- and overcompilation have exact meanings; what Zinc trades away for speed (hashes instead of resolution); and the premise it all rests on: separate ≡ joint compilation.
-2. How Zinc approximates it, and three design choices worth arguing about: members vs decls, who computes the hashes, and what a used name is (name kinds).
-3. How everyone else does it.
-4. Where it breaks: worked examples (implicits, value classes, macros), then a taxonomy.
-5. The machinery we maintain: bridge, tests, persisted state.
-6. Avoiding compilation altogether: hermetic builds and ABI jars.
-7. Can we prove it? A Lean model.
-8. Asks.
+**Contents (~60 min):**
 
-**Suggested budget (~60 min):** I 12 · II 10 · III 3 · IV 14 · V 10 · VI 4 · VII 5 · close 2. Cut Part III to a single slide if time is short; Part VII can be a 2-slide teaser.
+| part | sections | min |
+|---|---|---|
+| I. First principles | §1 the contract · §2 summaries as abstractions · §3 the fixed point · §4 rounds · §5 efficiency vs minimality · §6 every round is a separate compilation · §6a determinism as a compiler property | 12 |
+| II. Three design choices | §7 what `ExtractAPI` records · §8 what materialising buys · §9 what it costs · §10 alternatives · §10a worked example · §11 who computes the hash · §12 what a used name is | 10 |
+| III. History and prior art | §13 history · §13a four turning points · §14 prior art | 3 |
+| IV. Bugs by language feature | §15 implicits, value classes, macros · §16 a taxonomy · §17 feature design does not consider incrementality | 14 |
+| V. The machinery we maintain | §18 the bridge · §19 testing · §20 persisted state | 10 |
+| VI. Avoiding compilation altogether | §21 layers of avoidance | 4 |
+| VII. A Lean model of Zinc | §22 | 5 |
+| Close | §23 asks · §24 open questions | 2 |
+
+Cut Part III to a single slide if time is short; Part VII can be a two-slide teaser for `zinc-lean`.
+
+Where a slide reports a bug, a chip says how it was found: <span class="chip proof">proof attempt</span> <span class="chip search">search in the model</span> <span class="chip harness">generated tests</span> <span class="chip bench">benchmark on real code</span> <span class="chip hand">by hand or user report</span>. "By hand" includes probing scripted tests written by agents.
 
 ### Why incrementality matters more for Scala
 
@@ -249,7 +257,7 @@ flowchart BT
 - Zinc already uses this pattern for traits: `extraHash` "folds in the parents' later". So Merkle composition is an extension of existing practice, not a new idea. The PoC found that channel over-reaching: a trait also folds in its *class* parents' `extraHash`, which for a class is its whole API hash, so a public member added to `Expression` read as a private change in every trait extending it. On catalyst that cost about 700 recompiles; the PoC folds in trait parents only.
 - Merkle hashing does for member resolution what name hashing does for symbol resolution. Both are sound, hash-based over-approximations that are cheaper than doing the resolution.
 
-### 6. The hidden premise: separate compilation ≡ joint compilation
+### 6. Every round is a separate compilation: separate ≡ joint
 
 An incremental compile **is** a separate compilation: $R$ is compiled from source against the *classfiles/TASTy* of $S \setminus R$. So $I \equiv C$ silently assumes, **byte for byte**:
 
@@ -312,7 +320,7 @@ flowchart LR
 - Scala 2 made this a tested property in 2018 (§6a); Scala 3 has started enforcing it mechanically (`DeterminismTest`, [scala/scala3#26553](https://github.com/scala/scala3/pull/26553)).
 - partest's `_1`/`_2` convention checks that separate compilation succeeds; it doesn't compare the output with a joint compile.
 
-#### 6a. Stability as a compiler property: scala-dev#405 and scala3#7661
+#### 6a. Determinism as a compiler property: scala-dev#405 and scala3#7661
 
 The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405) ("Deterministic Compilation / Reproducible Builds", opened 2017, closed for 2.13.0-M5 in 2018) made the §6 premise an explicit, tested property of scalac. Its working definition of *stable*: the same bytes regardless of
 
@@ -357,7 +365,7 @@ The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/
 
 ---
 
-## Part II — Three design choices worth arguing about: the shape of π, who hashes it, and what a "used name" is
+## Part II — Three design choices: the shape of π, who hashes it, and what a used name is
 
 *(Discussion section. These are open questions.)*
 
@@ -380,14 +388,14 @@ The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/
 - The bridge's doc comment says so: the class hash includes parents only by *name*, "so we must ensure changes propagate somehow", followed by a TODO asking whether parent hashes could be used instead.
 - Scala 3 made the as-declared choice deliberately in 2016 ([lampepfl/dotty#1244](https://github.com/scala/scala3/pull/1244), Martres). The `ExtractAPI` doc comment gives two reasons: asSeenFrom for every inherited member is slow, and the set of prefixes explodes (`Outer#A#B#C…`). A change *as seen from* a prefix is caught on the client side instead: `ExtractDependencies` walks the *typed* use-site types (use-site expansion, contrasted with sbt 0.13's inheritance expansion in [sbt/zinc#174](https://github.com/sbt/zinc/issues/174)). The same function carries a 2016 TODO: "We shouldn't have to compute inherited members. Instead, `Structure` should have a lazy `parentStructures` field."
 
-### 8. Why it's done (what it buys)
+### 8. What materialising inherited members buys
 
 - **Locality of dependencies:** a client of `c.m`, where `m` is inherited from `A`, depends on `C`'s API. A change to `A.m` shows up as a change to `C`, so no hierarchy walk is needed at invalidation time. (In practice Zinc records a `memberRef` on the owner `A` as well, and walks anyway; §10.)
 - **`asSeenFrom`:** in `class B extends A[Int]`, `def f: T` is observed as `f: Int`. Changing only `B`'s extends clause changes the members clients see, with no change to any decl. (Scala 2 only. In Scala 3 the name hash of `f` does not move; the class-name hash of `B`, which covers `parents`, does, §10a Edit 2.)
 - **But asSeenFrom hides erasure.** A method's JVM descriptor is computed from its *declared* signature in the owner, not from the signature as seen from a subclass. A rendering that substitutes type arguments can hide an erasure change a subclass's bridge depends on (§15b).
 - **Linearization:** adding an override in a mixin changes *which* member wins for `C`. A member-level view captures that; a decls-only view would have to recompute the linearization.
 
-### 9. What it costs (what makes it non-local)
+### 9. What materialising inherited members costs
 
 - **API(C) depends on C's whole ancestor closure.** Editing `A` changes the API hash and name hashes of *every* descendant, so every descendant must be recompiled before its hash is trustworthy again, whether or not its own output depends on the edit. The descendants' clients are *not* delayed by a round: the invalidator already walks the hierarchy (`invalidateByInheritance`, then `memberRef` clients of every inheritor, filtered by `A`'s changed names), so they join the same round. What the walk cannot avoid is recompiling the hierarchy itself; in the model (§22) the decls and Merkle designs recompile only the clients, and in the PoC (§10) only the clients plus the descendants whose own compilation reads the change (§10a).
 
@@ -726,7 +734,7 @@ A name hash covers *all* definitions with that name in `c`, so adding one change
 
 ---
 
-## Part III — How we got here, and how everyone else does it
+## Part III — History and prior art
 
 ### 13. History
 
@@ -755,7 +763,7 @@ Three lanes moved at different speeds: what Zinc computes, where the bridge live
 
 **4. Ownership moves to the compilers (2020–2026).** Dotty shipped its own bridge from the start (`CompilerInterface2`, [scala/scala3#10607](https://github.com/scala/scala3/pull/10607)), and the Scala 2 bridge moved in-tree in 2.13.12 ([scala/scala#10472](https://github.com/scala/scala/pull/10472)). The consequences are Part V's drift risks. In parallel, state became deterministic (consistent format, [#1326](https://github.com/sbt/zinc/pull/1326); hashes instead of timestamps, [#1430](https://github.com/sbt/zinc/pull/1430); Scala 3 pipelining, [scala/scala3#18880](https://github.com/scala/scala3/pull/18880)). The 2025–26 wave of macro, pattern-match and determinism fixes (§15–16, Notes N1) are the most recent.
 
-### 14. Prior art: everyone converged on the same three ideas
+### 14. Prior art: ABI summaries, use tracking, content addressing
 
 ABI summaries · fine-grained use tracking · content addressing.
 
@@ -784,7 +792,7 @@ ABI summaries · fine-grained use tracking · content addressing.
 
 ---
 
-## Part IV — Where it breaks: language features vs incrementality
+## Part IV — Bugs by language feature
 
 ### 15. Three worked examples: implicits, value classes, macros
 
@@ -1028,7 +1036,7 @@ object Client { Provider.printTree(Foo.str) }  // remove Foo.str → Client must
 - **Declared literal types.** `dropConst` widens `def x: 1` and `var v: 1` to `Int` in the API (`def-literal-return-type`, `var-literal-type`; draft fix [retronym/zinc#18](https://github.com/retronym/zinc/pull/18)). Only stable vals kept their constant types.
 - **Java sealed `permits`.** Without pipelining, the Java API comes from `ClassToAPI`, whose `childrenOfSealedClass` only handled enums, so exhaustivity against a Java sealed interface missed a new subclass (`java-sealed-permits-exhaustivity`; draft fix [retronym/zinc#21](https://github.com/retronym/zinc/pull/21) reads `Class.getPermittedSubclasses`).
 
-### 17. Incrementality is the forgotten dimension of feature design
+### 17. Feature design does not consider incrementality
 
 - A SIP or feature PR covers syntax, typing, erasure, binary compatibility and TASTy compatibility, but never "which new observables does this introduce, and where are they hashed?"
 - **Time-to-fix as evidence:** `@inline` + optimizer took 5 years; refinement-owner instability was open for years; Scala 3 patmat existed since 3.0 and was found in 2026.
@@ -1174,9 +1182,9 @@ flowchart LR
 
 ---
 
-## Part VII — Can we prove it? A mechanised model (Lean)
+## Part VII — A Lean model of Zinc
 
-### 22. Formalising incremental compilation
+### 22. Zinc's loop, proved sound relative to the compiler
 
 **Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful result: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: `lean/` in this directory, Lean 4 + Mathlib, ~1100 lines, no `sorry`. Theorem names below refer to it.
 
@@ -1465,9 +1473,9 @@ Most explain *overcompilation*; few help with *undercompilation*, which needs th
 
 ---
 
-## Appendix
+## Notes for Jason
 
-### Demo candidates (pick 2)
+### D. Demos (pick two)
 
 - `@inline` + optimizer undercompilation (Scala 2, pre-1.10).
 - Scala 3 `unapply` change → `NoSuchMethodError` (pre-3.10).
@@ -1476,7 +1484,7 @@ Most explain *overcompilation*; few help with *undercompilation*, which needs th
 - Joint vs separate: compile a Scala/Java pair both ways and `diff` the classfiles (`javap -v`); pick one of the open §6 issues.
 - Members-vs-decls cascade: edit a root trait, show the invalidation log across a deep hierarchy.
 
-### TODOs
+### C. Work before this is presentable
 
 - Measure the inherited-vs-declared share of the analysis (count definitions and bytes) for scala/scala and one large app.
 - Verify how `memberRef` targets are chosen (declaring owner vs receiver type) in both bridges before presenting §10.

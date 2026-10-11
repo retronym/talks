@@ -6,6 +6,8 @@
 
 **Thesis:** incremental compilation is sound relative to a small set of obligations on the compiler. Writing the obligations down in Lean replaced fixing Zinc bugs one report at a time with a repeatable process: model a language feature as a new kind of query, re-prove the obligations or find the counterexample, check the model exhaustively, then test real Zinc against the model's program space.
 
+**Companion talks:** `zinc-incrementality` (the overview: Zinc's design, its bugs by feature, the bridge) and `zinc-testing` (how testing of Zinc and this model evolved together). This talk is about the model and what it proved; `zinc-testing` covers §5 and §26–27b at more length.
+
 <!-- break -->
 
 **Where the Lean lives:** the full model is `../zinc-incrementality/lean/` (Lean and Mathlib `v4.34.1`, no `sorry`). This talk's own Lean is `lean/`:

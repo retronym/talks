@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Testing Zinc</title>
+<title>%%TITLE%%</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -151,7 +151,7 @@ body.focus .focus-counter { display: block; }
 <body>
 <div class="layout">
   <nav class="toc" aria-label="Contents">
-    <div class="title">Testing Zinc</div>
+    <div class="title">%%TITLE%%</div>
     <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
     <div class="controls">
       <button id="btn-focus" type="button">Focus mode</button>
@@ -339,10 +339,10 @@ if (window.hljs) hljs.registerLanguage('lean', function (hljs) {
   function toggleTheme() {
     const next = isDark() ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('zinc-testing-theme', next); } catch (e) {}
+    try { localStorage.setItem('zinc-talk-theme', next); } catch (e) {}
     renderMermaid();
   }
-  try { const t = localStorage.getItem('zinc-testing-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
+  try { const t = localStorage.getItem('zinc-talk-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
   document.getElementById('btn-focus').onclick = toggleFocus;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.addEventListener('keydown', e => {
