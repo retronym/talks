@@ -81,6 +81,19 @@ def space3 : List Client :=
   (sites3.map fun s => ([], { sites := [s] })) ++
   (xClasses3.flatMap fun x => sites3.map fun s => ([(.X, x)], { loads := [.X], sites := [s] }))
 
+/-- The J5 space: `space3`'s clients, each `X` declaring a public `()V` constructor (J5's classes
+declare theirs), plus `new c(…)` of each library class with `()V` and `(I)V`, from a class of its
+own or from `X`. -/
+def xClasses5 : List (Classfile C N D) := xClasses3.map fun x => { x with methods := ctor0 :: x.methods }
+
+def sites5 : List (Site C N D) :=
+  let cs : List (Site C N D) := [C.A, .B, .I, .J].flatMap fun c => [D.v, .iv].map fun d => .construct c .init d
+  sites3 ++ cs ++ cs.map (.within .X)
+
+def space5 : List Client :=
+  (sites5.map fun s => ([], { sites := [s] })) ++
+  (xClasses5.flatMap fun x => sites5.map fun s => ([(.X, x)], { loads := [.X], sites := [s] }))
+
 def recvOf : Site C N D → Option (C × C)
   | .invokevirtual c _ _ r => some (r, c)
   | .invokeinterface c _ _ r => some (r, c)

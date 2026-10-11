@@ -20,7 +20,7 @@ the new library. Both are questions about a task's trace against an edited envir
 The model is generic in class, method-name and descriptor types. Calibrated against HotSpot 21, 25
 and 27 by `probes/jvm`. Not modelled: nestmates (private access is same-class only), method bodies
 (a library method's own calls), signature-polymorphic methods, `Object`'s methods in interface
-resolution, loader constraints, class initialisation, and transitive overriding through an
+resolution, loader constraints, class initialisation, protected constructors, modules (all classes are in one), and transitive overriding through an
 intermediate package-private method (§5.4.5's second case). Linking is lazy, as on the JVM: an error is raised by
 the first site that hits it; a class is loaded, with its loading checks, when it is first referred
 to, and each site is verified just before it runs (as if each site were its own method).
@@ -44,6 +44,8 @@ structure Header (C : Type) where
   ifaces : List C := []
   isPublic : Bool := true
   pkg : ℕ := 0
+  /-- The `PermittedSubclasses` attribute: `some ps` for a sealed class or interface. -/
+  permitted : Option (List C) := none
   deriving DecidableEq, Repr
 
 structure MethodInfo where
@@ -211,9 +213,17 @@ def chainOver (n : N) (d : D) (a : C) (ma : MethodInfo) :
       | none => pure none
       | some s => chainOver n d a ma k s
 
+/-- May `x` (with header `h`) extend or implement `s` (with header `hs`)? JVMS §5.3.5: if `s` is
+sealed, `x` must be listed in its `PermittedSubclasses` and, unless `x` is public, be in the same
+run-time package (all classes here are in one module). -/
+def permits (x : C) (h hs : Header C) : Bool :=
+  match hs.permitted with
+  | none => true
+  | some ps => (h.isPublic || h.pkg == hs.pkg) && ps.contains x
+
 /-- Load a class, and first its superinterfaces and superclass (HotSpot's class file parser resolves
 them in that order): each superinterface must be an interface, the superclass a non-final class,
-both accessible from the class, and none of the class's instance methods may override a final one. The JVM loads a class when a
+both accessible from the class and, if sealed, permitting it (§5.3.5), and none of the class's instance methods may override a final one. The JVM loads a class when a
 site, the verifier or a subclass first refers to it; the model loads it at each such reference,
 which repeats queries but not answers. -/
 def loadK : ℕ → C → M C N D Unit
@@ -224,15 +234,19 @@ def loadK : ℕ → C → M C N D Unit
       loadK k i
       if !(← hdr i).isInterface then throw .incompatibleClassChange
     match h.super with
-    | none => pure ()
+    | none =>
+      for i in h.ifaces do
+        if !permits x h (← hdr i) then throw .incompatibleClassChange
     | some s =>
       loadK k s
       let hs ← hdr s
       if hs.isInterface then throw .incompatibleClassChange
       if hs.isFinal then throw .finalSuper
+      if !permits x h hs then throw .incompatibleClassChange
       if !hs.isPublic && hs.pkg != h.pkg then throw .illegalAccess
       for i in h.ifaces do
         let hi ← hdr i
+        if !permits x h hi then throw .incompatibleClassChange
         if !hi.isPublic && hi.pkg != h.pkg then throw .illegalAccess
       for (n, d, mi) in ← askDeclared x do
         if let some (a, si) ← chain true n d depth s then
@@ -350,7 +364,8 @@ def resolveField (cur : Cur C) (c : C) (n : N) (d : D) : M C N D (C × FieldInfo
     pure (a, f)
 
 /-- A call site, as javac emits it for `new R().m()` with the static receiver type `C` (an upcast
-`C c = new R(); c.m()` when `R ≠ C`), or a `new C()`; field accesses likewise.
+`C c = new R(); c.m()` when `R ≠ C`), or a `new C()` whose constructor is not modelled (`construct`
+models one); field accesses likewise.
 `invokespecial` is a `super` call (`iface` for `I.super.m()`) from the site's class, so it is wrapped in a
 `within`. `within x s` runs `s` from a static method of the client's class `x`. -/
 inductive Site (C N D : Type)
@@ -366,6 +381,9 @@ inductive Site (C N D : Type)
   | getstatic (c : C) (n : N) (d : D)
   | putstatic (c : C) (n : N) (d : D)
   | within (x : C) (s : Site C N D)
+  /-- `new c(…)`: `new c; dup; invokespecial c.n d`, where `n` is the constructor's name (`<init>`)
+  in the caller's name type. -/
+  | construct (c : C) (n : N) (d : D)
   deriving DecidableEq, Repr
 
 /-- The verifier's assignability of class type `r` to `c` (JVMS §4.10.1.2, as HotSpot checks it):
@@ -489,6 +507,13 @@ def runSiteK (cur : Cur C) : Site C N D → M C N D C
   | .within x s => do
     discard <| resolveCls cur x
     runSiteK (some x) s
+  | .construct c n d => do
+    instantiate cur c
+    -- Resolution walks the superclasses as for any method; HotSpot then requires a constructor to
+    -- be declared by `c` itself (`linktime_resolve_special_method`).
+    let (a, _) ← resolveClass cur c n d
+    if a != c then throw .noSuchMethod
+    pure c
 
 def runSite : Site C N D → M C N D C := runSiteK none
 

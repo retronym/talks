@@ -106,17 +106,19 @@ example : enumConstantRemoved.after = .ok (.error .noSuchField) := by decide +ke
 example : recordComponentRemoved.before = .ok (.ok ["R", "R"]) ∧
     recordComponentRemoved.after = .ok (.error .noSuchMethod) := by decide +kernel
 
-/-- Adding one leaves the old accessors' footprint unchanged. -/
+/-- Adding one leaves the old accessors' footprint unchanged… -/
 example : Jvm.Compatible recordComponentAdded.w0 recordComponentAdded.w1 recordComponentAdded.p0 :=
   compatible_of_agrees _ _ _ (by decide +kernel)
 
+/-- …but changes the canonical constructor's descriptor, so constructing the record breaks. -/
+example : recordComponentAddedNew.before = .ok (.ok ["R", "R"]) ∧
+    recordComponentAddedNew.after = .ok (.error .noSuchMethod) := by decide +kernel
+
 /-! ## §13.4.2.1: sealed classes -/
 
-/-- Making a class `sealed` without permitting an existing subclass is not binary compatible: HotSpot
-refuses to load the subclass. `Jvm` does not model `PermittedSubclasses`, so the model loads it;
-lowering does emit the attribute. -/
-example : classBecomesSealed.after = .ok (.ok []) ∧
-    (lowerProgram classBecomesSealed.v1).map (·.map (·.permitted)) = .ok [["B"], []] := by
-  decide +kernel
+/-- Making a class `sealed` without permitting an existing subclass is not binary compatible: the
+subclass no longer loads. Lowering emits `PermittedSubclasses`, and `Jvm` checks it (§5.3.5). -/
+example : classBecomesSealed.before = .ok (.ok []) ∧
+    classBecomesSealed.after = .ok (.error .incompatibleClassChange) := by decide +kernel
 
 end Java.Jls13
