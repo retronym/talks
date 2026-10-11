@@ -64,6 +64,12 @@ remote = "origin"
 pr = 137
 title = "Warn when a class does not implement a Java interface's re-declared default (scala/bug#12224)"
 
+[[members]]
+id = "rz-scala#138"
+remote = "origin"
+pr = 138
+title = "Make Analyzer an abstract class"
+
 [[excluded]]
 id = "rz-scala#40..#133"
 reason = "old performance and WIP experiments"
