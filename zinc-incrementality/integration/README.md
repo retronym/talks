@@ -49,3 +49,9 @@ cd ~/code/scala/scala
 ```
 
 The first run publishes the branch (a few minutes); later runs republish only when the branch's tip moves.
+
+The argument can also be any other branch of retronym/zinc, such as a PR branch, to try it before the integration branch is rebuilt:
+
+```bash
+~/code/retronym/talks/zinc-incrementality/integration/zinc-sbt backport/1.12.x-merkle-hash-poc
+```

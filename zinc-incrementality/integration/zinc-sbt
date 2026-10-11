@@ -10,6 +10,8 @@
 # private boot directory are replaced by the branch's. A global setting points every Scala 2.13
 # project at the branch's compiled compiler bridge rather than scala2-sbt-bridge.
 #
+# The argument names integration/<name> on retronym/zinc if that exists, otherwise any branch
+# there, e.g. backport/1.12.x-merkle-hash-poc to test a PR before the integration rebuild.
 # The branch must be on the project's Zinc line: merkle-1.12.x for sbt 1.12.x. Tested on
 # scala/scala (sbt 1.12.15); the sbt 2 branches (develop, merkle) are untested here.
 #
@@ -20,8 +22,15 @@ set -euo pipefail
 branch=${1:?usage: zinc-sbt <integration branch, e.g. merkle-1.12.x> [sbt args...]}
 shift
 root=${INTEGRATION_ROOT:-$HOME/code/.integration}
-zinc=$root/integration-$branch
-ivy=$root/ivy-$branch
+remote=https://github.com/retronym/zinc.git
+if git ls-remote --exit-code -q "$remote" "refs/heads/integration/$branch" >/dev/null; then
+  ref=integration/$branch
+else
+  ref=$branch
+fi
+slug=${branch//\//-}
+zinc=$root/integration-$slug
+ivy=$root/ivy-$slug
 project=$PWD
 
 sbt_version=$(sed -n 's/^sbt.version *= *//p' project/build.properties 2>/dev/null | tr -d '[:space:]')
@@ -30,16 +39,16 @@ zinc_version=$(coursier resolve "org.scala-sbt:sbt:$sbt_version" | sed -n 's/^or
 [[ -n $zinc_version ]] || { echo "could not find the Zinc version of sbt $sbt_version" >&2; exit 1; }
 
 if [[ ! -d $zinc ]]; then
-  git clone -q --branch "integration/$branch" https://github.com/retronym/zinc.git "$zinc"
+  git clone -q --branch "$ref" "$remote" "$zinc"
 elif [[ ${ZINC_SBT_FETCH:-1} != 0 ]]; then
-  git -C "$zinc" fetch -q origin "integration/$branch"
-  git -C "$zinc" checkout -q -B "integration/$branch" FETCH_HEAD
+  git -C "$zinc" fetch -q origin "$ref"
+  git -C "$zinc" checkout -q -B "$ref" FETCH_HEAD
 fi
 sha=$(git -C "$zinc" rev-parse HEAD)
 
 stamp=$ivy/published-$zinc_version
 if [[ ! -f $stamp || $(cat "$stamp") != "$sha" ]]; then
-  echo "zinc-sbt: publishing integration/$branch ${sha:0:9} as Zinc $zinc_version to $ivy" >&2
+  echo "zinc-sbt: publishing $ref ${sha:0:9} as Zinc $zinc_version to $ivy" >&2
   (cd "$zinc" && sbt --ivy "$ivy" --batch --no-server \
     "set ThisBuild / version := \"$zinc_version\"" publishLocal publishBridges) >&2
   echo "$sha" > "$stamp"
@@ -72,5 +81,5 @@ if [[ ! -f $boot_stamp || $(cat "$boot_stamp") != "$sha" ]]; then
   echo "$sha" > "$boot_stamp"
 fi
 
-echo "zinc-sbt: sbt $sbt_version in $project with Zinc $zinc_version = integration/$branch ${sha:0:9}" >&2
+echo "zinc-sbt: sbt $sbt_version in $project with Zinc $zinc_version = $ref ${sha:0:9}" >&2
 exec sbt "${sbt_flags[@]}" "$@"
