@@ -1026,7 +1026,7 @@ theorem rules_over :
     simp [rules, answer] at hne
 
 
-/-! ## Import selectors (Phase 26, `PLAN-imports.md`)
+/-! ## Import selectors (Phase 27, `PLAN-imports.md`)
 
 A selector that renames or hides (`import X.{Foo => Bar}`, `import X.{Foo => _, _}`) asks its
 qualifier for the original name whether or not the client uses it: both compilers reject a

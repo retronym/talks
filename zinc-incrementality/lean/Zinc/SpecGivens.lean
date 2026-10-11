@@ -324,7 +324,7 @@ theorem g_decls_not_abstraction :
   simp [gcompiler, answer] at this
 
 
-/-! ## Given prioritisation (Phase 26, `PLAN-imports.md`)
+/-! ## Given prioritisation (Phase 27, `PLAN-imports.md`)
 
 At the decisive level the search has read every scope; the rule picks among the level's hits:
 Scala 3.7 and later the most general instance (`general`), Scala 3 before 3.7 and Scala 2 the most

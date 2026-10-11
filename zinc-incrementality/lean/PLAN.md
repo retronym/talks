@@ -466,4 +466,4 @@ Each step adds a layout or a dimension that the harness (retronym/zinc#25) alrea
 
 ## Phase 25 — companion pairs in a hierarchy space: see `PLAN-companions.md`
 
-## Phase 26 — import selectors (renames, hiding, givens) and Scala 3.7's given prioritisation: see `PLAN-imports.md`
+## Phase 27 — import selectors (renames, hiding, givens) and Scala 3.7's given prioritisation: see `PLAN-imports.md`

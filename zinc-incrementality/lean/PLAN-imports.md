@@ -1,4 +1,4 @@
-# Phase 26 — import selectors and Scala 3.7's given prioritisation (`SplitProof.Spec`, `SpecGivens`)
+# Phase 27 — import selectors and Scala 3.7's given prioritisation (`SplitProof.Spec`, `SpecGivens`)
 
 ## Questions
 
@@ -68,7 +68,7 @@ Both are G1 (an instance in a package object, reached through no edge) under a n
 
 ## Steps
 
-- [x] P26.1 Probes and bridge reading (above).
-- [x] P26.2 `Spec`: selector checks, coverage, obligations, witness.
-- [x] P26.3 `SpecGivens`: `Prio`, `best`, today's keys on the picked scope, obligations under both rules, witnesses, a bounded check.
-- [x] P26.4 Proved vs checked; PLAN.md pointer.
+- [x] P27.1 Probes and bridge reading (above).
+- [x] P27.2 `Spec`: selector checks, coverage, obligations, witness.
+- [x] P27.3 `SpecGivens`: `Prio`, `best`, today's keys on the picked scope, obligations under both rules, witnesses, a bounded check.
+- [x] P27.4 Proved vs checked; PLAN.md pointer.
