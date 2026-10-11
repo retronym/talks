@@ -1,4 +1,4 @@
-# Phase 26 — SAM conversion and local classes (BUG-MAP gap L1)
+# Phase 28 — SAM conversion and local classes (BUG-MAP gap L1)
 
 ## Question
 
@@ -71,6 +71,6 @@ A policy of the files layer, not a coverage failure here: Zinc records no `membe
 
 ## Steps
 
-- [x] P26.1 This design.
-- [x] P26.2 `Zinc/Sam.lean`: the task, today's keys per bridge, witnesses by kernel `decide`, the fix's `Obligations` and T3a, today's obligations without lambdas in argument position, the fix's cost.
-- [ ] P26.3 The pending tests above in retronym/zinc, and #1528's statement in the files layer.
+- [x] P28.1 This design.
+- [x] P28.2 `Zinc/Sam.lean`: the task, today's keys per bridge, witnesses by kernel `decide`, the fix's `Obligations` and T3a, today's obligations without lambdas in argument position, the fix's cost.
+- [ ] P28.3 The pending tests above in retronym/zinc, and #1528's statement in the files layer.
