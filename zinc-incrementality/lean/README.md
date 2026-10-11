@@ -44,7 +44,7 @@ The local `Compiler` (`Model.lean:67`) has the first three. The policy's one obl
 | | `Stale.stale_unsound`, `stale_affected` (`Stale.lean:131`, `:136`) | T2-stale: a non-local hash diffed over the recompiled set alone undercompiles; over `affected` it does not | kernel `decide` |
 | | `Cycles.zinc_ne_clean`, `annotated_eq_clean` (`Cycles.lean:190`, `:219`) | T3a without T3 for inferred types in a cycle; T3 when every member is annotated | |
 | B4 | `XCompiler.untouched_eq_clean` (`BinCompat/ZincBridge.lean:131`) | A unit Zinc never recompiles equals the clean build's, so it links as a fresh build does | explicit interfaces, through `XCompiler.fixpoint_unique_of_explicit` (`:100`) |
-| | `zinc_sound_charged` (`Files.lean:170`) | T3a with file-closed rounds and imports charged to one class of the file | charged obligations; file-closed policy |
+| | `zinc_sound_charged` (`Files.lean:175`) | T3a with file-closed rounds and imports charged to one class of the file | charged obligations; file-closed policy |
 
 **Where the hypotheses bite.**
 
@@ -78,7 +78,7 @@ The local `Compiler` (`Model.lean:67`) has the first three. The policy's one obl
 | `NonLocalAns.lean` | `NCompiler`: answers and hash read sets over several interfaces; T2″, T3a″ through `toX` |
 | `Tree.lean` | `TCompiler`: keys read off the output (the typed tree), not the trace; T2, T3a through `toX` |
 | `Classpath.lean` | Upstream subprojects and libraries: stored snapshots, external invalidation; T5a, T5 |
-| `Files.lean` | Files as a layer: file-closed policies, imports charged to one class of a file; `zinc_sound_charged` |
+| `Files.lean` | Files as a layer: file-closed policies, imports charged to one class of a file; `zinc_sound_charged`, T5 under charging (`downstream_sound_charged`), the sbt/zinc#417 fix for every program (`Fi.kept_sound`) |
 | `Naming.lean` | Class-name agreement between what the compiler reads and what the bridge records; `spelling_bugs`, case-insensitive collisions |
 | `HashForms.lean` | Hash stability across forms (tree, pickle, TASTy, classfile): abstraction holds iff no form masks a difference; canonical forms |
 
