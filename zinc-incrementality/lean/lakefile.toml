@@ -45,7 +45,6 @@ root = "ScalaProbe"
 
 [[lean_lib]]
 name = "BinCompat"
-globs = ["BinCompat.+"]
 
 [[lean_lib]]
 name = "Java"
@@ -53,3 +52,7 @@ name = "Java"
 [[lean_exe]]
 name = "javaprobe"
 root = "JavaProbe"
+
+[[lean_exe]]
+name = "bincompat"
+root = "BinCompatMain"

@@ -129,7 +129,8 @@ public class Run {
 
   static boolean written(Class<?> c, Map<String, Object> s, Object o) throws Exception {
     for (java.lang.reflect.Field f : c.getDeclaredFields()) {
-      if (f.getName().equals(s.get("name"))) {
+      boolean st = java.lang.reflect.Modifier.isStatic(f.getModifiers());
+      if (f.getName().equals(s.get("name")) && st == (o == null)) {
         f.setAccessible(true);
         if ("put".equals(f.get(o))) return true;
       }

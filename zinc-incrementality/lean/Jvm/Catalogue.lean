@@ -114,7 +114,7 @@ def superclassRemoved : Case where
 declared the method, so a call through the interface finds nothing to run. -/
 def defaultRemoved : Case where
   name := "defaultRemoved"
-  mima := some "ReversedMissingMethodProblem"
+  mima := some "DirectAbstractMethodProblem"
   v0 := [(.I, { header := { isInterface := true }, methods := [(.m, .v, inst)] })]
   v1 := [(.I, { header := { isInterface := true }, methods := [(.m, .v, abs)] })]
   client := [(.X, { header := { ifaces := [.I] } })]
@@ -153,7 +153,7 @@ def pulledUp : Case where
 /-! ## J3: access, `invokespecial` and private methods, interface statics, fields
 
 Packages: `pkg := 1` is `p1`; a site without `within` runs from a class of its own in the unnamed
-package. MiMa's problem names for these cases are expectations, to be confirmed by track B. -/
+package. -/
 
 def p1 : Header C := { pkg := 1 }
 def iface : Header C := { isInterface := true }
@@ -245,7 +245,7 @@ def superCallRemoved : Case where
 
 def superCallAbstract : Case where
   name := "superCallAbstract"
-  mima := some "DirectAbstractMethodProblem"
+  mima := some "AbstractClassProblem"
   v0 := [(.B, { methods := [(.m, .v, inst)] })]
   v1 := [(.B, { header := { isAbstract := true }, methods := [(.m, .v, abs)] })]
   client := [(.X, { header := { super := some .B }, methods := [(.m, .v, inst)] })]
