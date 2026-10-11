@@ -9,6 +9,7 @@ import pathlib
 import sys
 
 here = pathlib.Path(__file__).resolve().parent
+TITLE = 'Testing Zinc'  # short title for the browser tab and sidebar
 src = (here / "talk.md").read_text(encoding="utf-8")
 template = (here / "template.html").read_text(encoding="utf-8")
 
@@ -16,5 +17,5 @@ if "%%TALK%%" not in template:
     sys.exit("template.html has no %%TALK%% placeholder")
 
 embedded = src.replace("</script", "<\\/script")
-(here / "index.html").write_text(template.replace("%%TALK%%", embedded), encoding="utf-8")
+(here / "index.html").write_text(template.replace("%%TITLE%%", TITLE).replace("%%TALK%%", embedded), encoding="utf-8")
 print("wrote", here / "index.html")
