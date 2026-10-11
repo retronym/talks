@@ -1,4 +1,4 @@
-# Files as a layer (design note, approved)
+# Files as a layer (design note, approved; implemented in `Zinc/Files.lean`)
 
 ## Problem
 
@@ -42,7 +42,15 @@ Zinc recompiles source files, not classes, but records keys per class. The frame
 
 ## Steps
 
-1. This note, for review.
-2. `General.lean`: `file` (default one class per file) and `Policy.FileClosed`; the charged T2 under closed rounds; T3a and T5 carried; the axioms check covers the new statements.
-3. `ChargedCoverage`, with `charged_of_coverage`; the F3 witness and fix on `SplitProof.Spec` with a two-class client file.
-4. FI: one witness for sbt/zinc#417 (an inheritance edge between classes of one file, dropped).
+1. [x] This note, for review.
+2. [x] `Zinc/Files.lean`, with no change to `General.lean`. The pieces:
+   - `file` and `charge` are parameters of the statements, not fields of `XCompiler`, so no instance changes. One class per file is `file := id`, under which every set is closed (`closed_id`).
+   - `Closed` and `Policy.FileClosed`.
+   - The charged T2, `round_preserves_charged`: from a file-closed round, with the dirty set over the classes whose own or charged keys moved.
+   - The charged T3a, `zinc_sound_charged`. Its hypotheses: a sound, file-closed policy; a file-closed first round; every representative is a class of its file, and of `S` when its file is. For an instance meeting the plain obligations, `XCompiler.zinc_sound` applies unchanged, whatever the file map and the policy.
+   - The axioms check covers the new theorems.
+   - Not done: T5 under charging.
+3. [x] `ChargedCoverage`, with `charged_of_obligations`.
+   - The F3 witness, `FileSpec.today_not_charged`, is on `Spec`'s lookup with a two-class client file. `Other` is the file's first class (Scala 2) or its last (Scala 3), and is today's representative. Since `SplitProof.lean` has open work, `Spec`'s lookup is lifted (`lift`, `trace_lift`) instead of extending `Spec` in place.
+   - The fix, the import charged to every class of the file, meets the plain obligations for every program whose scopes are pinned or wildcard-imported (`every_obligations`). Hence T3a (`every_sound`).
+4. [x] FI, `Fi.fi_not_covered` and `Fi.fi_loop`, for sbt/zinc#417. `A` and `B extends A` share a file, and `C extends B` is in another. With the same-file edge dropped, `C`'s inheritance key on `B` does not reach `A`, which `C` reads; with the edge kept, it does. From an up-to-date build, an edit to `A` recompiles `{A, B}`, the loop stops, and `C` keeps what it inherited from the old `A`. The fix (keeping the edge) is checked on this program only, not proved in general.

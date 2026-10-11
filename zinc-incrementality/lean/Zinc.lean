@@ -48,3 +48,4 @@ import Zinc.MacroDeps
 import Zinc.ExtraHash
 import Zinc.Companions
 import Zinc.Extensions
+import Zinc.Files
