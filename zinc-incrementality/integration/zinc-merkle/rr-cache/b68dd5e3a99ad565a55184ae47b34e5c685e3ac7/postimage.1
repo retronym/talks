@@ -1,0 +1,7 @@
+# Client, in package a with `import w.W._`, resolves Foo to a.Foo (another file).
+> p/compile
+# W gains Foo, which the wildcard import now supplies over a.Foo, and its v is a String: a clean build fails.
+# Zinc charges a top-level import to the first class of the file, First, which does not use the name Foo;
+# Client, which does, has no edge to W.
+$ copy-file changes/W.scala p/W.scala
+-> p/compile

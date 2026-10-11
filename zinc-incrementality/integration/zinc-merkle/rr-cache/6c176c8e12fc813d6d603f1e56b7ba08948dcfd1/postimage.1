@@ -1,0 +1,8 @@
+# Client, in package a with `import w.W._`, resolves Foo to a.Foo (another file).
+> p/compile
+# W gains Foo, which the wildcard import now supplies over a.Foo, and its v is a String: a clean build fails.
+# Scala 3's bridge charges a top-level import to the last class of the file (`responsibleForImports`
+# keeps the last TypeDef it folds over), Last, which does not use the name Foo; Client, which does,
+# has no edge to W.
+$ copy-file changes/W.scala p/W.scala
+-> p/compile

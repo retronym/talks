@@ -1,0 +1,255 @@
+branch = "integration/develop"
+repo = "~/code/sbt/zinc"
+push = "origin"
+
+base = { remote = "upstream", branch = "develop" }
+
+# upstream PRs (sbt/zinc)
+[[members]]
+id = "sz#1841"
+remote = "upstream"
+pr = 1841
+title = "Hash a top-level class's kind, modifiers, access and annotations"
+
+[[members]]
+id = "sz#1846"
+remote = "upstream"
+pr = 1846
+title = "[2.x] fix: Recompile clients of an object's singleton type when an ancestor's companion gains an implicit in another project"
+
+[[members]]
+id = "sz#1842"
+remote = "upstream"
+pr = 1842
+title = "Record dependencies on the annotations of definitions"
+
+# fixes
+[[members]]
+id = "rz#27"
+remote = "origin"
+pr = 27
+title = "Distinguish traits from classes in the class-name hash"
+
+[[members]]
+id = "rz#28"
+remote = "origin"
+pr = 28
+title = "Hash the erased signature of each member as declared"
+
+[[members]]
+id = "rz#32"
+remote = "origin"
+pr = 32
+title = "Pending scripted tests: an added class that shadows an already resolved name"
+
+[[members]]
+id = "rz#34"
+remote = "origin"
+pr = 34
+title = "Invalidate the users of an added class's simple name"
+
+[[members]]
+id = "rz#35"
+remote = "origin"
+pr = 35
+title = "Pending scripted tests: name-resolution changes that Zinc misses (package objects, exports, imports charged to another class, givens)"
+
+[[members]]
+id = "rz#47"
+remote = "origin"
+pr = 47
+title = "Invalidate on definitions added to package objects, wildcard-imported objects and top-level scopes, scoped to the classes that see the package"
+
+[[members]]
+id = "rz#43"
+remote = "origin"
+pr = 43
+title = "Record a Java class's used names and its static imports"
+
+[[members]]
+id = "rz#37"
+remote = "origin"
+pr = 37
+title = "Avoid per-node allocation in the bridge's used-name extraction"
+
+# pending tests
+[[members]]
+id = "rz#33"
+remote = "origin"
+pr = 33
+title = "Scripted test: mutually inferred types alternate in pairs until transitiveStep"
+
+[[members]]
+id = "rz#40"
+remote = "origin"
+pr = 40
+title = "Pending scripted tests: Scala 3 inline bodies and opaque types"
+
+[[members]]
+id = "rz#42"
+remote = "origin"
+pr = 42
+title = "Pending scripted tests: Java name resolution and sealed hierarchies that Zinc misses"
+
+[[members]]
+id = "rz#49"
+remote = "origin"
+pr = 49
+title = "Pending scripted tests: annotations removed or changed on members inferred in a cycle"
+
+[[members]]
+id = "rz#50"
+remote = "origin"
+pr = 50
+title = "Pending scripted tests predicted by the Lean model (Java views, stale javac product, Dynamic)"
+
+[[members]]
+id = "rz#51"
+remote = "origin"
+pr = 51
+title = "Pending scripted tests: Scala 3 misses predicted by the Lean model (BUG-MAP)"
+
+[[members]]
+id = "rz#52"
+remote = "origin"
+pr = 52
+title = "Pending scripted test: trait initialiser skipped for a trait with an extension method (Scala 3)"
+
+[[members]]
+id = "rz#53"
+remote = "origin"
+pr = 53
+title = "Pending scripted tests: an extension added where the search looks"
+
+[[members]]
+id = "rz#57"
+remote = "origin"
+pr = 57
+title = "Pending scripted tests: a type turned into a value class leaves stale mixin and static forwarders"
+
+[[members]]
+id = "rz#58"
+remote = "origin"
+pr = 58
+title = "Pending scripted tests: Scala 3.7+ given prioritisation and SAM lambda arguments (predicted by the Lean model)"
+
+[[members]]
+id = "rz#59"
+remote = "origin"
+pr = 59
+title = "Add pending test: forwarders to an inherited method over a new value class"
+
+# harness
+[[members]]
+id = "rz#36"
+remote = "origin"
+pr = 36
+title = "Conformance harness on develop: source-file bases, a classfile probe, and Scala 3 TASTy fixes"
+
+[[members]]
+id = "rz#44"
+remote = "origin"
+pr = 44
+title = "Conformance: Java sources in source-file bases"
+
+[[members]]
+id = "rz#46"
+remote = "origin"
+pr = 46
+title = "Conformance: split-layout pending tests for an added upstream class; --jobs machine-wide lock"
+
+[[members]]
+id = "rz#54"
+remote = "origin"
+pr = 54
+title = "Conformance: an uncovered verdict from the keys the Analysis records"
+
+# tooling
+[[members]]
+id = "rz#60"
+remote = "origin"
+pr = 60
+title = "Allow scripted tests to run on a locally published Scala 3"
+
+[[members]]
+id = "rz#45"
+remote = "origin"
+pr = 45
+title = "CLAUDE.md: run sbt with --server --batch"
+
+[[excluded]]
+id = "rz#1"
+reason = "2019-era performance work (flat classpath caching); conflicts with UsedName/protobuf"
+
+[[excluded]]
+id = "rz#3"
+reason = "2019-era performance work (analysis deserialization); conflicts with UsedName/protobuf"
+
+[[excluded]]
+id = "rz#4"
+reason = "2019-era performance work (analysis deserialization); conflicts with UsedName/protobuf"
+
+[[excluded]]
+id = "rz#5"
+reason = "2019-era performance work (UseScope bitmask); conflicts with UsedName/protobuf"
+
+[[excluded]]
+id = "rz#6"
+reason = "review branch for feat/classfile-java-api-phase3, not a fix"
+
+[[excluded]]
+id = "rz#12"
+reason = "placeholder (draft)"
+
+[[excluded]]
+id = "rz#26"
+reason = "placeholder"
+
+[[excluded]]
+id = "rz#14"
+reason = "1.x-era pending tests; base of the #15-#23 bridge stack"
+
+[[excluded]]
+id = "rz#15"
+reason = "1.x-era bridge stack (on #14)"
+
+[[excluded]]
+id = "rz#17"
+reason = "1.x-era bridge stack; conflicts with sz#1842"
+
+[[excluded]]
+id = "rz#18"
+reason = "1.x-era bridge stack; conflicts in ExtractAPI with rz#27/#28"
+
+[[excluded]]
+id = "rz#19"
+reason = "superseded by sz#1842"
+
+[[excluded]]
+id = "rz#20"
+reason = "1.x-era bridge stack; conflicts in ExtractAPI with rz#27/#28"
+
+[[excluded]]
+id = "rz#21"
+reason = "1.x-era bridge stack; conflicts in ExtractAPI with rz#27/#28"
+
+[[excluded]]
+id = "rz#23"
+reason = "1.x-era bridge stack; conflicts in ExtractAPI with rz#27/#28"
+
+[[excluded]]
+id = "rz#9"
+reason = "1.12.x backport; see integration/merkle-1.12.x"
+
+[[excluded]]
+id = "rz#48"
+reason = "1.12.x backport; see integration/merkle-1.12.x"
+
+[[excluded]]
+id = "rz#24"
+reason = "Merkle PoC; see integration/merkle"
+
+[[excluded]]
+id = "rz#30"
+reason = "Merkle PoC; see integration/merkle"
+

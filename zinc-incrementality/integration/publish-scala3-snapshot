@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Publish a scala3 checkout's compiler and sbt bridge to a private Ivy home, for Zinc's scripted
+# tests to use with -Dzinc.scala3ForBridge=<version>.
+#
+#   publish-scala3-snapshot <scala3 checkout> <ivy home>
+#
+# sbt 2 resolves the bridge with `zinc-tool->default`, but the ivy.xml that publishLocalBin writes
+# has no `default` conf (a POM from Maven Central implies one), so the bridge would resolve to
+# nothing. This adds the conf and drops the source and doc artifacts, which aren't published.
+set -euo pipefail
+checkout=$1
+ivy=$(cd "$2" && pwd)
+
+projects=(scala3-interfaces tasty-core-bootstrapped scala-library-bootstrapped scala3-library-bootstrapped
+  scala3-compiler-bootstrapped scala3-directives-parser-bootstrapped scala3-repl scala3-staging scala3-tasty-inspector scaladoc scala3-sbt-bridge-bootstrapped)
+cmds=()
+for p in "${projects[@]}"; do cmds+=("$p/publishLocalBin"); done
+(cd "$checkout" && sbt -J-Xmx6G --ivy "$ivy" --batch --color=false --supershell=false "${cmds[@]}")
+
+for xml in "$ivy"/local/org.scala-lang/*/*-bin-SNAPSHOT/ivys/ivy.xml; do
+  if ! grep -q 'name="default"' "$xml"; then
+    sed -i '' -e 's|<conf extends="compile" name="runtime" visibility="public" description=""/>|&\
+    <conf extends="runtime" name="default" visibility="public" description=""/>|' \
+      -e '/e:classifier="sources"/d' -e '/e:classifier="javadoc"/d' "$xml"
+    md5 -q "$xml" > "$xml.md5"
+    shasum -a 1 "$xml" | cut -d' ' -f1 > "$xml.sha1"
+  fi
+done
+ls "$ivy"/local/org.scala-lang/scala3-sbt-bridge/

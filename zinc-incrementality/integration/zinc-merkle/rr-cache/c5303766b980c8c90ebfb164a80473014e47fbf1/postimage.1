@@ -1,0 +1,7 @@
+# Client, in `package a; package b`, finds the implicit a.T through `import w.W._`.
+> p/compile
+# `package object b` gains an implicit a.T: two in the lexical scope are ambiguous, so a clean build fails.
+# Client reached the package object through no symbol, so Zinc records no edge to it (the unconditional
+# invalidation for a changed implicit only reaches the package object's dependents).
+$ copy-file changes/PObj.scala p/PObj.scala
+-> p/compile

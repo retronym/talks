@@ -1,0 +1,6 @@
+# Client, in `package a; package b`, resolves Foo to a.Foo; package a.b exports the members of a.U at the top level.
+> p/compile
+# a.U gains Foo, whose v is a String. Zinc recompiles Exp.scala (the wildcard export's inheritance edge),
+# and its forwarder Foo in a.b shadows a.Foo: a clean build fails. Client has no edge to Exp$package.
+$ copy-file changes/U.scala p/U.scala
+-> p/compile

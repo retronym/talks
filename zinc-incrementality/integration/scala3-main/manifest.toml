@@ -1,0 +1,92 @@
+branch = "integration/scala3-main"
+repo = "~/code/scala/scala3"
+push = "origin"
+
+base = { remote = "upstream", branch = "main" }
+
+[[members]]
+id = "scala3#27264"
+remote = "upstream"
+pr = 27264
+title = "Make Java source parsing agree with ClassfileParser for throws clauses and constant expressions"
+
+[[members]]
+id = "scala3#27269"
+remote = "upstream"
+pr = 27269
+title = "Fix TastyPrinter reading signed constant payloads as Nat"
+
+[[members]]
+id = "scala3#27271"
+remote = "upstream"
+pr = 27271
+title = "Mark deferred terms abstract in the API sent to Zinc"
+
+[[members]]
+id = "scala3#27272"
+remote = "upstream"
+pr = 27272
+title = "Exclude inline parameters again when hashing inline bodies in ExtractAPI"
+
+[[members]]
+id = "scala3#27274"
+remote = "upstream"
+pr = 27274
+title = "Fix match-case completion labels for non-enum Java classes"
+
+[[members]]
+id = "scala3#27275"
+remote = "upstream"
+pr = 27275
+title = "Fix #27273: Mark Java enum constants from classfiles StableRealizable"
+
+[[members]]
+id = "scala3#27276"
+remote = "upstream"
+pr = 27276
+title = "Vulpix: don't shut down the test pool while tests are running"
+
+[[members]]
+id = "scala3#27277"
+remote = "upstream"
+pr = 27277
+title = "Name the parameter of a Java enum's synthetic valueOf `name`, as javac does"
+
+[[members]]
+id = "rz-scala3#11"
+remote = "origin"
+pr = 11
+title = "Record a wildcard import of a package as a used name for Zinc"
+
+[[excluded]]
+id = "rz-scala3#6"
+reason = "duplicate of scala3#27275"
+
+[[excluded]]
+id = "rz-scala3#1"
+reason = "nestmates; conflicts in the backend, unrelated"
+
+[[excluded]]
+id = "rz-scala3#2"
+reason = "performance draft"
+
+[[excluded]]
+id = "rz-scala3#3"
+reason = "performance draft"
+
+[[excluded]]
+id = "rz-scala3#4"
+reason = "performance draft"
+
+[[excluded]]
+id = "rz-scala3#9"
+reason = "Scaladoc performance, unrelated"
+
+[[excluded]]
+id = "rz-scala3#5"
+reason = "Merkle; see integration/scala3-merkle"
+
+[[excluded]]
+id = "rz-scala3#10"
+reason = "Merkle; see integration/scala3-merkle"
+

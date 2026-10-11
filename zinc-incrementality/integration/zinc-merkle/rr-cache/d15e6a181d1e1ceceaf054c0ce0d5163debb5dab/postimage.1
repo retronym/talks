@@ -1,0 +1,7 @@
+# Package a.b has a class Foo (Inner.scala) and an empty package object.
+> p/compile
+# The package object gains a member Foo: Scala 3 reports "Foo is already defined" only when it compiles
+# both files together, so a clean build fails. Zinc recompiles PObj.scala first (it names the member
+# a.b.package$.Foo, and nothing connects it to a.b.Foo), then both files together.
+$ copy-file changes/PObj.scala p/PObj.scala
+-> p/compile

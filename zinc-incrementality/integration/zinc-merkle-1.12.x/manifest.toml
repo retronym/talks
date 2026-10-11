@@ -1,0 +1,22 @@
+branch = "integration/merkle-1.12.x"
+repo = "~/code/sbt/zinc"
+push = "origin"
+
+# Merkle only (decision 5). 1.12.x is far behind develop, so this is not merged from
+# integration/merkle: rz#48 holds a hand-maintained series of squashed [1.x] commits, one per
+# upstream unit, and a new Merkle PR adds a commit there.
+base = { remote = "upstream", branch = "1.12.x" }
+
+[[members]]
+id = "rz#48"
+remote = "origin"
+pr = 48
+title = "[1.x] Merkle name hashes PoC: pipelining backports (rz#9), #1765, the PoC, #41, #56, #55, #30"
+
+[[excluded]]
+id = "backport/1.12.x-z1-overcompilation"
+reason = "not Merkle (decision 5)"
+
+[[excluded]]
+id = "backport/1.12.x-z2-name-kinds"
+reason = "not Merkle (decision 5)"

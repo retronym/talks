@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Regenerate an integration branch from a manifest.
+
+    build-integration MANIFEST.toml [--dry-run] [--push]
+
+The branch is built in a private clone (objects shared with the source clone
+through alternates) whose .git/rr-cache is a symlink to the rr-cache directory
+beside the manifest, so conflict resolutions recorded by git rerere are checked
+in and replayed on the next rebuild.
+
+A member with `patch = "fixups/x.patch"` (a `git format-patch` file beside the manifest) is
+applied with `git am -3` instead of merged. It holds an integration-only fix that a conflict
+resolution needs beyond the conflicting hunks (rerere records only those).
+
+On a conflict rerere can't resolve, the build stops with the clone mid-merge.
+Resolve it there, `git commit --no-edit` (rerere records the resolution), and
+run the script again.
+
+--dry-run merges every member, aborting conflicting merges, and prints a table.
+--push force-pushes the result, with a lease on the branch's current remote SHA.
+"""
+
+import argparse
+import datetime
+import os
+import re
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+
+def run(args, cwd=None, check=True, capture=True):
+    r = subprocess.run(args, cwd=cwd, text=True, capture_output=capture)
+    if check and r.returncode != 0:
+        sys.exit(f"failed: {' '.join(args)}\n{r.stdout}{r.stderr}")
+    return r
+
+
+def git(clone, *args, check=True):
+    return run(["git", "-C", str(clone), *args], check=check)
+
+
+def out(clone, *args):
+    return git(clone, *args).stdout.strip()
+
+
+def expand(p):
+    return Path(os.path.expanduser(p))
+
+
+def slug(s):
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", s).strip("-")
+
+
+def source_ref(spec):
+    if "patch" in spec:
+        return spec["patch"]
+    if "pr" in spec:
+        return f"refs/pull/{spec['pr']}/head"
+    if "branch" in spec:
+        return f"refs/heads/{spec['branch']}"
+    sys.exit(f"member needs `pr` or `branch`: {spec}")
+
+
+def remote_url(source, name):
+    return out(source, "remote", "get-url", name)
+
+
+def prepare_clone(m, manifest_dir):
+    source = expand(m["repo"])
+    clone = expand(m.get("clone", f"~/code/.integration/{slug(m['branch'])}"))
+    if not (clone / ".git").exists():
+        clone.parent.mkdir(parents=True, exist_ok=True)
+        run(["git", "clone", "-q", "--shared", "--no-checkout", str(source), str(clone)])
+        git(clone, "remote", "remove", "origin")
+    remotes = set(out(clone, "remote").split())
+    for name in {m["base"]["remote"], m["push"], *(x["remote"] for x in m["members"] if "remote" in x)}:
+        url = remote_url(source, name)
+        if name in remotes:
+            git(clone, "remote", "set-url", name, url)
+        else:
+            git(clone, "remote", "add", name, url)
+    for k, v in {"rerere.enabled": "true", "rerere.autoupdate": "true",
+                 "gc.rerereResolved": "100000", "gc.rerereUnresolved": "100000",
+                 "user.name": out(source, "config", "user.name"),
+                 "user.email": out(source, "config", "user.email"),
+                 "commit.gpgsign": "false", "merge.conflictstyle": "diff3"}.items():
+        git(clone, "config", k, v)
+    cache = manifest_dir / "rr-cache"
+    cache.mkdir(exist_ok=True)
+    link = clone / ".git" / "rr-cache"
+    if link.is_symlink() or not link.exists():
+        if link.is_symlink():
+            link.unlink()
+        link.symlink_to(cache.resolve())
+    else:
+        sys.exit(f"{link} exists and is not a symlink")
+    return clone
+
+
+def fetch(clone, spec, local):
+    git(clone, "fetch", "-q", "--no-tags", spec["remote"], f"+{source_ref(spec)}:{local}")
+    return out(clone, "rev-parse", local)
+
+
+def unmerged(clone):
+    return [f for f in out(clone, "diff", "--name-only", "--diff-filter=U").splitlines() if f]
+
+
+def in_progress(clone):
+    gd = Path(out(clone, "rev-parse", "--absolute-git-dir"))
+    return any((gd / f).exists() for f in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "rebase-apply"))
+
+
+def merge(clone, member, sha):
+    msg = f"Merge {member['id']}: {member.get('title', member.get('branch', ''))}".rstrip(": ")
+    if member.get("mode") == "cherry-pick":
+        base = member.get("onto")
+        rng = f"{base}..{sha}" if base else sha
+        r = git(clone, "cherry-pick", "--allow-empty", "-x", rng, check=False)
+    else:
+        r = git(clone, "merge", "--no-ff", "--no-edit", "-m", msg, sha, check=False)
+    if r.returncode == 0:
+        return "clean", []
+    conflicted = unmerged(clone)
+    if not conflicted and in_progress(clone):
+        if member.get("mode") == "cherry-pick":
+            git(clone, "-c", "core.editor=true", "cherry-pick", "--continue")
+        else:
+            git(clone, "commit", "--no-edit")
+        return "rerere", []
+    if not conflicted:
+        sys.exit(f"{member['id']}: merge failed without conflicts\n{r.stdout}{r.stderr}")
+    return "conflict", conflicted
+
+
+def lock_text(m, base_sha, rows, built_at):
+    lines = [f"# {m['branch']}, built {built_at} by build-integration from manifest.toml", "",
+             f"base\t{m['base']['remote']}/{source_ref(m['base']).removeprefix('refs/heads/')}\t{base_sha}", ""]
+    for member, sha, result in rows:
+        lines.append(f"{member['id']}\t{source_ref(member)}\t{sha}\t{result}")
+    if m.get("excluded"):
+        lines += ["", "# excluded"]
+        lines += [f"{x['id']}\t{x['reason']}" for x in m["excluded"]]
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("manifest")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--push", action="store_true")
+    a = ap.parse_args()
+
+    manifest_path = Path(a.manifest).resolve()
+    m = tomllib.loads(manifest_path.read_text())
+    clone = prepare_clone(m, manifest_path.parent)
+    branch = m["branch"]
+    print(f"{branch}: building in {clone}")
+
+    if in_progress(clone):
+        git(clone, "merge", "--abort", check=False)
+        git(clone, "cherry-pick", "--abort", check=False)
+    if in_progress(clone):
+        git(clone, "am", "--abort", check=False)
+    base_sha = fetch(clone, m["base"], "refs/integration-src/base")
+    git(clone, "checkout", "-q", "-f", "-B", branch, base_sha)
+    git(clone, "clean", "-qfdx")
+
+    rows, failures = [], []
+    for member in m["members"]:
+        if "patch" in member:
+            patch = manifest_path.parent / member["patch"]
+            sha = run(["git", "hash-object", str(patch)]).stdout.strip()
+            r = git(clone, "am", "-q", "-3", "--committer-date-is-author-date", str(patch), check=False)
+            result, files = ("applied", []) if r.returncode == 0 else ("conflict", unmerged(clone) or [r.stderr.strip()])
+        else:
+            sha = fetch(clone, member, f"refs/integration-src/{slug(member['id'])}")
+            result, files = merge(clone, member, sha)
+        print(f"  {member['id']:<12} {sha[:10]}  {result}{'  ' + ', '.join(files) if files else ''}")
+        if result == "conflict":
+            if a.dry_run:
+                failures.append((member, files))
+                git(clone, "merge", "--abort", check=False)
+                git(clone, "cherry-pick", "--abort", check=False)
+                git(clone, "am", "--abort", check=False)
+                continue
+            sys.exit(f"\nUnresolved conflict merging {member['id']} in {clone}.\n"
+                     f"Resolve, `git -C {clone} commit --no-edit`, and rerun.")
+        rows.append((member, sha, result))
+
+    if a.dry_run:
+        print(f"\n{len(failures)} conflicting members" if failures else "\nno unresolved conflicts")
+        return
+
+    built_at = run(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]).stdout.strip()
+    (clone / "MANIFEST.lock").write_text(lock_text(m, base_sha, rows, built_at))
+    git(clone, "add", "MANIFEST.lock")
+    git(clone, "commit", "-q", "-m", f"MANIFEST.lock for {branch}")
+    tip = out(clone, "rev-parse", "HEAD")
+    print(f"{branch} = {tip}")
+
+    if a.push:
+        url = remote_url(clone, m["push"])
+        old = run(["git", "ls-remote", url, f"refs/heads/{branch}"]).stdout.split()
+        lease = f"refs/heads/{branch}:{old[0] if old else ''}"
+        git(clone, "push", "-q", f"--force-with-lease={lease}", m["push"], f"{tip}:refs/heads/{branch}")
+        print(f"pushed to {m['push']} ({url})")
+
+
+if __name__ == "__main__":
+    main()

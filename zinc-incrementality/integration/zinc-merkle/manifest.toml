@@ -1,0 +1,19 @@
+branch = "integration/merkle"
+repo = "~/code/sbt/zinc"
+push = "origin"
+
+# Conflicts between the Merkle PoC's own name invalidation (rz#41, merged into rz#24) and rz#34/#47
+# are resolved in favour of Merkle's (decision 4); see rr-cache.
+base = { remote = "origin", branch = "integration/develop" }
+
+[[members]]
+id = "rz#24"
+remote = "origin"
+pr = 24
+title = "[PoC] Merkle name hashes, bridge-side hashing, coarse library ancestors (with merged #25, #29, #31, #38, #39, #41, #55, #56)"
+
+[[members]]
+id = "rz#30"
+remote = "origin"
+pr = 30
+title = "Merkle PoC across modules: Spark catalyst → core, traitDirect fix, IncBench --verify"
