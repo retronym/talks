@@ -343,7 +343,7 @@ Not compared: the rest of the bytecode, `Signature`, `InnerClasses`, `NestHost`/
 - **B3. Source-level spaces.** Once S1 and V1 exist: Scala and Java edits, lowered, linked, and checked against MiMa and HotSpot.
 - [x] **B4. The Zinc ⇒ binary-compatible theorem above** (`BinCompat/ZincBridge.lean`).
   - **The front end.** Scala lowering is an instance of the general form `XCompiler` (`General.lean`), not `NCompiler`, because its output carries the classfiles. A unit is a source unit, its task is `lowerSrc` with its queries renamed to `(unit, side)`, and its output is the unit's declarations plus its lowered classfiles. The interface is the declaration, so it is source-determined.
-  - **Faithfulness.** Every query is answered as if the definition were in the same run (`inRun = true`), which is faithful for Scala 2.12 and 2.13. For Scala 3, separate compilation differs (F6), a compositionality failure already witnessed in `Scala/Facts.lean`.
+  - **Faithfulness.** Every query is answered as if the definition were in the same run (`inRun = true`), which is faithful for Scala 2.12 and 2.13. Scala 3 is below.
   - **A sound bridge.** `searched`, a key per traced query hashed by the declaration it read, meets the obligations (`searched_obligations`).
   - **`Zinc.XCompiler.untouched_eq_clean`.** After an edit, if Zinc's loop stops and a unit `c` was in none of its rounds (`c ∉ recompiled …`), then `c`'s old output equals its output in the clean build of the new sources. Its hypotheses are:
     - the framework's `Obligations`;
@@ -355,7 +355,25 @@ Not compared: the rest of the bytecode, `Signature`, `InnerClasses`, `NestHost`/
     `must_recompile` is its contrapositive.
   - **For lowering.** `after_eq_fresh`: the client's old classfiles next to the new library give the same `Jvm.outcome` as a fresh build. `compatible_of_untouched`: so `Jvm.Compatible` holds whenever the fresh build links.
   - **The converse fails** (`gap_witness`, kernel `decide`). Adding a concrete method to a trait leaves the old `X extends T` linking (it selects the default method), so the edit is binary compatible. But `X`'s classfile changes, because a fresh build adds a mixin forwarder, so every sound bridge recompiles `X`. That gap, compatible but not Zinc-clean, is what MiMa does not report.
-  - **Left out.** Scala 3 separate compilation (F6). The `NCompiler` statement the roadmap first named (`XCompiler` subsumes it through `NCompiler.toX`). A bridge with Zinc's actual keys (name hashes) for lowering. The JVM program is linked over the units' lowered classfiles only, with no library jars.
+  - **Scala 3, compiled separately** (`BinCompat/ZincBridgeScala3.lean`). A round compiles its units in one run and reads the rest from TASTy, so the faithful joint compilation answers `inRun := v ∈ G`. Under F6 the obligation that fails is `comp`: `C extends T`, with `T` holding only a `lazy val`, gets different classfiles in `{T, C}` and in `{C}` over the same interfaces (`f6_witness`), so no per-unit task makes `comp` hold, whatever the keys (`not_comp`). With retronym/scala3#10's fix (the TASTy reader computes `NoInits` as the namer does), a view read from TASTy behaves as one from source. The faithful joint compilation is then B4's `group .s3` (`group3Fix_eq`), and B4 holds for Scala 3 (`after_eq_fresh_fix`), with B4's hypotheses. We take the fix over restricting to programs without the F6 shape. That restriction is about every trait the client reads, library traits included. It excludes common code. And proving it would need a congruence lemma through all of lowering.
+  - **Zinc's actual keys** (`BinCompat/ZincBridgeKeys.lean`). The keys are:
+    - inheritance on each parent, hashed over the parent and its ancestors, which is what Zinc's transitive walk does;
+    - member-ref name keys on every class the source names (parents, signature types, a value class's underlying type);
+    - the unit itself.
+
+    **Coverage fails** (`coverage_fails`), even when a name key covers every query on its class. The case: `T { def f(v: V): Int }` and `object O extends T`. Lowering `O` erases `f` for the mixin forwarder and the static forwarder, so it asks for `V`. But `O`'s source never names `V`, and `V` is not an ancestor. **The conclusion fails too** (`loop_witness`, kernel `decide`). `V` becomes a value class. Zinc recompiles `V`, then `T`. `T`'s API is unchanged, so the loop stops with `O` untouched. A fresh build's `invokestatic O.f(I)I` then gets `NoSuchMethodError` against the old `O`. Bridges and a class's mixin forwarders have the same shape. There are two fixes:
+    - keys on value classes in inherited signatures (what `searched` does);
+    - hashing a value-class reference in an API by its underlying type.
+
+    This is a prediction of the model, not yet a scripted test against Zinc.
+  - **Library JARs** (`BinCompat/ZincBridgeLibs.lean`). A library has no Analysis, so each query on a library unit is covered by the unit's stamp key, hashed by its whole interface (`stamp_covers`). Source units keep per-query keys. The bridge meets the obligations (`obligations`).
+
+    `library_client` is T5a (`inv_external`) followed by `untouched_eq_clean`. A client the loop never recompiled links against the edited JAR as a fresh build does. Its hypotheses are:
+    - the library is disjoint from the project;
+    - the old build is up to date;
+    - the stored stamps are the old library's interfaces (`fresh_of_stamps`);
+    - the loop starts from the edited sources and the external invalidations, inside `S`, under a sound policy.
+  - **Left out.** The `NCompiler` statement the roadmap first named (`XCompiler` subsumes it through `NCompiler.toX`). A restricted Scala 3 theorem without the fix. A scripted test of the inherited value-class gap against Zinc.
 
 ### Later, single writer, after talks#21 merges
 
