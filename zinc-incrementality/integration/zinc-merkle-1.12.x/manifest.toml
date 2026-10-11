@@ -11,7 +11,7 @@ base = { remote = "upstream", branch = "1.12.x" }
 id = "rz#48"
 remote = "origin"
 pr = 48
-title = "[1.x] Merkle name hashes PoC: pipelining backports (rz#9), #1765, the PoC, #41, #56, #55, #30, #61"
+title = "[1.x] Merkle name hashes PoC: pipelining backports (rz#9), #1765, the PoC, #41, #56, #55, #30, #61, #63"
 
 [[excluded]]
 id = "backport/1.12.x-z1-overcompilation"
