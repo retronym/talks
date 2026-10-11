@@ -22,7 +22,7 @@ JAR) or `final` (classfiles), and by its hash:
   (`obligations_withBodies`), so each view is sound on its own.
 
 The views disagree, so a pipelined build and a non-pipelined build of the same sources differ
-(`pipelined_ne_final`): early agreement (`Pipelining.lean`) fails for Scala 2 `@inline` and for
+(`pipelined_ne_final`): early agreement (T1 with the early view as the oracle, `JavaOrder.early_view`) fails for Scala 2 `@inline` and for
 Java constants, and holds for Scala 3 `inline`.
 -/
 

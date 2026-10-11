@@ -8,7 +8,7 @@ AST, which `Lower` already handles (forwarders, bridges, static forwarders, eras
 compiler inherits from the standard library enters as a *prelude*: the interfaces of the library
 classes a desugared definition extends, read through `Q.decl` like any other parent. So the mixin
 forwarders for `Product`'s concrete methods and the static forwarders for
-`AbstractFunction2.tupled` come from the rules calibrated in S1-S3.
+`AbstractFunction2.tupled` come from the rules calibrated in Tracks S1–S3.
 
 **Case classes.** `case class P(x: A, y: B)` becomes:
 - a class with the fields, `copy` and its default getters, `Product`'s abstract members,

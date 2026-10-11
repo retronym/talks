@@ -150,7 +150,7 @@ def pulledUp : Case where
   v1 := [(.A, { methods := [(.m, .v, inst)] }), (.B, { header := { super := some .A } })]
   prog := { sites := [invokevirtual .B .m .v .B] }
 
-/-! ## J3: access, `invokespecial` and private methods, interface statics, fields
+/-! ## Track J3: access, `invokespecial` and private methods, interface statics, fields
 
 Packages: `pkg := 1` is `p1`; a site without `within` runs from a class of its own in the unnamed
 package. -/
@@ -362,7 +362,7 @@ def j3 : List Case :=
    fieldBecomesFinal, fieldBecomesPrivate, fieldShadowed, fieldIfaceBeforeSuper,
    putstaticBecomesFinal]
 
-/-! ## J5: sealed classes and constructors
+/-! ## Track J5: sealed classes and constructors
 
 Every class here declares its constructors, so `probes/jvm` renders exactly those (and no default
 `()V`); each keeps a public `()V`, which `new` and subclasses' constructors call. -/

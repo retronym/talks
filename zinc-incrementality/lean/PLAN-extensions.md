@@ -49,12 +49,12 @@ The model's layout agrees with all but two rows, neither of which changes a resu
 
 The ancestor-companion witness is about keys alone. Inside one subproject Zinc's policy compensates: an implicit added to `P`'s companion changes `P`'s API in the implicit scope, `T` is invalidated as `P`'s inheritor, and its member-ref dependents are invalidated unconditionally (an implicit change). So the miss needs the split layout, where `T`'s API does not change and the downstream client depends on `T` and `Q`, not `P`. That is Phase 7's sbt/zinc#1845, and the pending test is written that way.
 
-## Predicted tests (written on retronym/zinc)
+## Predicted tests (retronym/zinc#53, open)
 
-Each should fail on develop at its last step: an extension added to a package object over the companion's (`x.m` changes, Scala 2 implicit class and Scala 3 `extension`); a top-level `extension` in a new file (Scala 3); an extension in a wildcard-imported package's package object; an extension added to an ancestor's companion (`T extends P`, `object P { extension ... }`).
+Each was predicted to fail on develop at its last step, and does (marked `pending`): an extension added to a package object over the companion's (`x.m` changes, Scala 2 implicit class and Scala 3 `extension`); a top-level `extension` in a new file (Scala 3); an extension in a wildcard-imported package's package object; an extension added to an ancestor's companion (`T extends P`, `object P { extension ... }`).
 
 ## Steps
 
 - [x] P24.1 `Extensions.lean`: the scope layout on `SpecGivens`, the G rule's obligations, a witness per scope kind.
 - [x] P24.2 Precedence probed (above).
-- [ ] P24.3 The predicted pending tests on retronym/zinc.
+- [x] P24.3 The predicted pending tests on retronym/zinc: retronym/zinc#53 (`extension-added-package-object`, `-top-level-scala3`, `-wildcard-imported-package`, `-ancestor-companion-split`), each failing on develop as predicted.

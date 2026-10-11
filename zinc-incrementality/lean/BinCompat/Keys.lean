@@ -83,7 +83,7 @@ theorem miss_changes_footprint (x : Witness) (h0 : (outcome x.w0 x.prog).toBool 
 
 def pubM : MethodInfo := {}
 
-/-- **F1, final fields.** A public field becomes `final`; a client's `putfield` now fails with
+/-- **MiMa-F1, final fields.** A public field becomes `final`; a client's `putfield` now fails with
 `IllegalAccessError`. MiMa's field key covers the query and does not compare `final`. -/
 def finalField : Witness where
   o := base1
@@ -93,7 +93,7 @@ def finalField : Witness where
 example : finalField.missed = true ∧ finalField.passes (.field .A .m .s) (.field .A .m .s) = true := by
   decide +kernel
 
-/-- **M1, a subclass's member shadows an inherited one.** `B` gains a static `m()V` that hides
+/-- **MiMa-M1, a subclass's member shadows an inherited one.** `B` gains a static `m()V` that hides
 `A.m()V`; `invokevirtual B.m` now resolves to it and fails (`IncompatibleClassChangeError`).
 MiMa checks only the members a class declares: no key covers `B.m`. Any access and any of
 `static`/`final` breaks some client the same way, and so do fields. -/
@@ -105,7 +105,7 @@ def shadowStatic : Witness where
 example : shadowStatic.missed = true ∧ shadowStatic.uncovered (.method .B .m .v) = true := by
   decide +kernel
 
-/-- **M1 with a field**: `B` gains a static field `m` that hides `A.m`; `getfield B.m` fails. -/
+/-- **MiMa-M1 with a field**: `B` gains a static field `m` that hides `A.m`; `getfield B.m` fails. -/
 def shadowField : Witness where
   o := base1
   n := replace base1 .B (setField ((get base1 .B).getD {}) (some { isStatic := true }))
@@ -114,7 +114,7 @@ def shadowField : Witness where
 example : shadowField.missed = true ∧ shadowField.uncovered (.field .B .m .s) = true := by
   decide +kernel
 
-/-- **M1, as an abstraction gap**: an override becomes private. MiMa's key for `B.m` covers the
+/-- **MiMa-M1, as an abstraction gap**: an override becomes private. MiMa's key for `B.m` covers the
 query, but MiMa's class file parser drops private methods, so its lookup finds the inherited
 `A.m` and passes; resolution finds the private `B.m` (`IllegalAccessError`). -/
 def overridePrivate : Witness where
@@ -126,7 +126,7 @@ example : overridePrivate.missed = true ∧
     overridePrivate.passes (.method .B .m .v) (.method .B .m .v) = true := by
   decide +kernel
 
-/-- **F2, an interface field comes first.** `I` gains a constant `m`. A client class extending
+/-- **MiMa-F2, an interface field comes first.** `I` gains a constant `m`. A client class extending
 `A` and implementing `I` resolves `X.m` to `I.m` now (superinterfaces before the superclass),
 which is static: `getfield X.m` fails. MiMa's field lookup never reads an interface. -/
 def ifaceField : Witness where
@@ -138,7 +138,7 @@ def ifaceField : Witness where
 example : ifaceField.missed = true ∧ ifaceField.uncovered (.field .I .m .s) = true := by
   decide +kernel
 
-/-- **D1, conflicting defaults.** `J` gains a default `m()V` that `I` also has; a client class
+/-- **MiMa-D1, conflicting defaults.** `J` gains a default `m()V` that `I` also has; a client class
 implementing both now has two maximally-specific methods (`IncompatibleClassChangeError`; on JDK
 21, `AbstractMethodError`, JDK-8356942). MiMa's `checkNew` reads only abstract methods. -/
 def defaultConflict : Witness where
@@ -150,7 +150,7 @@ def defaultConflict : Witness where
 example : defaultConflict.missed = true ∧ defaultConflict.uncovered (.method .J .m .v) = true := by
   decide +kernel
 
-/-- **P1, protected members.** MiMa checks only `ACC_PUBLIC` members (`nonAccessible` is
+/-- **MiMa-P1, protected members.** MiMa checks only `ACC_PUBLIC` members (`nonAccessible` is
 `!isBytecodePublic`), so a protected method that a client's subclass calls can go. -/
 def protectedRemoved : Witness where
   o := [(.A, { header := pub1, methods := [(.m, .v, { access := .prot })] })]

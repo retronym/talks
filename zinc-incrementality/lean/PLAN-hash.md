@@ -2,7 +2,7 @@
 
 ## Question
 
-The bridge extracts a unit's API from whichever form the compiler holds: the typed tree when the unit is in the round, the unpickled (or TASTy, or classfile) symbols when it is read from the classpath. Zinc compares the hash stored in one run with the hash computed in the next, often from a different form. `Model.lean` assumes `π : Iface → K → Hash`, a function of the interface; these bugs are cases where the bridge's view of the interface carries an artefact of the form, so `π` is not a function of the interface. BUG-MAP's cluster H1: 6 bugs, newest 2026.
+The bridge extracts a unit's API from whichever form the compiler holds: the typed tree when the unit is in the round, the unpickled (or TASTy, or classfile) symbols when it is read from the classpath. Zinc compares the hash stored in one run with the hash computed in the next, often from a different form. `Model.lean` assumes `π : Iface → K → Hash`, a function of the interface; these bugs are cases where the bridge's view of the interface carries an artefact of the form, so `π` is not a function of the interface. BUG-MAP's cluster K-H1: 6 bugs, newest 2026.
 
 | Bug | Artefact | Forms that differ |
 |---|---|---|

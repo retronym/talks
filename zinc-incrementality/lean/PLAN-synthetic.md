@@ -2,7 +2,7 @@
 
 ## Question
 
-A client's `new C(…)`, `C(…)`, `c.copy(…)` or `case C(a, b)` asks for the signature of a constructor or of a member the compiler synthesised. Zinc's key for it is a used name, checked against the name hashes of the classes the client depends on; a used name does not record which class it came from. Every constructor is called `<init>`, and synthetic members have shapes that need not follow the fields they stand for. BUG-MAP's cluster C1: sbt/zinc#97 (fixed by #288), #1324, scala/scala3#12401 (fixed by #12712), #12898, #19910 / sbt/zinc#1334 (fixed by #19911), sbt/zinc#572, scala/scala3#26231's abstraction half.
+A client's `new C(…)`, `C(…)`, `c.copy(…)` or `case C(a, b)` asks for the signature of a constructor or of a member the compiler synthesised. Zinc's key for it is a used name, checked against the name hashes of the classes the client depends on; a used name does not record which class it came from. Every constructor is called `<init>`, and synthetic members have shapes that need not follow the fields they stand for. BUG-MAP's cluster K-C1: sbt/zinc#97 (fixed by #288), #1324, scala/scala3#12401 (fixed by #12712), #12898, #19910 / sbt/zinc#1334 (fixed by #19911), sbt/zinc#572, scala/scala3#26231's abstraction half.
 
 ## Model
 

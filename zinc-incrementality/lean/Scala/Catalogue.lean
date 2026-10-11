@@ -3,8 +3,8 @@ import Scala.Lower
 /-!
 # A catalogue of Scala library edits, lowered and linked
 
-The source-level counterpart of `Jvm/Catalogue.lean`, and the input track B needs for source-level
-spaces (B3). Each case is a library edit (`v0` → `v1`, Scala sources), client units compiled
+The source-level counterpart of `Jvm/Catalogue.lean`, and the input Track B needs for source-level
+spaces (Track B3). Each case is a library edit (`v0` → `v1`, Scala sources), client units compiled
 against `v0`, and a JVM program (the classes the client loads and the call sites it executes).
 Library and client are lowered with `Scala.lower`, then linked with `Jvm.outcome`:
 
@@ -17,7 +17,7 @@ compatible, yet Zinc must recompile the client. `widenedToValueClass` shows the 
 edited unit is `V`, but the classfile that changes is `W`'s, because lowering `W` read `V`.
 
 Sites that would run a trait method's body through `invokestatic T.m$` or `T.$init$` are left
-out: `Jvm` does not model static interface methods yet (J3).
+out: they predate static interface methods in `Jvm` (Track J3).
 -/
 
 namespace Scala.Catalogue
@@ -28,7 +28,7 @@ abbrev S := Jvm.Site String String String
 
 structure Case where
   name : String
-  /-- The MiMa problem expected to report the edit, if any (to be checked by track B). -/
+  /-- The MiMa problem expected to report the edit, if any (to be checked by Track B). -/
   mima : Option String
   dl : Dialect := .s213
   v0 : Program

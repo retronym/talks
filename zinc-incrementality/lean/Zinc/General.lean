@@ -13,7 +13,7 @@ first page; `XCompiler` is where its theorems are proved once.
 
 **T2** (`round_preserves`): with `Δ` over `affected R s`, one round preserves the invariant.
 **T3a** (`zinc_sound`): if the loop stops, every unit is up to date. The variants reach both
-through their lifts (`Lifts.lean`), round for round.
+through their lifts (`toX` in `Soundness.lean`, `NonLocal.lean`, `NonLocalAns.lean` and `Tree.lean`), round for round.
 -/
 
 namespace Zinc

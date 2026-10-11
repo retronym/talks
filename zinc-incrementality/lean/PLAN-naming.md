@@ -2,7 +2,7 @@
 
 ## Question
 
-`Query := CUnit × Q` and `Key := CUnit × K` assume one spelling of a unit. In Zinc there are at least two. The compiler reads a class through the name its output carries: the classfile on disk, the class name Zinc analysed (`productClassName`, `ClassToAPI`, `generatedNonLocalClass`). The bridge records dependencies under the name it computes from symbols (`classDependency`, `binaryDependency`, `associatedFile`). When the two spellings of one class differ, the recorded key names a unit Zinc never compiles, and the class it should name never invalidates its dependent. When two classes share one spelling (one file on disk), their hashes merge. BUG-MAP's cluster N: 8 bugs, newest 2026.
+`Query := CUnit × Q` and `Key := CUnit × K` assume one spelling of a unit. In Zinc there are at least two. The compiler reads a class through the name its output carries: the classfile on disk, the class name Zinc analysed (`productClassName`, `ClassToAPI`, `generatedNonLocalClass`). The bridge records dependencies under the name it computes from symbols (`classDependency`, `binaryDependency`, `associatedFile`). When the two spellings of one class differ, the recorded key names a unit Zinc never compiles, and the class it should name never invalidates its dependent. When two classes share one spelling (one file on disk), their hashes merge. BUG-MAP's cluster K-N: 8 bugs, newest 2026.
 
 | Bug | Spelling of the read (product) | Spelling of the key (bridge) |
 |---|---|---|

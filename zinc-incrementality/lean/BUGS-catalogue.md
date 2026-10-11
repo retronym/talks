@@ -46,8 +46,8 @@ Note on #26262: the fix records `C;init;` for synthetic case-class unapplies (th
 | sbt/zinc#1528 | 2025 | merged | under | local classes | policy: local dependencies were dropped from `memberRef`, breaking the invariant `memberRef ⊇ inheritance` that transitive invalidation relies on | sbt/zinc#1528 | |
 | sbt/zinc#830 | 2020 | closed | under | SAM lambda, Java interop | coverage: a lambda implementing a SAM type is a subclass of it but no inheritance edge was recorded; changing the Java interface's method type left the lambda alone | sbt/zinc#1288, scala/scala#10617, scala/scala3#16996 | |
 | sbt/zinc#168 | 2016 | open | over | trait compiles to interface (2.12) | policy: since 2.12 most trait method changes need no forwarder in subclasses, so inheritance invalidation could be skipped; never implemented | none | |
-| sbt/zinc#1845 | 2026 | open | under | implicit scope of ancestors' companions, multi-project | compositionality: in one project `MemberRefInvalidator` reaches clients of inheritors; across projects the downstream only checks the external classes it recorded, and `C`'s API does not include `B`'s companion | sbt/zinc#1845 (open) | |
-| sbt/zinc#1846 | 2026 | open | under | implicit scope of an object's singleton type | compositionality: the published implicit-scope summary followed only the class side's parents, not the object side's | sbt/zinc#1846 (open) | implicit-scope-object-singleton-companion |
+| sbt/zinc#1845 | 2026 | merged | under | implicit scope of ancestors' companions, multi-project | compositionality: in one project `MemberRefInvalidator` reaches clients of inheritors; across projects the downstream only checks the external classes it recorded, and `C`'s API does not include `B`'s companion | sbt/zinc#1845 | |
+| sbt/zinc#1846 | 2026 | open | under | implicit scope of an object's singleton type | compositionality: the published implicit-scope summary followed only the class side's parents, not the object side's | sbt/zinc#1846 (draft) | implicit-scope-object-singleton-companion |
 | scala/scala3#18309 | 2023 | open | under | using-clause on constructor, multi-module | coverage: the implicit chosen for a constructor's using parameter changes in an upstream module and the downstream call site is not invalidated; `NoSuchMethodError` | none | |
 | scala/scala3#9087 | 2020 | closed | under | multiversal equality `Eql` given, multi-module | coverage: adding `given Eql[...]` instances in an upstream module makes `EUR == CHF` an error on a clean build, but the downstream file is not recompiled | none linked | |
 | scala/scala3#9694 | 2020 | merged | under | inner class, separate compilation | coverage: the binary class name sent via `binaryDependency` was taken from `associatedFile`, which for an inner Scala class is the top-level classfile, so inner-class dependencies were never recorded | scala/scala3#9694 | |
@@ -104,7 +104,7 @@ Note on #26262: the fix records `C;init;` for synthetic case-class unapplies (th
 | scala/scala3#18100 | 2023 | closed | under | Scala 3 macro reached through another method | coverage: same as #23852 | scala/scala3#24969 | |
 | scala/scala3#22178 | 2024 | closed | under | `Mirror` of a nested case class through derivation | coverage: changing `case class Test` did not invalidate `Labels.derived[Deps]` where `Deps` has a `Test` field; the recursive mirror summons were not recorded | scala/scala3#24969 | |
 | scala/scala3#23783 | 2025 | open | under | macro reading an annotation argument | coverage: the macro inspects `@MyAnnot("Hello")` on `Foo`; changing the argument changes nothing Zinc tracks for `Foo` (see also sbt/zinc#1842) | none | |
-| scala/scala3#22999 | 2025 | open | under | macro annotation `transform` body change | coverage: no dependency from the annotated definition to the annotation's `transform` method | scala/scala3#25128 (open) | |
+| scala/scala3#22999 | 2025 | open | under | macro annotation `transform` body change | coverage: no dependency from the annotated definition to the annotation's `transform` method | scala/scala3#25128 (draft) | |
 | scala/scala3#20119 | 2024 | closed | crash | macros with pipelining | compositionality: with early TASTy output a spurious `Cyclic macro dependencies` error between files that compile fine without pipelining | fixed upstream | |
 
 ## Sealed hierarchies, pattern matching, mirrors
@@ -126,7 +126,7 @@ Note on #26262: the fix records `C;init;` for synthetic case-class unapplies (th
 |---|---|---|---|---|---|---|---|
 | sbt/zinc#945 | 2020 | open | under | removing `implicit` from a method | coverage: a client that resolved the implicit records a use of its name, whose hash is unaffected by dropping the modifier; the old implicit keeps being used | none | |
 | sbt/zinc#616 | 2018 | closed | crash | implicit in empty-package package object | compiler: scalac never opens an empty-package package object read from `package.class` (scala/bug#10927); Zinc records the dependency correctly | none (fixed in Scala 3) | |
-| sbt/zinc#1842 | 2026 | open | under | annotations on definitions | coverage: after typer annotations live only in `sym.annotations`, which neither `Dependency` nor `ExtractUsedNames` visited; `@Ann(1) class S` had no edge to `Ann`, nor to constants used as annotation arguments, nor to Java `@interface`s | sbt/zinc#1842 (open) | annotation-ctor-change-class-3 (pending) |
+| sbt/zinc#1842 | 2026 | open | under | annotations on definitions | coverage: after typer annotations live only in `sym.annotations`, which neither `Dependency` nor `ExtractUsedNames` visited; `@Ann(1) class S` had no edge to `Ann`, nor to constants used as annotation arguments, nor to Java `@interface`s | sbt/zinc#1842 (draft) | annotation-ctor-change-class-3 (pending) |
 | sbt/zinc#237 | 2017 | merged | over | annotations | abstraction: `ExtractAPI#annotations` phase-travelled to after typer instead of entering typer, a transcription slip during the class-based name hashing port | sbt/zinc#237 | |
 
 ## Package objects, exports, top-level definitions
@@ -169,7 +169,7 @@ Note on #26262: the fix records `C;init;` for synthetic case-class unapplies (th
 
 | id | year | state | kind | feature | root cause | fix | test |
 |---|---|---|---|---|---|---|---|
-| sbt/zinc#1843 | 2026 | open | under | pipelining, failed compile | snapshot: early output (pickle jar and early analysis) is written before the compile is known to succeed and never rolled back on failure; downstream compiles against signatures that never compiled, with no error on 2.12 | sbt/zinc#1843 (open) | |
+| sbt/zinc#1843 | 2026 | merged | under | pipelining, failed compile | snapshot: early output (pickle jar and early analysis) is written before the compile is known to succeed and never rolled back on failure; downstream compiles against signatures that never compiled, with no error on 2.12 | sbt/zinc#1843 | |
 | scala/scala3#27125 | 2026 | closed | under | pipelining, Scala 3.8.3 | policy (protocol): after #24969 `dependencyPhaseCompleted` fires from the background TASTy writer before `Inlining` sends the dependencies, so Zinc decides what to recompile with none | scala/scala3#27135 | |
 | scala/scala3#27139 | 2026 | closed | under | pipelining, Java-only run | snapshot (race): the run can end and cancel the async TASTy write, dropping `apiPhaseCompleted`/`dependencyPhaseCompleted` and some TASTy files; downstream `Not found: type J` | scala/scala3#27141, sbt/zinc#1823 (workaround) | |
 | scala/scala3#25520 | 2026 | closed | over | pipelining, inlined anonymous class from a library | snapshot: `Symbol.copy` ignored its compilation-unit argument, so a class inlined from a library was reported as a binary dependency on that jar; Zinc 1.x keeps one class per jar and the order varied, so it was intermittent | scala/scala3#27162 | |
@@ -219,7 +219,7 @@ Note on #26262: the fix records `C;init;` for synthetic case-class unapplies (th
 
 ## Patterns
 
-Rows: 145 (sbt/zinc 74, scala/scala3 52, scala/bug 19). States: closed 90, merged 19, open 36.
+Rows: 145 (sbt/zinc 74, scala/scala3 52, scala/bug 19). States: closed 90, merged 21, open 34.
 
 Root causes, by count:
 
@@ -242,7 +242,7 @@ Two clusters account for most of the 2023-2026 activity:
 
 Still open:
 
-- Undercompilation: sbt/zinc#945 (implicit modifier removed), sbt/zinc#476 (alias chain), sbt/zinc#1811 (Java interface to abstract class in a cycle), sbt/zinc#1493 (Java compiled outside Zinc), sbt/zinc#1845 and #1846 (implicit scope across projects, PRs open), sbt/zinc#1842 (annotations, PR open), sbt/zinc#1843 (early output rollback, PR open), scala/scala3#18309 (using-clause implicits), #13085 (moved extension method), #18216 and #11841 (exports), #23783 and #22999 (macro annotations and annotation arguments), sbt/zinc#249 and #1478 (macro tracking generally).
+- Undercompilation: sbt/zinc#945 (implicit modifier removed), sbt/zinc#476 (alias chain), sbt/zinc#1811 (Java interface to abstract class in a cycle), sbt/zinc#1493 (Java compiled outside Zinc), sbt/zinc#1846 (implicit scope of an object's singleton type, draft PR), sbt/zinc#1842 (annotations, draft PR), scala/scala3#18309 (using-clause implicits), #13085 (moved extension method), #18216 and #11841 (exports), #23783 and #22999 (macro annotations and annotation arguments), sbt/zinc#249 and #1478 (macro tracking generally).
 - Overcompilation: sbt/zinc#1796 (companion name hashes), sbt/zinc#168 (traits as interfaces), sbt/zinc#1396 (umbrella), scala/scala3#23689 (`adhocExtensions` binary dep), sbt/zinc#653 (2.13 used names).
 - Crash under incremental build: sbt/zinc#535 and #598 (stale middle file; #1780 open), sbt/zinc#1553 (case-insensitive names), sbt/zinc#1561 (type lambda bound), scala/scala3#22684, #13121, #25273.
 - Joint vs separate output: scala/scala3#7661, #26551, #26552, scala/bug#10256, #9948, #11569, scala/scala3#18767.

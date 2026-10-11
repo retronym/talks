@@ -16,12 +16,10 @@ import Zinc.Erasure
 import Zinc.ImplicitScope
 import Zinc.Classpath
 import Zinc.Snapshot
-import Zinc.Pipelining
 import Zinc.Tree
 import Zinc.TreeToy
 import Zinc.Inline
 import Zinc.PingPong
-import Zinc.Embed
 import Zinc.Added
 import Zinc.Sealed
 import ZincNames.Names

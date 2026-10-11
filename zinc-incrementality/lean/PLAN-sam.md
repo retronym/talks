@@ -1,4 +1,4 @@
-# Phase 28 — SAM conversion and local classes (BUG-MAP gap L1)
+# Phase 28 — SAM conversion and local classes (BUG-MAP gap K-L1)
 
 ## Question
 
@@ -56,7 +56,7 @@ A `TCompiler` over an arbitrary finite set of names, for top-level clients whose
 | **P1** `p1_today`: Java today, `O.run(() -> 1)`, the SAM type has no key | proved, one witness; checked with javac 21 (constant pool, clean v1 fails) |
 | **P2** `p2_today`: Scala today, the unchosen alternative `run(F1)` has no key; making `F1` functional makes the call ambiguous (`example`) | proved, one witness; checked with scalac 2.13.16, Scala 3.7.3 and javac 21 |
 
-Proved for every program: the four obligations-and-soundness results and the cost. Checked: the witnesses (kernel `decide` on one program each) and the compiler behaviour behind P1 and P2 (javac, scalac, dotc on the probes in this file's table). Not checked against Zinc: P1 and P2 are predictions until the pending tests below run.
+Proved for every program: the four obligations-and-soundness results and the cost. Checked: the witnesses (kernel `decide` on one program each) and the compiler behaviour behind P1 and P2 (javac, scalac, dotc on the probes in this file's table). Checked against Zinc: the pending tests below (retronym/zinc#58) fail on develop as predicted, P2 on Scala 2.13, Scala 3 and Java.
 
 Simplifications: one lambda arity and no parameter types for the lambda; members merge by name, the first declaration on a depth-first walk winning (JLS §9.4.1.3 and Scala's linearisation agree with it on the programs here); overload resolution picks the single applicable alternative, with no most-specific step; the walk is bounded by `fuel`.
 
@@ -73,4 +73,5 @@ A policy of the files layer, not a coverage failure here: Zinc records no `membe
 
 - [x] P28.1 This design.
 - [x] P28.2 `Zinc/Sam.lean`: the task, today's keys per bridge, witnesses by kernel `decide`, the fix's `Obligations` and T3a, today's obligations without lambdas in argument position, the fix's cost.
-- [ ] P28.3 The pending tests above in retronym/zinc, and #1528's statement in the files layer.
+- [x] P28.3 The pending tests above in retronym/zinc: retronym/zinc#58 (`sam-java-lambda-argument`, `sam-overload-becomes-functional`, `-scala3`, `-java`; the Java tests set `pipelining = false`, which otherwise hides the miss).
+- [ ] P28.4 #1528's statement in the files layer (not in `Files.lean` yet).

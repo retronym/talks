@@ -15,7 +15,7 @@ space of clients over the catalogue's universe:
 
 One site suffices: linking is lazy and per site, so a client fails on `v1` iff one of its sites
 (or its loads) does. `breaksSomeClient` is the model's verdict for a MiMa problem; `changesSomeClient`
-adds "links on both, and runs a different method" (the J4 verdict for `overrideAdded`, `pulledUp`).
+adds "links on both, and runs a different method" (the Track J4 verdict for `overrideAdded`, `pulledUp`).
 Checked per catalogue case by kernel `decide`.
 
 Not in the space: clients with more than one class, fields, `invokespecial`; and the verifier's
@@ -58,7 +58,7 @@ def space : List Client :=
   (sites.map fun s => ([], { sites := [s] })) ++
   (xClasses.flatMap fun x => sites.map fun s => ([(.X, x)], { loads := [.X], sites := [s] }))
 
-/-- The J3 space: `X` in the unnamed package, superclass none, `A` or `B`, implementing `I` or not,
+/-- The Track J3 space: `X` in the unnamed package, superclass none, `A` or `B`, implementing `I` or not,
 declaring nothing or a public `m()V`; one site of any kind (methods `m()V`, fields `m:String`), run
 from a class of its own or from `X` (`invokespecial` only from `X`). -/
 def xClasses3 : List (Classfile C N D) := do
@@ -81,7 +81,7 @@ def space3 : List Client :=
   (sites3.map fun s => ([], { sites := [s] })) ++
   (xClasses3.flatMap fun x => sites3.map fun s => ([(.X, x)], { loads := [.X], sites := [s] }))
 
-/-- The J5 space: `space3`'s clients, each `X` declaring a public `()V` constructor (J5's classes
+/-- The Track J5 space: `space3`'s clients, each `X` declaring a public `()V` constructor (Track J5's classes
 declare theirs), plus `new c(…)` of each library class with `()V` and `(I)V`, from a class of its
 own or from `X`. -/
 def xClasses5 : List (Classfile C N D) := xClasses3.map fun x => { x with methods := ctor0 :: x.methods }
@@ -145,7 +145,7 @@ example : breaksSomeClient overrideAdded = false ∧ changesSomeClient overrideA
   decide +kernel
 example : breaksSomeClient pulledUp = false ∧ changesSomeClient pulledUp = true := by decide +kernel
 
-/-! ## J3 verdicts, over `space3` -/
+/-! ## Track J3 verdicts, over `space3` -/
 
 example : breaksSomeClient methodBecomesPrivate space3 = true := by decide +kernel
 example : breaksSomeClient methodBecomesPackagePrivate space3 = true := by decide +kernel

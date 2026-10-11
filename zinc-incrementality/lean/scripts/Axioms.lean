@@ -29,8 +29,10 @@ import BinCompat.ZincBridgeLibs
 #print axioms Zinc.Compiler.zinc_some_of_wf
 -- T5
 #print axioms Zinc.NCompiler.downstream_sound
--- a proved counterexample that used to lean on native_decide
+-- proved counterexamples that used to lean on native_decide
 #print axioms Zinc.PingPong.zinc_diverges
+#print axioms Zinc.Stale.stale_unsound
+#print axioms Zinc.Stale.stale_affected
 -- the instances' soundness theorems and witnesses
 #print axioms Zinc.JavaSpec.fix_sound
 #print axioms Zinc.JavaSealedSpec.fix_sound
@@ -47,6 +49,15 @@ import BinCompat.ZincBridgeLibs
 #print axioms Zinc.PipelineLifecycle.rollback_preserves
 #print axioms Zinc.Synthetic.sound_of_agree
 #print axioms Zinc.InlineOpaqueSpec.fix_sound
+#print axioms Zinc.InlineOpaqueSound.denot_sound
+#print axioms Zinc.MacroDeps.fix_sound
+#print axioms Zinc.MacroDeps.Ex.private_today
+#print axioms Zinc.Erasure.dep_sound
+#print axioms Zinc.ImplicitScope.is_sound
+#print axioms Zinc.Flat.flat_sound
+#print axioms Zinc.Hier.D_obligations
+#print axioms Zinc.Hier.W_obligations
+#print axioms Zinc.Hier.Mk_obligations
 -- the general form (General.lean), where T2, T3a, T4 (monotone) and T5 are proved once
 #print axioms Zinc.XCompiler.round_preserves
 #print axioms Zinc.XCompiler.zinc_sound
@@ -62,7 +73,7 @@ import BinCompat.ZincBridgeLibs
 #print axioms AsSeenFrom.compose
 #print axioms AsSeenFrom.chain_is_single
 #print axioms Scala.lower_congr
--- B4 and its extensions
+-- B4 (Track B4) and its extensions
 #print axioms Zinc.XCompiler.untouched_eq_clean
 #print axioms BinCompat.ZincBridge.gap_witness
 #print axioms BinCompat.ZincBridgeScala3.not_comp
