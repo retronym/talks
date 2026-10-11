@@ -2,7 +2,7 @@
 
 ## Question
 
-A class that mixes in a trait implements the trait's fields and private members, so its bytecode reads queries no public API answers. Zinc answers them with `extraHash`, a second hash on a trait's key that covers its private members and, since sbt/zinc#1289, its parents' `extraHash`. And Zinc keys a class by its name, so a companion pair (`trait A` / `object A`, `class A` / `object A`) shares one `AnalyzedClass`, one `extraHash`, one list of parents and one set of name hashes. BUG-MAP's cluster C2, a lineage of fixes: #542 → #662 / #1289 → #1794 / #1793 → #1799 / #1801 → #1795 / #1796 (open).
+A class that mixes in a trait implements the trait's fields and private members, so its bytecode reads queries no public API answers. Zinc answers them with `extraHash`, a second hash on a trait's key that covers its private members and, since sbt/zinc#1289, its parents' `extraHash`. And Zinc keys a class by its name, so a companion pair (`trait A` / `object A`, `class A` / `object A`) shares one `AnalyzedClass`, one `extraHash`, one list of parents and one set of name hashes. BUG-MAP's cluster K-C2, a lineage of fixes: #542 → #662 / #1289 → #1794 / #1793 → #1799 / #1801 → #1795 / #1796 (open).
 
 | Bug | Shape | Obligation |
 |---|---|---|

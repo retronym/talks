@@ -731,4 +731,45 @@ def fileEdits (p p' : Prog) : List (String × Option String) :=
   ((present p.cl).filter (· != .lib)).filterMap fun s =>
     if slotSrc p s == slotSrc p' s then none else some (slotFile p s, slotSrc p' s)
 
+/-- The class the client's name resolved to, as Zinc names it. Scala 2's bridge names a package
+object's member `a.b.Foo` (`aliased`); Scala 3 names it under `package`. -/
+def resolvedClass (v : Ver) (p : Prog) : Slot → String
+  | .blk => "a.V." ++ p.name
+  | .inh => "a.P." ++ p.name
+  | .expl => "a.X." ++ p.name
+  | .wild => (if p.cl.exp then "a.U." else if p.cl.winh then "a.WT." else "a.W.") ++ p.name
+  | .wpkg => "a.q." ++ p.name
+  | .inner => "a.b." ++ p.name
+  | .pobj => if p.cl.exp then "a.U2." ++ p.name else if p.cl.pinh then "a.PT." ++ p.name
+      else if v == .s2 then "a.b." ++ p.name else "a.b.package." ++ p.name
+  | .outer => "a." ++ p.name
+  | .lib => "scala.Option"
+
+/-- The keys the client must have recorded, before the edit, for the edit to reach it under mode
+`m`, in retronym/zinc#54's grammar: the name it uses and the class it resolved to; for each slot of
+its lookup that the edit changes, the record that carries the change (the inheritance edge to `P`,
+the block import's qualifier `V`, the file's import of `X` or `W`, charged to one class of the file);
+and, for the narrowed rules, `sees:p` for each package scope the lookup searches (the client's own
+package, the outer clause of a chained clause, an imported package when the bridge records it). -/
+def clientKeys (m : Mode) (v : Ver) (p p' : Prog) : List String :=
+  let rs := m.toRules
+  let c := p.cl
+  let narrowed := rs.reach == .narrowed
+  -- a library class (`scala.Option`) is a library dependency of the source, not a member-ref
+  let base := ("uses:" ++ p.name) :: match resolve v p with
+    | .ok .lib => []
+    | .ok s => ["ref:" ++ resolvedClass v p s]
+    | _ => []
+  let slot : Slot → List String
+    | .inh => ["inh:a.P"]
+    | .blk => ["ref:a.V"]
+    | .expl => ["refFile:a.X"]
+    | .wild => [(if rs.f3 || c.first then "refFile:" else "ref:") ++ "a.W"]
+    | .inner | .pobj => if narrowed then ["sees:a.b"] else []
+    | .outer => if narrowed then ["sees:a"] else []
+    | .wpkg => if narrowed && rs.imports then ["sees:a.q"] else []
+    | .lib => []
+  let ks := base ++ ((changed p p').filter (visible c).contains).flatMap slot
+  ks.foldl (fun acc k => if acc.contains k then acc else acc ++ [k]) []
+
 end Zinc.Names

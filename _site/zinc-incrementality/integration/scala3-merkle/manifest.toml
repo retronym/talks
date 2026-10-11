@@ -1,0 +1,18 @@
+branch = "integration/scala3-merkle"
+repo = "~/code/scala/scala3"
+push = "origin"
+
+base = { remote = "origin", branch = "integration/scala3-main" }
+
+[[members]]
+id = "rz-scala3#5"
+remote = "origin"
+branch = "claude/merkle-sbt-bridge-hashing-main"
+title = "rz-scala3#5 rebased onto main (on scala3#27271, without 1ef38dfa8c which it supersedes): Scala 3 bridge-side API hashing (AnalysisCallback5): H1 and H2"
+
+[[members]]
+id = "rz-scala3#10"
+remote = "origin"
+branch = "claude/merkle-joint-separate-flags-main"
+title = "rz-scala3#10 rebased onto the above: Read NoInits from TASTy as Namer computes it from source"
+

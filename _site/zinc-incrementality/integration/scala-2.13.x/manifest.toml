@@ -1,0 +1,60 @@
+branch = "integration/2.13.x"
+repo = "~/code/scala/scala"
+push = "origin"
+
+base = { remote = "upstream", branch = "2.13.x" }
+
+[[members]]
+id = "scala#11287"
+remote = "upstream"
+pr = 11287
+title = "Forward-port zinc bridge fixes to scala2-sbt-bridge (sbt/zinc#1316, #1324, #1507, #1782, #1803)"
+
+[[members]]
+id = "scala#11289"
+remote = "upstream"
+pr = 11289
+title = "Make forwarder signatures independent of the compilation batch"
+
+[[members]]
+id = "scala#11290"
+remote = "upstream"
+pr = 11290
+title = "Give Java fields initialized with constant expressions a constant type"
+
+[[members]]
+id = "scala#11291"
+remote = "upstream"
+pr = 11291
+title = "Order base types of the same depth by name rather than by symbol id"
+
+[[members]]
+id = "scala#11292"
+remote = "upstream"
+pr = 11292
+title = "Use ObjectTpe, not ObjectTpeJava, as the parent of Java classes parsed from source"
+
+[[members]]
+id = "rz-scala#136"
+remote = "origin"
+pr = 136
+title = "Trait setter dropped when a class redeclares a trait val abstractly (AbstractMethodError)"
+
+[[members]]
+id = "rz-scala#137"
+remote = "origin"
+pr = 137
+title = "Warn when a class does not implement a Java interface's re-declared default (scala/bug#12224)"
+
+[[excluded]]
+id = "rz-scala#40..#133"
+reason = "old performance and WIP experiments"
+
+[[excluded]]
+id = "rz-scala#134"
+reason = "same branch as scala#11287"
+
+[[excluded]]
+id = "rz-scala#135"
+reason = "blocked on a zinc release: needs compiler-interface 1.12.2 (AnalysisCallback4), not yet published"
+

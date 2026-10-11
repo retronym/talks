@@ -1025,6 +1025,145 @@ theorem rules_over :
     subst hq
     simp [rules, answer] at hne
 
+
+/-! ## Import selectors (Phase 27, `PLAN-imports.md`)
+
+A selector that renames or hides (`import X.{Foo => Bar}`, `import X.{Foo => _, _}`) asks its
+qualifier for the original name whether or not the client uses it: both compilers reject a
+selector naming no member (probes p1, p2). The client's compilation asks those checks first, then
+searches for its name as before; a rename is a scope of the search asked for the original name
+(the slot language does not care which name a scope is asked for), and its check is the same query.
+Both bridges record the selector's member, with its name, for the class charged with the import,
+which takes the client's file with it: a check is a pinned scope. -/
+
+/-- Ask whether each check scope binds; `true` when all do. -/
+def askChecks : List (Fin n) → Task (U n × Q) (fun _ => Bool) Bool
+  | [] => .pure true
+  | i :: is => .ask (some i, .binds) fun x => (askChecks is).bind fun y => .pure (x && y)
+
+variable (n) in
+/-- The client with selector checks `chk`: a failed check is a compile error (no resolution). -/
+def selUnit (chk : List (Fin n)) : Src → T n
+  | .bind x => .pure ⟨x, none⟩
+  | .client => (askChecks chk).bind fun ok => if ok then search n 0 else .pure ⟨false, none⟩
+
+def selGroup (chk : List (Fin n)) (G : Finset (U n)) (src : U n → Src) (I : U n → Bool) : U n → Out :=
+  fun u => (selUnit n chk (src u)).run (answer fun v => if v ∈ G then ifaceSrc (src v) else I v)
+
+def selCompiler (d : Design) (chk : List (Fin n)) : NCompiler (U n) Src Out Bool K (List Bool) Q (fun _ => Bool) where
+  unit := selUnit n chk
+  group := selGroup chk
+  iface := Out.iface
+  answer := answer
+  π := π sc
+  hashDeps := hashDeps
+  keys := keys sc d
+  covers := covers sc d
+
+theorem trace_askChecks (e : Task.Env (U n × Q) (fun _ => Bool)) :
+    ∀ (chk : List (Fin n)), ∀ q ∈ (askChecks chk).trace e, ∃ i ∈ chk, q = (some i, Q.binds)
+  | [], q, h => by simp [askChecks] at h
+  | i :: is, q, h => by
+    simp only [askChecks, Task.trace_ask, Task.trace_bind, Task.trace_pure, List.append_nil,
+      List.mem_cons] at h
+    rcases h with rfl | h
+    · exact ⟨i, by simp, rfl⟩
+    · obtain ⟨j, hj, rfl⟩ := trace_askChecks e is q h
+      exact ⟨j, by simp [hj], rfl⟩
+
+theorem iface_selUnit (chk : List (Fin n)) (s : Src) (e : Task.Env (U n × Q) (fun _ => Bool)) :
+    ((selUnit n chk s).run e).iface = ifaceSrc s := by
+  cases s with
+  | bind x => rfl
+  | client =>
+    simp only [selUnit, Task.run_bind]
+    split
+    · exact iface_search e 0
+    · rfl
+
+/-- A query of the client is a check or a query of the search. -/
+theorem trace_selUnit (chk : List (Fin n)) (s : Src) (e : Task.Env (U n × Q) (fun _ => Bool)) :
+    ∀ q ∈ (selUnit n chk s).trace e,
+      (∃ i ∈ chk, q = (some i, Q.binds)) ∨ q ∈ (search n 0).trace e := by
+  intro q hq
+  cases s with
+  | bind x => simp [selUnit] at hq
+  | client =>
+    simp only [selUnit, Task.trace_bind, List.mem_append] at hq
+    rcases hq with h | h
+    · exact .inl (trace_askChecks e chk q h)
+    · revert h
+      split
+      · exact .inr
+      · simp
+
+theorem sel_comp (d : Design) (chk : List (Fin n)) :
+    ∀ (G : Finset (U n)) (src : U n → Src) (I : U n → Bool), ∀ u ∈ G,
+    (selCompiler sc d chk).group G src I u =
+      ((selCompiler sc d chk).unit (src u)).run ((selCompiler sc d chk).answer
+        (NCompiler.override I G ((selCompiler sc d chk).iface ∘ (selCompiler sc d chk).group G src I))) := by
+  intro G src I u _
+  have : NCompiler.override I G (Out.iface ∘ selGroup chk G src I) =
+      fun v => if v ∈ G then ifaceSrc (src v) else I v := by
+    funext v
+    simp only [NCompiler.override, Function.comp]
+    split
+    · simp only [selGroup, iface_selUnit]
+    · rfl
+  show selGroup chk G src I u = (selUnit n chk (src u)).run (answer (NCompiler.override I G (Out.iface ∘ selGroup chk G src I)))
+  rw [this]
+  rfl
+
+/-- **Selectors are covered by the cross-subproject key**, which covers every scope. -/
+theorem sel_cross_obligations (chk : List (Fin n)) : (selCompiler sc .cross chk).Obligations where
+  comp := sel_comp sc .cross chk
+  coverage := by
+    intro I u s q hq
+    have : ∃ i, q = (some i, Q.binds) := by
+      rcases trace_selUnit chk s _ q hq with ⟨i, -, rfl⟩ | h
+      · exact ⟨i, rfl⟩
+      · obtain ⟨i, hi, -, rfl, -⟩ := trace_search _ 0 q h
+        exact ⟨⟨i, hi⟩, rfl⟩
+    obtain ⟨i, rfl⟩ := this
+    exact ⟨(none, .named true), by simp [selCompiler, keys], rfl, i, rfl, .inl rfl⟩
+  abstraction := abstraction_of sc .cross (by simp)
+  locality := locality sc .cross
+
+/-- **A pinned check is covered by today's keys**: the selector's own dependency. -/
+theorem sel_check_covered (d : Design) (hd : d ≠ .searched) (chk : List (Fin n))
+    (hpin : ∀ i ∈ chk, (sc i).pinned = true) (I : U n → Bool) (u : U n) (s : Src) (q : U n × Q)
+    (hq : q ∈ (selUnit n chk s).trace (answer I)) (hchk : ∃ i ∈ chk, q = (some i, Q.binds)) :
+    ∃ k ∈ keys sc d u ((selUnit n chk s).trace (answer I)), covers sc d I q k := by
+  obtain ⟨i, hi, rfl⟩ := hchk
+  exact ⟨(some i, .presence), pinned_key sc d hd u _ i (hpin i hi), rfl⟩
+
+/-! ### Witness: a hiding selector the bridge did not record
+
+`import a.X.{Foo => _, _}` in `package a`: the check asks `X.Foo` (scope 1, a member of an object:
+neither pinned nor a top-level class, as if no bridge recorded the selector); the client's `Foo`
+resolves to `a.Foo` (scope 0), so the search never reaches the hidden member. Under #34's key the
+check has no key, and the obligations fail; both bridges record the selector, which pins scope 1
+and covers it (`sel_check_covered`). -/
+
+def hideScopes : Fin 2 → Scope := fun i => if i = 0 then ⟨false, false, true, false⟩ else ⟨false, false, false, false⟩
+
+def hideEnv : U 2 → Bool := fun u => u == some 0 || u == some 1
+
+theorem trace_hide : (selUnit 2 [1] .client).trace (answer hideEnv) =
+    [(some 1, .binds), (some 0, .binds)] := by
+  simp [selUnit, askChecks, search, answer, hideEnv]
+
+theorem hide_unrecorded_not_obligations : ¬ (selCompiler hideScopes .cheap [1]).Obligations := by
+  intro ob
+  obtain ⟨k, hk, hc⟩ := ob.coverage hideEnv none .client (some 1, .binds)
+    (by show _ ∈ (selUnit 2 [1] .client).trace (answer hideEnv); rw [trace_hide]; simp)
+  change k ∈ keys hideScopes .cheap none ((selUnit 2 [1] .client).trace (answer hideEnv)) at hk
+  rw [trace_hide] at hk
+  simp [keys, pinnedKeys, hideScopes] at hk
+  rcases hk with rfl | rfl
+  · simp [selCompiler, covers] at hc
+  · simp [selCompiler, covers, hideScopes] at hc
+
 end Spec
 
 end Zinc.SplitProof

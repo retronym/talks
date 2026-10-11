@@ -190,7 +190,29 @@ On the #34 scratch build (`cheap` mode), 60-base subsets weighted to the new fac
 * F4 depends on the mode. What decides the mirror is whether the package object has the member when `Inner.scala` is compiled, jointly or apart (probed). The F2 rule recompiles `a.b.Foo` as a user of its own name, which leaves the mirror as a clean build has it for an inherited member, but not for a declared one: there Zinc's `a.b.Foo` is the member, the class-name alias (`innerRecompiled`). zinc-develop-names' run of the narrowed rules (#47, names 2.13, 2,331 cases; givens 2.13, 2,372) agrees with the model on every verdict and recompiled set.
 * With exact `sees` (#47's final build, the Scala 2 import record), model and harness agree on every verdict and recompiled client/bystander set: names 2.13 2,331 cases, givens 2.13 2,372.
 
-Case files for the Zinc sessions (develop: `all`, `all+narrowed+imports`; #24: `all+decls`, `all+composed`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary` and `modelFamily`.
+Case files for the Zinc sessions (develop: `all`, `all+narrowed+imports`; #24: `all+decls`, `all+composed`) are `conformance names|givens 2|3 <mode>` dumps with a greedy base selection. The dumps carry `modelRecompiled`, `modelNecessary`, `modelFamily` and `keys`.
+
+### Coverage: the model's keys against the Analysis
+
+Each edit's `keys` names what the mode needs the client to have recorded before the edit (`Names.clientKeys`, `Givens.clientKeys`), in retronym/zinc#54's grammar:
+- the name it uses and the class it resolved to (`uses:Foo`, `ref:a.W.Foo`);
+- for each slot of its lookup that the edit changes, the record that carries the change: `inh:a.P`, `ref:a.V`, and `refFile:a.W` / `refFile:a.X` for imports, which are charged to one class of the file;
+- for the narrowed rules, `sees:p` for each package scope the lookup searches. The givens rule reads `ref:a.T` instead of `sees:a` for a flat client in Scala 2, where the prefix part of the implicit scope reaches it.
+
+The harness (#54) reads the keys from the Analysis and reports `uncovered`, separately from classfile divergence. Run with `--keys-at both`, before the edit and after the incremental build, on develop + #36 + #54 + #47 (scoped rules, the Scala 2 bridge recording `p._`), mode `all+narrowed+imports`, the overnight base selection:
+
+| space | cases | uncovered | divergences |
+|---|---|---|---|
+| names 2.13 | 5,905 | 0 | 93, all F4 as the model predicts (83 mirror classfiles, 10 errors in a later compile), plus 73 on the revert |
+| givens 2.13 | 4,748 | 0 | 0 |
+
+After the incremental build every key other than the resolution's `ref` is still recorded. That `ref` moves with the resolution, so the after-edit check skips it.
+
+The same keys on a build without #47's bridge records (develop + #36 + #54), on subsets touching the package scopes:
+- names 2.13: 144 of 352 cases uncovered, all for `sees:a` (chained clause) or `sees:a.q` (package import). 136 of them build clean: the gap is visible without a divergence. The other 98 divergences are covered; they come from the missing rules.
+- givens 2.13: 215 of 351 uncovered, for the same two keys.
+
+What the loop changed in the model: a binding to a library class (`scala.Option`) is a library dependency of the source, not a member-ref, so it has no `ref` key.
 
 ## Steps
 

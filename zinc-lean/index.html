@@ -684,7 +684,7 @@ structure Obligations : Prop where
 
 <div class="fn">
 
-Notes: 1.5 min. `Compiler.Obligations` (`lean/V1/Model.lean`). The `final` example is HashAPI omitting a top-level class's modifiers, found by the PoC baseline; trait vs class is [retronym/zinc#27](https://github.com/retronym/zinc/issues/27). Both are fixed upstream by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (open), which hashes a top-level class's kind, modifiers, access and annotations.
+Notes: 1.5 min. `Compiler.Obligations` (`lean/V1/Model.lean`). The `final` example is HashAPI omitting a top-level class's modifiers, found by the PoC baseline; trait vs class is [retronym/zinc#27](https://github.com/retronym/zinc/issues/27). Both are fixed upstream by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026), which hashes a top-level class's kind, modifiers, access and annotations; it supersedes retronym/zinc#27.
 
 </div>
 
@@ -897,7 +897,7 @@ def forwarders : List Cls → T (List (Cls × Name))
 <span class="chip hand">by hand or user report</span> <span class="chip harness">generated tests</span>
 
 - **Zinc today:** both rows are handled within one subproject: the value class's underlying type is in the name hash ([sbt/zinc#444](https://github.com/sbt/zinc/issues/444)), and trait changes reach subclasses by transitive inheritance invalidation. §20 has the cases Zinc still misses.
-- **Fix:** §20. The receiver-kind row (`invokevirtual` vs `invokeinterface`) was found by the conformance harness and is fixed by [sbt/zinc#1841](https://github.com/sbt/zinc/issues/1841) (open).
+- **Fix:** §20. The receiver-kind row (`invokevirtual` vs `invokeinterface`) was found by the conformance harness and is fixed by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026).
 
 </div>
 
@@ -1061,8 +1061,8 @@ Unclean runs out of 189,888 (program, edit) pairs:
 
 <span class="chip hand">by hand or user report</span> <span class="chip search">search in the model</span>
 
-- **Zinc today:** the first two rows: Scala 2 and Scala 3 both miss value-class and intersection changes, and Scala 2 also misses generic ones.
-- **Fix:** [retronym/zinc#27](https://github.com/retronym/zinc/pull/27), [#28](https://github.com/retronym/zinc/pull/28) (in a fork); trait vs class upstream in [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (open). The value-class case was first found by hand ([sbt/zinc#1844](https://github.com/sbt/zinc/issues/1844), closed as a point fix); the search separated the two steps and found the intersection and trait-vs-class cases.
+- **Zinc today:** the first two rows, less the trait vs class part, which develop now has ([sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841)). Without the erased signature, Scala 2 and Scala 3 still miss value-class and intersection changes, and Scala 2 also misses generic ones.
+- **Fix:** trait vs class in [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026); the erased signature in [retronym/zinc#28](https://github.com/retronym/zinc/pull/28) (in a fork). The value-class case was first found by hand ([sbt/zinc#1844](https://github.com/sbt/zinc/issues/1844), closed as a point fix); the search separated the two steps and found the intersection and trait-vs-class cases.
 
 </div>
 
@@ -1290,7 +1290,7 @@ Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug fa
 
 **Fixes to Zinc and the compilers**
 
-- Erasure changes are missed at two steps (§20): [retronym/zinc#27](https://github.com/retronym/zinc/pull/27), [#28](https://github.com/retronym/zinc/pull/28); trait vs class upstream in [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841). <span class="chip search">search in the model</span>
+- Erasure changes are missed at two steps (§20): trait vs class fixed by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026); the erased signature in [retronym/zinc#28](https://github.com/retronym/zinc/pull/28). <span class="chip search">search in the model</span>
 - Implicit scope through an ancestor's companion, across subprojects (§22): [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (merged), [sbt/zinc#1846](https://github.com/sbt/zinc/pull/1846). <span class="chip search">search in the model</span>
 - An added class that shadows a name a client already resolved (§23c), on Spark too: tests [retronym/zinc#32](https://github.com/retronym/zinc/pull/32), fix [#34](https://github.com/retronym/zinc/pull/34). <span class="chip search">search in the model</span>
 - Names and implicits added to package objects, wildcard-imported objects and top-level scopes: [retronym/zinc#47](https://github.com/retronym/zinc/pull/47), and [retronym/scala3#11](https://github.com/retronym/scala3/pull/11) for dotc. <span class="chip search">search in the model</span>
@@ -1345,9 +1345,9 @@ flowchart LR
 
 Found in Zinc:
 
-- an upstream class becomes a trait; the client keeps `invokevirtual` ([sbt/zinc#1841](https://github.com/sbt/zinc/issues/1841));
+- an upstream class becomes a trait; the client keeps `invokevirtual` (fixed by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026));
 - a stale bridge after an upstream deferred member, `StackOverflowError` (PoC only);
-- a parent made `final`; the subclass is not rejected ([sbt/zinc#1841](https://github.com/sbt/zinc/issues/1841));
+- a parent made `final`; the subclass is not rejected (fixed by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026));
 - `erasure-bridge-upstream-grandparent` across subprojects.
 
 Found in the model: a deferred declaration hides a concrete one in its own ancestors; a call's answer must include whether the receiver is a trait.

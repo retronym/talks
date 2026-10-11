@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Renders the catalogue with the Classfile API (JDK 24+) and runs it on every JDK given.
 # Usage: probes/jvm/probe.sh [cases.jsonl] -- JAVA_HOME...   (run from the lean directory)
-# With OUT=dir, the rendered classfiles are kept in dir/<case>/{v0,v1,client,sites} (for MiMa, track B).
+# With OUT=dir, the rendered classfiles are kept in dir/<case>/{v0,v1,client,sites} (for MiMa, Track B).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cases=${1:-}

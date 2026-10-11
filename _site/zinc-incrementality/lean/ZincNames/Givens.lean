@@ -328,6 +328,31 @@ def cost (m : Zinc.Names.Mode) (v : Ver) : Cost := Id.run do
 
 /-! ## Rendering -/
 
+/-- The keys the client must have recorded, before the edit, for the edit to reach it under mode
+`m`, in retronym/zinc#54's grammar: its reference to `a.T`; for each slot it sees that the edit
+changes, the record that carries the change (the inheritance edge to `P`, the block import's
+qualifier `V`, the file's import of `W`, the companion `T`); and, for the narrowed G rule, what
+`reachesG` reads: `sees:p` for a package whose implicits changed, or in Scala 2, for package `a`
+seen from a flat client, the reference to `a.T` (the prefix part of the implicit scope). -/
+def clientKeys (m : Zinc.Names.Mode) (v : Ver) (p p' : Prog) : List String :=
+  let rs := m.toRules
+  let c := p.cl
+  let narrowed := rs.reach == .narrowed && rs.g
+  let pkgKeys : Where → List String
+    | .ab => if c.pkg != .top then ["sees:a.b"] else []
+    | .a => if c.pkg != .flat then ["sees:a"] else if v == .s2 then ["ref:a.T"] else []
+    | .aq => if rs.imports && c.wpkg then ["sees:a.q"] else []
+  let slot : Slot → List String
+    | .inh => ["inh:a.P"]
+    | .blk => ["ref:a.V"]
+    | .wild => ["refFile:a.W"]
+    | .comp => ["ref:a.T"]
+    | s => match s.where? with
+      | some w => if narrowed then pkgKeys w else []
+      | none => []
+  let ks := "ref:a.T" :: ((changed v p p').filter (visible v c).contains).flatMap slot
+  ks.foldl (fun acc k => if acc.contains k then acc else acc ++ [k]) []
+
 def gname : Slot → String
   | .blk => "gBlk" | .inh => "gInh" | .wild => "gWild" | .wpkg => "gWpkg" | .inner => "gInner" | .pobj => "gPobj"
   | .outer => "gOuter" | .comp => "gComp"

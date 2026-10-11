@@ -1,7 +1,7 @@
 import BinCompat.ZincBridge
 
 /-!
-# B4 for Scala 3: separate compilation
+# Track B4 for Scala 3: separate compilation
 
 A round of Zinc's loop compiles its units in one compiler run, and reads every other unit from
 the classpath (TASTy). The faithful joint compilation of a group `G` (`group3`) therefore answers
@@ -19,7 +19,7 @@ from source. A trait read from TASTy then gives its subclasses the `$init$` call
 give them in the same run. In the model `View.inRun` is read only by `Scala.hasInit`, so the fixed
 reader is the reader that reports every view as in the run (`readFix`). With it, the faithful
 joint compilation is `ZincBridge.group .s3` (`group3Fix_eq`), so `ZincBridge.compiler .s3` meets
-the obligations and B4 holds for Scala 3 (`after_eq_fresh_fix`).
+the obligations and Track B4 holds for Scala 3 (`after_eq_fresh_fix`).
 
 **Which is more honest.** The alternative was to restrict the theorem to programs without the F6
 shape: no trait whose only initialisers are a `lazy val` or an extension method. That statement is
@@ -97,14 +97,14 @@ def group3Fix (G : Finset String) (src : String → Option Scala.Src) (I : Strin
   fun u => (unit .s3 (src u)).run
     (fun q => (answerIn G (fun v => if v ∈ G then ifaceSrc (src v) else I v) q).map readFix)
 
-/-- With the fix, the faithful joint compilation is B4's. -/
+/-- With the fix, the faithful joint compilation is Track B4's. -/
 theorem group3Fix_eq : group3Fix = group .s3 := by
   funext G src I u
   simp only [group3Fix, group, answerIn, Option.map_map]
   rfl
 
-/-- **B4 for Scala 3, with the fix.** `ZincBridge.after_eq_fresh` at `.s3`, whose compiler is the
-faithful one once the reader is fixed (`group3Fix_eq`). Hypotheses as for B4: a sound policy that
+/-- **Track B4 for Scala 3, with the fix.** `ZincBridge.after_eq_fresh` at `.s3`, whose compiler is the
+faithful one once the reader is fixed (`group3Fix_eq`). Hypotheses as for Track B4: a sound policy that
 stays inside `S`, the edit in the first round, the old build up to date except at the edit. -/
 theorem after_eq_fresh_fix (us : List String) (S : Finset String)
     (src : String → Option Scala.Src) (P : Zinc.Compiler.Policy String Out Bool) (hP : P.Sound S)

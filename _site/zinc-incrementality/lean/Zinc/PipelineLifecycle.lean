@@ -1,4 +1,4 @@
-import Zinc.Pipelining
+import Zinc.Snapshot
 
 /-!
 # Pipelining: the early output's lifecycle
@@ -13,10 +13,9 @@ invalidates when the early output's hash differs from the snapshot.
 * `rollback_preserves`: with #1843 every run keeps `early = built` ("published = built").
 * `noRollback_breaks`, `stale_after_revert`: without it a failed run publishes an interface that
   never built, and the revert, whose sources equal the last build's, leaves it there; a downstream
-  that read it sees no hash change and keeps it. This is `Pipelining.stale_after_failed_upstream`
-  for every interface and hash.
+  that read it sees no hash change and keeps it, for every interface and hash.
 * `rollback_detects`: with #1843 the downstream's snapshot of the failed early output differs from
-  the restored one, so its next build recompiles (`Pipelining.rollback_after_failed_upstream`).
+  the restored one, so its next build recompiles.
 * `downstream_reads_built`: under the invariant a downstream reads the last successful build.
 * `partial_write`: a cancelled write (scala/scala3#27139) that left the early output between the old
   and the new is the same failure, and the same rollback restores the invariant.

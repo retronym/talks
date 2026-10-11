@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Start sbt in the current project with Zinc swapped for an integration branch.
+#
+#   cd ~/code/scala/scala && zinc-sbt merkle-1.12.x [sbt args...]
+#
+# The branch is published, at the Zinc version the project's sbt.version depends on, into a
+# private Ivy home (~/code/.integration/ivy-<branch>), and sbt starts with that Ivy home, its own
+# boot directory and its own global base, so ~/.ivy2 and other sbt servers are untouched. The
+# launcher resolves sbt's Zinc from Maven regardless, so after the first boot the Zinc jars in the
+# private boot directory are replaced by the branch's. A global setting points every Scala 2.13
+# project at the branch's compiled compiler bridge rather than scala2-sbt-bridge.
+#
+# The branch must be on the project's Zinc line: merkle-1.12.x for sbt 1.12.x. Tested on
+# scala/scala (sbt 1.12.15); the sbt 2 branches (develop, merkle) are untested here.
+#
+# Republishes only when the branch's tip or the target Zinc version changes. ZINC_SBT_FETCH=0
+# skips fetching the branch.
+set -euo pipefail
+
+branch=${1:?usage: zinc-sbt <integration branch, e.g. merkle-1.12.x> [sbt args...]}
+shift
+root=${INTEGRATION_ROOT:-$HOME/code/.integration}
+zinc=$root/integration-$branch
+ivy=$root/ivy-$branch
+project=$PWD
+
+sbt_version=$(sed -n 's/^sbt.version *= *//p' project/build.properties 2>/dev/null | tr -d '[:space:]')
+[[ -n $sbt_version ]] || { echo "no sbt.version in $project/project/build.properties" >&2; exit 1; }
+zinc_version=$(coursier resolve "org.scala-sbt:sbt:$sbt_version" | sed -n 's/^org.scala-sbt:zinc-core_2.12:\([^:]*\):.*/\1/p')
+[[ -n $zinc_version ]] || { echo "could not find the Zinc version of sbt $sbt_version" >&2; exit 1; }
+
+if [[ ! -d $zinc ]]; then
+  git clone -q --branch "integration/$branch" https://github.com/retronym/zinc.git "$zinc"
+elif [[ ${ZINC_SBT_FETCH:-1} != 0 ]]; then
+  git -C "$zinc" fetch -q origin "integration/$branch"
+  git -C "$zinc" checkout -q -B "integration/$branch" FETCH_HEAD
+fi
+sha=$(git -C "$zinc" rev-parse HEAD)
+
+stamp=$ivy/published-$zinc_version
+if [[ ! -f $stamp || $(cat "$stamp") != "$sha" ]]; then
+  echo "zinc-sbt: publishing integration/$branch ${sha:0:9} as Zinc $zinc_version to $ivy" >&2
+  (cd "$zinc" && sbt --ivy "$ivy" --batch --no-server \
+    "set ThisBuild / version := \"$zinc_version\"" publishLocal publishBridges) >&2
+  echo "$sha" > "$stamp"
+fi
+
+mkdir -p "$ivy/global/1.0"
+cat > "$ivy/global/1.0/zinc-bridge.sbt" <<EOF
+scalaCompilerBridgeBinaryJar := { if (scalaVersion.value.startsWith("2.13.")) Some(file("$ivy/local/org.scala-sbt/compiler-bridge_2.13/$zinc_version/jars/compiler-bridge_2.13.jar")) else scalaCompilerBridgeBinaryJar.value }
+EOF
+
+sbt_flags=(--no-server -Dsbt.ivy.home="$ivy" -Dsbt.boot.directory="$ivy/boot" -Dsbt.global.base="$ivy/global/1.0")
+
+find_boot() { compgen -G "$ivy/boot/scala-*/org.scala-sbt/sbt/$sbt_version" | head -1; }
+boot=$(find_boot || true)
+if [[ -z $boot ]]; then
+  empty=$(mktemp -d)
+  mkdir -p "$empty/project" && echo "sbt.version=$sbt_version" > "$empty/project/build.properties"
+  (cd "$empty" && sbt "${sbt_flags[@]}" --batch exit >/dev/null)
+  rm -rf "$empty"
+  boot=$(find_boot)
+fi
+boot_stamp=$boot/zinc-sbt-$zinc_version
+if [[ ! -f $boot_stamp || $(cat "$boot_stamp") != "$sha" ]]; then
+  for jar in "$boot"/*-"$zinc_version".jar; do
+    module=$(basename "$jar" "-$zinc_version.jar")
+    src=$ivy/local/org.scala-sbt/$module/$zinc_version/jars/$module.jar
+    [[ -f $src ]] || { echo "zinc-sbt: no published $module" >&2; exit 1; }
+    cp "$src" "$jar"
+  done
+  echo "$sha" > "$boot_stamp"
+fi
+
+echo "zinc-sbt: sbt $sbt_version in $project with Zinc $zinc_version = integration/$branch ${sha:0:9}" >&2
+exec sbt "${sbt_flags[@]}" "$@"

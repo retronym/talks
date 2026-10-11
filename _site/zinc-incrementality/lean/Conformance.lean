@@ -21,7 +21,10 @@ its verdict for that Scala version under the mode (`Mode.parse`: `today` by defa
 retronym/zinc#34, `all` for #34 with the F2, F3 and G rules, `+narrowed+imports` for the rules
 narrowed to the searched packages with recorded package imports, `+decls` for #24's API without
 composition), and the classes it recompiles beyond the edited files and their heirs
-(`modelRecompiled`, among the client, `User`, `Near`, `Mid` and `Far`).
+(`modelRecompiled`, among the client, `User`, `Near`, `Mid` and `Far`). Each edit also carries
+`keys`: for the client, the keys the mode needs it to have recorded before the edit
+(`Names.clientKeys`, `Givens.clientKeys`), in retronym/zinc#54's grammar, which the harness checks
+against the Analysis and reports as `uncovered` when one is missing.
 
 `conformance cost`: per space, version and mode, the edits, the wrong ones, and the recompilations
 beyond the necessary, as a markdown table.
@@ -207,7 +210,8 @@ def mainNames (m : Mode) (v : Ver) (split : Option Zinc.Split.Mode := none) : IO
           (if userRecompiled m v p p' then ["User"] else [])).map jstr) ++
         ",\"modelNecessary\":" ++ toString (necessary v p p') ++
         ",\"modelClean\":" ++ toString r.clean ++ ",\"modelFamily\":" ++ jstr (family m v p p') ++
-        ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
+        ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++
+        ",\"keys\":{\"Client\":" ++ jarr ((clientKeys m v p p').map jstr) ++ "}}"
     out.putStrLn ("{\"space\":\"names\",\"id\":\"n" ++ toString i ++ "\",\"cfg\":" ++ jstr (namesCfg p) ++
       ",\"factors\":" ++ jfactors (namesFactors p) ++
       ",\"probe\":" ++ jstr (clientClass p) ++ ",\"files\":" ++ jfiles ((files v p).map fun (f, s) => (f, some s)) ++
@@ -242,7 +246,8 @@ def mainGivens (m : Zinc.Names.Mode) (v : Zinc.Names.Ver) (split : Option Zinc.S
           (if far then ["Far"] else [])).map jstr) ++
         ",\"modelNecessary\":" ++ toString (necessary v p p') ++
         ",\"modelClean\":" ++ toString r.clean ++ ",\"modelFamily\":" ++ jstr (family m v p p') ++
-        ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++ "}"
+        ",\"modelErrs\":" ++ jarr (match r.after with | .ok _ => [] | x => [jstr x.str]) ++
+        ",\"keys\":{\"Client\":" ++ jarr ((clientKeys m v p p').map jstr) ++ "}}"
     out.putStrLn ("{\"space\":\"givens\",\"id\":\"g" ++ toString i ++ "\",\"cfg\":" ++
       jstr (" ".intercalate ((givensFactors v p).map (·.2))) ++
       ",\"factors\":" ++ jfactors (givensFactors v p) ++

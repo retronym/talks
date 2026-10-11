@@ -2,7 +2,7 @@
 
 ## Question
 
-With pipelining an upstream writes its early output (pickles, the early analysis) before its compile is known to succeed, and the downstream compiles against it at once. `Pipelining.lean` stated two obligations on the upstream's outputs: early agreement (the early view answers like the final one; Phase 14 made it `JavaOrder.early_view` for Java) and "published = built" (the early output describes the sources as last built successfully), the latter only as a checked scenario. BUG-MAP's cluster PL: sbt/zinc#1843 (the user's open PR: a failed pipelined compile leaves stale early output), scala/scala3#27139 (a cancelled async write drops callbacks and TASTy files), #27125 (keys arrive after the decision that needs them), #20119 (a spurious cyclic-macro error only under early output), sbt/zinc#918 (Java sources under pipelining).
+With pipelining an upstream writes its early output (pickles, the early analysis) before its compile is known to succeed, and the downstream compiles against it at once. `Pipelining.lean` (since deleted, its content subsumed here and by `JavaOrder.early_view`) stated two obligations on the upstream's outputs: early agreement (the early view answers like the final one; Phase 14 made it `JavaOrder.early_view` for Java) and "published = built" (the early output describes the sources as last built successfully), the latter only as a checked scenario. BUG-MAP's cluster K-PL: sbt/zinc#1843 (a failed pipelined compile leaves stale early output; merged 2026-10-10), scala/scala3#27139 (a cancelled async write drops callbacks and TASTy files), #27125 (keys arrive after the decision that needs them), #20119 (a spurious cyclic-macro error only under early output), sbt/zinc#918 (Java sources under pipelining).
 
 ## Model
 
@@ -14,8 +14,8 @@ An upstream unit's lifecycle state is three views: the source of its last succes
 |---|---|
 | `rollback_preserves`: with #1843 every run keeps the early output equal to the last successful build | proved, every state and run |
 | `noRollback_breaks`: without it a failed run publishes an interface that never built | proved |
-| `stale_after_revert`: the revert, whose sources equal the last build's, leaves that interface published, with the hash the downstream stored during the failed run, so nothing invalidates the downstream (`Pipelining.stale_after_failed_upstream`, now for every interface and hash) | proved |
-| `rollback_detects`: with #1843, the restored early output's hash differs from the downstream's snapshot of the failed one whenever the hash tells them apart, so the downstream recompiles (`Pipelining.rollback_after_failed_upstream`) | proved |
+| `stale_after_revert`: the revert, whose sources equal the last build's, leaves that interface published, with the hash the downstream stored during the failed run, so nothing invalidates the downstream (the deleted `Pipelining.lean`'s checked scenario `stale_after_failed_upstream`, now for every interface and hash) | proved |
+| `rollback_detects`: with #1843, the restored early output's hash differs from the downstream's snapshot of the failed one whenever the hash tells them apart, so the downstream recompiles (the deleted scenario `rollback_after_failed_upstream`) | proved |
 | `downstream_reads_built`: under the invariant the downstream's oracle on the upstream is the built one, so `Classpath.downstream_sound` holds relative to the last successful build | proved |
 | `partial_write`: a cancelled write (scala/scala3#27139) leaves an early output that never built; rolling it back restores the invariant | proved |
 

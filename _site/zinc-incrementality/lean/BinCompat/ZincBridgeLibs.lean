@@ -1,7 +1,7 @@
 import BinCompat.ZincBridge
 
 /-!
-# B4 for a client of a library JAR
+# Track B4 for a client of a library JAR
 
 A library has classfiles and no Analysis: Zinc cannot see its sources, its name hashes or its
 dependencies. It records, for each library a client read, the JAR's stamp, and invalidates the
@@ -99,7 +99,7 @@ theorem fresh_of_stamps (dl : Dialect) (Lib S : Finset String) (s : Zinc.Compile
     · rfl
   rw [this]
 
-/-- **B4 for a client of an edited JAR.** Hypotheses: the library is disjoint from the project; the
+/-- **Track B4 for a client of an edited JAR.** Hypotheses: the library is disjoint from the project; the
 old build is up to date with stamps from the old library; `D` covers the edited sources; the loop
 starts from `D` and the external invalidations and stays inside `S` under a sound policy. Then a
 project unit `c` the loop never recompiled links against the new JAR as in a fresh build. -/

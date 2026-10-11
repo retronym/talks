@@ -4,10 +4,10 @@ import Jvm.Clients
 /-! `lake exe jvmcases`: the catalogue (`Jvm/Catalogue.lean`) as JSON lines for `probes/jvm`.
 
 `lake exe jvmcases space`: every catalogue edit with every well-typed client of `Jvm/Clients.lean`'s
-space (`space3` for the J3 cases, `space5` for J5), named `<case>/<n>`, so the probe checks the model's outcome for each client, not only the
+space (`space3` for the Track J3 cases, `space5` for Track J5), named `<case>/<n>`, so the probe checks the model's outcome for each client, not only the
 catalogue's own.
 
-`lake exe jvmcases verdicts`: per edit, MiMa's problem, the J2 verdicts and the number of clients in
+`lake exe jvmcases verdicts`: per edit, MiMa's problem, the Track J2 verdicts and the number of clients in
 the space that break or change, as a markdown table. -/
 
 open Jvm.Catalogue Jvm.Clients

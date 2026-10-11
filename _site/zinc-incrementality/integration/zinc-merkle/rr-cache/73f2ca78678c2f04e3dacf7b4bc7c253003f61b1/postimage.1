@@ -1,0 +1,6 @@
+# Client, in `package a; package b`, finds the given a.T through `import w.W.given`.
+> p/compile
+# `package object b` gains a given a.T at the import's nesting level: ambiguous, so a clean build fails.
+# Client has no edge to the package object.
+$ copy-file changes/PObj.scala p/PObj.scala
+-> p/compile

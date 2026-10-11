@@ -2,7 +2,7 @@
 
 ## Question
 
-Two gaps where a client's answer is derived through a unit it never names. An export forwarder `B.f` has the signature of the exported `A.f`: a client of `B.f` reads `A`'s signature through `B` (BUG-MAP EX: scala/scala3#18216, partially #10182 and #11841). A client of `val p: P = B.x` with `B.x : A1` asks whether `A1 <: P`, answered from `A1`'s parents, and names neither `A1` nor its parents (U1: sbt/zinc#87, scala/bug#2558 for a structural type's members). In both the obligation that fails is coverage on the derivation's inputs.
+Two gaps where a client's answer is derived through a unit it never names. An export forwarder `B.f` has the signature of the exported `A.f`: a client of `B.f` reads `A`'s signature through `B` (BUG-MAP K-EX: scala/scala3#18216, partially #10182 and #11841). A client of `val p: P = B.x` with `B.x : A1` asks whether `A1 <: P`, answered from `A1`'s parents, and names neither `A1` nor its parents (K-U1: sbt/zinc#87, scala/bug#2558 for a structural type's members). In both the obligation that fails is coverage on the derivation's inputs.
 
 ## Model
 
@@ -23,7 +23,7 @@ What the single-project instance cannot show, stated rather than proved: scala/s
 
 ## The clusters' scripted tests
 
-On develop: `types-in-used-names-a`, `-b`, `struct`, `struct-usage`, `struct-projection`, `variance` pass (U1's first hop and structural members); `export-jars` is pending (exports across a jar boundary, the external path above).
+On develop: `types-in-used-names-a`, `-b`, `struct`, `struct-usage`, `struct-projection`, `variance` pass (K-U1's first hop and structural members); `export-jars` is pending (exports across a jar boundary, the external path above).
 
 ## Steps
 

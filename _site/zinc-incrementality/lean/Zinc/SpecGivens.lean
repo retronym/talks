@@ -323,4 +323,132 @@ theorem g_decls_not_abstraction :
     (by simp [gcompiler, gπ, gtwo]) (some 0, .binds) rfl).1
   simp [gcompiler, answer] at this
 
+
+/-! ## Given prioritisation (Phase 27, `PLAN-imports.md`)
+
+At the decisive level the search has read every scope; the rule picks among the level's hits:
+Scala 3.7 and later the most general instance (`general`), Scala 3 before 3.7 and Scala 2 the most
+specific (`specific`); with no such instance the search is ambiguous (probes g1–g5). `le i j`: the
+instance in scope `i` has a type at least as specific as `j`'s. The rule reads no more than the
+trace, so it changes no obligation; it changes which edits change the choice. A type edit is a
+container's instance leaving one scope (its old type) and entering another (its new type). -/
+
+inductive Prio | general | specific
+  deriving DecidableEq
+
+variable (le : Fin n → Fin n → Bool)
+
+/-- The instance the rule picks among the hits. -/
+def best (p : Prio) (hs : List (Fin n)) : Option (Fin n) :=
+  hs.find? fun i => hs.all fun j => match p with
+    | .general => le j i
+    | .specific => le i j
+
+/-- Today's keys read the scope the search picked. -/
+def pickedKeys (p : Prio) (o : GOut n) : Finset (U n × KR) :=
+  match best le p o.hits with
+  | some i => {(some i, KR.presence)}
+  | none => ∅
+
+def gkeysP (p : Prio) : GDesign → U n → GOut n → List (U n × Q) → Finset (U n × KR)
+  | .searched, _, _, tr => (tr.map fun q => (q.1, KR.presence)).toFinset
+  | .today, _, o, _ =>
+    pickedKeys le p o ∪ (((List.finRange n).filter fun i => (sc i).pinned).map (fun i => (some i, KR.presence))).toFinset
+  | .rule _ _, _, o, _ =>
+    pickedKeys le p o ∪ (((List.finRange n).filter fun i => (sc i).pinned).map (fun i => (some i, KR.presence))).toFinset ∪
+      {(none, KR.rule)}
+
+def gcompilerP (p : Prio) (d : GDesign) :
+    XCompiler (U n) Src (GOut n) Bool KR (List Bool) Q (fun _ => Bool) :=
+  { gcompiler gx sc false d with keys := gkeysP sc le p d }
+
+/-- **The G rule meets the obligations under either rule**, global or narrowed with recorded
+imports: the rule picks among what the trace read. -/
+theorem gP_rule_obligations (p : Prio) (g imp : Bool)
+    (hk : ∀ i, (sc i).pinned = true ∨ gruled gx (.rule g imp) i = true) :
+    (gcompilerP gx sc le p (.rule g imp)).Obligations where
+  comp := gcomp gx sc false (.rule g imp)
+  coverage := by
+    intro I u s q hq
+    obtain ⟨i, rfl⟩ := trace_gunit gx s _ q hq
+    rcases hk i with hp | hr
+    · exact ⟨(some i, .presence), by simp [gcompilerP, gkeysP, hp], rfl⟩
+    · exact ⟨(none, .rule), by simp [gcompilerP, gkeysP], i, rfl, hr⟩
+  abstraction := gabstraction gx sc (.rule g imp)
+  locality := glocality gx sc false (.rule g imp)
+
+theorem gP_global_obligations (p : Prio) (h : GivensScopes gx sc) :
+    (gcompilerP gx sc le p (.rule true false)).Obligations :=
+  gP_rule_obligations gx sc le p true false fun i => by
+    rcases h i with h | h
+    · exact .inl h
+    · exact .inr (by simp [gruled, h])
+
+theorem gP_searched_obligations (p : Prio) : (gcompilerP gx sc le p .searched).Obligations where
+  comp := gcomp gx sc false .searched
+  coverage := gsearched_coverage gx sc false
+  abstraction := gabstraction gx sc .searched
+  locality := glocality gx sc false .searched
+
+/-! ### Witnesses: one level, scope 0 an imported `X { given B }` (pinned), scope 1 `package
+object b`'s instance of `A`, scope 2 its instance of `C` (`C <: B <: A`) -/
+
+def g3Scopes : Fin 3 → Scope := fun i => if i = 0 then ⟨true, false, false, false⟩ else ⟨false, false, false, false⟩
+def g3Levels : Fin 3 → GScope := fun i => if i = 0 then ⟨0, false, false, false⟩ else ⟨0, true, false, false⟩
+/-- `C <: B <: A`: scope 2 at least as specific as 0, 0 as 1. -/
+def g3Le : Fin 3 → Fin 3 → Bool := fun i j => i == j || (i == 2) || (i == 0 && j == 1)
+
+def onlyB : U 3 → Bool := fun u => u == some 0
+def bAndA : U 3 → Bool := fun u => u == some 0 || u == some 1
+def bAndC : U 3 → Bool := fun u => u == some 0 || u == some 2
+
+theorem run_onlyB : (gunit g3Levels .client).run (answer onlyB) = ⟨false, [0]⟩ := by
+  simp [gunit, gsearch, answer, onlyB, g3Levels]
+theorem run_bAndA : (gunit g3Levels .client).run (answer bAndA) = ⟨false, [0, 1]⟩ := by
+  simp [gunit, gsearch, answer, bAndA, g3Levels]
+theorem run_bAndC : (gunit g3Levels .client).run (answer bAndC) = ⟨false, [0, 2]⟩ := by
+  simp [gunit, gsearch, answer, bAndC, g3Levels]
+
+/-- **The rules differ** (probe g1): with `B` and `A` at one level, Scala 3.7+ picks `A`, the old
+rule `B`. -/
+theorem prio_differs : best g3Le .general [0, 1] = some 1 ∧ best g3Le .specific [0, 1] = some 0 := by
+  decide
+
+/-- **A more general instance added to a package object**: under 3.7+ the choice moves from `B`
+to `A`, and no key today's bridge recorded moves (the package object is reached through no edge);
+under the old rule the choice stays. -/
+theorem general_added_stale :
+    best g3Le .general ((gunit g3Levels .client).run (answer onlyB)).hits = some 0 ∧
+    best g3Le .general ((gunit g3Levels .client).run (answer bAndA)).hits = some 1 ∧
+    best g3Le .specific ((gunit g3Levels .client).run (answer bAndA)).hits = some 0 ∧
+    ∀ k ∈ gkeysP g3Scopes g3Le .general .today none ((gunit g3Levels .client).run (answer onlyB)) [],
+      gπ g3Levels false .today onlyB k.1 k.2 = gπ g3Levels false .today bAndA k.1 k.2 := by
+  rw [run_onlyB, run_bAndA]; decide
+
+/-- **A package object's instance retyped from `C` to `A`**: with the imported `B`, 3.7+ picks `B`
+before (`C` is more specific, `B` more general) and `A` after; today's keys do not move. -/
+theorem type_widened_stale :
+    best g3Le .general ((gunit g3Levels .client).run (answer bAndC)).hits = some 0 ∧
+    best g3Le .general ((gunit g3Levels .client).run (answer bAndA)).hits = some 1 ∧
+    ∀ k ∈ gkeysP g3Scopes g3Le .general .today none ((gunit g3Levels .client).run (answer bAndC)) [],
+      gπ g3Levels false .today bAndC k.1 k.2 = gπ g3Levels false .today bAndA k.1 k.2 := by
+  rw [run_bAndC, run_bAndA]; decide
+
+
+/-- Every environment of the three scopes. -/
+def g3Envs : List (U 3 → Bool) :=
+  [false, true].flatMap fun a => [false, true].flatMap fun b => [false, true].map fun c =>
+    fun u => match u with
+      | some 0 => a | some 1 => b | some 2 => c | none => false
+
+/-- Check, on the bounded space: under the global G rule's keys, when no key the client recorded
+moves, the choice does not either, under both rules (the obligations' consequence, enumerated). -/
+example : g3Envs.all (fun e => g3Envs.all fun e' => [Prio.general, .specific].all fun p =>
+    let o := (gunit g3Levels .client).run (answer e)
+    let o' := (gunit g3Levels .client).run (answer e')
+    !(decide (∀ k ∈ gkeysP g3Scopes g3Le p (.rule true false) none o [],
+        gπ g3Levels false (.rule true false) e k.1 k.2 = gπ g3Levels false (.rule true false) e' k.1 k.2)) ||
+      best g3Le p o.hits == best g3Le p o'.hits) = true := by
+  native_decide
+
 end Zinc.SplitProof.Spec

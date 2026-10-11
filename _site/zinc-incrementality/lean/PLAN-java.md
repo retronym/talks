@@ -69,7 +69,7 @@ The harness needed no code for Java: a source-file base may hold `.java` files u
 | S1 | A leaf added to a Java `permits`, no pipelining: `ClassToAPI` lists no children (retronym/zinc#21's case). | `s1_noChildren` | `java-sealed-permits-exhaustivity` (retronym/zinc#14, fixed by #21) |
 | S2 | A leaf added under a nested sealed `T` declared in a file of its own. `S` is not recompiled, and a Scala client depends on `S` and its patterns' classes, not `T`: missed with #21, and with pipelining. A Java client gets `T` through sbt/zinc#148's ancestors. With `T` in `S`'s file (inferred `permits`, or any Scala hierarchy) the descendants in `S`'s hash catch it, so #21 should list descendants too. | `s2_cases`; fixed by `JavaSealedSpec.obligations_fix` | `java-sealed-nested-permits` |
 
-With pipelining (scripted's default, not sbt's) every Java source is compiled in every cycle and J1–J3 and S1 vanish (`j1_pipe`, `s1_pipe`); S2 stays.
+With pipelining (scripted's default, not sbt's) every Java source is compiled in every cycle and J1–J3 and S1 vanish (`JavaNames.recompiles` recompiles every Java client when `pipe`; unnamed checked examples for J1 in `JavaNames.lean` and S1 in `JavaSealed.lean`); S2 stays.
 
 ## Counts
 

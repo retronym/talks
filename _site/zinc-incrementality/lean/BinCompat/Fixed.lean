@@ -9,11 +9,11 @@ MiMa's keys plus four, one per gap in `BinCompat/Keys.lean`:
   name and descriptor, the member a client's reference *through `c`* resolves to (JVMS §5.4.3.2–4,
   private members and superinterfaces included), compared by access, `static`, `abstract` and
   `final`. MiMa compares only the members `c` declares, looked up without private members or
-  (for fields) interfaces: gaps M1 and F1.
+  (for fields) interfaces: gaps MiMa-M1 and MiMa-F1.
 * `ifaceField t n d`: an interface that sees a field it did not see before, which a client class
-  extending a public class and implementing `t` would resolve before the class's field (F2).
+  extending a public class and implementing `t` would resolve before the class's field (MiMa-F2).
 * `defaults t n d`: an interface gaining a default method that another public interface, unrelated
-  to it, also has (D1). In general a client's own interface can have a default of any name, so any
+  to it, also has (MiMa-D1). In general a client's own interface can have a default of any name, so any
   new default can conflict; in the model's client space, clients implement only library interfaces.
 
 Soundness on the space: every edit in `BinCompat.edits` that breaks a client of `spaceB` is
