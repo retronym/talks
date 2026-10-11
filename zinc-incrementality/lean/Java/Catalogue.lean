@@ -3,7 +3,7 @@ import Java.Lower
 /-!
 # A catalogue of Java library edits, lowered and linked
 
-The Java counterpart of `Scala/Catalogue.lean`, and input for track B's source-level spaces. Each
+The Java counterpart of `Scala/Catalogue.lean`, and input for Track B's source-level spaces. Each
 case is a library edit (`v0` → `v1`, Java declarations), client units compiled against `v0`, and
 a JVM program: the classes the client loads, the sites it executes directly, and client methods
 whose bodies it runs (their `getstatic`s and invokes, read off the client's lowered classfile).
@@ -28,7 +28,7 @@ abbrev S := Jvm.Site String String String
 
 structure Case where
   name : String
-  /-- The MiMa problem expected to report the edit, if any (to be checked by track B). -/
+  /-- The MiMa problem expected to report the edit, if any (to be checked by Track B). -/
   mima : Option String
   v0 : Program
   v1 : Program

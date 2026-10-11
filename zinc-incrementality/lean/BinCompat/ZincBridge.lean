@@ -2,7 +2,7 @@ import Zinc.General
 import Scala.Catalogue
 
 /-!
-# B4: Zinc-clean implies binary compatible
+# Track B4: Zinc-clean implies binary compatible
 
 **The front end.** Scala lowering (`Scala/Lower.lean`) as an `XCompiler` (`General.lean`):
 
@@ -124,7 +124,7 @@ theorem inv_of_edit (S : Finset CUnit) (src₀ src : CUnit → Src) (s : State C
   rw [this] at h
   exact h
 
-/-- **B4.** After an edit (the dirty set `D` ⊆ the first round `R₀`), if Zinc's loop stops and a
+/-- **Track B4.** After an edit (the dirty set `D` ⊆ the first round `R₀`), if Zinc's loop stops and a
 unit `c` was in none of its rounds, `c`'s old output is its output in the clean build of the new
 sources. Hypotheses: the obligations; interfaces determined by the source; a sound policy that
 stays inside `S`. -/
@@ -270,7 +270,7 @@ def afterWorld (us : List String) (clean : String → Out) (c : String) (old : O
     Jvm.World String String String :=
   worldOf us fun u => if u = c then old else clean u
 
-/-- **B4 for lowering.** Under the `searched` bridge (or any bridge meeting the obligations, by
+/-- **Track B4 for lowering.** Under the `searched` bridge (or any bridge meeting the obligations, by
 `Zinc.XCompiler.untouched_eq_clean`), a client `c` that Zinc's loop never recompiled links against
 the new library exactly as a fresh build does. -/
 theorem after_eq_fresh (dl : Dialect) (us : List String) (S : Finset String)

@@ -1,6 +1,6 @@
 # Phase 22 — Scala 3 macro dependencies: what an expansion reads, when it is recorded (`MacroDeps.lean`)
 
-BUG-MAP gap M1: sbt/zinc#249, #1478, scala/scala3#22999, #27125, #20119, partially #23852, #18100, sbt/zinc#1282, #1333, scala/scala3#27133. Phase 11 (`PLAN-inline.md`) specified inline bodies; a macro is an inline def whose body splices a call to an implementation, and the expansion is whatever that implementation *does*. This phase specifies it on the same shape: a `TCompiler` whose task is dotc's, keys read off the tree, a witness per bug, fixes as keys with their cost, and what is left to policy.
+BUG-MAP gap K-M1: sbt/zinc#249, #1478, scala/scala3#22999, #27125, #20119, partially #23852, #18100, sbt/zinc#1282, #1333, scala/scala3#27133. Phase 11 (`PLAN-inline.md`) specified inline bodies; a macro is an inline def whose body splices a call to an implementation, and the expansion is whatever that implementation *does*. This phase specifies it on the same shape: a `TCompiler` whose task is dotc's, keys read off the tree, a witness per bug, fixes as keys with their cost, and what is left to policy.
 
 ## The query: what a macro expansion reads
 
@@ -74,4 +74,4 @@ Prediction for the harness or a pending scripted test: `private_today`, a macro 
 - [x] P22.1 `MacroDeps.lean`: the language, the task, the tree, `faithful`.
 - [x] P22.2 Witnesses per bug (kernel `decide`), designs `pre24969`, `pre23900`, `today`, `early`.
 - [x] P22.3 `fix`: obligations, T3a; precision witnesses (the bytecode key, private members).
-- [x] P22.4 PLAN status row, BUG-MAP M1 entries.
+- [x] P22.4 PLAN status row, BUG-MAP K-M1 entries.

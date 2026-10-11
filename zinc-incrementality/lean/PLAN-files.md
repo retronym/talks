@@ -6,7 +6,7 @@ Zinc recompiles source files, not classes, but records keys per class. The frame
 
 - **Rounds are closed under files.** Invalidating one class recompiles every class of its file. The model's rounds can split a file. Today this is harmless: a policy may compile more, and `Policy.Sound` allows it. It matters once a file's classes share recorded keys.
 - **Keys are charged to one class of the file.** A top-level import records its qualifier as a dependency of one class of the file: the first in Scala 2, the last in Scala 3 (`Dependency.firstClassOrModuleClass`, dotc's `responsibleForImports`). `MemberRefInvalidator` then checks the used names of that class only. F3 is exactly this: the import is charged to a class that does not use the name, and the class that does use it holds no key. `Names.lean` models it with an ad hoc `first` flag. The framework cannot say it, because coverage is per class and the import's query belongs to the file.
-- **Edges inside a file.** sbt/zinc#417 is the bridge dropping inheritance edges between classes of one file. BUG-MAP's FI cluster has more. With per-class units and no files, "same file" is not a predicate the model has.
+- **Edges inside a file.** sbt/zinc#417 is the bridge dropping inheritance edges between classes of one file. BUG-MAP's K-FI cluster has more. With per-class units and no files, "same file" is not a predicate the model has.
 
 ## Decision
 
@@ -21,7 +21,7 @@ Zinc recompiles source files, not classes, but records keys per class. The frame
 
 **F3 becomes a framework statement.** Today's charging (first, or last, class of the file) fails charged coverage, and the witness is the F3 trace. The fix, an import charged to every class of the file (F3's `f3Keys`), or the file's used names taken as the union, meets it. Both are proved once, for any instance that sets `file`, not only for `Names.lean`'s space.
 
-**FI becomes expressible.** A dropped same-file edge is a coverage failure whose missing key would be a same-file one: the predicate `file u = file v` is now available, so the witness can be stated.
+**K-FI becomes expressible.** A dropped same-file edge is a coverage failure whose missing key would be a same-file one: the predicate `file u = file v` is now available, so the witness can be stated.
 
 ## What changes
 
@@ -53,4 +53,4 @@ Zinc recompiles source files, not classes, but records keys per class. The frame
 3. [x] `ChargedCoverage`, with `charged_of_obligations`.
    - The F3 witness, `FileSpec.today_not_charged`, is on `Spec`'s lookup with a two-class client file. `Other` is the file's first class (Scala 2) or its last (Scala 3), and is today's representative. Since `SplitProof.lean` has open work, `Spec`'s lookup is lifted (`lift`, `trace_lift`) instead of extending `Spec` in place.
    - The fix, the import charged to every class of the file, meets the plain obligations for every program whose scopes are pinned or wildcard-imported (`every_obligations`). Hence T3a (`every_sound`).
-4. [x] FI, `Fi.fi_not_covered` and `Fi.fi_loop`, for sbt/zinc#417. `A` and `B extends A` share a file, and `C extends B` is in another. With the same-file edge dropped, `C`'s inheritance key on `B` does not reach `A`, which `C` reads; with the edge kept, it does. From an up-to-date build, an edit to `A` recompiles `{A, B}`, the loop stops, and `C` keeps what it inherited from the old `A`. The fix (keeping the edge) is checked on this program only, not proved in general.
+4. [x] K-FI, `Fi.fi_not_covered` and `Fi.fi_loop`, for sbt/zinc#417. `A` and `B extends A` share a file, and `C extends B` is in another. With the same-file edge dropped, `C`'s inheritance key on `B` does not reach `A`, which `C` reads; with the edge kept, it does. From an up-to-date build, an edit to `A` recompiles `{A, B}`, the loop stops, and `C` keeps what it inherited from the old `A`. The fix (keeping the edge) is checked on this program only, not proved in general.

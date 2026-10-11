@@ -2,7 +2,7 @@
 
 ## Question
 
-A definition `@Ann(arg) class S` asks things about `Ann` when it compiles: that its constructor takes the arguments, whether it is a static annotation (so whether it is pickled and seen by separate compilation), and for a macro annotation its `transform` body, which rewrites `S`. An argument may name a constant of another class (`@SerialVersionUID(Consts.Uid)`). A client of `S` may read `S`'s annotations (a macro, a derivation, Java's retention). Which keys does Zinc record for these queries, and does the hash move when the answers do? BUG-MAP's cluster AN: sbt/zinc#1842 (the user's open PR), #237, scala/scala3#22999, #23783.
+A definition `@Ann(arg) class S` asks things about `Ann` when it compiles: that its constructor takes the arguments, whether it is a static annotation (so whether it is pickled and seen by separate compilation), and for a macro annotation its `transform` body, which rewrites `S`. An argument may name a constant of another class (`@SerialVersionUID(Consts.Uid)`). A client of `S` may read `S`'s annotations (a macro, a derivation, Java's retention). Which keys does Zinc record for these queries, and does the hash move when the answers do? BUG-MAP's cluster K-AN: sbt/zinc#1842 (a draft PR), #237, scala/scala3#22999, #23783.
 
 ## What the bridges do, read off the code
 

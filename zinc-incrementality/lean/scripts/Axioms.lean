@@ -73,7 +73,7 @@ import BinCompat.ZincBridgeLibs
 #print axioms AsSeenFrom.compose
 #print axioms AsSeenFrom.chain_is_single
 #print axioms Scala.lower_congr
--- B4 and its extensions
+-- B4 (Track B4) and its extensions
 #print axioms Zinc.XCompiler.untouched_eq_clean
 #print axioms BinCompat.ZincBridge.gap_witness
 #print axioms BinCompat.ZincBridgeScala3.not_comp

@@ -59,7 +59,7 @@ Givens: `trait A`, `class B extends A`; `summon[A]` (`implicitly[A]` in 2.13).
 
 Not modelled: a selector's rename in the scopes searched for the new name is any scope of the slot language; which scopes a selector adds to the search order (p6, p7) is taken from the probes.
 
-## Pending tests (predicted, not run)
+## Pending tests (predicted, then run: retronym/zinc#58, open)
 
 * `added-general-given-package-object-scala3`: the client in `package a.b` imports `a.X.given` (`given B`); `package object b` gains `given A` (`B <: A`). Scala 3.7+ picks `A`; Zinc recompiles the package object only; the client keeps `B` (behavioural: print the choice). Under `-source:3.6` the choice stays `B`. (`general_added_stale`.)
 * `given-type-widened-package-object-scala3`: as above, with `package object b`'s `given g: C` (`C <: B`) retyped to `given g: A`: the choice moves from `B` to `A` under 3.7+, and Zinc keeps `B`. (`type_widened_stale`.)
@@ -72,3 +72,4 @@ Both are G1 (an instance in a package object, reached through no edge) under a n
 - [x] P27.2 `Spec`: selector checks, coverage, obligations, witness.
 - [x] P27.3 `SpecGivens`: `Prio`, `best`, today's keys on the picked scope, obligations under both rules, witnesses, a bounded check.
 - [x] P27.4 Proved vs checked; PLAN.md pointer.
+- [x] P27.5 The two pending tests on retronym/zinc#58; each fails on develop as predicted (the client keeps `B`; a clean build picks `A`).

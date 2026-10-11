@@ -1,7 +1,7 @@
 import BinCompat.ZincBridge
 
 /-!
-# B4 with Zinc's actual keys
+# Track B4 with Zinc's actual keys
 
 `ZincBridge`'s `searched` bridge records a key per query lowering asks. Zinc records less: what
 the extractor sees in the typed tree of the unit's own source, before lowering runs.
@@ -31,7 +31,7 @@ is unchanged, so its API is too, and the loop stops: `O` was never recompiled. A
 a Java caller compiled against the fresh build does, fails with `NoSuchMethodError`.
 The mixin forwarder `O$.f(LV;)I` is stale too.
 
-So B4's hypothesis (the obligations) does not hold for Zinc's keys, and its conclusion fails. The
+So Track B4's hypothesis (the obligations) does not hold for Zinc's keys, and its conclusion fails. The
 same shape breaks bridges (a value class in an inherited generic signature) and mixin forwarders of
 a class. Fixes: record keys on the value classes in inherited signatures (what `searched` does), or
 hash a value class reference in an API by its underlying type, so `T`'s API changes and
