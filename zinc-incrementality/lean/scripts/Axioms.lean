@@ -77,3 +77,6 @@ import BinCompat.ZincBridgeLibs
 #print axioms Zinc.FileSpec.every_obligations
 #print axioms Zinc.Fi.fi_not_covered
 #print axioms Zinc.Fi.fi_loop
+-- SAM conversion and local classes
+#print axioms Zinc.Sam.fix_sound
+#print axioms Zinc.Sam.today_sound_argFree

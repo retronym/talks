@@ -49,3 +49,4 @@ import Zinc.ExtraHash
 import Zinc.Companions
 import Zinc.Extensions
 import Zinc.Files
+import Zinc.Sam

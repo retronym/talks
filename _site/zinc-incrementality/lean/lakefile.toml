@@ -1,0 +1,58 @@
+name = "zinc"
+version = "0.1.0"
+defaultTargets = ["Zinc", "Jvm", "Scala", "BinCompat", "Java"]
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.34.1"
+
+# The name-resolution spaces, compiled to native code so that `native_decide` over them (in
+# `Zinc.NamesRules`) does not run in the interpreter.
+[[lean_lib]]
+name = "ZincNames"
+roots = ["ZincNames"]
+precompileModules = true
+
+[[lean_lib]]
+name = "Zinc"
+
+[[lean_exe]]
+name = "exhaustive"
+root = "Exhaustive"
+
+[[lean_exe]]
+name = "conformance"
+root = "Conformance"
+
+[[lean_exe]]
+name = "jconformance"
+root = "JConformance"
+
+[[lean_lib]]
+name = "Jvm"
+
+[[lean_exe]]
+name = "jvmcases"
+root = "JvmCases"
+
+[[lean_lib]]
+name = "Scala"
+
+[[lean_exe]]
+name = "scalaprobe"
+root = "ScalaProbe"
+
+[[lean_lib]]
+name = "BinCompat"
+
+[[lean_lib]]
+name = "Java"
+
+[[lean_exe]]
+name = "javaprobe"
+root = "JavaProbe"
+
+[[lean_exe]]
+name = "bincompat"
+root = "BinCompatMain"

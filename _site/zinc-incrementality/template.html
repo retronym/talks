@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zinc Incrementality</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --rule: #e4e2dc;
+  --accent: #b4441f;
+  --accent-soft: #f6e4dc;
+  --link: #1f5fa8;
+  --code-bg: #f2f1ec;
+  --part-bg: #1d1d1f;
+  --part-ink: #f6f5f1;
+  --kw: #a3361a; --str: #2f7a3a; --com: #8a8a8f; --typ: #1f5fa8; --num: #7a3fa0;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+    --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+    --part-bg: #ececee; --part-ink: #141416;
+    --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+  --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+  --part-bg: #ececee; --part-ink: #141416;
+  --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+html { scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; }
+:not(pre) > code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre.mermaid { background: transparent; text-align: center; padding: 8px 0; }
+.hljs-keyword, .hljs-built_in { color: var(--kw); }
+.hljs-string { color: var(--str); }
+.hljs-comment { color: var(--com); font-style: italic; }
+.hljs-type, .hljs-title { color: var(--typ); }
+.hljs-number, .hljs-literal { color: var(--num); }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+nav.toc {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 24px 16px 40px 20px; border-right: 1px solid var(--rule); font-size: 13.5px;
+}
+nav.toc .title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+nav.toc .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--ink); }
+nav.toc li a:hover { background: var(--accent-soft); text-decoration: none; }
+nav.toc li.h2 > a { font-weight: 600; margin-top: 12px; color: var(--muted); text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; }
+nav.toc li.h4 > a { padding-left: 22px; color: var(--muted); }
+nav.toc li a.active { background: var(--accent-soft); color: var(--accent); }
+.controls { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.controls button {
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+}
+.controls button:hover { border-color: var(--accent); }
+
+main { padding: 32px 40px 120px; max-width: 980px; width: 100%; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 26px 32px; margin: 0 0 22px; box-shadow: var(--shadow);
+}
+.card.part { background: var(--part-bg); color: var(--part-ink); border: none; padding: 36px 32px; }
+.card.part h2 { margin: 0; font-size: 28px; letter-spacing: -.01em; }
+.card.part code { background: transparent; color: inherit; }
+.card.cover h1 { font-size: 34px; line-height: 1.2; margin: 0 0 18px; letter-spacing: -.02em; }
+.card h3 { margin: 0 0 14px; font-size: 22px; letter-spacing: -.01em; }
+.card h4 { margin: 0 0 12px; font-size: 18px; }
+.card .cont { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.card h3 .num, .card h4 .num { color: var(--accent); margin-right: .35em; }
+.card > :last-child { margin-bottom: 0; }
+.card ul, .card ol { padding-left: 1.3em; }
+.card li { margin: .25em 0; }
+.card li > ul { margin: .2em 0; }
+strong { font-weight: 650; }
+.katex-display { margin: 14px 0; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.katex { font-size: 1.05em; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { border-bottom: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); color: var(--muted); }
+a.sref { white-space: nowrap; }
+
+/* Focus mode: one card at a time, bigger type, for presenting */
+body.focus nav.toc { display: none; }
+body.focus .layout { grid-template-columns: 1fr; }
+body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
+body.focus .card { display: none; min-height: 80vh; }
+body.focus .card.current { display: block; outline: none; }
+body.focus .card.part.current { display: flex; align-items: center; }
+body.focus .card.part h2 { font-size: 44px; }
+.focus-counter { display: none; position: fixed; bottom: 14px; right: 18px; color: var(--muted); font-size: 13px; }
+body.focus .focus-counter { display: block; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  main { padding: 16px 16px 80px; }
+  .card { padding: 18px 16px; }
+}
+@media print {
+  nav.toc, .focus-counter { display: none; }
+  .layout { display: block; }
+  .card { break-inside: avoid; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <div class="title">Zinc incrementality</div>
+    <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
+    <div class="controls">
+      <button id="btn-focus" type="button">Focus mode</button>
+      <button id="btn-theme" type="button">Theme</button>
+    </div>
+    <ol id="toc"></ol>
+  </nav>
+  <main id="content"></main>
+</div>
+<div class="focus-counter" id="counter"></div>
+
+<script type="text/markdown" id="talk-src">%%TALK%%</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  const src = document.getElementById('talk-src').textContent;
+
+  // 1. Protect $…$ and $$…$$ from markdown, skipping fenced and inline code.
+  const maths = [];
+  function protectMath(text) {
+    return text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => token(m, true))
+      .replace(/(^|[^\\\w])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\w)/g, (_, pre, m) => pre + token(m, false));
+  }
+  function token(tex, display) { maths.push({ tex, display }); return 'MATHTOKEN' + (maths.length - 1) + 'X'; }
+  const fenceSplit = src.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const protectedSrc = fenceSplit.map((part, i) => {
+    if (i % 2 === 1) return part;
+    return part.split(/(`+[^`\n]*?`+)/).map((p, j) => (j % 2 === 1 ? p : protectMath(p))).join('');
+  }).join('');
+
+  // 2. Render markdown; mermaid fences become <pre class="mermaid">.
+  const md = window.markdownit({ html: true, linkify: false, typographer: false });
+  const defaultFence = md.renderer.rules.fence;
+  md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
+    const t = tokens[idx];
+    const lang = (t.info || '').trim().split(/\s+/)[0];
+    if (lang === 'mermaid') return '<pre class="mermaid">' + md.utils.escapeHtml(t.content) + '</pre>';
+    if (lang && window.hljs && hljs.getLanguage(lang)) {
+      return '<pre><code class="hljs language-' + lang + '">' + hljs.highlight(t.content, { language: lang }).value + '</code></pre>';
+    }
+    return defaultFence(tokens, idx, opts, env, self);
+  };
+  let html = md.render(protectedSrc);
+  html = html.replace(/MATHTOKEN(\d+)X/g, (_, i) => {
+    const m = maths[+i];
+    try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, strict: 'ignore' }); }
+    catch (e) { return '<code>' + md.utils.escapeHtml(m.tex) + '</code>'; }
+  });
+
+  // 3. Chunk into cards at h1/h2/h3/h4 and at <!-- break --> comments; drop <hr>.
+  const scratch = document.createElement('div');
+  scratch.innerHTML = html;
+  const main = document.getElementById('content');
+  let card = null, lastHeading = null;
+  function newCard(cls) { card = document.createElement('section'); card.className = 'card ' + (cls || ''); main.appendChild(card); return card; }
+  function slugFor(h) {
+    const text = h.textContent.trim();
+    const m = text.match(/^(\d+[a-z]?)\.\s/) || text.match(/^(N\d+)\.\s/);
+    if (m) return 's' + m[1].toLowerCase();
+    return text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+  Array.from(scratch.childNodes).forEach(node => {
+    if (node.nodeType === Node.COMMENT_NODE && /break/.test(node.textContent)) {
+      newCard();
+      if (lastHeading) { const c = document.createElement('div'); c.className = 'cont'; const n = lastHeading.querySelector('.num'); c.textContent = (n ? n.textContent + ' ' + lastHeading.textContent.slice(n.textContent.length) : lastHeading.textContent) + ' (cont.)'; card.appendChild(c); }
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = node.tagName;
+      if (tag === 'HR') return;
+      if (/^H[1-4]$/.test(tag)) {
+        newCard(tag === 'H2' ? 'part' : tag === 'H1' ? 'cover' : '');
+        const id = slugFor(node);
+        card.id = id;
+        const m = node.innerHTML.match(/^(\d+[a-z]?\.|N\d+\.)\s/);
+        if (m) node.innerHTML = '<span class="num">' + m[1] + '</span>' + node.innerHTML.slice(m[0].length);
+        if (tag !== 'H2') lastHeading = node;
+      }
+    }
+    if (!card) newCard('cover');
+    card.appendChild(node);
+  });
+
+  // 4. Link § references and "Notes N1" to their cards.
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('code, pre, a, .katex, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const textNodes = []; while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(n => {
+    const re = /§(\d+[a-c]?)((?:[–-]\d+)?)|Notes (N\d)/g;
+    if (!re.test(n.nodeValue)) return;
+    const frag = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
+    while ((m = re.exec(n.nodeValue))) {
+      frag.appendChild(document.createTextNode(n.nodeValue.slice(last, m.index)));
+      const a = document.createElement('a'); a.className = 'sref';
+      a.href = '#s' + (m[1] || m[3]).toLowerCase(); a.textContent = m[0];
+      frag.appendChild(a); last = re.lastIndex;
+    }
+    frag.appendChild(document.createTextNode(n.nodeValue.slice(last)));
+    n.parentNode.replaceChild(frag, n);
+  });
+
+  // 5. Table of contents.
+  const toc = document.getElementById('toc');
+  const cards = Array.from(main.querySelectorAll('.card'));
+  cards.forEach(c => {
+    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4');
+    if (!h || !c.id) return;
+    const li = document.createElement('li'); li.className = h.tagName.toLowerCase();
+    const num = h.querySelector('.num');
+    const label = num ? num.textContent + ' ' + h.textContent.slice(num.textContent.length) : h.textContent;
+    const a = document.createElement('a'); a.href = '#' + c.id; a.textContent = label; a.dataset.target = c.id;
+    li.appendChild(a); toc.appendChild(li);
+  });
+
+  // 6. Mermaid, themed to match; re-rendered on theme change.
+  const mermaidBlocks = Array.from(main.querySelectorAll('pre.mermaid'));
+  mermaidBlocks.forEach(b => { b.dataset.src = b.textContent; });
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  async function renderMermaid() {
+    mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
+      fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: true, curve: 'basis' } });
+    mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
+    try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
+  }
+  const firstRender = renderMermaid();
+
+  // 7. Navigation: current card, keyboard, focus mode, theme.
+  let current = 0, suppressObserverUntil = 0;
+  const counter = document.getElementById('counter');
+  function setCurrent(i, scroll, smooth) {
+    current = Math.max(0, Math.min(cards.length - 1, i));
+    cards.forEach((c, j) => c.classList.toggle('current', j === current));
+    counter.textContent = (current + 1) + ' / ' + cards.length;
+    const id = cards[current].id;
+    toc.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+    if (scroll) {
+      suppressObserverUntil = performance.now() + 1000;
+      if (document.body.classList.contains('focus')) window.scrollTo(0, 0);
+      else cards[current].scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'instant' });
+      if (id) history.replaceState(null, '', '#' + id);
+    }
+  }
+  const io = new IntersectionObserver(entries => {
+    if (document.body.classList.contains('focus') || performance.now() < suppressObserverUntil) return;
+    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length) setCurrent(cards.indexOf(visible[0].target), false);
+  }, { rootMargin: '0px 0px -60% 0px' });
+  cards.forEach(c => io.observe(c));
+  function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
+  function toggleTheme() {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('zinc-talk-theme', next); } catch (e) {}
+    renderMermaid();
+  }
+  try { const t = localStorage.getItem('zinc-talk-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
+  document.getElementById('btn-focus').onclick = toggleFocus;
+  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['j', 'ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); setCurrent(current + 1, true, true); }
+    else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
+    else if (e.key === 'f') toggleFocus();
+    else if (e.key === 't') toggleTheme();
+    else if (e.key === 'Escape') document.body.classList.remove('focus');
+  });
+  toc.addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  main.addEventListener('click', e => {
+    const a = e.target.closest('a.sref'); if (!a) return;
+    const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
+  setCurrent(start < 0 ? 0 : start, start > 0);
+  firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+})();
+</script>
+</body>
+</html>
