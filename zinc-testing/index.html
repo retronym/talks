@@ -169,7 +169,7 @@ body.focus .focus-counter { display: block; }
 
 **Audience:** Scala tooling people and anyone who maintains a compiler or build tool. No Lean needed; the model is shown only through what it checked and predicted.
 
-**Thesis:** each test oracle for Zinc had a blind spot, and in each case the Lean model is what exposed it and suggested the next check. The model was tested in turn: against Zinc, against scalac, javac and HotSpot, and by checking its own proofs. Most of this happened between 3 and 11 October 2026.
+**Thesis:** each test oracle for Zinc had a blind spot, and in each case the Lean model is what exposed it and suggested the next check. The model was tested in turn: against Zinc, against scalac, javac and HotSpot, and by checking its own proofs. Most of this happened between 6 and 11 October 2026.
 
 **Companion talks:** `zinc-incrementality` (the overview) and `zinc-lean` (the model and its proofs, which covers the same results in its §5 and §26–27b). This talk is about the testing. Part III overlaps with the parked joint ≡ separate talk (`zinc-lean` Notes T); if that talk goes ahead, Part III shrinks to one slide pointing to it.
 
@@ -255,7 +255,7 @@ Notes: 2.5 min. `zinc-incrementality` §6a. Scala 3's counterpart, scala/scala3#
 
 - Zinc's loop stops only because of `transitiveStep`. Without it, three classes whose types are inferred from each other alternate for ever; this is proved for any amount of fuel (`PingPong.zinc_diverges`).
 - Stopping does not mean the result equals the clean build. With mutually inferred types, separate compilation can have several fixed points; joint compilation reports a cyclic reference.
-- No test had found either. Both became scripted tests afterwards (retronym/zinc#33, #49).
+- No test stated either as a property of the loop. The search then found the three-class witness (§7), and both became scripted tests (retronym/zinc#33, #49).
 
 <div class="fn">
 
@@ -265,7 +265,7 @@ Notes: 1.5 min. `zinc-lean` §14 and §14a have the details; here only the point
 
 ### 6. The Merkle PoC passed the scripted suite
 
-- The PoC (retronym/zinc#24, 8 October) stops copying inherited members into each class's API and decides which descendants recompile by six rules.
+- The PoC (retronym/zinc#24, 8 October) stops copying inherited members into each class's API and decides which descendants recompile by a small set of rules (six at first, eight now).
 - It passed the full scripted suite.
 - Its first trait test also passed with the trait rule switched off: a missing mixin forwarder is invisible at runtime, because the JVM falls back to the trait's default method. A second test (`merkle-trait-override`) was needed to tell the two apart.
 - Passing the suite said little about whether the rules were right.
@@ -281,9 +281,9 @@ Notes: 2 min. `zinc-incrementality` §19. One line on Merkle only; the design is
 <span class="chip search">search in the model</span>
 
 - The Lean model of Zinc's loop runs, so bounded program spaces can be checked exhaustively, with each rule in turn removed (the largest: 216,000 programs × 27 edits).
-- The `abstract` rule as stated was unsound: 672 of 142,500 runs. Minimal case: a member loses its body in a class whose ancestor declares it abstract.
-- Refreshing only some upstream snapshots goes stale after an edit and its revert (`stale_after_revert`).
-- Both fixed in the PoC before any user saw them.
+- The `abstract` rule as stated was unsound: on a 142,500-run space it left 672 runs unclean (9,600 on the largest). Minimal case: a member loses its body in a class whose ancestor declares it abstract.
+- Private trait members needed a key (48,000 unclean runs without one); macro keys are non-local (437,696 without them).
+- All fixed in the PoC before any user saw them.
 
 <div class="fn">
 
@@ -303,7 +303,8 @@ flowchart LR
 - The model's program space is dumped as cases, rendered as Scala and run through real Zinc (retronym/zinc#25, the same day as §7).
 - The oracle changed from "which classes recompiled" to "are the classfiles equal to a clean build's".
 - Cases are ordered by a covering array over the program's factors; each known bug family appears within 7–436 cases.
-- Found in Zinc within hours: a class that becomes a trait (the client keeps `invokevirtual`), a parent made `final`, an upstream grandparent's erasure (retronym/zinc#26). The first two are fixed in sbt/zinc#1841.
+- Found in Zinc within hours: a class that becomes a trait (the client keeps `invokevirtual`) and an upstream grandparent's erasure (retronym/zinc#26). It also hit the `final` parent the PoC's own tests had found; sbt/zinc#1841 fixes both header cases.
+- Found in the PoC: refreshing only some upstream snapshots goes stale after an edit and its revert. The model then proved the fix sufficient (`Snapshot.stale_after_revert`, `refreshAll_after_revert`).
 
 <div class="fn">
 
@@ -335,7 +336,7 @@ Notes: 1.5 min. Demo candidate: the class-becomes-trait divergence, then the `ja
 
 - `IncBench --verify`: after each incremental build, build the same sources from scratch and compare every classfile by digest (retronym/zinc#31, 9 October).
 - 146 edits to `sql/catalyst` (2,527 classes, Scala and Java), each followed by its revert, for `develop` and for the PoC.
-- No undercompilation on either side.
+- No undercompilation in these 146 edits, on either side. Later runs on Spark did find two: develop's added-class `Utils` bug (retronym/zinc#34) and the PoC's companion bug (retronym/zinc#56).
 - Many classfiles still differed.
 
 <div class="fn">
@@ -392,11 +393,11 @@ Notes: 1 min.
 
 ## Part IV — From checking to predicting
 
-### 14. A bug map: every known bug classified by the obligation it breaks
+### 14. A bug map: every known bug classified by root cause
 
-- 145 historical bugs and 208 scripted tests, each assigned to the obligation it breaks: coverage, abstraction or compositionality.
-- Of the bugs, 56 are covered by a test, 38 partially, 50 not at all.
-- The gaps are where to look next.
+- Every one of 145 historical bugs classified by root cause (coverage, abstraction, compositionality, the policy, snapshots, or the compiler itself) and mapped to the part of the model that expresses it.
+- 56 covered by the model, 38 partially, 50 gaps (24 of them compiler joint-vs-separate bugs). The 208 scripted tests are catalogued alongside.
+- The gaps are where to extend the model next; the covered bugs with no scripted test are where to look for new failures.
 
 <div class="fn">
 
@@ -409,12 +410,13 @@ Notes: 1.5 min. `BUG-MAP.md`, `BUGS-catalogue.md`, `TESTS-catalogue.md` in `zinc
 <span class="chip search">search in the model</span>
 
 - The model predicted 20 failures no test covered, 16 of them new bug families. All 20 failed on `develop` as predicted.
-- Examples: an added class that shadows a resolved name (and on Spark, an added `Utils` that makes an import ambiguous); members added to package objects, exports and givens; three mutually inferred classes that alternate without `transitiveStep`; Scala 3.7's given priority; erasure through opaque types.
+- Examples: a Java class's source and classfile views disagreeing (retronym/zinc#50); an extension added where the search looks first (#53); Scala 3.7's given priority and SAM lambda arguments (#58); erasure through opaque types (#51); forwarders over a type turned into a value class (#57).
+- Before these, the model predicted the added-class shadowing bug (#32), on Spark too: an added `Utils` makes an existing import ambiguous. Members added to package objects, exports and givens (#35) were found the same way.7's given priority; erasure through opaque types.
 - The model was now writing the test suite's missing entries.
 
 <div class="fn">
 
-Notes: 2.5 min. retronym/zinc#32–#35, #47, #49–#53, #57, #58. Of the 20, one is a termination property (#33) and three restate the erasure family already fixed by hand.
+Notes: 2.5 min. The 20: retronym/zinc#33, #49, #50, #51, #53, #57, #58. Of the 20, one is a termination property (#33) and three restate the erasure family already fixed by hand. #32 and #35 are earlier finds outside the 20; fixes in #34 and #47.
 
 </div>
 
@@ -454,19 +456,19 @@ Notes: 2.5 min. Central review finding 6 (`REVIEW-2026-10-11-central.md`).
 ### 18. Calibration against scalac, javac and HotSpot
 
 - The model's lowering of Scala to bytecode agrees with scalac on about 1,350 programs each for 2.12, 2.13 and 3.9; Java lowering with javac on 99.
-- The model's JVM linkage agrees with HotSpot 21, 25 and 27 on about 58,000 client programs; the only disagreements are two JDK 21 bugs.
+- The model's JVM linkage agrees with HotSpot 21, 25 and 27 on 58,400 client programs over 45 library edits; the only disagreements are where it hits two known JDK 21 bugs.
 - Pointed at MiMa, a tool it was not built for, it found five gaps.
 
 <div class="fn">
 
-Notes: 2 min. retronym/talks#39, #50, #58, #60, #64, #65. JDK-8356942, JDK-8350029. Check before presenting whether those JDK bugs were already known.
+Notes: 2 min. retronym/talks#39, #50, #58, #60, #64, #65. JDK-8356942, JDK-8350029, both known before the probe hit them.
 
 </div>
 
 ### 19. Checking the proofs
 
-- No theorem is proved by `native_decide`, which would trust Lean's compiler; CI lints for it and runs `#print axioms` on T1–T5.
-- Caveat: the lint misses some directories, and several counterexamples are still checked examples rather than theorems (central review).
+- No theorem is proved by `native_decide`, which would trust Lean's compiler; CI lints every Lean file for it and checks the axioms of 74 theorems (T1–T5, B4, every instance's soundness theorem).
+- Caveat: several counterexamples (Hier's scenarios, the whole-space rule tables) are still checked examples rather than theorems.
 
 <div class="fn">
 
@@ -535,7 +537,6 @@ Notes: 1.5 min.
 
 - Confirm the dates and order of §2–§9 against the PRs; the stage order is from PR creation times.
 - Mine the local-models search index for earlier history: `IncrementalCompileSimulator`, the scripted harness bugs, user reports that took longest to reproduce.
-- Check the JDK bug numbers in §18.
 - Freeze the numbers at a commit (the catalyst totals moved once between runs).
 </script>
 
