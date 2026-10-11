@@ -172,22 +172,22 @@ All Lean and tool output is shown as screenshots.
 
 | part | sections | min |
 |---|---|---|
-| I. The problem, and Zinc | §1 incremental = clean · §2 Zinc compares hashes · §2a modules and JARs · §3 every round is a separate compilation | 5.5 |
-| II. Bugs arrive one feature at a time | §4 features add observables · §5 scripted tests are a weak oracle | 3 |
-| III. Why formalise | §6 sound relative to the compiler · §6a the words, on one program · §7 why Lean | 3.5 |
+| I. The problem and Zinc | §1 incremental = clean · §2 Zinc compares hashes · §2a subprojects and JARs · §3 every round is a separate compilation | 5.5 |
+| II. Bugs by language feature | §4 features add observables · §5 scripted tests are a weak oracle | 3 |
+| III. Why formalise | §6 sound relative to the compiler · §6a vocabulary · §7 why Lean | 3.5 |
 | IV. A Lean primer | §P1 types · §P2 dependent queries · §P3 proofs as programs · §P4 tactics and `decide` | 9 |
 | V. A compiler as a query tree | §8 a `Task` per class · §9 a small Scala · §10 lookup walks the linearization | 6 |
-| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 name hashing misses implicit search | 9.5 |
+| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in detail · §15 name hashing misses implicit search | 9.5 |
 | VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §19 subprojects | 6.5 |
 | VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree | 9.5 |
-| IX. What we got out of it | §24 the model as a specification · §25 findings that changed Zinc · §27 conformance · §27a verifying on Spark · §27b binary compatibility: the JVM and Scala layers · §28 limits | 8.5 |
+| IX. Results | §24 the model as a specification · §25 findings that changed Zinc · §27 conformance · §27a verifying on Spark · §27b binary compatibility: the JVM and Scala layers · §28 limits | 8.5 |
 | Close | §29 next steps | 2 |
 
 Overflow (§18a, §23, §23d, §26) holds the demoted slides. If still over: §2a to one sentence, then one of §23a–c.
 
 ---
 
-## Part I — The problem, and Zinc
+## Part I — The problem and Zinc
 
 ### 1. An incremental build must equal a clean build
 
@@ -226,7 +226,7 @@ Notes: 2.5 min. Recap of `zinc-incrementality` §2–4. Mention the `transitiveS
 
 </div>
 
-### 2a. One module, many modules, JARs
+### 2a. Subprojects and JARs
 
 | a client depends on | Zinc knows | how a change reaches the client |
 |---|---|---|
@@ -271,7 +271,7 @@ Bugs of note: [scala/scala#11289](https://github.com/scala/scala/pull/11289) (fo
 
 ---
 
-## Part II — Bugs arrive one feature at a time
+## Part II — Bugs by language feature
 
 ### 4. Each language feature adds observables
 
@@ -327,7 +327,7 @@ We cannot verify scalac. We can prove Zinc's loop sound *assuming* three things 
 2. **Coverage:** every question a class's compilation asks about another class is covered by a key it records. If `C` reads `A.foo`, it must record a key `(A, foo)` whose hash changes whenever `foo`'s type does.
 3. **Abstraction:** if a key's hash is unchanged, the answer to every question it covers is unchanged.
 
-The assumptions are the useful part. They are the specification of `ExtractAPI` and `ExtractUsedNames`, and each bug in Part II breaks one of them.
+These assumptions are the specification of `ExtractAPI` and `ExtractUsedNames`. Each bug in Part II breaks one of them.
 
 <div class="fn">
 
@@ -335,7 +335,7 @@ Notes: 1.5 min. Value classes and implicit scope break coverage (a question with
 
 </div>
 
-### 6a. The words, on one program
+### 6a. Vocabulary
 
 ```scala
 object B { implicit val x: Int = 1 }
@@ -364,7 +364,7 @@ Notes: 1 min. The running example of §9 and §15. Every later slide uses these 
 
 ### 7. Why Lean
 
-One artefact does three jobs:
+Lean is used for three things:
 
 - **Proofs:** Zinc's loop is sound for any compiler meeting the obligations, and for any invalidation policy that only adds classes.
 - **Computation:** the toy compilers run. A counterexample is a program, an edit and two builds that disagree, checked by evaluation.
@@ -642,7 +642,7 @@ Notes: 2 min. `lean/V1/Model.lean` (`round`, `changed`, `invalidated`, `Policy`,
 
 </div>
 
-### 12. The obligations, in Lean
+### 12. The obligations in Lean
 
 ```lean
 structure Obligations : Prop where
@@ -691,7 +691,7 @@ Notes: 1 min. T1 `run_eq_of_trace`; T2 `round_preserves`; T3a `zinc_sound`; T3b 
 
 </div>
 
-### 14. Two things the proof found out about Zinc
+### 14. Two findings about Zinc's loop
 
 **1. `transitiveStep` is what guarantees termination.** Zinc can recompile the same classes round after round, and mutually inferred types can keep changing (§14a). From round `transitiveStep` on, each round includes the previous one, so the set only grows, and it cannot grow for ever.
 
@@ -715,7 +715,7 @@ Bugs of note: [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) · [sbt/zin
 
 </div>
 
-### 14a. Finding 1, from a search to a proof to Zinc
+### 14a. Finding 1 in detail
 
 **A search in Lean**, before any `transitiveStep`. Programs: three classes, each of which may read the inferred type of any other. Edits: change what one class's type is computed from. Start: every state in which each class is consistent with the others' current types, not only the clean build. 12,402 runs; each row is a rule for choosing the next round.
 
@@ -912,7 +912,7 @@ class B extends A[Int]
 
 <!-- break -->
 
-What the common model lets us say:
+With one model for all three we can:
 
 - **Relate schemes by theorem.** `asf_of_decl`: Scala 3's hashes determine Scala 2's. So for anything a client observes through typing, Scala 3 is sound wherever Scala 2 is, and recompiles at least as much. The converse fails, with a checked example (a parent's type argument changes a member only as seen from the subclass).
 - **Compare schemes on one program space.** Same programs, same edits: undercompiling runs and total recompiles per scheme (§20's table is one such comparison).
@@ -925,7 +925,7 @@ Notes: 2 min. In the model: Scala 2 is `Hier.W` and `Erasure` `.asf` (`W_obligat
 
 </div>
 
-### 19. Subprojects change the answer, in Zinc and in the model
+### 19. Subprojects
 
 Same edit, two layouts (`implicit-scope-grandparent-companion`: `B`, an ancestor of `C`, gains a companion implicit; `X` resolves `Show[C]`):
 
@@ -992,7 +992,7 @@ Bugs of note: [sbt/zinc#444](https://github.com/sbt/zinc/pull/444) (value class 
 
 </div>
 
-### 21. Macros: observing a whole class
+### 21. Macros that read a whole class
 
 ```scala
 def hasAnyField[T]: Boolean = macro ...   // reads weakTypeOf[T].members
@@ -1126,7 +1126,7 @@ Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231)
 
 ---
 
-## Part IX — What we got out of it
+## Part IX — Results
 
 ### 24. The model as a specification
 
@@ -1151,7 +1151,7 @@ Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug fa
 
 ### 25. Findings that changed Zinc
 
-**The Merkle PoC, corrected before it shipped**
+**Fixes to the Merkle PoC**
 
 - A rule that fired only for members deferred in the edited class missed members deferred in its ancestors (672 of 142,500 runs; the next card).
 - Changes to a class's header (parents, kind) must reach grandchildren, not only children.
@@ -1161,7 +1161,7 @@ Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug fa
 - Refreshing only the upstream snapshots a recompiled class referenced goes stale after a revert, so the PoC refreshes every changed upstream class.
 - Under pipelining, Java's dependencies on its own subproject's classes went external, and every edit recompiled about 1,700 catalyst classes ([retronym/zinc#55](https://github.com/retronym/zinc/pull/55); found by benchmark, then modelled).
 
-**Zinc: fixed, or fix proposed**
+**Fixes to Zinc and the compilers**
 
 - Erasure changes are missed at two steps (§20): [retronym/zinc#27](https://github.com/retronym/zinc/pull/27), [#28](https://github.com/retronym/zinc/pull/28); trait vs class upstream in [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841).
 - Implicit scope through an ancestor's companion, across subprojects (§22): [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (merged), [sbt/zinc#1846](https://github.com/sbt/zinc/pull/1846).
