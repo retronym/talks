@@ -22,6 +22,9 @@
   --part-ink: #f6f5f1;
   --kw: #a3361a; --str: #2f7a3a; --com: #8a8a8f; --typ: #1f5fa8; --num: #7a3fa0;
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+  --chip-proof: #6b3fa0; --chip-proof-bg: #efe6f8; --chip-search: #1f5fa8; --chip-search-bg: #e2ecf8;
+  --chip-harness: #2f7a3a; --chip-harness-bg: #e2f2e5; --chip-bench: #8a5a00; --chip-bench-bg: #f8edd6;
+  --chip-hand: #55555a; --chip-hand-bg: #ecebe6;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -30,6 +33,9 @@
     --part-bg: #ececee; --part-ink: #141416;
     --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
+    --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
+    --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
   }
 }
 :root[data-theme="dark"] {
@@ -38,6 +44,9 @@
   --part-bg: #ececee; --part-ink: #141416;
   --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
+  --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
+  --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
 }
 
 * { box-sizing: border-box; }
@@ -129,6 +138,14 @@ body.focus .focus-counter { display: block; }
 }
 .card .fn { margin-top: 1.2em; padding-top: .5em; border-top: 1px solid var(--rule); font-size: .78em; color: var(--muted); }
 .card .fn p, .card .fn ul { margin: .2em 0; }
+.card .status { margin-top: 1em; padding: .5em .8em; border-left: 3px solid var(--rule); font-size: .9em; }
+.card .status p, .card .status ul { margin: .2em 0; }
+.chip { display: inline-block; padding: .1em .6em; border-radius: 999px; font-size: .8em; font-weight: 600; white-space: nowrap; }
+.chip.proof { color: var(--chip-proof); background: var(--chip-proof-bg); }
+.chip.search { color: var(--chip-search); background: var(--chip-search-bg); }
+.chip.harness { color: var(--chip-harness); background: var(--chip-harness-bg); }
+.chip.bench { color: var(--chip-bench); background: var(--chip-bench-bg); }
+.chip.hand { color: var(--chip-hand); background: var(--chip-hand-bg); }
 </style>
 </head>
 <body>
