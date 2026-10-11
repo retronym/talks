@@ -177,7 +177,7 @@ All Lean and tool output is shown as screenshots.
 | III. Why formalise | §6 sound relative to the compiler · §7 why Lean | 2.5 |
 | IV. A Lean primer | §P1 types · §P2 dependent queries · §P3 proofs as programs · §P4 tactics and `decide` | 9 |
 | V. A compiler as a query tree | §8 a `Task` per class · §9 a small Scala · §10 lookup walks the linearization | 6 |
-| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 the first counterexample | 9.5 |
+| VI. Zinc on top | §11 the loop · §12 the obligations · §13 what is proved · §14 two findings · §14a finding 1 in Zinc · §15 name hashing misses implicit search | 9.5 |
 | VII. The backend and separate compilation | §16 codegen queries · §17 non-local hashes · §18 Scala 2, Scala 3, Merkle · §19 subprojects | 6.5 |
 | VIII. Language features extend the model | §20 erasure · §21 macros · §22 implicit scope · §23a the classpath · §23b pipelining and bodies · §23c keys from the tree | 9.5 |
 | IX. What we got out of it | §24 the model as a specification · §25 findings that changed Zinc · §27 conformance · §27a verifying on Spark · §27b binary compatibility: the JVM and Scala layers · §28 limits | 8.5 |
@@ -724,9 +724,29 @@ Notes: 2 min. `Zinc/PingPong.lean` (`zincPolicy`, `zinc_diverges`, `transitiveSt
 
 </div>
 
-### 15. The first counterexample
+### 15. Name hashing misses implicit search
 
-Two ways to turn a trace into keys:
+A query with no key is an answer Zinc never rechecks. Name hashing keys only member lookups, but an implicit search asks a different question: "which implicit members of type `Int` does `A` have?"
+
+```scala
+object B { implicit val x: Int = 1 }
+object A { }                          // edit: implicit val y: Int = 2
+object C { import A._, B._; implicitly[Int] }
+```
+
+`C` asked `A` for implicit `Int`s and got none, then took `B.x`. After the edit a clean build picks `A.y`; with only names recorded, nothing ties `C` to `A`'s implicits, so `C` is not recompiled.
+
+| edit to `A` | names only (today) | every query keyed (the fix) |
+|---|---|---|
+| `foo: Int` → `foo: String`; `C` selects `A.foo` | right: `(A, foo)` was recorded | right |
+| adds `implicit val y` | **wrong**: `C` keeps `B.x` | right: `(A, implicitScope)` changed |
+| adds a plain `val x`, shadowing `B.x` | right: `C`'s failed lookup of `x` in `A` was recorded | right |
+
+The shadowing row is why name hashing copes with shadowing: the miss is itself a lookup. Implicit search is a query kind with no key, so name-only keys fail coverage (`not_obligations_nameOnly`, a theorem) and keying every query kind meets it (`obligations_repaired`); every cell is a checked `example`.
+
+<!-- break -->
+
+The two extractors from a trace (the queries a compilation asked) to keys (what Zinc records and rehashes):
 
 ```lean
 /-- Name-only keys: only member lookups are recorded. -/
@@ -739,14 +759,6 @@ def keysNameOnly (tr : List (Cls × Q)) : Finset (Cls × K) :=
 def keysRepaired (tr : List (Cls × Q)) : Finset (Cls × K) :=
   (tr.map fun p => (p.1, keyOf p.2)).toFinset
 ```
-
-| edit to `A` | name-only keys | repaired keys |
-|---|---|---|
-| `A.foo: Int` → `A.foo: String`, `C` selects `A.foo` | clean: `(A, foo)` was recorded | clean |
-| new `implicit val y` in `A` | `C` still picks `B.x`: **wrong** | clean |
-| new `val x` in `A` shadows `B.x` | clean: the miss was recorded | clean |
-
-`not_obligations_nameOnly` and `obligations_repaired` are theorems; every cell is a checked `example`.
 
 <div class="fn">
 
