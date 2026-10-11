@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing Zinc</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --rule: #e4e2dc;
+  --accent: #b4441f;
+  --accent-soft: #f6e4dc;
+  --link: #1f5fa8;
+  --code-bg: #f2f1ec;
+  --part-bg: #1d1d1f;
+  --part-ink: #f6f5f1;
+  --kw: #a3361a; --str: #2f7a3a; --com: #8a8a8f; --typ: #1f5fa8; --num: #7a3fa0;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+  --chip-proof: #6b3fa0; --chip-proof-bg: #efe6f8; --chip-search: #1f5fa8; --chip-search-bg: #e2ecf8;
+  --chip-harness: #2f7a3a; --chip-harness-bg: #e2f2e5; --chip-bench: #8a5a00; --chip-bench-bg: #f8edd6;
+  --chip-hand: #55555a; --chip-hand-bg: #ecebe6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+    --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+    --part-bg: #ececee; --part-ink: #141416;
+    --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
+    --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
+    --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+  --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+  --part-bg: #ececee; --part-ink: #141416;
+  --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
+  --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
+  --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
+}
+
+* { box-sizing: border-box; }
+html { scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; }
+:not(pre) > code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre.mermaid { background: transparent; text-align: center; padding: 8px 0; }
+.hljs-keyword, .hljs-built_in { color: var(--kw); }
+.hljs-string { color: var(--str); }
+.hljs-comment { color: var(--com); font-style: italic; }
+.hljs-type, .hljs-title { color: var(--typ); }
+.hljs-number, .hljs-literal { color: var(--num); }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+nav.toc {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 24px 16px 40px 20px; border-right: 1px solid var(--rule); font-size: 13.5px;
+}
+nav.toc .title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+nav.toc .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--ink); }
+nav.toc li a:hover { background: var(--accent-soft); text-decoration: none; }
+nav.toc li.h2 > a { font-weight: 600; margin-top: 12px; color: var(--muted); text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; }
+nav.toc li.h4 > a { padding-left: 22px; color: var(--muted); }
+nav.toc li a.active { background: var(--accent-soft); color: var(--accent); }
+.controls { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.controls button {
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+}
+.controls button:hover { border-color: var(--accent); }
+
+main { padding: 32px 40px 120px; max-width: 980px; width: 100%; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 26px 32px; margin: 0 0 22px; box-shadow: var(--shadow);
+}
+.card.part { background: var(--part-bg); color: var(--part-ink); border: none; padding: 36px 32px; }
+.card.part h2 { margin: 0; font-size: 28px; letter-spacing: -.01em; }
+.card.part code { background: transparent; color: inherit; }
+.card.cover h1 { font-size: 34px; line-height: 1.2; margin: 0 0 18px; letter-spacing: -.02em; }
+.card h3 { margin: 0 0 14px; font-size: 22px; letter-spacing: -.01em; }
+.card h4 { margin: 0 0 12px; font-size: 18px; }
+.card .cont { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.card h3 .num, .card h4 .num { color: var(--accent); margin-right: .35em; }
+.card > :last-child { margin-bottom: 0; }
+.card ul, .card ol { padding-left: 1.3em; }
+.card li { margin: .25em 0; }
+.card li > ul { margin: .2em 0; }
+strong { font-weight: 650; }
+.katex-display { margin: 14px 0; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.katex { font-size: 1.05em; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { border-bottom: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); color: var(--muted); }
+a.sref { white-space: nowrap; }
+
+/* Focus mode: one card at a time, bigger type, for presenting */
+body.focus nav.toc { display: none; }
+body.focus .layout { grid-template-columns: 1fr; }
+body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
+body.focus .card { display: none; min-height: 80vh; }
+body.focus .card.current { display: block; outline: none; }
+body.focus .card.part.current { display: flex; align-items: center; }
+body.focus .card.part h2 { font-size: 44px; }
+.focus-counter { display: none; position: fixed; bottom: 14px; right: 18px; color: var(--muted); font-size: 13px; }
+body.focus .focus-counter { display: block; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  main { padding: 16px 16px 80px; }
+  .card { padding: 18px 16px; }
+}
+@media print {
+  nav.toc, .focus-counter { display: none; }
+  .layout { display: block; }
+  .card { break-inside: avoid; box-shadow: none; }
+}
+.card .fn { margin-top: 1.2em; padding-top: .5em; border-top: 1px solid var(--rule); font-size: .78em; color: var(--muted); }
+.card .fn p, .card .fn ul { margin: .2em 0; }
+.card .status { margin-top: 1em; padding: .5em .8em; border-left: 3px solid var(--rule); font-size: .9em; }
+.card .status p, .card .status ul { margin: .2em 0; }
+.chip { display: inline-block; padding: .1em .6em; border-radius: 999px; font-size: .8em; font-weight: 600; white-space: nowrap; }
+.chip.proof { color: var(--chip-proof); background: var(--chip-proof-bg); }
+.chip.search { color: var(--chip-search); background: var(--chip-search-bg); }
+.chip.harness { color: var(--chip-harness); background: var(--chip-harness-bg); }
+.chip.bench { color: var(--chip-bench); background: var(--chip-bench-bg); }
+.chip.hand { color: var(--chip-hand); background: var(--chip-hand-bg); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <div class="title">Testing Zinc</div>
+    <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
+    <div class="controls">
+      <button id="btn-focus" type="button">Focus mode</button>
+      <button id="btn-theme" type="button">Theme</button>
+    </div>
+    <ol id="toc"></ol>
+  </nav>
+  <main id="content"></main>
+</div>
+<div class="focus-counter" id="counter"></div>
+
+<script type="text/markdown" id="talk-src"># Testing Zinc against a model of Zinc
+
+**Status:** outline for review. Each `###` is one slide. The grey block under a slide holds notes, evidence and time; it is not shown.
+
+**Audience:** Scala tooling people and anyone who maintains a compiler or build tool. No Lean needed; the model is shown only through what it checked and predicted.
+
+**Thesis:** each test oracle for Zinc had a blind spot, and in each case the Lean model is what exposed it and suggested the next check. The model was tested in turn: against Zinc, against scalac, javac and HotSpot, and by checking its own proofs. Most of this happened between 3 and 11 October 2026.
+
+**Relation to other talks:** `zinc-lean` is about the proofs and covers the same results in §5 and §26–27b; this talk is about the testing. Part III overlaps with the parked joint ≡ separate talk (`zinc-lean` Notes T); if that talk goes ahead, Part III shrinks to one slide pointing to it.
+
+<!-- break -->
+
+**Contents (~40 min):**
+
+| part | slides | min |
+|---|---|---|
+| I. What "the test passed" meant | §1 the property · §2 scripted tests · §3 the harness had bugs too · §4 determinism as a compiler property | 7 |
+| II. The model as an oracle | §5 the PoC passed the suite · §6 exhaustive search over the PoC's rules · §7 generated programs vs clean classfiles · §8 the model was wrong too | 9 |
+| III. The clean build was not a fixed reference | §9 catalyst, 146 edits · §10 six batch dependences · §11 why `DeterminismTest` missed them · §12 the fixes went back into `DeterminismTest` | 8 |
+| IV. From checking to predicting | §13 the bug map · §14 20 predictions, 20 failures · §15 checking resolved names · §16 checking recorded keys | 8 |
+| V. Checking the model | §17 calibration against scalac, javac and HotSpot · §18 checking the proofs · §19 testing fixes across repositories | 5 |
+| Close | §20 the sequence · §21 what to adopt | 3 |
+
+---
+
+## Part I — What "the test passed" meant
+
+### 1. The property: an incremental build equals a clean build
+
+$$\mathit{incremental}(\mathit{state}, \mathit{sources}') \;\equiv\; \mathit{clean}(\mathit{sources}')$$
+
+- Undercompilation breaks it: `NoSuchMethodError`, a missing compile error, stale behaviour.
+- The obvious test compares the two builds' output. For most of Zinc's history, nothing did.
+
+<div class="fn">
+
+Notes: 1 min. Same equation as `zinc-lean` §1.
+
+</div>
+
+### 2. Scripted tests check how much was recompiled
+
+- A scripted test edits sources, runs `compile`, and checks which classes recompiled; sometimes it runs the program.
+- It never compares the output with a clean build.
+- Finding a bug depends on someone thinking of the case. Before October the bugs came from user reports and, lately, agents writing probing tests: about 14 confirmed cases on 2.13 in one batch (retronym/zinc#14, 6 October).
+
+<div class="fn">
+
+Notes: 1.5 min. `zinc-incrementality` §19 ("weakness: scripted checks how much was recompiled"). Downstream copies: scala/scala `sbtTest/scripted`, scala3 `sbt-test/`, `IncrementalCompileSimulator` (scala/scala3#26262).
+
+</div>
+
+### 3. The test harness had bugs too
+
+- Tests in a batch shared one directory. On Windows a JAR left under `lib/` by one test ended up on the next test's classpath, so a test compiled against another test's `object A` (sbt/zinc#1802).
+- The "2.13.y" label never selected `scala2-sbt-bridge`, the bridge sbt actually uses for 2.13.12 and later. Runs taken to be on the stock bridge were on Zinc's patched one, so a needed fix looked unnecessary (sbt/zinc#1836 → #1837).
+- A second Scala version in one scripted build was silently ignored.
+
+<div class="fn">
+
+Notes: 1.5 min. Later harness bugs (§15) belong to the same theme; mention here that the theme recurs.
+
+</div>
+
+### 4. Prior art: determinism as a tested property of scalac
+
+- scala/scala-dev#405 (2017–2018): the same bytes regardless of source order, and when compiling file by file against the others' classfiles. That second condition is joint ≡ separate compilation, the premise of every incremental build.
+- Method: compile in normal order, reverse order and file by file; diff with jardiff (retronym/scalac-stability). Seven causes fixed for 2.13.0-M5: fresh-name counters, LambdaLift sorting by `Symbol.id`, declaration order missing from the pickle, and others.
+- `DeterminismTest` kept it fixed: annotation order, inferred `packedType`s, synthetic module order, the `InnerClass` attribute (scala/scala#9131), async output (2018–2020).
+- Users cared because of Bazel's remote cache.
+- So, before this round, I expected the clean build to be a fixed reference.
+
+<div class="fn">
+
+Notes: 2.5 min. `zinc-incrementality` §6a. Scala 3's counterpart, scala/scala3#7661, has been open since 2019; its `DeterminismTest` arrived in 2026 (scala/scala3#26553).
+
+</div>
+
+---
+
+## Part II — The model as an oracle
+
+### 5. The Merkle PoC passed the scripted suite
+
+- The PoC (retronym/zinc#24, 8 October) stops copying inherited members into each class's API and decides which descendants recompile by six rules.
+- It passed the full scripted suite.
+- Its first trait test also passed with the trait rule switched off: a missing mixin forwarder is invisible at runtime, because the JVM falls back to the trait's default method. A second test (`merkle-trait-override`) was needed to tell the two apart.
+- Passing the suite said little about whether the rules were right.
+
+<div class="fn">
+
+Notes: 2 min. `zinc-incrementality` §19. One line on Merkle only; the design is in other talks.
+
+</div>
+
+### 6. Exhaustive search over the PoC's rules
+
+- The Lean model of Zinc's loop runs, so bounded program spaces can be checked exhaustively, with each rule in turn removed (the largest: 216,000 programs × 27 edits).
+- The `abstract` rule as stated was unsound: 672 of 142,500 runs. Minimal case: a member loses its body in a class whose ancestor declares it abstract.
+- Refreshing only some upstream snapshots goes stale after an edit and its revert (`stale_after_revert`).
+- Both fixed in the PoC before any user saw them.
+
+<div class="fn">
+
+Notes: 2.5 min. retronym/talks#5, #8, #9; `FlatRules.lean`, `Snapshot.lean`. The same `abstract` edit is a bug in plain Zinc on Scala 3 since 2020 (scala/scala3#27270), found later while porting the PoC; mention it here or at §14.
+
+</div>
+
+### 7. Generated programs compared with a clean build's classfiles
+
+```mermaid
+flowchart LR
+  L["Lean program space"] --> J["JSON cases<br/>+ the model's verdict"] --> S["Scala sources"] --> Z["Zinc: incremental build<br/>vs clean build"] --> D{"classfiles<br/>equal?"}
+```
+
+- The model's program space is dumped as cases, rendered as Scala and run through real Zinc (retronym/zinc#25, the same day as §6).
+- The oracle changed from "which classes recompiled" to "are the classfiles equal to a clean build's".
+- Cases are ordered by a covering array over the program's factors; each known bug family appears within 7–436 cases.
+- Found in Zinc within hours: a class that becomes a trait (the client keeps `invokevirtual`), a parent made `final`, an upstream grandparent's erasure (retronym/zinc#26). The first two are fixed in sbt/zinc#1841.
+
+<div class="fn">
+
+Notes: 2.5 min. `Conformance.lean`; `sbt.internal.inc.bench.Conformance`.
+
+</div>
+
+### 8. The harness found mistakes in the model too
+
+- A deferred declaration hides a concrete one in its own ancestors; the model had it the other way.
+- A call's answer must include whether the receiver is a trait (`invokevirtual` vs `invokeinterface`); the model had no such query.
+- From here the model and the harness corrected each other.
+
+<div class="fn">
+
+Notes: 1.5 min. Demo candidate: the class-becomes-trait divergence, then the `javap` diff.
+
+</div>
+
+---
+
+## Part III — The clean build was not a fixed reference
+
+### 9. Real code: 146 edits to Spark's catalyst
+
+- `IncBench --verify`: after each incremental build, build the same sources from scratch and compare every classfile by digest (retronym/zinc#31, 9 October).
+- 146 edits to `sql/catalyst` (2,527 classes, Scala and Java), each followed by its revert, for `develop` and for the PoC.
+- No undercompilation on either side.
+- Many classfiles still differed.
+
+<div class="fn">
+
+Notes: 1.5 min. `CATALYST-DIFFERENTIAL.md` on retronym/zinc.
+
+</div>
+
+### 10. Six ways scalac's output depended on the batch
+
+| difference | fix |
+|---|---|
+| forwarder type variables, `compose[A]` vs `compose[A$]` | scala/scala#11289 |
+| Java `static final` constant expressions folded only from classfiles | scala/scala#11290 |
+| erased lub: base types of equal depth ordered by symbol id | scala/scala#11291 |
+| a Java `Object` parent pickled as `ObjectTpeJava` from source | scala/scala#11292 |
+| Java enum `valueOf` parameter, `x` vs `name` | scala/scala#11293 |
+| forwarder parameter names for Java methods | compile Java with `-parameters` |
+
+- The harness needed new verdicts to tell compiler nondeterminism apart from staleness: `signature`, `java-context`, `fresh-mismatch`, `bytecode`.
+- With the five fixes, all 292 steps are byte-identical.
+
+<div class="fn">
+
+Notes: 2.5 min. The model already had a name for this: the `comp` obligation. Scala 3 equivalents: scala/scala3#27264, #27265, TASTy type sharing by identity (scala/scala3#26551, retronym/scala3#3).
+
+</div>
+
+### 11. Why `DeterminismTest` missed them
+
+- **Combinations nobody writes by hand.** The forwarder bug needs an unrelated class with a clashing type parameter in the same batch.
+- **A second `Symbol.id` sort.** 2018 removed the one in LambdaLift; `isLess` kept another. Ids follow load order: declaration order from source, file-name order from a directory, hash-map order from a jar.
+- **A situation the test never created.** The lub case depended on Zinc deleting the batch's stale classfiles before compiling.
+- **Java.** Four of the six are Java source vs classfile. The test barely compiled Java, and not with `-parameters`.
+
+<div class="fn">
+
+Notes: 2 min. The general point: hand-written cases find the causes someone anticipated; real code compared byte for byte finds the rest.
+
+</div>
+
+### 12. The fixes went back into `DeterminismTest`
+
+- Each of scala/scala#11289–#11293 adds its minimised case to `DeterminismTest`; #11293 also makes `DeterminismTester` compile Java with `-parameters`.
+- The real-code comparison finds the bug; the unit test keeps it fixed.
+
+<div class="fn">
+
+Notes: 1 min.
+
+</div>
+
+---
+
+## Part IV — From checking to predicting
+
+### 13. A bug map: every known bug classified by the obligation it breaks
+
+- 145 historical bugs and 208 scripted tests, each assigned to the obligation it breaks: coverage, abstraction or compositionality.
+- Of the bugs, 56 are covered by a test, 38 partially, 50 not at all.
+- The gaps are where to look next.
+
+<div class="fn">
+
+Notes: 1.5 min. `BUG-MAP.md`, `BUGS-catalogue.md`, `TESTS-catalogue.md` in `zinc-incrementality/lean/`.
+
+</div>
+
+### 14. 20 predictions, 20 failures
+
+- The model predicted 20 failures no test covered, 16 of them new bug families. All 20 failed on `develop` as predicted.
+- Examples: an added class that shadows a resolved name (and on Spark, an added `Utils` that makes an import ambiguous); members added to package objects, exports and givens; three mutually inferred classes that alternate without `transitiveStep`; Scala 3.7's given priority; erasure through opaque types.
+- The model was now writing the test suite's missing entries.
+
+<div class="fn">
+
+Notes: 2.5 min. retronym/zinc#32–#35, #47, #49–#53, #57, #58. Of the 20, one is a termination property (#33) and three restate the erasure family already fixed by hand.
+
+</div>
+
+### 15. Checking what each name resolved to, not only the verdict
+
+- Bases as source files, plus a classfile probe that reads the constant pool after each clean build (retronym/zinc#36).
+- So the model's name resolution is checked on every case, not only its final verdict.
+- Making Scala 3 work found two more harness bugs: a deleted source's `.tasty` left in the output, and build paths in every classfile until `-sourceroot` was set.
+
+<div class="fn">
+
+Notes: 1.5 min. The harness-bug theme from §3 again.
+
+</div>
+
+### 16. A clean build can hide a missing key
+
+- Classfile equality cannot see a key the bridge never records, whenever the build happens to come out right.
+- The harness now reads Zinc's Analysis and checks the keys the model says must be recorded (retronym/zinc#54).
+- Without the fix for names: 136 uncovered cases on builds that were byte-identical to clean. With it (retronym/zinc#47): 0 uncovered in 10,653 cases.
+- The `coverage` obligation became something checked directly, not inferred from symptoms.
+
+<div class="fn">
+
+Notes: 2.5 min. Central review finding 6 (`REVIEW-2026-10-11-central.md`).
+
+</div>
+
+---
+
+## Part V — Checking the model
+
+### 17. Calibration against scalac, javac and HotSpot
+
+- The model's lowering of Scala to bytecode agrees with scalac on about 1,350 programs each for 2.12, 2.13 and 3.9; Java lowering with javac on 99.
+- The model's JVM linkage agrees with HotSpot 21, 25 and 27 on about 58,000 client programs; the only disagreements are two JDK 21 bugs.
+- Pointed at MiMa, a tool it was not built for, it found five gaps.
+
+<div class="fn">
+
+Notes: 2 min. retronym/talks#39, #50, #58, #60, #64, #65. JDK-8356942, JDK-8350029. Check before presenting whether those JDK bugs were already known.
+
+</div>
+
+### 18. Checking the proofs
+
+- No theorem is proved by `native_decide`, which would trust Lean's compiler; CI lints for it and runs `#print axioms` on T1–T5.
+- Caveat: the lint misses some directories, and several counterexamples are still checked examples rather than theorems (central review).
+
+<div class="fn">
+
+Notes: 1 min. retronym/talks#36, #73.
+
+</div>
+
+### 19. Testing fixes across repositories together
+
+- A fix often spans Zinc and a compiler bridge; each repository's CI tests only released versions of the others.
+- Integration branches regenerated from manifests, with a rerere cache and a lock file of SHAs (retronym/talks#74); scripted tests on a locally published compiler (retronym/zinc#60).
+- A pending Zinc test can go green against an unreleased compiler fix.
+
+<div class="fn">
+
+Notes: 2 min. One slide here; the full recipe is a separate talk idea ("the monorepo experience").
+
+</div>
+
+---
+
+## Close
+
+### 20. The sequence
+
+| stage | oracle | its blind spot | found by |
+|---|---|---|---|
+| scripted tests | which classes recompiled | output never compared | the PoC passing with a rule off |
+| exhaustive search | the model's own runs | only the model | §7 |
+| generated programs | classfiles vs clean | the clean build varies | catalyst |
+| real code | classfiles vs clean, with verdicts | keys that happen not to matter | the key check |
+| key check | the Analysis vs the model's keys | the model itself | calibration |
+
+<div class="fn">
+
+Notes: 1.5 min. Possibly a diagram instead of a table.
+
+</div>
+
+### 21. What to adopt
+
+- Compare incremental output with a clean build's, byte for byte, on real code.
+- Keep a joint ≡ separate regression suite in each compiler, and feed every real-code difference back into it.
+- Write down what the compiler must record, and check the Analysis against it.
+- Agents made the speed possible (most of this took a week); the oracles are what made their output trustworthy.
+
+<div class="fn">
+
+Notes: 1.5 min.
+
+</div>
+
+---
+
+## Notes for Jason
+
+### Open questions
+
+1. Title. Alternatives: "How testing of Zinc and its model evolved together"; "Checking an incremental compiler against clean builds".
+2. Length: 40 min as outlined, or cut Part V to §17 and §19 for 30.
+3. Part III: keep at full length here, or shrink if the joint ≡ separate talk goes ahead.
+4. How much Merkle: §5 assumes the audience needs only one line.
+
+### Work before drafting
+
+- Confirm the dates and order of §2–§8 against the PRs; the stage order is from PR creation times.
+- Mine the local-models search index for earlier history: `IncrementalCompileSimulator`, the scripted harness bugs, user reports that took longest to reproduce.
+- Check the JDK bug numbers in §17.
+- Freeze the numbers at a commit (the catalyst totals moved once between runs).
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script>
+// A small Lean 4 grammar for highlight.js (it ships none).
+if (window.hljs) hljs.registerLanguage('lean', function (hljs) {
+  return {
+    name: 'Lean',
+    keywords: {
+      $pattern: /[A-Za-z_][A-Za-z0-9_'!?]*/,
+      keyword: 'def theorem lemma example abbrev inductive structure class instance where extends deriving namespace section end open variable universe import ' +
+        'fun match with do let if then else for in return mut by at from have show suffices calc termination_by decreasing_by noncomputable private protected partial',
+      built_in: 'simp simp_all rw rfl exact refine intro intros induction cases rcases obtain constructor apply decide native_decide omega aesop unfold split trivial contradiction exfalso use assumption subst funext ext congr',
+      type: 'Type Prop Sort Nat Int Bool Option List Finset Set String Unit',
+      literal: 'true false none some pure'
+    },
+    contains: [
+      hljs.COMMENT('/-', '-/', { contains: ['self'] }),
+      hljs.COMMENT('--', '$'),
+      hljs.QUOTE_STRING_MODE,
+      { className: 'number', begin: /\b\d+(\.\d+)?\b/ },
+      { className: 'meta', begin: /#(eval|check|print|reduce)\b/ },
+      { className: 'type', begin: /[ℕℤ]/ },
+      { className: 'keyword', begin: /[∀∃λ↦→←↔⟨⟩∧∨¬]/ }
+    ]
+  };
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  const src = document.getElementById('talk-src').textContent;
+
+  // 1. Protect $…$ and $$…$$ from markdown, skipping fenced and inline code.
+  const maths = [];
+  function protectMath(text) {
+    return text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => token(m, true))
+      .replace(/(^|[^\\\w])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\w)/g, (_, pre, m) => pre + token(m, false));
+  }
+  function token(tex, display) { maths.push({ tex, display }); return 'MATHTOKEN' + (maths.length - 1) + 'X'; }
+  const fenceSplit = src.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const protectedSrc = fenceSplit.map((part, i) => {
+    if (i % 2 === 1) return part;
+    return part.split(/(`+[^`\n]*?`+)/).map((p, j) => (j % 2 === 1 ? p : protectMath(p))).join('');
+  }).join('');
+
+  // 2. Render markdown; mermaid fences become <pre class="mermaid">.
+  const md = window.markdownit({ html: true, linkify: false, typographer: false });
+  const defaultFence = md.renderer.rules.fence;
+  md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
+    const t = tokens[idx];
+    const lang = (t.info || '').trim().split(/\s+/)[0];
+    if (lang === 'mermaid') return '<pre class="mermaid">' + md.utils.escapeHtml(t.content) + '</pre>';
+    if (lang && window.hljs && hljs.getLanguage(lang)) {
+      return '<pre><code class="hljs language-' + lang + '">' + hljs.highlight(t.content, { language: lang }).value + '</code></pre>';
+    }
+    return defaultFence(tokens, idx, opts, env, self);
+  };
+  let html = md.render(protectedSrc);
+  html = html.replace(/MATHTOKEN(\d+)X/g, (_, i) => {
+    const m = maths[+i];
+    try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, strict: 'ignore' }); }
+    catch (e) { return '<code>' + md.utils.escapeHtml(m.tex) + '</code>'; }
+  });
+
+  // 3. Chunk into cards at h1/h2/h3/h4 and at <!-- break --> comments; drop <hr>.
+  const scratch = document.createElement('div');
+  scratch.innerHTML = html;
+  const main = document.getElementById('content');
+  let card = null, lastHeading = null;
+  function newCard(cls) { card = document.createElement('section'); card.className = 'card ' + (cls || ''); main.appendChild(card); return card; }
+  function slugFor(h) {
+    const text = h.textContent.trim();
+    const m = text.match(/^(\d+[a-z]?)\.\s/) || text.match(/^(N\d+)\.\s/);
+    if (m) return 's' + m[1].toLowerCase();
+    return text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+  Array.from(scratch.childNodes).forEach(node => {
+    if (node.nodeType === Node.COMMENT_NODE && /break/.test(node.textContent)) {
+      newCard();
+      if (lastHeading) { const c = document.createElement('div'); c.className = 'cont'; const n = lastHeading.querySelector('.num'); c.textContent = (n ? n.textContent + ' ' + lastHeading.textContent.slice(n.textContent.length) : lastHeading.textContent) + ' (cont.)'; card.appendChild(c); }
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = node.tagName;
+      if (tag === 'HR') return;
+      if (/^H[1-4]$/.test(tag)) {
+        newCard(tag === 'H2' ? 'part' : tag === 'H1' ? 'cover' : '');
+        const id = slugFor(node);
+        card.id = id;
+        const m = node.innerHTML.match(/^(\d+[a-z]?\.|N\d+\.)\s/);
+        if (m) node.innerHTML = '<span class="num">' + m[1] + '</span>' + node.innerHTML.slice(m[0].length);
+        if (tag !== 'H2') lastHeading = node;
+      }
+    }
+    if (!card) newCard('cover');
+    card.appendChild(node);
+  });
+
+  // 4. Link § references and "Notes N1" to their cards.
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('code, pre, a, .katex, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const textNodes = []; while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(n => {
+    const re = /§(\d+[a-c]?)((?:[–-]\d+)?)|Notes (N\d)/g;
+    if (!re.test(n.nodeValue)) return;
+    const frag = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
+    while ((m = re.exec(n.nodeValue))) {
+      frag.appendChild(document.createTextNode(n.nodeValue.slice(last, m.index)));
+      const a = document.createElement('a'); a.className = 'sref';
+      a.href = '#s' + (m[1] || m[3]).toLowerCase(); a.textContent = m[0];
+      frag.appendChild(a); last = re.lastIndex;
+    }
+    frag.appendChild(document.createTextNode(n.nodeValue.slice(last)));
+    n.parentNode.replaceChild(frag, n);
+  });
+
+  // 5. Table of contents.
+  const toc = document.getElementById('toc');
+  const cards = Array.from(main.querySelectorAll('.card'));
+  cards.forEach(c => {
+    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4');
+    if (!h || !c.id) return;
+    const li = document.createElement('li'); li.className = h.tagName.toLowerCase();
+    const num = h.querySelector('.num');
+    const label = num ? num.textContent + ' ' + h.textContent.slice(num.textContent.length) : h.textContent;
+    const a = document.createElement('a'); a.href = '#' + c.id; a.textContent = label; a.dataset.target = c.id;
+    li.appendChild(a); toc.appendChild(li);
+  });
+
+  // 6. Mermaid, themed to match; re-rendered on theme change.
+  const mermaidBlocks = Array.from(main.querySelectorAll('pre.mermaid'));
+  mermaidBlocks.forEach(b => { b.dataset.src = b.textContent; });
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  async function renderMermaid() {
+    mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
+      fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: true, curve: 'basis' } });
+    mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
+    try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
+  }
+  const firstRender = renderMermaid();
+
+  // 7. Navigation: current card, keyboard, focus mode, theme.
+  let current = 0, suppressObserverUntil = 0;
+  const counter = document.getElementById('counter');
+  function setCurrent(i, scroll, smooth) {
+    current = Math.max(0, Math.min(cards.length - 1, i));
+    cards.forEach((c, j) => c.classList.toggle('current', j === current));
+    counter.textContent = (current + 1) + ' / ' + cards.length;
+    const id = cards[current].id;
+    toc.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+    if (scroll) {
+      suppressObserverUntil = performance.now() + 1000;
+      if (document.body.classList.contains('focus')) window.scrollTo(0, 0);
+      else cards[current].scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'instant' });
+      if (id) history.replaceState(null, '', '#' + id);
+    }
+  }
+  const io = new IntersectionObserver(entries => {
+    if (document.body.classList.contains('focus') || performance.now() < suppressObserverUntil) return;
+    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length) setCurrent(cards.indexOf(visible[0].target), false);
+  }, { rootMargin: '0px 0px -60% 0px' });
+  cards.forEach(c => io.observe(c));
+  function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
+  function toggleTheme() {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('zinc-testing-theme', next); } catch (e) {}
+    renderMermaid();
+  }
+  try { const t = localStorage.getItem('zinc-testing-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
+  document.getElementById('btn-focus').onclick = toggleFocus;
+  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['j', 'ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); setCurrent(current + 1, true, true); }
+    else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
+    else if (e.key === 'f') toggleFocus();
+    else if (e.key === 't') toggleTheme();
+    else if (e.key === 'Escape') document.body.classList.remove('focus');
+  });
+  toc.addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  main.addEventListener('click', e => {
+    const a = e.target.closest('a.sref'); if (!a) return;
+    const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
+  setCurrent(start < 0 ? 0 : start, start > 0);
+  firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+})();
+</script>
+</body>
+</html>
