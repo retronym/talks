@@ -38,3 +38,14 @@ sbt -Dzinc.scala3ForBridge=3.10.1-RC1-bin-SNAPSHOT --ivy /tmp/ivy-develop --clie
 ```
 
 `integration/scala3-main` and `integration/scala3-merkle` publish the same version, so each gets its own Ivy home. Rebuild whenever a member's head moves or a base advances.
+
+## Running a project's sbt on an integration branch
+
+[`zinc-sbt`](zinc-sbt) starts sbt in the current directory with Zinc replaced by an integration branch. It publishes the branch into a private Ivy home under `~/code/.integration/`, at the Zinc version the project's `sbt.version` depends on, and replaces the Zinc jars in a private boot directory, so `~/.ivy2`, `~/.sbt` and other sbt servers are untouched. Scala 2.13 projects also get the branch's compiler bridge instead of scala2-sbt-bridge.
+
+```bash
+cd ~/code/scala/scala
+~/code/retronym/talks/zinc-incrementality/integration/zinc-sbt merkle-1.12.x
+```
+
+The first run publishes the branch (a few minutes); later runs republish only when the branch's tip moves.
