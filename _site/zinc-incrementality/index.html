@@ -1,0 +1,1814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zinc Incrementality</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --rule: #e4e2dc;
+  --accent: #b4441f;
+  --accent-soft: #f6e4dc;
+  --link: #1f5fa8;
+  --code-bg: #f2f1ec;
+  --part-bg: #1d1d1f;
+  --part-ink: #f6f5f1;
+  --kw: #a3361a; --str: #2f7a3a; --com: #8a8a8f; --typ: #1f5fa8; --num: #7a3fa0;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+    --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+    --part-bg: #ececee; --part-ink: #141416;
+    --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+  --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+  --part-bg: #ececee; --part-ink: #141416;
+  --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+html { scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; }
+:not(pre) > code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre.mermaid { background: transparent; text-align: center; padding: 8px 0; }
+.hljs-keyword, .hljs-built_in { color: var(--kw); }
+.hljs-string { color: var(--str); }
+.hljs-comment { color: var(--com); font-style: italic; }
+.hljs-type, .hljs-title { color: var(--typ); }
+.hljs-number, .hljs-literal { color: var(--num); }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+nav.toc {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 24px 16px 40px 20px; border-right: 1px solid var(--rule); font-size: 13.5px;
+}
+nav.toc .title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+nav.toc .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--ink); }
+nav.toc li a:hover { background: var(--accent-soft); text-decoration: none; }
+nav.toc li.h2 > a { font-weight: 600; margin-top: 12px; color: var(--muted); text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; }
+nav.toc li.h4 > a { padding-left: 22px; color: var(--muted); }
+nav.toc li a.active { background: var(--accent-soft); color: var(--accent); }
+.controls { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.controls button {
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+}
+.controls button:hover { border-color: var(--accent); }
+
+main { padding: 32px 40px 120px; max-width: 980px; width: 100%; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 26px 32px; margin: 0 0 22px; box-shadow: var(--shadow);
+}
+.card.part { background: var(--part-bg); color: var(--part-ink); border: none; padding: 36px 32px; }
+.card.part h2 { margin: 0; font-size: 28px; letter-spacing: -.01em; }
+.card.part code { background: transparent; color: inherit; }
+.card.cover h1 { font-size: 34px; line-height: 1.2; margin: 0 0 18px; letter-spacing: -.02em; }
+.card h3 { margin: 0 0 14px; font-size: 22px; letter-spacing: -.01em; }
+.card h4 { margin: 0 0 12px; font-size: 18px; }
+.card .cont { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.card h3 .num, .card h4 .num { color: var(--accent); margin-right: .35em; }
+.card > :last-child { margin-bottom: 0; }
+.card ul, .card ol { padding-left: 1.3em; }
+.card li { margin: .25em 0; }
+.card li > ul { margin: .2em 0; }
+strong { font-weight: 650; }
+.katex-display { margin: 14px 0; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.katex { font-size: 1.05em; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { border-bottom: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); color: var(--muted); }
+a.sref { white-space: nowrap; }
+
+/* Focus mode: one card at a time, bigger type, for presenting */
+body.focus nav.toc { display: none; }
+body.focus .layout { grid-template-columns: 1fr; }
+body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
+body.focus .card { display: none; min-height: 80vh; }
+body.focus .card.current { display: block; outline: none; }
+body.focus .card.part.current { display: flex; align-items: center; }
+body.focus .card.part h2 { font-size: 44px; }
+.focus-counter { display: none; position: fixed; bottom: 14px; right: 18px; color: var(--muted); font-size: 13px; }
+body.focus .focus-counter { display: block; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  main { padding: 16px 16px 80px; }
+  .card { padding: 18px 16px; }
+}
+@media print {
+  nav.toc, .focus-counter { display: none; }
+  .layout { display: block; }
+  .card { break-inside: avoid; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <div class="title">Zinc incrementality</div>
+    <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
+    <div class="controls">
+      <button id="btn-focus" type="button">Focus mode</button>
+      <button id="btn-theme" type="button">Theme</button>
+    </div>
+    <ol id="toc"></ol>
+  </nav>
+  <main id="content"></main>
+</div>
+<div class="focus-counter" id="counter"></div>
+
+<script type="text/markdown" id="talk-src"># Zinc: incrementality as a language-design concern
+
+**Audience:** maintainers of scalac / dotc, IDEs (Metals, IntelliJ), build tools (sbt, Mill, Bazel, Pants, Gradle). They know the compilers; most don't know Zinc's internals.
+
+**Thesis:** every language feature has consequences for incremental compilation, whether or not its designer considered them. Incremental soundness is a property of the *compiler's* API summary, which now lives in the compiler repos. So it should be designed, specified and tested alongside each feature, not reverse-engineered from user bug reports years later.
+
+<!-- break -->
+
+**Arc:**
+
+1. What incremental compilation *is*, precisely, so that under- and overcompilation have exact meanings; what Zinc trades away for speed (hashes instead of resolution); and the premise it all rests on: separate ≡ joint compilation.
+2. How Zinc approximates it, and three design choices worth arguing about: members vs decls, who computes the hashes, and what a used name is (name kinds).
+3. How everyone else does it.
+4. Where it breaks: worked examples (implicits, value classes, macros), then a taxonomy.
+5. The machinery we maintain: bridge, tests, persisted state.
+6. Avoiding compilation altogether: hermetic builds and ABI jars.
+7. Can we prove it? A Lean model.
+8. Asks.
+
+**Suggested budget (~60 min):** I 12 · II 10 · III 3 · IV 14 · V 10 · VI 4 · VII 5 · close 2. Cut Part III to a single slide if time is short; Part VII can be a 2-slide teaser.
+
+### Why incrementality matters more for Scala
+
+- **Scala compilers are slow per line.** scalac and dotc process far fewer lines per second than javac. Typing does real work: inference, implicit/given search, overload resolution, macro expansion and inlining. The pipeline also has many more phases before bytecode. (TODO: put one measured number on the slide, e.g. from scala/compiler-benchmark, scalac vs javac on comparable code.)
+- **So a full rebuild costs more.** A module rebuild that a Java team shrugs off becomes minutes in Scala, and the edit-compile loop is where users feel it. The same holds in the IDE: Metals and IntelliJ compile through Zinc/BSP.
+- **So precision is worth more.** Java build tools can lean on fast compiles plus coarse ABI-jar avoidance (Gradle, Bazel `ijar`). Scala needs fine-grained invalidation inside the module as well. That puts every under/overcompilation bug in this talk on the critical path of daily work.
+- **And rounds cost more** (§4): each extra round pays again for typer setup and signature loading, so keeping round counts low matters as much as keeping file counts low.
+
+---
+
+## Part I — First principles
+
+### 1. The contract
+
+- Program = a set of sources $S$. Clean compile $C : \mathcal{P}(S) \to \mathit{Out}$ (classfiles/TASTy + diagnostics).
+- Incremental compile $I : (\mathit{State}, S', \Delta) \to (\mathit{Out}', \mathit{State}')$, where $\mathit{State}$ summarises the previous run.
+- **Correctness:** up to observational equivalence (bytes modulo known nondeterminism; same diagnostics),
+
+$$I(\mathit{State}, S', \Delta) \equiv C(S')$$
+
+- **Undercompilation:** $I \not\equiv C$, so it is unsound.
+- **Overcompilation:** $I \equiv C$ but the recompiled set $R$ is much larger than the minimal $R^*$, so it is sound but slow.
+- Users experience both as "sbt is flaky", type `clean`, and stop trusting the tool. Undercompilation is a correctness bug; overcompilation is a perf bug that trains users to throw away the incremental state.
+
+### 2. Summaries as abstractions
+
+- For each class $c$ the compiler extracts $\mathrm{API}(c) = \pi(c)$, a projection of its typed definition.
+- A **client** (dependent) of $c$ is a class $d$ whose compilation references $c$: it calls, extends, mentions or pattern-matches on something in $c$. For each $d$ the compiler records the *used names* $U(d)$. The question is always "when $c$ changes, which of its clients must recompile?"
+- **Soundness condition:**
+
+$$\pi_{U(d)}(c) = \pi_{U(d)}(c') \implies C(d \mid c) = C(d \mid c')$$
+
+- In words: $\pi$ must capture *everything a client's compilation can observe*.
+- Every undercompilation bug is a counterexample: an observable not in $\pi$.
+- Every overcompilation bug is the dual: $\pi$ distinguishes things no client observes (positions, fresh names, iteration order).
+- Precision/soundness lattice: coarser $\pi$ gives sound but slow results; finer $\pi$ is fast and correct only if every observable is captured.
+
+<!-- break -->
+
+**Observables are closed under the backend.**
+
+- The client's output is $g(\mathrm{typed}(d))$, and codegen applies functions $f$ to the definitions it references: erasure $E$, name mangling, bridge and forwarder generation, boxing, constant folding.
+- If $d$'s output depends on $f(c)$ for one of these, then $\pi(c)$ must determine $f(c)$.
+- For an ordinary class, erasure is a function of the *name*, so a name-keyed $\pi$ is enough:
+
+$$E(A) = A$$
+
+- For a value class, erasure is a function of the *contents*, and the name-keyed view breaks (§15b):
+
+$$E(A) = E(\mathrm{underlying}(A))$$
+
+- For an inherited member, erasure is a function of the member's signature *as declared in its owner*, not as seen from the class that inherits it. A bridge in `B` for `M.m` has the descriptor $E(\mathrm{sig}_M(m))$, so $\pi$ must render $m$ as declared (§7, §15b).
+
+### 3. The algorithm: a fixed point over a dependency graph
+
+$$R_0 = \mathit{changed} \cup \mathrm{dependents}(\mathit{deleted}) \qquad R_{n+1} = \mathrm{inv}(\Delta\mathrm{API}_n) \qquad \text{stop when } \mathrm{inv}(\Delta\mathrm{API}_n) \subseteq R_n$$
+
+The round just compiled is subtracted only in the *stop test*, so rounds are not monotone: a class compiled in round 1 can be recompiled in round 3, and a class in $R_n$ whose dependency in $R_n$ changed API is recompiled again in $R_{n+1}$ even though it already saw the new API (§4).
+
+```mermaid
+flowchart TB
+  R0["R₀ = changed sources ∪ dependents of deleted"] --> CMP["Compile Rₙ together (compiler + bridge)"]
+  CMP --> D{"API / name hashes<br/>changed?"}
+  D -- "no: early cutoff" --> STOP["Done"]
+  D -- "yes" --> INV["Invalidate dependents:<br/>inheritance (unfiltered),<br/>memberRef ∩ used names"]
+  INV -- "Rₙ₊₁ non-empty" --> CMP
+  INV -- "Rₙ₊₁ = ∅" --> STOP
+```
+
+- Edges: `memberRef`, `inheritance`, `localInheritance`, `macroExpansion`; plus library dependencies, tracked by classfile/jar stamps.
+- **Name hashing:** $\mathrm{API}(c)$ is split into $\{\, n \mapsto \mathit{hash} \,\}$; a `memberRef` client $d$ is invalidated only if $U(d) \cap \mathrm{changedNames}(c) \neq \emptyset$. Inheritance edges bypass the filter.
+
+<!-- break -->
+
+- `UseScope` (`Default`, `Implicit`, `PatMatTarget`) exists because "used name" alone is not enough. This is the first hint that some observables aren't names (§15–16).
+- Granularity: source-level (sbt ≤ 0.13) → class-level (Zinc 1.0). Finer nodes give smaller $R$ but more state, and more ways to be wrong.
+- Escape hatch: past `transitiveStep` cycles, invalidate the transitive dependents *and keep the round just compiled*. From then on $R_n$ only grows, which is what makes termination provable (§22). The fallback is part of the semantics.
+- $\pi$ and $U$ are computed *inside the compiler*, by the bridge phases `ExtractAPI` and `ExtractDependencies`. Zinc only does set algebra on them, so **incremental soundness is mostly a compiler property.**
+
+```mermaid
+flowchart LR
+  subgraph COMPILER["Compiler process (scalac / dotc)"]
+    T["typer"] --> XA["ExtractAPI<br/>→ π(c)"]
+    T --> XD["ExtractDependencies /<br/>ExtractUsedNames → U(d), edges"]
+    T --> BE["backend<br/>→ classfiles"]
+  end
+  XA -- "AnalysisCallback" --> Z["Zinc: hash, store<br/>Analysis"]
+  XD -- "AnalysisCallback" --> Z
+  BE --> Z
+  Z --> INV["Invalidator<br/>(set algebra on hashes)"]
+```
+
+- **Unconditional fallbacks in the invalidator** (`MemberRefInvalidator`) show where name hashing gives up and every `memberRef` client is invalidated:
+  - any change to an *implicit* member;
+  - any change in a file that *declares a macro*;
+  - any change in a file that declares an annotation.
+
+  In each case $U(d)$ can't express the dependency (worked examples in §15).
+
+### 4. Rounds: the fixed point in practice, its heuristics, and why incremental can be slower than clean
+
+Each round (Zinc calls it a *cycle*) is a full compiler run over $R_n$:
+
+- typecheck and generate code for $R_n$;
+- load signatures of everything else from classfiles/TASTy;
+- delete stale products, keeping a backup for transactional rollback;
+- merge the new Analysis, diff old and new APIs, compute $R_{n+1}$.
+
+```mermaid
+flowchart TB
+  A["Round 1: A.scala<br/>(edited: f's result type)"] -- "API of A changed" --> B["Round 2: B<br/>val g = A.f (inferred)"]
+  B -- "B's API changed too" --> C["Round 3: clients of B"]
+  C -- "round ≥ transitiveStep" --> X["Brute force: transitive<br/>closure of dependents"]
+```
+
+<!-- break -->
+
+**Precisely** (`IncrementalCommon.invalidateAfterInternalCompilation`):
+
+With $X_n = \mathrm{macroDownstream}(R_n) \cup \mathrm{collisions}$:
+
+$$\text{stop iff } \big(\mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n\big) \cup X_n = \emptyset$$
+
+$$R_{n+1} = \begin{cases} \mathrm{inv}(\Delta\mathrm{API}_n) \cup X_n & n < \mathtt{transitiveStep} \\ \mathrm{closure}(\mathrm{inv}(\Delta\mathrm{API}_n)) \cup X_n \cup R_n & n \ge \mathtt{transitiveStep} \end{cases}$$
+
+- $R_n$ is subtracted in the stop test only; `nextInvalidations` is the unsubtracted set. A class compiled in round 1 is recompiled again in round 3 if one of its dependencies' APIs changes in round 2, which happens with cycles in the class graph. A class in $R_n$ that depends on another class in $R_n$ whose API changed is recompiled in round $n+1$ although it was compiled jointly with the new API: overcompilation by construction. (TODO: confirm in the invalidation log of a two-class cycle.)
+- Without an assumption on the class graph the plain regime need not terminate: two mutually recursive classes whose inferred APIs keep changing ping-pong forever in the model (§22). `transitiveStep` is what guarantees termination.
+- **Typical round counts:** a body-only change takes 1 round (early cutoff); a signature change takes 2.
+- **Inferred types ripple:** a change to the inferred result type of a public `def` changes the API of every unedited class whose own public signature is inferred from it, adding a round per level. Explicit result types on public members are also an incremental-compilation best practice: they make interfaces source-determined, which caps a signature change at two rounds and guarantees the result matches a clean build (§22, T3).
+
+<!-- break -->
+
+**The heuristics** (`IncOptions`), each trading precision for a bound on rounds:
+
+| Heuristic | Default | What it does |
+|---|---|---|
+| `transitiveStep` | 3 | from round 3 on, stop name-filtering: invalidate the *transitive closure* of the round's invalidations, plus the classes just recompiled ("brute-force transitive invalidation"). $R_n$ is then monotone, so at most $\lvert S\rvert$ further rounds |
+| `recompileAllFraction` | 0.5 | if more than half of the sources are invalidated, compile everything in one round |
+| macro downstream | always | every round, invalidate macro-bearing classes transitively downstream of anything recompiled (an expansion depends on behaviour as well as API) |
+| unconditional invalidation | always | implicit members, files declaring macros or annotations: all `memberRef` clients (§3) |
+| initial invalidation | — | tuned on field reports: "include mutual dependencies in initial invalidation" ([sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284)) was reverted ([#1462](https://github.com/sbt/zinc/pull/1462)) after an overcompilation report ([#1420](https://github.com/sbt/zinc/issues/1420)) |
+
+<!-- break -->
+
+**Why an incremental compile can be slower than a clean one.** Rough cost model, with $c_0$ the per-run overhead, $c$ the per-class compile cost and $c_{\mathrm{sig}}$ the cost of loading a dependency's signature:
+
+$$\mathrm{cost}(I) \approx \sum_{n} \big(c_0 + c\,\lvert R_n\rvert + c_{\mathrm{sig}}\,\lvert \mathrm{deps}(R_n) \setminus R_n\rvert\big) + \mathrm{bookkeeping} \qquad \mathrm{cost}(C) \approx c_0 + c\,\lvert S\rvert$$
+
+- **Per-round overhead repeats:**
+  - a new compiler run;
+  - classpath and symbol loading, i.e. unpickling the signatures of everything $R_n$ touches;
+  - a cold JIT if the compiler isn't in a long-lived server;
+  - Analysis merge and API diff;
+  - classfile backup/restore, and jar rewriting for straight-to-jar output and the pipelining early-output jar.
+- **The same source file can be compiled in several rounds.** The next round is the full invalidated set, not just the newcomers, so a file compiled in round 1 is compiled again in round 2 or 3 whenever a class it depends on changes API in between (cycles, inferred types). Recompilation is per *file*, so a file holding several classes can also be pulled back in by each of them in turn. Each repeat pays full parsing, typing and code generation for the whole file again, which a clean build pays once. So $\sum_n \lvert R_n \rvert$ can exceed $\lvert S \rvert$.
+
+<!-- break -->
+
+- **Lost batch efficiencies:** one big run amortises typer caches, the parallel backend (`-Ybackend-parallelism`) and module-level pipelining. Several small runs don't.
+- **A tax on every build:** the extraction phases (`xsbt-api`, `xsbt-dependency`) and Analysis persistence run even on a clean build. So a Zinc clean build is slower than plain `scalac`. For Scala 3, [scala/scala3#19422](https://github.com/scala/scala3/issues/19422) puts `ExtractAPI` plus `ExtractDependencies` at about 8% of compilation time. (TODO: measure the Scala 2 share with `-Vstatistics` on scala/scala.)
+- **Future work: take extraction off the critical path.** The same issue proposes running both phases asynchronously, from the TASTy the build already produces (via TASTy Query), instead of in sequence with the other phases. A student project explored it. That would unblock the regular compile and shorten time-to-TASTy, which matters for pipelining (§21). §11 covers what it implies for where $\pi$ is computed.
+- **Incremental wins only when** $\sum_n \lvert R_n\rvert \ll \lvert S\rvert$ *and* there are few rounds. `recompileAllFraction` is a crude, static estimate of that inequality.
+
+**Implications:**
+
+- Treat *rounds per build* as a first-class metric, alongside files recompiled. The invalidation log already has it.
+- Watch for rounds that never converge in practice. With straight-to-jar output, after a partial compile, every later *no-op* compile reports the entries carried over from the previous jar as removed products and recompiles them, indefinitely (`compile-to-jar-no-op-recompiles`, [retronym/zinc#14](https://github.com/retronym/zinc/pull/14)). CI had stopped running scripted tests in jar mode, so nothing caught it.
+- Make the escape hatches visible. Today both "Recompiling all sources: …" and "Brute-force transitive invalidation" only appear in debug-level invalidation logs, so users never learn why a one-line edit rebuilt the module.
+- Consider a *cost-model* switch to a full compile, predicted from $\lvert R_n\rvert$, round count and measured per-round overhead, instead of a fixed fraction.
+- Pipelining and a warm compiler server (sbt server, Bloop, Mill's worker) shrink $c_0$, which moves the break-even point in Zinc's favour.
+
+### 5. Efficiency vs minimality: Zinc deliberately doesn't compute R*
+
+- **True minimality is as expensive as compiling.**
+
+$$d \in R^* \iff C(d \mid \mathit{new}) \neq C(d \mid \mathit{old})$$
+
+  Deciding that exactly means re-running $d$'s compilation, or at least re-running every query $d$ made and comparing the answers. Any practical incremental compiler computes a cheap, sound over-approximation $R \supseteq R^*$.
+- **Early cutoff is where Zinc is precise.** After recompiling $R_n$, propagation happens only if the *new* hash differs from the old. Without this, every edit would recompile the transitive dependents, as `make` would. With it, a body-only change stops after one cycle. (*Build Systems à la Carte* calls this early cutoff; §22.)
+- In general, Zinc replaces *resolution* (an expensive semantic question about the new program) with *hash equality over a projection* (cheap and syntactic). Soundness comes from the projection covering everything resolution could depend on (§2). Precision is whatever survives that coarsening.
+
+<!-- break -->
+
+**Zinc's approximations, each trading precision for cost:**
+
+| Zinc does | Instead of (closer to $R^*$) | Saves | Costs (overcompilation) |
+|---|---|---|---|
+| compares **hashes** of $\pi$ (an `int` API hash, `int` per-name hashes) | structural diff of old vs new API | O(1) compare; small state; no old API kept (`APIUtil.minimize`) | can't tell *compatible* changes (widening, adding a default) from breaking ones; can't explain what changed without `apiDebug`. In theory 32-bit collisions are unsound; in practice negligible per comparison |
+| invalidates $d$ if it **uses name $n$** and depends on $c$ | **re-resolve** $d$'s uses of $n$ against the new $c$ (overloads, qualifiers, overriding) | no per-use resolution data stored; no lookups at invalidation time | `size` on any receiver; overloads it never picks (§12) |
+| hashes **all defs named $n$** together | per-overload / per-signature keys | additions are visible (§12) | any overload change hits every user of the name |
+| **class** nodes, **source-file** recompilation units | member-level nodes | small graph | every class in an invalidated file recompiles |
+| **inheritance** edges bypass name filtering, transitively | per-member override analysis | no override tracking | a change to any member reaches every heir |
+| **materialises members as seen from $C$** and hashes them (§7–9) | resolve `C#m` through linearization on demand | invalidation never walks the hierarchy | $\sum_c \lvert\mathrm{members}(c)\rvert$ extraction and state; N-fold re-detection |
+| `transitiveStep` cap → recompile everything | keep iterating | bounded cycles | rare full rebuilds |
+
+<!-- break -->
+
+**Merkle hashing as the same trade, applied to member resolution** (links to §10).
+
+Today Zinc hashes the *materialised* set of members named $n$ as seen from $C$, after linearization, overriding and `asSeenFrom`. That is *resolution, precomputed and hashed*:
+
+$$h_C(n) = h\big(\mathrm{res}_C(n)\big)$$
+
+The Merkle alternative composes the class's own declarations with its parents' hashes:
+
+$$h'_C(n) = h\Big(\mathrm{decl}_C(n),\ \big\langle (P_i,\ \bar{T}_i,\ h'_{P_i}(n)) \big\rangle_{P_i \in \mathrm{parents}(C)}\Big)$$
+
+```mermaid
+flowchart BT
+  subgraph TODAY["Today: members materialised per class"]
+    A1["A: m, n"]
+    B1["B extends A: m, n (copied), p"]
+    C1["C extends B: m, n, p (copied), q"]
+  end
+  subgraph MERKLE["Merkle: decls + parent hashes"]
+    A2["A: decls m, n"]
+    B2["B: decl p + h(A)"]
+    C2["C: decl q + h(B)"]
+    C2 --> B2 --> A2
+  end
+```
+
+<!-- break -->
+
+- **Sound:** $\mathrm{res}_C(n)$ is a function of $C$'s own decls named $n$, its parents with their type arguments $\bar{T}_i$, and the parents' resolutions of $n$. With $h$ treated as injective, $h'_C(n) = h'_{C'}(n) \implies \mathrm{res}_C(n) = \mathrm{res}_{C'}(n)$.
+- **Not complete:** inputs can change while $\mathrm{res}_C(n)$ doesn't, e.g. a parent's $n$ that $C$ overrides, or a type-argument change irrelevant to $n$. That gives a little more overcompilation, the *same direction* as every other Zinc approximation.
+- **Cheap:** $O(\lvert\mathrm{decls}\rvert + \lvert\mathrm{parents}\rvert)$ per class, memoised per parent. No `asSeenFrom` of every inherited member, and no $\sum \lvert\mathrm{members}\rvert$ state. (The PoC composes less than this: within a subproject not at all, because Zinc's existing walk suffices; across subprojects over each class's stored linearization, at lookup; §10.)
+- **Fewer recompiles, and in practice fewer rounds:** with Zinc's hierarchy walk, materialised hashes already invalidate $C$'s clients in the same round as $C$ (§9). What Merkle composition saves is recompiling the hierarchy itself (§10). Rounds drop as well, because recompiled descendants no longer report API changes of their own that need another round: on Spark's catalyst, adding a member to `TreeNode` takes 2 rounds in the PoC instead of 3 (§10).
+- Zinc already uses this pattern for traits: `extraHash` "folds in the parents' later". So Merkle composition is an extension of existing practice, not a new idea. The PoC found that channel over-reaching: a trait also folds in its *class* parents' `extraHash`, which for a class is its whole API hash, so a public member added to `Expression` read as a private change in every trait extending it. On catalyst that cost about 700 recompiles; the PoC folds in trait parents only.
+- Merkle hashing does for member resolution what name hashing does for symbol resolution. Both are sound, hash-based over-approximations that are cheaper than doing the resolution.
+
+### 6. The hidden premise: separate compilation ≡ joint compilation
+
+An incremental compile **is** a separate compilation: $R$ is compiled from source against the *classfiles/TASTy* of $S \setminus R$. So $I \equiv C$ silently assumes, **byte for byte**:
+
+$$C_{\mathrm{sep}}\big(R \mid \mathrm{out}(S \setminus R)\big) \equiv C_{\mathrm{joint}}(S)\big|_R$$
+
+```mermaid
+flowchart TB
+  subgraph JOINT["Joint"]
+    direction LR
+    AS["A.scala"] --> J["compile {A, B}"]
+    BS["B.scala"] --> J
+    J --> BJ["B.class"]
+  end
+  subgraph SEP["Separate (= incremental)"]
+    direction LR
+    AS2["A.scala"] --> CA["compile A"] --> AC["A.class / A.tasty"]
+    AC --> CB["compile B against A.class"]
+    BS2["B.scala"] --> CB
+    CB --> BSC["B.class"]
+  end
+  BJ -.-|"must be byte-identical"| BSC
+```
+
+<!-- break -->
+
+- If that premise fails, the consequences are:
+  - *spurious API diffs*, i.e. overcompilation that never converges ("recompiled `B` again, no source change");
+  - *semantic* divergence: the program means something different depending on build history;
+  - broken JAR-equivalence and remote caches (§21), because a Bazel cache hit and an sbt incremental build disagree on the bytes.
+- **Why the two views differ in Scala:**
+  - a symbol typed from source and a symbol unpickled from Scala signatures or TASTy are different objects. They differ in flags, completion order, inferred types, companion pairing and annotations;
+  - Symbol ids leak into sort keys and fresh names (lambda-lift ordering by `Symbol.id`, [scala/scala3#7661](https://github.com/scala/scala3/issues/7661));
+  - flags mutated by later phases leak into output: `InnerClass` access flags differed joint vs separate ([scala/bug#12085](https://github.com/scala/bug/issues/12085) → [scala/scala#9131](https://github.com/scala/scala/pull/9131));
+  - still being found: TASTy sharing depends on type identity ([scala/scala3#26551](https://github.com/scala/scala3/issues/26551)); classfile member order and `InnerClasses` differ ([#26552](https://github.com/scala/scala3/issues/26552)); source-file order changes the result ([#10634](https://github.com/scala/scala3/issues/10634));
+  - the backend's `companionSymbol` lookup observed stale classfiles ([scala/scala-dev#402](https://github.com/scala/scala-dev/issues/402));
+  - reflective calls on structural types break under separate compilation ([scala/bug#11773](https://github.com/scala/bug/issues/11773)).
+
+<!-- break -->
+
+**Java interop adds a second source of divergence.** scalac has *two independent front ends for Java*, and they must agree:
+
+```mermaid
+flowchart LR
+  JS["J.java"] --> JP["JavaParsers<br/>(signature-only parse)"] --> S1["Symbols for J<br/>(joint / mixed / pipelined)"]
+  JS --> JC["javac"] --> CF["J.class"] --> CP["ClassfileParser"] --> S2["Symbols for J<br/>(separate)"]
+  S1 -.-|"must agree"| S2
+```
+
+- Constants: `static final` fields not folded to `ConstantType` from source ([scala/bug#5333](https://github.com/scala/bug/issues/5333), [#10410](https://github.com/scala/bug/issues/10410), still open; fix in [scala/scala#11290](https://github.com/scala/scala/pull/11290), ported to Scala 3 in [scala/scala3#27264](https://github.com/scala/scala3/pull/27264)).
+- Annotations parsed differently ([scala/bug#5699](https://github.com/scala/bug/issues/5699), [scala/scala3#10788](https://github.com/scala/scala3/issues/10788)); `throws` clauses dropped from source, so forwarders to Java default methods get an `Exceptions` attribute only from the classfile ([scala/scala#11289](https://github.com/scala/scala/pull/11289), [scala/scala3#27264](https://github.com/scala/scala3/pull/27264)).
+- Smaller symbol mismatches with the same effect: a Java class's `Object` parent as `ObjectTpeJava` from source ([scala/scala#11292](https://github.com/scala/scala/pull/11292)); a Java enum's `valueOf` parameter named `x` from source, `name` from the classfile ([scala/scala#11293](https://github.com/scala/scala/pull/11293), merged). All of these showed up as classfile differences between incremental and clean builds of Spark's catalyst ([retronym/zinc#31](https://github.com/retronym/zinc/pull/31)).
+- Typing differs: `T[]` overriding needs `Array[T with Object]` vs `Array[T]` depending on joint vs separate ([scala/bug#4390](https://github.com/scala/bug/issues/4390)); Java inner classes get path-dependent types only under joint compilation ([scala/bug#11569](https://github.com/scala/bug/issues/11569)); record varargs work separately but not jointly ([scala/scala3#24167](https://github.com/scala/scala3/issues/24167)); a Java enum pattern under `strictEquality` compiles jointly but not separately ([scala/scala3#27273](https://github.com/scala/scala3/issues/27273)).
+- **Parameter names can make separate compilation fail outright** ([retronym/zinc#14](https://github.com/retronym/zinc/pull/14), `java-param-rename-named-arg`). scalac knows a Java method's parameter names only from its *source*. Without `javac -parameters`, `ClassToAPI` records every Java parameter name as `""`, so renaming one doesn't invalidate a Scala caller that uses named arguments. Recovering the names from javac's syntax tree (closed WIP [retronym/zinc#22](https://github.com/retronym/zinc/pull/22)) made the rename invalidate the caller, but then *recompiling* the caller fails with "unknown parameter name", because Zinc recompiles it without the Java source. That happens with no Java change at all (`java-named-arg-scala-recompiled`). Workaround: compile Java with `-parameters`, which [retronym/zinc#23](https://github.com/retronym/zinc/pull/23) then records. A full fix needs scalac to see the Java sources the recompiled Scala depends on.
+- Every new Java language feature needs a `JavaParsers` port in *both* compilers: records ([scala/bug#11908](https://github.com/scala/bug/issues/11908), [scala/scala3#14846](https://github.com/scala/scala3/issues/14846)), sealed ([scala/bug#12159](https://github.com/scala/bug/issues/12159)), text blocks ([#12290](https://github.com/scala/bug/issues/12290)), value objects ([#13194](https://github.com/scala/bug/issues/13194), open).
+
+<!-- break -->
+
+- **Zinc chooses the view:** `CompileOrder` (`Mixed`, `JavaThenScala`, `ScalaThenJava`) chooses which Java view scalac sees. **Pipelining** (`-Ypickle-java`) *always* gives downstream the source view of Java, so pipelined and non-pipelined builds see different symbols for the same Java class.
+- **The invariant to test:** for every pos test, `compile({A,B})` and `compile(A); compile(B | A.class)` emit identical bytes for `B`, and the same holds with `A` in Java.
+- Scala 2 made this a tested property in 2018 (§6a); Scala 3 has started enforcing it mechanically (`DeterminismTest`, [scala/scala3#26553](https://github.com/scala/scala3/pull/26553)).
+- partest's `_1`/`_2` convention checks that separate compilation succeeds; it doesn't compare the output with a joint compile.
+
+#### 6a. Stability as a compiler property: scala-dev#405 and scala3#7661
+
+The work behind [scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405) ("Deterministic Compilation / Reproducible Builds", opened 2017, closed for 2.13.0-M5 in 2018) made the §6 premise an explicit, tested property of scalac. Its working definition of *stable*: the same bytes regardless of
+
+- **source file order**: the order of files on the command line drives type-completion order in a joint compile, so anything sensitive to completion order leaks into the output;
+- **partial compilation**: compiling subsets of files separately, file by file, against the others' classfiles. This is joint ≡ separate, the premise of every incremental build.
+
+**Method** ([retronym/scalac-stability](https://github.com/retronym/scalac-stability)): hand-crafted test cases expected to be unstable, plus `scalac-stability-check.sh`, which compiles in normal order, in reverse order and file by file, then diffs the classes with [jardiff](https://github.com/scala/jardiff).
+
+<!-- break -->
+
+**What it found in scalac** (all fixed for 2.13.0-M5):
+
+| Cause | Why the output varied |
+|---|---|
+| fresh names from per-compilation-unit counters | numbering followed type-completion order; now scoped to the enclosing user-written method |
+| `LambdaLift` sorted symbol sets by `Symbol.id` | ids depend on completion order; now a linked set |
+| default getters entered into scope as methods were completed | scope order followed completion order; now entered eagerly by the namer |
+| parameter-alias computation across inheritance levels | a race between `setAlias` and `alias` during typer; moved after typer |
+| mixed-in outer accessors took the mixed-in member's position | that position only exists in a joint compile |
+| decl order not recorded in the pickle | mixin decl order differed between joint and separate compiles; the pickler now enters decls in order |
+| refinement typing set the `OVERRIDE` flag late | inferred types copying the refinement saw the flag or not, depending on timing; now cleared on copies |
+
+<!-- break -->
+
+**Why users cared:** Bazel users sharing build artifacts through a distributed cache found that non-reproducible output "killed the cache". One team removed quasiquotes to improve hit rates (comment on #405).
+
+**Scala 3 lags behind:**
+
+- [scala/scala3#7661](https://github.com/scala/scala3/issues/7661) ("Fully deterministic compilation (stable compiler output under reordering and separate compilation)") was opened in 2019 as the counterpart to #405, quoting the scalac findings above, and is still open.
+- Coverage was `IdempotencyTests` over a handful of `tests/order-idempotency` files.
+- In 2026 a `DeterminismTest` ([#26553](https://github.com/scala/scala3/pull/26553)) checking classfile/TASTy stability under recompilation started finding more: TASTy sharing that depends on type identity ([#26551](https://github.com/scala/scala3/issues/26551)) and classfile member order / `InnerClasses` differing under separate compilation ([#26552](https://github.com/scala/scala3/issues/26552)).
+
+<!-- break -->
+
+**Relevance to Zinc:**
+
+- Every instability can produce a spurious API diff, i.e. overcompilation (§16(e)) that can cascade through extra rounds (§4).
+- It breaks ABI-jar equivalence and remote caching (§21) for users of hermetic builds who rely on caching instead of Zinc.
+- Completion-order effects are the global-state back-channel that the purity assumption in the Lean model forbids (§22).
+
+**Ask:** run the stability check (normal order, reverse order, file by file) over the community build for *both* compilers in CI, and treat a diff as a bug in the feature that introduced it.
+
+---
+
+## Part II — Three design choices worth arguing about: the shape of π, who hashes it, and what a "used name" is
+
+*(Discussion section. These are open questions.)*
+
+### 7. What ExtractAPI actually records
+
+- A class's `Structure` (`xsbti.api.Structure`) has three parts:
+  - `parents`: the *linearized* ancestor types, with their type arguments *as seen from* $C$ (plus a value class's underlying type);
+  - `declared`;
+  - `inherited`: the members of every ancestor.
+- The two bridges render members differently:
+
+| | `parents` | `declared`, `inherited` | which inherited members |
+|---|---|---|---|
+| Scala 2 (`mkStructureWithInherited`) | as seen from $C$ | as seen from $C$ (`memberInfo`) | $\mathrm{nonPrivateMembers} \setminus \mathrm{decls}$: overrides resolved |
+| Scala 3 (`apiClassStructure`) | as seen from $C$ (`baseType`) | **as declared** in the owner (`sym.info`) | non-private decls of every ancestor: no override dedup, and none from Scala-2-compiled ancestors |
+
+- So in `class B extends A[Int]`, Scala 2 stores `A`'s `m: T` as `m: Int`, and Scala 3 stores `m: T`. Scala 3 keeps `Int` only in `parents`.
+- Both the class's API hash (`HashAPI.hashStructure0`) and its name hashes cover `inherited`.
+- It has been this way since 2009 (Mark Harrah, "linearization instead of parents and add inherited members for structure", [42c5d47b](https://github.com/scala/scala/commit/42c5d47b99f6d4ed215957d784934c3580c36968)).
+- The bridge's doc comment says so: the class hash includes parents only by *name*, "so we must ensure changes propagate somehow", followed by a TODO asking whether parent hashes could be used instead.
+- Scala 3 made the as-declared choice deliberately in 2016 ([lampepfl/dotty#1244](https://github.com/scala/scala3/pull/1244), Martres). The `ExtractAPI` doc comment gives two reasons: asSeenFrom for every inherited member is slow, and the set of prefixes explodes (`Outer#A#B#C…`). A change *as seen from* a prefix is caught on the client side instead: `ExtractDependencies` walks the *typed* use-site types (use-site expansion, contrasted with sbt 0.13's inheritance expansion in [sbt/zinc#174](https://github.com/sbt/zinc/issues/174)). The same function carries a 2016 TODO: "We shouldn't have to compute inherited members. Instead, `Structure` should have a lazy `parentStructures` field."
+
+### 8. Why it's done (what it buys)
+
+- **Locality of dependencies:** a client of `c.m`, where `m` is inherited from `A`, depends on `C`'s API. A change to `A.m` shows up as a change to `C`, so no hierarchy walk is needed at invalidation time. (In practice Zinc records a `memberRef` on the owner `A` as well, and walks anyway; §10.)
+- **`asSeenFrom`:** in `class B extends A[Int]`, `def f: T` is observed as `f: Int`. Changing only `B`'s extends clause changes the members clients see, with no change to any decl. (Scala 2 only. In Scala 3 the name hash of `f` does not move; the class-name hash of `B`, which covers `parents`, does, §10a Edit 2.)
+- **But asSeenFrom hides erasure.** A method's JVM descriptor is computed from its *declared* signature in the owner, not from the signature as seen from a subclass. A rendering that substitutes type arguments can hide an erasure change a subclass's bridge depends on (§15b).
+- **Linearization:** adding an override in a mixin changes *which* member wins for `C`. A member-level view captures that; a decls-only view would have to recompute the linearization.
+
+### 9. What it costs (what makes it non-local)
+
+- **API(C) depends on C's whole ancestor closure.** Editing `A` changes the API hash and name hashes of *every* descendant, so every descendant must be recompiled before its hash is trustworthy again, whether or not its own output depends on the edit. The descendants' clients are *not* delayed by a round: the invalidator already walks the hierarchy (`invalidateByInheritance`, then `memberRef` clients of every inheritor, filtered by `A`'s changed names), so they join the same round. What the walk cannot avoid is recompiling the hierarchy itself; in the model (§22) the decls and Merkle designs recompile only the clients, and in the PoC (§10) only the clients plus the descendants whose own compilation reads the change (§10a).
+
+```mermaid
+flowchart BT
+  B["B extends A"] --> A["A (edited)"]
+  C["C extends B"] --> B
+  D["D extends B"] --> B
+  E["E extends C"] --> C
+  UB["clients of B"] -.-> B
+  UC["clients of C"] -.-> C
+  UE["clients of E"] -.-> E
+  classDef hot fill:#f6e4dc,stroke:#b4441f,color:#1d1d1f;
+  class A,B,C,D,E hot;
+```
+
+- **Duplication of work:** inheritance invalidation is already transitive, so the same change gets re-detected N times, once per subclass, and the descendants' changed name hashes then point at clients that were already recompiled (a non-empty but redundant $\Delta$). Invalidation logs become hard to explain ("why did `Z` recompile?" → because `Y`'s API changed → because `X` …).
+
+<!-- break -->
+
+- **Size:** state grows with $\sum_c \lvert\mathrm{members}(c)\rvert$, not $\sum_c \lvert\mathrm{decls}(c)\rvert$. Deep or wide hierarchies make this large: collections, cake pattern, big framework traits, anything extending `java.util.AbstractList`. Analysis size, hashing and extraction time all scale with it. Measured with the PoC (§10): on Spark 4.0.1's `sql/catalyst`, not storing members inherited from classes in the same build cuts the stored name hashes from 212,389 to 90,711 and the analysis on disk from 1.88 MB to 1.43 MB.
+  - `inherited` is `lazy` in the schema for this reason; laziness was removed and then reverted ([371b374d](https://github.com/scala/scala/commit/371b374db34ade9ef3af927e9b95094995202cf0) / [b9bd9ecb](https://github.com/scala/scala/commit/b9bd9ecb53fbb7209d0bddc033c8dc8cefdca6ec)).
+- **Extraction cost on every run:** in Scala 2, `members` plus `asSeenFrom` for each compiled class, including members from library parents that can only change when the library jar changes. Scala 3 skips asSeenFrom: an inherited member's `sym.info` is the same `Type` object in every subclass, so rendering it is a type-cache hit. Storage and hashing still scale with $\sum_c \lvert\mathrm{members}(c)\rvert$.
+- **Overcompilation amplifier:** any nondeterminism in rendering an inherited member (unstable owners, refinement type params: [sbt/zinc#1782](https://github.com/sbt/zinc/pull/1782), [scala/bug#6596](https://github.com/scala/bug/issues/6596)) is multiplied across every subclass. Scala 2 recomputes the rendering in each subclass, so the result can differ per subclass. Scala 3 renders a member identically in every subclass, but an unstable *declared* type is still re-hashed in every one: [scala/scala3#27189](https://github.com/scala/scala3/issues/27189), where a `P#T` reference gets a different info depending on whether typer or the unpickler resolved it first.
+- Traits make it worse in a different way: trait bodies leak into subclasses (fields, super accessors, mixin forwarders), so there is a separate `extraHash` / "trait breakers" channel for subclasses.
+
+### 10. Alternatives
+
+- **Merkle composition** (worked out in §5): $h'_C(n) = h(\mathrm{decl}_C(n), \langle (P_i, \bar{T}_i, h'_{P_i}(n)) \rangle)$.
+  - The hash stays non-local, but the *storage* and *computation* become local and memoised. This is what the bridge's TODO suggests, and Scala 3's 2016 `parentStructures` TODO (§7).
+  - It is a sound over-approximation of today's materialised resolution.
+  - **Scala 3 already stores its ingredients.** Scala 3's `inherited` is the ancestors' own decls, rendered as declared, and its `parents` are each ancestor as seen from $C$. For Scala 3, composing instead of materialising refactors information already stored. For Scala 2 it also changes what is rendered, from as-seen-from to as-declared plus type arguments, and that change fixes the erasure bug in §15b.
+  - Open questions: self-types and refinements as parents; library parents (treat their hash as a constant keyed by the jar stamp); whether per-name composition is precise enough for `asSeenFrom`-heavy code (type-argument changes now move every inherited name).
+- **Decls-only + hierarchy-aware invalidation:** record each `memberRef` against the *declaring* owner and the *receiver* type. When `A.m` changes, walk subclasses at invalidation time. Zinc already does this walk (§9); what changes is that the client records the classes its lookup *visited*, misses included, instead of relying on the receiver's materialised hash. This moves `asSeenFrom` and linearization concerns from extraction into the recorded keys.
+- **Hybrid:** decls-only for classes whose parents are library types (which change only by jar stamp), member-level within the module. The PoC below splits the other way: ancestors in the same subproject or in another analysed subproject are decls-only, and only members of plain library classes stay materialised. A change in an upstream subproject filters this subproject's descendants by the same rules as a local one.
+- **A proof of concept** ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24), draft, Scala 2 bridge; a Scala 3 port in [retronym/zinc#39](https://github.com/retronym/zinc/pull/39)): stop materialising members inherited from analysed subprojects, recompile a descendant only when one of six rules says its own compilation reads the change, and compose Merkle hashes for lookups from other subprojects. §10a's Edit 1 recompiles `X Y` instead of `B C X Y`, and four existing scripted tests (`transitive-class`, `transitive-memberRef`, `class-based-inheritance`, `local-class-inheritance`) now recompile fewer descendants. The full scripted suite passes, including the fixes the benchmark below found (218 tests, on sbt/zinc `develop`).
+
+<!-- break -->
+
+**The PoC on a real hierarchy.** `IncBench` (in the PoC) applies edits to a build and records rounds, classes recompiled, wall time and stored size; A is sbt/zinc's `develop`, B the PoC. Spark 4.0.1's `sql/catalyst`, 2,527 classes in one module, pipelining off, one repetition:
+
+| edit | A: recompiled, rounds, wall | B: recompiled, rounds, wall |
+|---|---|---|
+| `TreeNode`: body only | 10, 1, 0.96 s | 10, 1, 0.72 s |
+| `TreeNode`: add an unused member | 1,371, 3, 13.8 s | 420, 2, 4.7 s |
+| `Expression`: add an unused member | 1,200, 3, 10.4 s | 388, 2, 3.2 s |
+| `TreeNode`: add a parent (`java.io.Serializable`) | 2,304, 4, 29.0 s | 1,987, 3, 22.7 s |
+| `Expression`: add a parent | 1,897, 3, 18.1 s | 1,897, 2, 10.4 s |
+| clean build, warm | 2,527, 1, 10.7 s | 2,527, 1, 11.2 s |
+
+- Today, adding a member nobody uses to `TreeNode` costs more than a clean build of the module.
+- On a generated worst case (511 classes in a binary tree over 4 modules), the same edit to the root recompiles 1 class instead of 511 (0.6 s against 22 s).
+- The real corpus found three overcompilations the scripted suite had not: header comparison by `equals` on types with lazy parts, a static-forwarder rule that fired for every case class's companion, and the trait `extraHash` over-reach (§5). Each made most of catalyst recompile.
+- Header edits stay expensive in both: adding a parent moves the class-name hash, and every client that names the class recompiles.
+- A review of the design then found two holes no test covered. sbt's annotated-test discovery reads *inherited* methods' annotations, so a JUnit `@Test` in a base class would have been silently lost. And a library ancestor has no stored API, so a member it declares abstract that another ancestor overrides was invisible to the descendant rules: `class D extends P with Product`, where `P` stops implementing `canEqual`, broke `D` with no rule firing. Both are fixed with tests.
+- A differential harness ([retronym/zinc#25](https://github.com/retronym/zinc/pull/25)) compares each incremental build's classfiles with a clean build's on generated programs, including the Lean model's program space. On real code: across catalyst → `sql/core`, a `TreeNode` member edit recompiles 518 → 44 classes in core ([retronym/zinc#30](https://github.com/retronym/zinc/pull/30)); and over 146 edits to catalyst, each incremental build's classfiles equal a clean build's, for develop and for the PoC, once six scalac batch dependences are fixed (§6; [retronym/zinc#31](https://github.com/retronym/zinc/pull/31)).
+
+<!-- break -->
+
+**What the model says (§22, `Hier.lean`):** the three are three ways to make the hash of an inherited member depend on the ancestor, and all three are sound instances of the same theorem.
+
+| design | what the client records | where the walk happens | hash | rounds on an inherited-member edit | recompiles the hierarchy? |
+|---|---|---|---|---|---|
+| materialised (today) | `(C, m)`; Zinc also records `(A, m)`, a `memberRef` on the owner of the selected member | in `C`'s own compilation, stored in `C`'s interface | local, but `C`'s interface is stale until `C` recompiles | 3 plain, 2 with the walk | yes |
+| decls + walk | `(X, m)` for every `X` visited, plus `(C, parents)` | in the client's compilation | local | 2 | only descendants whose own compilation reads the change (§10a) |
+| Merkle | `(C, m)` | in the hash function, memoised | non-local: the *verifying trace* of the walk | 2 | only descendants whose own compilation reads the change (§10a) |
+
+- **Zinc is already partly decls + walk.** A client of `B.m`, with `m` inherited from `A`, already has a `memberRef` on `A` under the name `m`, and the invalidator already walks the `memberRef` clients of every inheritor, filtered by the ancestor's changed names (§9). Within a subproject that is enough: the PoC needed no composed hashes there, only to stop materialising inherited members and to stop recompiling every descendant.
+- **Where Merkle composition is required: across subprojects.** A downstream subproject sees only the stored API, and the upstream analysis it looks up carries no relations, so there is nothing to walk. The PoC composes each upstream class's name hashes over its stored linearization (`structure.parents`) at lookup time. Without that, `macros/macro-type-change-3` undercompiles: a macro that reflects over `baseClasses` selects no member, so no `memberRef` names the ancestor. Ancestors contribute their class-side hash, not the merged class-and-object `apiHash`, because companion-object members are not inherited (Java statics are, §12); this is another face of [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (§12).
+- **Soundness requirement or convenience?** Convenience. Any of the three works; what is *required* is either a non-local hash kept fresh (by recompiling the hierarchy, or by recomputing hashes over the inheritance closure, `affected` in the model) or local keys that name every ancestor visited.
+- **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles (`Stale.lean`, T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
+- **Precision comes from the hash function.** On an `asSeenFrom` edit (`B extends A[Int]` → `A[String]`), the model's materialised hash moves only the names whose rendering changed (in Zinc, the name hash of `B` itself also moves, so every client that mentions `B` recompiles; §10a); the decls design moves every client of `B` through `(B, parents)`; the §5 Merkle formula moves every inherited name of `B`. A Merkle hash of the *resolved* member would be as precise as materialised, with the same freshness obligation.
+- **Precision for clients, soundness for descendants.** As-declared members plus the parents' type arguments determine the as-seen-from rendering, but not the other way round: the as-seen-from rendering loses erasure (§15b). So the resolved-member hash can only be a precision key for `memberRef` clients. The descendant rules (overrides, bridges, forwarders) must key on the declared member.
+
+**Discussion questions:**
+
+- Which scripted tests break under decls-only? The PoC answers this for Scala 2: within a subproject, none, given the six descendant rules of §10a; with no descendant recompiles at all, the five rule tests that discriminate fail. Across subprojects, `macros/macro-type-change-3` fails without Merkle composition. The model says none for soundness.
+- What fraction of a real analysis file is `inherited`? On Spark's catalyst, members inherited from classes in the same module account for 57% of the stored name hashes (121,678 of 212,389) and a quarter of the analysis on disk. scala/scala is still to measure.
+- Scala 3 has TASTy: could $\pi$ be derived from TASTy-level signatures plus a structural parent hash, making it shareable with IDEs and other build tools?
+
+#### 10a. Worked example: materialised members vs Merkle hashing
+
+The program is the one `Hier.lean` checks, written as Scala. `A` is an abstract class, so `B` and `C` contain no code generated from `A`'s members.
+
+```scala
+abstract class A[T] { def m: Int = 0; def g: Int = 0 }
+class B extends A[Int]
+trait M
+class C extends B with M
+
+object X { def f(b: B) = b.m }   // client of B.m
+object Y { def f(c: C) = c.m }   // client of C.m
+object Z { def f(b: B) = b.g }   // client of B.g
+```
+
+<!-- break -->
+
+**What each design stores.**
+
+*Materialised (today).* Each class's API lists every member as seen from that class, and the name hash hashes that rendering:
+
+| class | `declared` | `inherited` | $h(m)$ | $h(g)$ |
+|---|---|---|---|---|
+| `A` | `m: Int`, `g: Int` | | $h(\texttt{m: Int})$ | $h(\texttt{g: Int})$ |
+| `B` | | `m: Int`, `g: Int` | $h(\texttt{m: Int})$ | $h(\texttt{g: Int})$ |
+| `C` | | `m: Int`, `g: Int` | $h(\texttt{m: Int})$ | $h(\texttt{g: Int})$ |
+
+Every inherited member is stored again in every descendant, and each descendant's hashes are computed when *that descendant* is compiled.
+
+*Merkle.* Each class stores only its own declarations and its parents with their type arguments. The hash of a name is composed on demand and memoised:
+
+$$h_A(m) = h(\texttt{m: Int}) \qquad h_B(m) = h\big(\emptyset,\ \langle (A, \texttt{Int}, h_A(m)) \rangle\big) \qquad h_C(m) = h\big(\emptyset,\ \langle (B, h_B(m)),\ (M, h_M(m)) \rangle\big)$$
+
+$h_M(m) = h(\text{miss})$ records that `M` has no `m`, so a later `M.m` changes $h_C(m)$.
+
+<!-- break -->
+
+**Edit 1: `A.m: Int` becomes `A.m: String`.**
+
+*Materialised.*
+
+- `A`'s hash for `m` changes. `B`'s and `C`'s stored hashes still say `m: Int`, because they were computed when `B` and `C` were last compiled.
+- Zinc must recompile `B` and `C` to refresh them; the inheritance edges do that.
+- Zinc's hierarchy walk also invalidates the `memberRef` clients of every inheritor that use `m`, so `X` and `Y` join the same round.
+- Result: **`B C X Y` recompiled, 2 rounds.** In this program `B` and `C` produce identical output: neither declares `m`, no other ancestor declares `m`, `m` is concrete, and `A`'s header didn't change. So here they were recompiled only to recompute their hashes. That is not true in general (next card).
+
+*Merkle.*
+
+- $h_A(m)$ changes, so $h_B(m)$ and $h_C(m)$ change when Zinc *recomputes* them from the stored ingredients. No compilation is needed for that.
+- `X` uses `m` on `B`, `Y` uses `m` on `C`: both are invalidated.
+- Result: **`X Y` recompiled, 2 rounds.** `Z` stays in both designs, since $h(g)$ didn't move.
+
+The PoC ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)) reproduces this in Zinc: its scripted test `merkle-member-type` recompiles `X Y`, where today's Zinc recompiles `B C X Y`.
+
+```mermaid
+flowchart LR
+  subgraph MAT["Materialised"]
+    direction TB
+    A1["A edited"] --> B1["recompile B<br/>(refresh hash)"]
+    A1 --> C1["recompile C<br/>(refresh hash)"]
+    A1 -. "walk" .-> X1["X, Y"]
+  end
+  subgraph MRK["Merkle"]
+    direction TB
+    A2["A edited"] --> H2["recompute h_B(m), h_C(m)<br/>(no compile)"]
+    H2 --> X2["X, Y"]
+  end
+```
+
+<!-- break -->
+
+**Edit 2: `asSeenFrom`.** Start from `A[T] { def m: T = ???; def g: Int = 0 }` and change `B extends A[Int]` to `B extends A[String]`.
+
+- *Materialised, in the model (`Hier.lean`):* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
+- *Materialised, in today's Zinc:* **`C X Y Z`**, pinned by the PoC's `merkle-as-seen-from` test on its baseline commit. `Z` mentions the type `B`, so the name `B` is in $U(Z)$, and the name hash of `B` itself covers `B`'s header, parents included. The model has no key for a class's own name.
+- *Scala 3's bridge:* the modified names are **`B`** only, against `B, m` with the Scala 2 bridge. Scala 3 renders `m: T` as declared, so only the class-name key moves. That is the decls design's `(B, parents)` key, and no client was missed: every client that selects through a `B` records `B` as a used name (scripted cases `asf-typearg-*`, directly, via a grandparent and via an alias, all three bridges clean).
+- *Merkle (§5 formula):* the parent and its type argument are inside *every* $h_B(n)$, so $h_B(g)$ changes too. Result: **`X Y Z`**; `Z` is recompiled although nothing it uses changed.
+- So the materialised design is more precise here in the model, not in Zinc: the class-name key already moves every client that mentions `B`. The PoC also recompiles `C X Y Z`. A Merkle hash of the *resolved* member, $h(\mathrm{res}_B(n))$ computed by a memoised walk, would be as precise as the model's materialised design while keeping local storage, but it must be recomputed for the same set of classes, and it buys nothing until the class-name key stops covering parents.
+
+**Edit 3: linearization.** The mixin `M` gains a member `m`.
+
+- *In the model:* $h_M(m)$ changes from "miss" to a declaration, so $h_C(m)$ changes and Merkle recompiles only **`Y`**; materialised recompiles **`C Y`**.
+- *In Scala, `C` must recompile in both designs.* With `trait M { def m: String = "" }`, `C` inherits conflicting members `m` from `A` and `M` and no longer compiles. With a legal edit, `trait M extends A[Int] { override def m: Int = 1 }`, `C` changes linearization and gains a mixin forwarder for `M.m` (the `extraHash` channel, §9). Either way the edit reaches `C`'s own compilation, so Merkle saves nothing here.
+
+<!-- break -->
+
+**When a descendant must recompile anyway.** A descendant's compilation reads its ancestors in places its used names $U(D)$ don't cover: refchecks and forwarder generation. The PoC's default set has six rules. Disabling each in turn against scripted tests, five fail a test of their own (`merkle-override`, `-conflict`, `-abstract`, `-trait-override`, `-mirror`); `header` is there because the Lean model needs it:
+
+- **overrides**: a member `D` declares that overrides an ancestor's member must still conform to it (and may need a bridge);
+- **conflicts**: members of the same name inherited from two parents must be reconciled (Edit 3);
+- **abstract members**: a concrete `D` must implement every abstract member it inherits, so the rule counts names deferred in *any* ancestor of `D`, not only in the edited class. Deleting `B`'s implementation of `A`'s abstract `m` leaves `class C extends B` unimplemented (`merkle-abstract-ancestor`). The narrower rule leaves 672 of 142,500 single-class edits unclean in the Lean model's exhaustive check (`FlatRules.lean`), and the widened one none;
+- **the ancestor's header**: parents, type parameters, self type, `final`/`sealed`. The cross-subproject Merkle composition (§10) reads each class's *stored* linearization, which is only sound if every transitive descendant of a class whose parents changed is recompiled (`flat_sound`, `Flat.lean`). No scripted test fails without this rule, because a header change already invalidates every `memberRef` client of every descendant, and each descendant is a `memberRef` client of its direct parent through its extends clause; the rule is defence in depth for a descendant not recorded that way;
+- **trait mixin forwarders**: if $P$ is a trait, `D`'s bytecode has a forwarder for each concrete member of $P$;
+- **static forwarders**: if `D` is a top-level object that itself extends $P$, its mirror class (or its companion class) has a static forwarder for every member, inherited ones included. A case class's companion object does not extend the case class's parents; a first version of the rule missed that and fired for every case class in catalyst.
+
+*Uses* need no rule: a descendant is a `memberRef` client of its parent (the constructor call, inherited member selections), so ordinary name-filtered invalidation already reaches it.
+
+So after an edit to ancestor $P$ with changed names $N$, descendant $D$ must recompile, beyond its ordinary `memberRef` invalidation, if
+
+$$N \cap \big(\mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad \mathrm{header}(P) \text{ changed} \quad\text{or}\quad P \text{ is a trait} \quad\text{or}\quad D \text{ has a mirror class}$$
+
+and, for concrete $D$, if $N$ contains a name deferred in any ancestor of $D$. The rules are to a descendant's refchecks and codegen what $U(d)$ is to a client's lookups: the key abstraction of the part of its trace that reads other classes (§12). The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (`Flat.lean` models the override, conflict and abstract checks as queries from the descendant to its ancestors, recorded as keys; `FlatRules.lean` checks the rules as an invalidation policy, exhaustively over a small program space. The forwarder rules were found by thinking about bytecode, not by the model.)
+
+<!-- break -->
+
+**What the example shows:**
+
+| | materialised (today) | Merkle chain |
+|---|---|---|
+| state per class | every member, own and inherited, as seen from the class (Scala 2) or as declared (Scala 3) | own declarations plus parent references |
+| total state | $\sum_c \lvert\mathrm{members}(c)\rvert$ | $\sum_c \lvert\mathrm{decls}(c)\rvert$ plus memoised hashes |
+| ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own compilation reads the change |
+| `asSeenFrom` edit | in the model, only the names whose rendering changed; in Zinc, also every client that mentions the class (Scala 3's bridge moves only the class-name key) | every name inherited through that parent |
+| linearization edit | recompile the class (needed anyway: conflict check, mixin forwarder) | the recorded miss changes the hash; the class still recompiles for its own reasons |
+| freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
+| rounds | 2 with Zinc's walk | 2 |
+
+The recompiled sets are the ones `Hier.lean` checks (§22); the walk policy is what brings the materialised design down to two rounds.
+
+### 11. Who computes the hash? Bridge-side hashing vs projecting into xsbti.api
+
+Today:
+
+```mermaid
+flowchart LR
+  T1["compiler types"] --> P1["full xsbti.api tree<br/>(incl. inherited)"]
+  P1 -- "api(file, classApi)" --> H1["Zinc hashes it"]
+  H1 --> M1["minimize: keep a stub,<br/>discard the tree"]
+```
+
+Alternative:
+
+```mermaid
+flowchart LR
+  T2["compiler types"] --> H2["bridge hashes directly,<br/>memoised per symbol"]
+  H2 -- "opaque hashes" --> Z2["Zinc invalidator"]
+  T2 -- "thin discovery callback" --> DSC["test discovery"]
+```
+
+**Today's pipeline** (`AnalysisCallback.api`, then `Incremental.scala`):
+
+1. The bridge projects compiler types into a full `xsbti.api.ClassLike` tree: every member including inherited ones, as seen from the class, with lazy fields.
+2. It hands the tree to Zinc via `api(sourceFile, classApi)`.
+3. Zinc computes `HashAPI` (the API hash), `NameHashing` (name hashes, partitioned by `UseScope`), and the trait `extraHash` (parents folded in later, already Merkle-style). It sets the `hasMacro` and `isAnnotationDefinition` flags.
+4. Zinc then *throws most of the tree away*. Unless `apiDebug` is set, `APIUtil.minimize` keeps a stub with the name, modifiers, annotations, `savedAnnotations`, sealed children, top-level flag and type parameters.
+5. `AnalyzedClass` persists the hashes plus that stub.
+
+So for every compiled class, on every run, we build a large object graph mainly so it can be hashed and discarded.
+
+<!-- break -->
+
+**Alternative:** the bridge computes `{apiHash, nameHashes, extraHash, flags}` directly over compiler symbols and types, and sends opaque hashes. Zinc's invalidator already works only on hashes.
+
+**What it buys:**
+
+- **No intermediate representation:** no allocation, laziness or interning of `xsbti.api` trees. (TODO: profile the `xsbt-api` phase and the callback on scala/scala with async-profiler to put a number on it.)
+- **Hash what codegen actually sees:** include erased descriptors directly, which closes the §15b class of bugs *by construction* (§2: $\pi$ must determine $E$). Also inline bodies, sealed children and TASTy-level detail, without growing a cross-repo schema.
+- **Memoise per symbol per run:** a parent's hash is computed once and reused by every subclass. That gives the Merkle composition of §10 without paying $\sum \lvert\mathrm{members}\rvert$.
+- **Less drift (§18):** a new observable becomes a compiler-local change. Today it can need an `xsbti.api` schema change, MiMa review, a Zinc release and two bridge releases.
+- **Smaller analysis, faster loads (§20).**
+
+<!-- break -->
+
+**What it costs:**
+
+- **Collateral consumers of the stored API:**
+  - test discovery: `xsbt.api.Discovery` walks the minimized `ClassLike` (annotations, parents, `savedAnnotations`) for sbt's `definedTests`;
+  - explaining invalidations: `apiDebug`, `APIDiff`, `ShowAPI` "what changed?" diffs;
+  - any external tool reading `Analysis.apis` (verify Bloop/Mill/IntelliJ).
+- **Mitigations:**
+  - a separate thin *discovery* callback (class name, kind, parent names, class/def annotations, main methods; `mainClass` is already a callback), or discovery from classfiles the way JUnit-platform scanners do it;
+  - for debugging, the bridge emits a canonical *text rendering* behind a flag and hashes that text, so the diff stays free.
+- **Hashing is no longer shared code:** two bridges plus Zinc's Java path (`ClassToAPI`) each hash. Mitigation: a tiny stable `Hasher` in `compiler-interface`, so the compiler decides *what* to hash and Zinc owns *how* hashes are mixed.
+  - Producers needn't agree with each other: a class's hash is only ever compared with its own previous hash from the same producer. A compiler-version change already forces a full recompile (`MiniSetup`).
+- **The name-hash contract must be written down:** the `UseScope` partition, sealed handling, private-member rules. That spec would also serve §17 and §23.
+- **Zinc can no longer fix a hashing bug without a compiler release.** But extraction bugs, which already require one, dominate the bug history (Part IV).
+
+<!-- break -->
+
+**Variant: derive π from outputs, not internals.**
+
+- Hash the classfile ABI (`ijar`-style descriptors, per member) plus the signature payload (Scala sig / TASTy signatures).
+- This is compiler-agnostic and erasure-correct by construction. Zinc 2.x's `bytecodeHash` / `transitiveBytecodeHash` already lean this way, replacing timestamps.
+- It still needs the compiler for $U(d)$ and for macro observation.
+- **A TASTy-based variant** ([scala/scala3#19422](https://github.com/scala/scala3/issues/19422)): extract both $\pi$ and $U(d)$ from TASTy, asynchronously from the main compile. TASTy has the trees, positions and symbols Zinc needs, but not everything the compiler sees. For example, code inlined during Mirror synthesis is dropped before pickling. The open questions in the issue are the coverage obligation of §22 in practice: what must be added to TASTy so nothing is lost, and whether the overhead of loading TASTy in parallel pays off. Desugaring and post-typer decisions (§16(h), (i)) would need to survive into TASTy as well.
+
+**The trade-off:** the `xsbti.api` tree is a *general* reflection of the type system that we pay for on every compile, while incremental compilation only needs a *hash* of it. If we optimise for incremental compilation alone, the tree is overhead, and test discovery should get its own narrow channel.
+
+### 12. What is a "used name"? Name kinds and the key space of U
+
+**What ExtractUsedNames records today** (Scala 2 bridge `ExtractUsedNames.scala`; Scala 3 `ExtractDependencies`):
+
+- *Simple, decoded, unqualified* names, per using class, each tagged with a set of `UseScope`s (`Default`, `Implicit`, `PatMatTarget`).
+- Names come from:
+  - symbols in non-definition position;
+  - **names of the types of trees**, including inferred ones (`types-in-used-names-*`, `as-seen-from-*` tests). That's why `C` "uses" `A` in §15b;
+  - import selectors;
+  - `TypeTree.original`;
+  - pre-expansion macro trees (`OriginalTreeAttachments`);
+  - pattern-match targets (`PatMatTarget`).
+- Synthetic names are normalised: a constructor shows up as `A;init;` in the invalidation log.
+
+<!-- break -->
+
+**The invalidation key is a conjunction.** The name is not tied to its qualifier:
+
+$$d \text{ invalidated by a change in } c \iff d \xrightarrow{\ \mathrm{memberRef}\ } c \ \wedge\ U(d) \cap \mathrm{changedNames}(c) \neq \emptyset$$
+
+- If `d` depends on `c` for any reason and calls `.size` on *anything*, a change to `c.size` invalidates `d`.
+- Zinc gives up this precision deliberately (§5).
+
+**Why simple names, not symbols?** Because the dangerous changes are *additions*, and you cannot record a dependency on a symbol that doesn't exist yet:
+
+- a new overload `foo(Int)` changes the resolution of `foo(1)`, which used to pick `foo(Long)`;
+- a new member shadows an import (§15a);
+- a new override changes linearization (§8);
+- a new *class* `p.q.Foo` shadows the `Foo` that code in `p.q` (or a nested package clause) used to resolve elsewhere. Classes in an added source only invalidate their reverse dependencies, of which there are none yet (`shadow-nested-package-added-class`, [retronym/zinc#14](https://github.com/retronym/zinc/pull/14); the nested-package flavour of sbt/zinc#226). Catching it needs a package → classes index.
+
+A name hash covers *all* definitions with that name in `c`, so adding one changes the hash. Simple names are the coarsest key that sees "something named `n` appeared or disappeared", which is a *negative lookup*.
+
+<!-- break -->
+
+**Name kinds: the conflations, and recent Zinc work:**
+
+- **Class vs companion object.** `class A` and `object A` share one `AnalyzedClass`, and their name hashes are merged. Changing `class A.x` recompiles users of `object A.x` ([sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796), open).
+  - Java is the exception to "object members aren't inherited". Java static members are inherited for name lookup (`lib.B.s()` compiles when `s` is declared on `B`'s superclass `A`), and `ClassToAPI` materialises them as `staticInherited` on the module side. The Merkle PoC handles them, with tests for mixed, pure-Java and cross-subproject hierarchies (`merkle-java-static*`).
+- **Inheritance edges had the same conflation:** `object B extends A` looked like `trait B extends A`, so a private change in `A` recompiled subclasses of `trait B` ([sbt/zinc#1795](https://github.com/sbt/zinc/issues/1795), fixed).
+- **`AnalysisCallback4`** (commit 0a463347a) adds `ClassRef` (a name plus a `NameKind` of `Term` or `Type`) to dependency edges. It also adds a `usedName` overload carrying `qualifierKinds`: the namespace the name is *selected from* (class, object, or unknown, e.g. for an import selector). Zinc does not consume it yet; it is groundwork for #1796.
+- **Still conflated:** whether the *referenced name itself* is a term or a type. A class mentioning only the type `A` is invalidated when the `object A` signature line changes. Cheap in practice, because each member has its own name hash and only the class/object header shares the name `A` (#1796, "related").
+
+<!-- break -->
+
+**The key-space ladder** (each rung is more precise and needs more from the compiler):
+
+| Key | Example | Sound if… | Status |
+|---|---|---|---|
+| simple name | `x` | name hash covers all defs named `x` | today |
+| name × `UseScope` | `x`@Implicit | scope-specific semantics are hashed separately | today (implicits → unconditional) |
+| name × qualifier namespace | `x` from `object A` | companions get separate hashes | callback ready, Zinc pending (#1796) |
+| name × referenced namespace | type `A` vs term `A` | term and type hashes are separated | open |
+| (qualifier class, name) | `A#x` | *failed* lookups are recorded too (extension methods, implicit conversions: `a.foo` resolving elsewhere because `A` *lacks* `foo`) | not attempted |
+| symbol | `A#x(I)J` | additions are impossible (closed world) | unsound for Scala |
+
+<!-- break -->
+
+**In the terms of §2 and §22:**
+
+- $U(d)$ is the abstraction of $d$'s query trace, and the name kind is the *key type*.
+- Coverage requires every lookup, including failed ones, to map to a recorded key. The qualified rungs are sound only if the compiler also records *misses*: "looked for `foo` in `A`, didn't find it, fell back to an extension". That is a new bridge obligation, and it is exactly where Scala's extension methods, implicit conversions and `Dynamic` make lookup non-local.
+- Precision improves monotonically down the ladder, but each rung adds a coverage obligation that an extractor bug can silently violate, turning an overcompilation fix into an undercompilation bug.
+
+**Discussion:**
+
+- Which rung pays for itself? Measure the share of invalidations caused by name collisions on unrelated qualifiers (e.g. `size`, `apply`, `map`) in a large build's invalidation logs.
+- Should "failed lookup" be a first-class recorded event in both compilers? It would also make implicit/extension invalidation precise instead of unconditional (§15a).
+
+---
+
+## Part III — How we got here, and how everyone else does it
+
+### 13. History
+
+Three lanes moved at different speeds: what Zinc computes, where the bridge lives, and how its state is stored. The table gives the dates; the next card picks out the four turning points the rest of the talk builds on.
+
+| Year | Algorithm | Bridge | Persisted state |
+|---|---|---|---|
+| 2009 | API extraction, member-level `Structure` (Harrah) | compiled from source per Scala version | text format |
+| 2013 | name hashing (Kossakowski) | | interned format (Pants) |
+| 2016 | class-based dependency tracking; Dotty: as-declared API + use-site expansion ([lampepfl/dotty#1244](https://github.com/scala/scala3/pull/1244)) | | |
+| 2017 | Zinc 1.0 | `compiler-interface` as a Java API | protobuf, relocatable |
+| 2020 | pipelining (early output) | Dotty owns its bridge | `VirtualFile` |
+| 2023 | | Scala 2 bridge in-tree (2.13.12) | |
+| 2024 | macro / inline invalidation fixes | | consistent format; hashes replace timestamps |
+| 2026 | Zinc 2.x; companion / inheritance precision | `AnalysisCallback4` | interning fixes |
+
+#### 13a. Four turning points
+
+**1. From a compiler flag to a build-tool library (2008–2013).** scalac's own `-make` mode didn't hold up ("Incremental compilation is broken", [scala/bug#354](https://github.com/scala/bug/issues/354); Java/Scala dependencies, [scala/bug#2889](https://github.com/scala/bug/issues/2889)). Mark Harrah's sbt 0.7–0.10 moved the logic out of the compiler: an API-extraction phase, source-level invalidation, the member-level `Structure` that §7–10 question (2009), and a bridge compiled from source for each Scala version. A standalone Typesafe `zinc` (nailgun) then served Maven, Gradle and Pants.
+
+**2. Precision, one refinement of π and U at a time (2013–2016).** Name hashing by Grzegorz Kossakowski ([`memberRef`/`inheritance`](https://github.com/sbt/zinc/commit/33635302cd73adbaf8c21476828bdae092610bc7), [algorithm](https://github.com/sbt/zinc/commit/e6c04434055657b679cbb50c2a1e6997a657b0f6)) split the API by name (§3). Class-based tracking ([sbt/zinc#86](https://github.com/sbt/zinc/pull/86)) shrank the graph's nodes from files to classes. It also produced the first feature-specific special case: sealed hierarchies needed [their own handling](https://github.com/scala/scala/commit/14a5784fad6537a42cf67ae355122d3462cac1e3) (§16(b)).
+
+<!-- break -->
+
+**3. Zinc as a product for other build tools (2017–2020).** Zinc 1.0 (Lightbend + Scala Center) gave build tools a Java API, protobuf analysis and relocatable, cacheable state ([#216](https://github.com/sbt/zinc/pull/216), [#218](https://github.com/sbt/zinc/issues/218)). `VirtualFile` ([#712](https://github.com/sbt/zinc/pull/712)) and build pipelining ([scalac `-Ypickle-java`](https://github.com/scala/scala/commit/b066d7e6402820879a970d6a88635018b8512dfe), [early output/analysis](https://github.com/scala/scala/commit/7b88ad4e5f2baba971a3461a45a19a090da319f1)) followed. This leads to Part VI, where hermetic builds skip Zinc altogether.
+
+**4. Ownership moves to the compilers (2020–2026).** Dotty shipped its own bridge from the start (`CompilerInterface2`, [scala/scala3#10607](https://github.com/scala/scala3/pull/10607)), and the Scala 2 bridge moved in-tree in 2.13.12 ([scala/scala#10472](https://github.com/scala/scala/pull/10472)). The consequences are Part V's drift risks. In parallel, state became deterministic (consistent format, [#1326](https://github.com/sbt/zinc/pull/1326); hashes instead of timestamps, [#1430](https://github.com/sbt/zinc/pull/1430); Scala 3 pipelining, [scala/scala3#18880](https://github.com/scala/scala3/pull/18880)). The 2025–26 wave of macro, pattern-match and determinism fixes (§15–16, Notes N1) are the most recent.
+
+### 14. Prior art: everyone converged on the same three ideas
+
+ABI summaries · fine-grained use tracking · content addressing.
+
+| System | Summary ($\pi$) | Use tracking ($U$) | Notable |
+|---|---|---|---|
+| GHC | `.hi` interface fingerprints | per-entity usages | cross-module inlining → unfoldings are part of the interface |
+| Kotlin IC | ABI snapshots | lookup tracker (scope, name) | near-isomorphic to name hashing; `inline fun` bodies are ABI |
+| Swift driver | `.swiftdeps` | fine-grained provides/depends | same name-filtered fixed point |
+| rustc | query fingerprints, red/green | query dependency graph | demand-driven rather than phase-driven |
+| Gradle (Java) | class ABI | class-level | historically full recompile on constant change |
+| Bazel / Buck | `ijar`/`hjar`, ABI jars | target-level | skip the compiler entirely if ABI bytes are equal |
+| TypeScript | `.d.ts` / `.tsbuildinfo` | file + signature hash | project references |
+
+<!-- break -->
+
+**Best practices to extract:**
+
+- Derive summaries from the **same typed trees codegen sees**.
+- Make summaries **canonical**: no positions, fresh names or iteration order.
+- Treat **cross-module inlining as ABI**.
+- Use **content hashes, not timestamps**; make state **relocatable and reproducible**.
+- Keep a **differential oracle** (incremental ≡ clean) in CI.
+- Log *why* each unit was invalidated.
+- Offer a **one-command bug report** for a user who just hit under- or overcompilation, capturing enough state to replay the build as a test (Notes N2).
+- Members-vs-decls (§7–10) is a place where systems diverge. Add a row to the table once verified.
+
+---
+
+## Part IV — Where it breaks: language features vs incrementality
+
+### 15. Three worked examples: implicits, value classes, macros
+
+One slide each. Show the code, ask the room "what must recompile?", then show what Zinc records and why. All examples come from Zinc's own scripted tests (`zinc/src/sbt-test/`).
+
+**What 15a–c have in common:** in each case the client's compiled output depends on information *not reachable from the names it wrote*. Implicit scope, erased representation and macro observation are the three main gaps, and each needed its own mechanism added to name hashing.
+
+#### 15a. Implicits: resolution depends on names you never wrote
+
+*Shadowing* (`source-dependencies/implicit-search`):
+
+```scala
+// B.scala
+object B { implicit val x: Ordering[Int] = ??? }
+// A.scala  v1: object A        v2: object A { val x = 1 }
+// C.scala
+object C { import A._, B._; implicitly[Ordering[Int]] }
+```
+
+- Adding an *unrelated, non-implicit* `val x` to `A` shadows `B.x` in `C`'s scope. The implicit is no longer eligible, so resolution silently falls back to `Ordering.Int`, and `C`'s behaviour changes (`???` stops throwing).
+- Likely mechanism (verify with the invalidation log): `C`'s used names include `x`, the name of the implicit it selected. Eligibility is name-based, so name hashing happens to model it.
+
+<!-- break -->
+
+*Implicit scope through the type hierarchy* (`companion-object-implicit-scope`):
+
+```scala
+trait A; object A { implicit val sad: Pretty[A] = ... }
+trait B extends A
+class D extends B
+object User { implicitly[Pretty[A]].show(new D) }
+```
+
+- `User` reaches `A`'s companion through implicit scope; adding an ordinary `def y` to `object A` recompiles 0 files, as it should.
+- Removing `sad` must break `User`.
+
+*Modifier as API* (`implicit-params`): making `(implicit y: E)` explicit must break the call site `x(3)`.
+
+<!-- break -->
+
+**What Zinc does:** implicit members get their own name hashes (`UseScope.Implicit`), and **any** change to an implicit member invalidates **all** `memberRef` clients of that class, with no name filtering (`MemberRefInvalidator`).
+
+- That is sound only for classes the client already depends on. The *negative* case is open: a client whose resolution would change because a *new, better* candidate appears somewhere it never referenced. Removing `implicit` was reported as not noticed ([sbt/zinc#945](https://github.com/sbt/zinc/issues/945), still open), though a 2.13.y probe of the inherited-trait shape found no bug ([retronym/zinc#14](https://github.com/retronym/zinc/pull/14), "tried, no bug found"); Scala 3 constructor implicits ([scala/scala3#18309](https://github.com/scala/scala3/issues/18309)).
+- A confirmed instance of the negative case, on 2.13.x, 2.13.y and 3.x alike: `implicit-scope-grandparent-companion`, where a grandparent `B` of the type the client resolves for gains a companion object with an implicit, which changes the resolution. Inside one subproject `MemberRefInvalidator` catches it; across subprojects nothing did, until [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (merged) folded a summary of the ancestors' implicit names into each class's API hash. The implicit scope of an object's singleton type is the remaining gap ([sbt/zinc#1846](https://github.com/sbt/zinc/pull/1846)). It is independent of how inherited members are rendered (§7).
+- Scala 3 `given`s, `using` clauses, and `given` imports (`import A.given`) make implicit scope larger and more structured, so the same problem applies to more constructs.
+
+#### 15b. Value classes: erasure makes representation observable
+
+`source-dependencies/value-class-underlying`:
+
+```scala
+class A(val x: Int) extends AnyVal      // → class A(val x: Double) extends AnyVal
+object B { def foo: A = new A(0) }
+object C { val duck = B.foo; println(duck) }
+```
+
+- At Scala level, `B`'s API is unchanged (`foo: A`); `B.scala` isn't even edited. At the JVM level, `B.foo()I` becomes `B.foo()D`. `C`'s bytecode still calls the old descriptor, so it fails with `NoSuchMethodError`.
+
+```mermaid
+flowchart LR
+  C["C.class<br/>invokes B.foo()I"] -- "memberRef: foo" --> B["B.foo : A<br/>(Scala signature unchanged)"]
+  B -- "descriptor = E(A)" --> A["A extends AnyVal<br/>underlying: Int → Double"]
+  C -. "observes E(A) = E(underlying(A))<br/>without naming x" .-> A
+```
+
+<!-- break -->
+
+**In the terms of §2:** $C$'s output contains the descriptor of `B.foo`, so $C$ observes $f(A) = \mathrm{underlying}(A)$:
+
+$$E(\mathrm{sig}_B(\mathit{foo})) = E(A) = E(\mathrm{underlying}(A))$$
+
+- $\pi(B)$ is unchanged, which makes this a counterexample to soundness if $C$'s dependency is keyed only on `B.foo`.
+- The observation reaches $A$ *through* $B$'s signature, but it is about $A$'s contents, not about any member of $A$ that $C$ names. $C$ never mentions `x`.
+
+**Fix:** make $\pi(A)$, under the *name* `A`, determine $E(A)$. ExtractAPI adds the underlying type to a value class's ancestor types (comment in `mkStructureWithInherited`), so the hash for name `A` changes.
+
+- This relies on `C` "using" the name `A`. It does, because used names come from *typed* trees, so the inferred type of `duck` counts.
+- The expected invalidation log: cycle 1 detects modified names `A`, `A;init;`, `x`; `B` and `C` are both invalidated because both use name `A`; cycle 2 finds nothing further.
+
+<!-- break -->
+
+- `source-dependencies/value-class`: toggling `extends AnyVal` on/off changes erased signatures of every method mentioning `A`. One case flips `null` from legal to illegal (`-> compile` expected); another is a pure binary change that must recompile to *run*.
+- **General lesson:** $\pi$ is a *Scala-level* summary, but clients link against *JVM-level* descriptors. Anything that changes erasure without changing the Scala signature needs a hook: value classes, opaque types (open question), `@specialized`, SAM vs non-SAM, varargs, Java generic signatures.
+
+<!-- break -->
+
+*Erasure through a type argument* (`erasure-bridge-upstream-grandparent`, found by the conformance harness, [retronym/zinc#25](https://github.com/retronym/zinc/pull/25)):
+
+```scala
+trait M[T] { def m: Int = 1 }           // → def m: T = null.asInstanceOf[T]
+abstract class A extends M[Int]         // lib
+class B extends A { override def m: Int = 2 }   // app
+```
+
+- `M.m` now erases to `m()Object`, so `B` needs a bridge from `m()Object` to `m()I`. As seen from `A`, `m` is still `Int`, so the Scala 2 bridge leaves `A`'s API unchanged and `B` is not recompiled. A call through `M[Int]` then runs `M`'s body.
+- The Scala 3 bridge renders `A`'s inherited `m` as declared (`m: T`, §7). `A`'s API changes, so `B` is recompiled through inheritance.
+- **asSeenFrom is the wrong input for erasure:** the descriptor of `M.m` is computed from `M`'s own declaration.
+
+| case (`asf-*` scripted tests, lib → app) | 2.13.x (Zinc bridge) | 2.13.y (scala2-sbt-bridge) | 3.x |
+|---|---|---|---|
+| `erasure-bridge-upstream-grandparent` | missing bridge | missing bridge | clean |
+| same, one subproject | clean | clean | clean |
+| `M[T,U].m: T` → `m: U`, `A extends M[Int,Int]`, `B` overrides `m` (erasure unchanged) | recompiles `Main` | `Main` | `B Main` |
+| `value-class-mirror-forwarder`, `value-class-mixin-forwarder` (`m: V`, `V`'s underlying changes) | missing forwarder change | same | same |
+
+- The third row is the price: an ancestor edit that as-seen-from hides recompiles the descendant, here needlessly. It is the same mechanism that catches the first row.
+- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. The model confirms it for these two cases (§22, `Erasure.lean`).
+
+<!-- break -->
+
+**Erasure has more inputs than value classes.** An erasure-only change reaches a descendant in two hops: the declaring class must notice that its own erasure moved, and the descendant must notice that the declaration's erasure moved. Each input fails at a different hop.
+
+- **Generic erasure** is a function of the owner's declaration (`T` erases to `Object`, or to its bound, which is also declared there). The declarer always notices, and as declared rendering carries it to descendants, as Scala 3 already does. Scala 2 fails at the second hop, and the fix there is the rendering (retronym/zinc#26).
+- **Value classes:** `V`'s own name hash covers its underlying type (sbt/zinc#444), so the declarer notices. Descendants notice either through a witness in the declarer's API or through a dependency on `V` recorded where codegen erases the inherited signature. In the model these give the same results; `Flat.lean`'s erasure keys are that edge.
+- **Intersections** (pending tests on sbt/zinc#1844): `def m: X with Y` erases to `X` while both are traits, and to `Y` once `trait Y` becomes `abstract class Y`, or once `Y extends X`. The trait-to-class edit moves only `Y;init;`, not the name `Y`, so even the declarer may not notice. A dependency edge on `Y` can't fix that. A witness (the erased signature hashed at the definition, sbt/zinc#1844's preferred direction) fixes the second hop only if the first hop holds.
+- **Other inputs:** union erasure depends on the class hierarchy, and an opaque type erases to its right-hand side. Both are likely Scala 3 analogues.
+
+So "a dependency edge, not a hash change" holds for value classes alone. sbt/zinc#1844 was closed for exactly this reason, as a point patch for a wider problem. §22 compares the alternatives in the model.
+
+#### 15c. Macros: the expansion depends on whatever the macro looked at
+
+*Macro inspects a type argument* (`macros/macro-type-change`):
+
+```scala
+def hasAnyField[T]: Boolean = macro hasAnyFieldImpl[T]   // reads weakTypeOf[T].members
+class A                       // → class A { val hello = "" }
+Macros.hasAnyField[A]         // false → must become true
+```
+
+- The client names only `A` as a type argument. The macro read `A.members`.
+- Fixed by recording type arguments of macro calls as `DependencyByMacroExpansion` ([sbt/zinc#1316](https://github.com/sbt/zinc/pull/1316); Scala 3 port [scala/scala3#23900](https://github.com/scala/scala3/pull/23900)).
+- That new edge kind was then silently dropped by the new analysis format until [#1432](https://github.com/sbt/zinc/pull/1432).
+- The edge names only the type argument, yet the macro also sees `A`'s *inherited* members. While every descendant recompiled on an ancestor edit, that was masked. In the Merkle PoC, which recompiles fewer descendants, the invalidator must follow macro-expansion edges from every descendant of the changed class, as it already did for `memberRef` edges, not only from the changed class itself. The case was found by moving an ancestor from an upstream subproject into the client's own (`merkle-move-ancestor-downstream-macro`, fixed in [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)).
+
+```mermaid
+flowchart LR
+  APP["App: hasAnyField[A]"] -- "memberRef: hasAnyField" --> M["Macros"]
+  APP -- "DependencyByMacroExpansion<br/>(type argument)" --> A["A"]
+  M -. "expansion reads A.members" .-> A
+```
+
+<!-- break -->
+
+*Macro erases its argument's dependency* (`macros/macro-arg-dep`):
+
+```scala
+def printTree(arg: Any): String = macro ...   // expands to Literal(arg.tree.toString)
+object Client { Provider.printTree(Foo.str) }  // remove Foo.str → Client must fail
+```
+
+- After expansion, the tree is a string literal, and the reference to `Foo.str` is *gone*. Dependency extraction must traverse the pre-expansion tree (the macro-expansion attachment), not only what typer left.
+
+*The macro implementation changes:* any change in a file that declares a macro invalidates all clients unconditionally. Clients of a macro defined upstream additionally recompile transitively ([warning + opt-out](https://github.com/sbt/zinc/commit/083b432e9bbd91d5ae8ab4a227b85ccdfdef8e42)), which is sound but expensive ([sbt/zinc#1333](https://github.com/sbt/zinc/issues/1333)).
+
+<!-- break -->
+
+*Scala 3* (quotes reflection can walk anything):
+
+- `macwire`'s `wire[Dep]` reads `Dep`'s constructor; changing it isn't detected ([sbt/zinc#1574](https://github.com/sbt/zinc/issues/1574), [scala/scala3#23852](https://github.com/scala/scala3/issues/23852), [#24969](https://github.com/scala/scala3/pull/24969)).
+- Macro annotations' `transform` isn't tracked ([#22999](https://github.com/scala/scala3/issues/22999)).
+- Feature request: "make Zinc Scala 3 macro-aware" ([sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)).
+- Scala 2 still has gaps. #1316 only covers the macro's *type arguments*. Macros that read the members of a *value* argument's type, or of types reachable from the type argument (as derivation macros do), are still missed on 2.13.y (`macro-value-arg-type-members`, `macro-type-arg-nested-members`, [retronym/zinc#14](https://github.com/retronym/zinc/pull/14)). Cheap fix: treat value-argument types as macro-expansion dependencies. Precise fix: the compiler reports the symbols a macro looked up, which a `TODO` in the bridge's `Dependency` already asks for.
+
+**Discussion:** a precise fix is to **record every symbol the macro observes** by instrumenting `Context`/`Quotes` reflection, and emit those as dependencies of the expansion site. This is a compiler-side change that only the compiler teams can make.
+
+### 16. A taxonomy (organise by kind of observable, not by feature)
+
+**(a) Bodies that are API.** The client's bytecode embeds the implementation.
+
+- Scala 3 `inline`: nested inline calls missed ([scala/scala3#11861](https://github.com/scala/scala3/issues/11861) → [#12931](https://github.com/scala/scala3/pull/12931)); inherited inline defs overcompiled ([62dfdaf6](https://github.com/scala/scala3/commit/62dfdaf6226db9cc4ef42b4534a4fe4904b9fda6)).
+- Scala 2 `@inline` + `-opt:inline`: broken from 2018 to 2023 ([sbt/zinc#537](https://github.com/sbt/zinc/issues/537) → [#1310](https://github.com/sbt/zinc/pull/1310)).
+- Constant folding (`final val`, Java `static final`).
+- Trait bodies mixed into subclasses (`extraHash`).
+
+**(b) Non-local or negative information.** Meaning depends on what *else* exists, or on what *doesn't*.
+
+- Sealed children determine exhaustivity; `useOptimizedSealed` broken on 2.13 ([sbt/zinc#1229](https://github.com/sbt/zinc/issues/1229)).
+- Implicit/given resolution observes shadowing, implicit scope and the *absence* of a better candidate (§15a).
+- Pattern matching observes `unapply` shape and arity; see (i).
+- SAM conversion adds an inheritance edge the source never spells out ([sbt/zinc#830](https://github.com/sbt/zinc/issues/830) → [scala/scala#10617](https://github.com/scala/scala/pull/10617), [scala/scala3#16996](https://github.com/scala/scala3/pull/16996)).
+- Inherited members (§7–10) belong in this category too, and are the *reason* $\pi$ is member-level.
+
+<!-- break -->
+
+**(c) Generated code.** The expansion depends on things the call site never names.
+
+- Macros, def and annotation, Scala 2 and 3 (§15c).
+
+**(d) Synthetic owners.** Definitions that don't map 1:1 to source classes.
+
+- Exports ([scala/scala3#11841](https://github.com/scala/scala3/issues/11841)), top-level defs ([#18447](https://github.com/scala/scala3/issues/18447), [#13994](https://github.com/scala/scala3/issues/13994)), package objects, companion pairing.
+
+**(e) Nondeterminism.** $\pi$ changes when nothing observable did (overcompilation).
+
+- Context-bound evidence names ([scala/scala3#19132](https://github.com/scala/scala3/pull/19132)), refinement owners ([sbt/zinc#1782](https://github.com/sbt/zinc/pull/1782)), [scala/scala3#26434](https://github.com/scala/scala3/issues/26434), [#25520](https://github.com/scala/scala3/issues/25520), whitespace changing line numbers ([sbt/zinc#718](https://github.com/sbt/zinc/issues/718)).
+
+**(e′) Erasure and representation.** The JVM descriptor changes while the Scala signature doesn't: value classes (§15b), type arguments hidden by asSeenFrom (§15b), `@specialized`, varargs, Java generic signatures.
+
+**(f) Cross-language and pipelining.** The two Java front ends (§6); Java sources invalidated every cycle ([#918](https://github.com/sbt/zinc/issues/918), [#867](https://github.com/sbt/zinc/issues/867), [#1819](https://github.com/sbt/zinc/issues/1819)).
+
+**(g) The compiler itself isn't robust to incremental inputs.** Stale-symbol crashes ([scala/scala3#17152](https://github.com/scala/scala3/issues/17152), [#13532](https://github.com/scala/scala3/issues/13532)).
+
+<!-- break -->
+
+**(h) Desugaring hides the identifier the user wrote.** Used names come from the *typed* tree, so a name the user wrote but the compiler rewrote away is never recorded.
+
+- `x += y`: the typer first tries a member `+=`; if there is none, it rewrites to `x = x + y`. The typed tree mentions `+` (and `x_=` for a field) but not `+=`. If upstream later *adds* a `+=` member, resolution changes, but `+=` isn't in $U(d)$. This is a negative lookup that was never recorded (§12). Confirmed on 2.13.y by the pending scripted test `assign-op-member-added` ([retronym/zinc#14](https://github.com/retronym/zinc/pull/14)). The draft fix ([retronym/zinc#15](https://github.com/retronym/zinc/pull/15)) registers `op=` when the selection's source position reads `op=`, so a hand-written `x = x op y` doesn't match.
+- The same shape appears wherever syntax expands to a name chosen by fallback:
+  - `a(i) = v` becomes `update`;
+  - `x.f = v` becomes `f_=`;
+  - an inserted `apply`;
+  - for-comprehensions becoming `map`/`flatMap`/`withFilter` (with Scala 2's fallback to `filter`);
+  - `Dynamic`: `d.foo` is typed as `d.selectDynamic("foo")`, so `foo` is never a used name. Confirmed by `dynamic-member-added` ([retronym/zinc#14](https://github.com/retronym/zinc/pull/14); draft fix [retronym/zinc#17](https://github.com/retronym/zinc/pull/17)), and known since a `pendingUntilFixed` test from the name-hashing work (gkossakowski/sbt#4);
+  - string interpolators becoming `StringContext`.
+- ExtractUsedNames already walks `TypeTree.original` and pre-expansion macro trees for this reason. Desugarings with no retained original need either the *source-level* name recorded as well, or the fallback recorded as a failed lookup.
+- The proposal in #14 covers (h) and (i) together: the typer records "names looked up while typing this tree", e.g. as an attachment. That handles `+=`, `Dynamic`, `unapply`/`unapplySeq` and name-based extractors without per-case heuristics. It is ask 6 (§23) as a concrete mechanism.
+
+<!-- break -->
+
+**(i) Post-typer phases decide from names not yet in the tree.** Scala 3's `ExtractDependencies` runs before `PatternMatcher`, so calls the matcher *will* emit don't exist yet when used names are extracted.
+
+- **`case C(x, y)`** lowers to `C.unapply` plus `_1()`, `_2()`. The synthetic case-class `unapply` has signature `(C): C`, so its hash never changes when field types change. `_1` and `_2` were never recorded. The result was a field type change producing `NoSuchMethodError` at runtime, in *every* Scala 3 version ([scala/scala3#26231](https://github.com/scala/scala3/issues/26231)).
+- **Variants of the same blind spot:**
+  - adding a field (a one-element pattern only calls `_1`);
+  - adding `unapplySeq` next to `unapply`, or the reverse (only the method actually called was recorded);
+  - a product extractor growing past the bound arity;
+  - name-based `isEmpty`/`get`, and `lengthCompare`/`apply`/`drop` for sequence patterns.
+- **The fix** ([#26262](https://github.com/scala/scala3/pull/26262), 3.10.0-RC1) records what the later phase will consult, including *anticipatory* keys for names that don't exist yet:
+  - the primary constructor `C;init;`, whose name encodes the whole parameter list, for synthetic case-class unapplies;
+  - both `unapply` and `unapplySeq` on every extractor pattern;
+  - each `_N` selector, plus a sentinel `_N+1`, so growing the product invalidates.
+- **Scala 2 has the same blind spot.** On 2.13.y, `extractor-unapply-added-beside-unapplyseq` and `name-based-extractor-get-type` ([retronym/zinc#14](https://github.com/retronym/zinc/pull/14)) fail for the same reason: the typer tries `unapply` before `unapplySeq` and only the one found is recorded, and patmat selects `isEmpty`/`get`/`_N` after the extraction phases. The draft fix ([retronym/zinc#15](https://github.com/retronym/zinc/pull/15)) mirrors #26262. Recording `get` everywhere costs some precision, because `get` is a common name.
+- **General rule:** if a phase after extraction makes a decision by *name* (pattern matcher, erasure, mixin, specialization), then extraction must record those names up front, or run after that phase. This is the coverage obligation of §22 applied to phase ordering.
+
+<!-- break -->
+
+**(j) Parts of a definition the extractors skip.** Information callers observe that neither `ExtractAPI` nor `Dependency`/`ExtractUsedNames` visits. All confirmed on 2.13.y by pending tests in [retronym/zinc#14](https://github.com/retronym/zinc/pull/14).
+
+- **Annotations on definitions.** After typer they live only in `sym.annotations`, which nothing traverses. So there is no dependency on the annotation class or its constant arguments (`annotation-class-signature-change`, `annotation-constant-arg`). The fix ([retronym/zinc#19](https://github.com/retronym/zinc/pull/19), upstream as [sbt/zinc#1842](https://github.com/sbt/zinc/pull/1842); Scala 3's `ExtractDependencies` has the same gap) walks `AnnotationInfo.original`; folded constants such as `@SerialVersionUID(C.X)` keep their original tree as an attachment.
+- **Parameter annotations.** `MethodParameter` carries none, so removing `@deprecatedName` doesn't change the API that callers using the old name depend on (`deprecated-name-removed`; draft fix [retronym/zinc#20](https://github.com/retronym/zinc/pull/20) encodes them as an `Annotated` parameter type). Adding a field to `MethodParameter` instead would be a `compiler-interface` change, with the binary-compatibility cost of §11.
+- **Declared literal types.** `dropConst` widens `def x: 1` and `var v: 1` to `Int` in the API (`def-literal-return-type`, `var-literal-type`; draft fix [retronym/zinc#18](https://github.com/retronym/zinc/pull/18)). Only stable vals kept their constant types.
+- **Java sealed `permits`.** Without pipelining, the Java API comes from `ClassToAPI`, whose `childrenOfSealedClass` only handled enums, so exhaustivity against a Java sealed interface missed a new subclass (`java-sealed-permits-exhaustivity`; draft fix [retronym/zinc#21](https://github.com/retronym/zinc/pull/21) reads `Class.getPermittedSubclasses`).
+
+### 17. Incrementality is the forgotten dimension of feature design
+
+- A SIP or feature PR covers syntax, typing, erasure, binary compatibility and TASTy compatibility, but never "which new observables does this introduce, and where are they hashed?"
+- **Time-to-fix as evidence:** `@inline` + optimizer took 5 years; refinement-owner instability was open for years; Scala 3 patmat existed since 3.0 and was found in 2026.
+- **Who finds these:** users of large builds and IDE vendors (IntelliJ runs Zinc in its IC tests, [scala/scala3#21179](https://github.com/scala/scala3/issues/21179)), not feature authors.
+- **MiMa analogy:** MiMa made "is this binary compatible?" a mechanical PR-time check. We can do the same for incremental soundness.
+- **Determinism is a shared precondition:** unstable synthetic names are both overcompilation bugs and reproducible-build bugs ([scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405)).
+
+---
+
+## Part V — The machinery we maintain
+
+### 18. The compiler bridge: architecture, relocation, drift
+
+```mermaid
+flowchart TB
+  subgraph ZINC["sbt/zinc"]
+    CI["compiler-interface<br/>(Java xsbti.*, MiMa-checked)"]
+    ZC["zinc-core: invalidator, Analysis"]
+    ZB["compiler-bridge for Scala ≤ 2.13.11"]
+  end
+  subgraph S2["scala/scala"]
+    B2["scala2-sbt-bridge (2.13.12+)"]
+  end
+  subgraph S3["scala/scala3"]
+    B3["scala3-sbt-bridge"]
+  end
+  ZB -- implements --> CI
+  B2 -- implements --> CI
+  B3 -- implements --> CI
+  ZC -- "loads bridge into the<br/>compiler's classloader" --> B2
+  ZC --> B3
+  ZC --> ZB
+```
+
+- **Architecture:** `compiler-interface` (Java `xsbti.*`, stable, MiMa-checked) ⟵ *bridge* (compiler-specific: extraction phases + callbacks) ⟵ loaded by Zinc into the compiler's classloader. Originally Zinc shipped bridge *sources* and compiled them on first use per Scala version.
+
+<!-- break -->
+
+**Relocation:**
+
+- 2016: [sbt/zinc#78](https://github.com/sbt/zinc/issues/78) proposes splitting interface and bridge out.
+- 2019: first in-tree attempt closed for lack of motivation ([scala/scala#8531](https://github.com/scala/scala/pull/8531)).
+- 2020: Scala 3's bridge is in-tree from the start.
+- 2023: [scala/scala#10472](https://github.com/scala/scala/pull/10472). Code actions/quick fixes needed lock-step bridge changes; history kept via filter-branch ([80e8df93](https://github.com/scala/scala/commit/80e8df93f854e8bb5ba7971c2af4d85671ccda08)); precompiled bridge ships with 2.13.12 ([forum](https://contributors.scala-lang.org/t/scala-2-13-12-in-source-sbt-compiler-bridge-clarifications/6289)).
+- Porting the scripted tests ([scala/scala#10554](https://github.com/scala/scala/pull/10554)) immediately found a missing invalidation ([scala/bug#12887](https://github.com/scala/bug/issues/12887) → [sbt/zinc#1268](https://github.com/sbt/zinc/issues/1268)).
+
+**Benefits:** the bridge evolves with compiler internals; no compile-on-first-use; the people who own the language also own $\pi$.
+
+<!-- break -->
+
+**Drift risks:**
+
+- **Three bridges** (Zinc's for ≤ 2.13.11, scala/scala's, scala3's) and three copies of the scripted suite. Fixes land in one place:
+  - forward-ports ([scala/scala#10542](https://github.com/scala/scala/pull/10542));
+  - Zinc PRs now carry "may also need to be applied in scala/scala and scala/scala3" ([#1782](https://github.com/sbt/zinc/pull/1782));
+  - a live example: forward-porting five Zinc bridge fixes (#1316, #1324, #1507, #1782, #1803) to `scala2-sbt-bridge` ([scala/scala#11287](https://github.com/scala/scala/pull/11287), open), while the same batch is backported to Zinc 1.x ([sbt/zinc#1838](https://github.com/sbt/zinc/pull/1838), [#1839](https://github.com/sbt/zinc/pull/1839)). The same fix has to land on four branches. [retronym/zinc#14](https://github.com/retronym/zinc/pull/14) turns the lag into failing tests: `*-213-bin` copies of scripted tests (`constructors-unrelated-2`, `type-lambda-refinement-owner`, `compound-type-member-inheritance`, `module-inheritance-extra-hash`) that pass on Zinc's own bridge and fail on `scala2-sbt-bridge` until the fixes are ported.
+- **Version matrix** (Zinc × compiler). New `xsbti` APIs must degrade on old Zinc (the lazy `DiagnosticCode` trick, [scala/scala3#15565](https://github.com/scala/scala3/pull/15565); `CompilerInterface` vs `CompilerInterface2`, [#10816](https://github.com/scala/scala3/issues/10816)).
+- **Implicit protocol:** callback ordering and completeness are unwritten (`dependencyPhaseCompleted` under pipelining, [scala/scala3#27139](https://github.com/scala/scala3/issues/27139) / [sbt/zinc#1823](https://github.com/sbt/zinc/pull/1823); `generatedNonLocalClass` regression breaking IntelliJ, [#21179](https://github.com/scala/scala3/issues/21179)).
+- **Release coupling:** a bridge fix reaches users only with the next compiler release. Users on an old compiler never get it, even with a new sbt.
+- **Packaging:** `scala3-sbt-bridge` was published depending on a never-published compiler ([scala/scala3#23604](https://github.com/scala/scala3/issues/23604)).
+- **Design decisions get frozen:** members-vs-decls (§7–10) now needs coordinated changes in three repos plus Zinc's hashing.
+
+<!-- break -->
+
+**Mitigations:**
+
+- Zinc runs its scripted suite against the *released* in-tree bridges, selected by label, with provenance checks ([sbt/zinc#1837](https://github.com/sbt/zinc/pull/1837)).
+- One canonical scripted corpus consumed by all three repos, instead of forks.
+- Specify the callback protocol (ordering, mandatory callbacks per phase) and add a conformance test.
+
+### 19. How Zinc is tested, and where the oracle is weak
+
+- **Scripted** (`zinc/src/sbt-test/`): ~170 `source-dependencies/*` plus `macros`, `pipelining`, `apiinfo`, `reporter`. File swaps, `> compile`, `> checkRecompilations n A B`, `-> compile`. The oracle is hand-written expected recompile sets.
+- **Bridge unit tests:** compile snippets, assert on extracted API, used names and class names; Hedgehog properties for analysis invariants.
+- **Cross-version bridge tests:** rerun whenever a bridge changes.
+- **Benchmarks:** `zinc-benchmarks`, including `AnalysisFormatBenchmark`.
+- **Downstream:** scala/scala `sbtTest/scripted`, scala3 `sbt-test/` and `IncrementalCompileSimulator` ([#26262](https://github.com/scala/scala3/pull/26262)), IntelliJ IC tests, community build.
+
+<!-- break -->
+
+- **Weakness:** scripted checks *how much* was recompiled, not *that the result equals a clean build*.
+- **Behaviour-level checks miss bytecode differences.** In the Merkle PoC, a missing mixin forwarder is usually invisible at runtime: the JVM resolves the trait's default method instead. It shows only when the trait overrides a *class* member, because class methods win JVM resolution, so the PoC's first trait test passed with the rule disabled and it took a second, `merkle-trait-override`, to discriminate. Comparing incremental and clean output bytes would have caught it directly.
+- **Where bugs come from:** field reports from large builds, and lately LLM-driven exploration. Many of the autumn 2026 batch were found by LLM agents writing probing scripted tests (Notes N1). Field reports are hard to turn into tests because the user's pre-change state is gone (Notes N2).
+- **Proposals:**
+  - After every scripted step, also clean-build and compare outputs (differential testing).
+  - Generate edit sequences by mutating upstream APIs (property-based or fuzzed), relying on deterministic output.
+  - Generalise the Scala 3 simulator so feature authors can write `v1/v2/client` tests next to the feature.
+
+### 20. Persisted state: analysis format history and performance
+
+| Era | Format | Notes |
+|---|---|---|
+| sbt 0.13 | text + sbinary/Java-serialization shortcuts | slow, nondeterministic |
+| 2013 | interned ([fa226927](https://github.com/sbt/zinc/commit/fa226927a5f176cc9367c15e1d3fcacb6a403cdd), Pants) | dedupe strings / API nodes |
+| Zinc 1.0 | protobuf ([#268](https://github.com/sbt/zinc/issues/268), [#351](https://github.com/sbt/zinc/pull/351)) | versioned, relocatable via mappers |
+| 2018–21 | protobuf tuning | slow writes ([#623](https://github.com/sbt/zinc/issues/623)); reads dominate no-op builds ([#984](https://github.com/sbt/zinc/issues/984)) → [#989](https://github.com/sbt/zinc/pull/989), [#995](https://github.com/sbt/zinc/pull/995) |
+| 1.10 (2024) | **ConsistentAnalysisFormat** ([#1326](https://github.com/sbt/zinc/pull/1326), Stefan Zeiger) | structural, deterministic, binary + text from one impl |
+| 2.0 | protobuf removed ([#1388](https://github.com/sbt/zinc/pull/1388)); reproducible flag; dummy output paths; content hashes | |
+| 2026 | Java serialization dropped from text ([#1769](https://github.com/sbt/zinc/pull/1769)); quadratic API-node interning fixed ([c8376846](https://github.com/sbt/zinc/commit/c83768463adf0c0f5fdab7cf63027a0e3d9757e3)) | |
+
+<!-- break -->
+
+From #1326 (scala-library + reflect + compiler):
+
+| Format | Write | Read | Size |
+|---|---|---|---|
+| sbt text | 1002 ms | 791 ms | ~7.1 MB |
+| sbt binary (protobuf) | 654 ms | 277 ms | ~6.2 MB |
+| Consistent binary | 157 ms | 100 ms | 3.1 MB |
+| Consistent binary (unsorted) | 79 ms | — | ~3.8 MB |
+
+- **Why read time matters:** on no-op and one-file builds, loading every module's analysis is the critical path. This is the *common* case.
+- **Interning is the big win,** and it is big *because* $\pi$ is member-level: the same inherited definitions repeat across every subclass (§9).
+- **Format bugs are IC bugs** (`DependencyByMacroExpansion` dropped on round-trip).
+- **The deterministic format is also the fastest.**
+
+---
+
+## Part VI — Avoiding compilation altogether
+
+### 21. Layers of avoidance
+
+```mermaid
+flowchart LR
+  IN["Build request"] --> L1{"Action cache hit?<br/>(content-addressed inputs)"}
+  L1 -- yes --> DONE["Nothing runs"]
+  L1 -- no --> L2{"Upstream ABI jar<br/>byte-identical?"}
+  L2 -- yes --> DONE2["Skip module,<br/>don't even load Analysis"]
+  L2 -- no --> L3["Zinc: compile a few files"]
+```
+
+- **Don't run** (action-cache hit) ⊃ **don't compile the module** (ABI unchanged) ⊃ **compile a few files** (Zinc).
+- **Hermetic builds** (Bazel, Pants, sbt 2 remote cache): inputs are content-addressed (sources + dependency ABI jars + flags). A hit means no Zinc at all.
+
+<!-- break -->
+
+- **JAR-equivalence / ABI jars:** if upstream's ABI jar (pickles/TASTy-only, Zinc early output, Bazel `ijar`) is byte-identical, downstream is skipped without even loading its analysis. This requires:
+  - reproducible compiler output ([scala/scala-dev#405](https://github.com/scala/scala-dev/issues/405); absolute paths under `-Xcheckinit`, [scala/bug#12698](https://github.com/scala/bug/issues/12698)), including joint ≡ separate (§6);
+  - reproducible jars (timestamps, entry order);
+  - reproducible, machine-independent analysis ([#218](https://github.com/sbt/zinc/issues/218), `WriteMapper`, `VirtualFile`, hashes instead of timestamps). The consistent format was built for this: identical state gives identical bytes, so Bazel can skip ([#1326](https://github.com/sbt/zinc/pull/1326); author reports ~27k Bazel targets using it).
+- **Pipelining:** downstream starts on upstream pickles before codegen; early analysis lets downstream name-hash against it.
+- **Where Zinc still matters:** large single targets, IDE/BSP loops, the inner dev loop. There, $\pi$'s precision (and its size, §9) is what users feel.
+
+---
+
+## Part VII — Can we prove it? A mechanised model (Lean)
+
+### 22. Formalising incremental compilation
+
+**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful result: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: `lean/` in this directory, Lean 4 + Mathlib, ~1100 lines, no `sorry`. Theorem names below refer to it.
+
+```mermaid
+flowchart TB
+  U["Unit d"] --> F["F_d : (Query → Answer) → Out"]
+  F -- "queries: lookup, members,<br/>erasure, implicits, sealed,<br/>inline body, macro observe" --> ENV["Env = iface(outputs of others)"]
+  ENV -- answers --> F
+  F --> O["Out"]
+  F -. "trace abstracted to keys" .-> UK["U(d) ⊆ Key"]
+  ENV -. "answers hashed per key" .-> PI["π : Class → Key → Hash"]
+```
+
+<!-- break -->
+
+**The model of the compiler:**
+
+1. **Compilation units with an explicit environment.** The per-unit compiler is a *query tree*: it either returns, or asks a typed query and continues with a function of the answer. Running it against an oracle $e : \mathit{Query} \to \mathit{Answer}$ gives the output; the *trace* is the list of queries asked. This is the free monad of *Build Systems à la Carte* (Mokhov, Mitchell, Peyton Jones, ICFP 2018), applied *inside* the compiler:
+
+$$F_d : (\mathit{Query} \to \mathit{Answer}) \to \mathit{Out}$$
+
+2. **Purity** needs no axiom: the output is a function of the source and the answers, by the type of $F_d$. Scala 2's mutable global symbol table, `Symbol.id` in sort keys and iteration order (§16(e)) are exactly the back-channels this type forbids.
+3. **Every query and key is addressed to a unit:** $\mathit{Query} = \mathit{Class} \times Q$, $\mathit{Key} = \mathit{Class} \times K$. A multi-scope lookup is a sequence of per-scope queries, which is also how Zinc records it (one `memberRef` edge per class). A *negative* lookup is an ordinary query whose answer is `none`.
+4. **Joint compilation** is a black box $\mathit{group}(G, \mathit{src}, e)$ with the **compositionality axiom (§6)** in its usable form: the joint result is a fixed point of the per-unit tasks, with group-mates answered from their fresh interfaces:
+
+$$\forall d \in G.\ \mathit{group}(G, \mathit{src}, e)(d) = F_d\big(e[G \mapsto \mathrm{iface} \circ \mathit{group}(G, \mathit{src}, e)]\big)$$
+
+5. **Recorded keys.** The bridge records $U(d) = \mathit{keys}(\mathrm{trace}(F_d))$ and the API hash $\pi : \mathit{Iface} \to K \to \mathit{Hash}$. The loop is Zinc's: compile $R_n$ jointly, re-record $U$ for $R_n$, diff hashes, compute $\mathrm{inv}(\Delta)$, stop iff $\mathrm{inv}(\Delta) \subseteq R_n$; the next round is chosen by a pluggable *policy*.
+
+<!-- break -->
+
+**The bridge obligations** (`Compiler.Obligations`), which is what a feature author must discharge:
+
+- **Compositionality** (`comp`): item 4 above. Every §6 bug is a violation.
+- **Coverage** (`coverage`): every traced query, including misses (§15a) and closure queries such as `underlying(A)` (§15b), is covered by a recorded key:
+
+$$\forall q \in \mathrm{trace}(F_d).\ \exists k \in U(d).\ q \sqsubseteq k$$
+
+- **Abstraction** (`abstraction`): equal hashes on a key give equal answers to every query it covers. Collision-freedom is carried as a hypothesis:
+
+$$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = \mathrm{ans}_q(c')$$
+
+- **Policy soundness** (`Policy.Sound`), the only thing the heuristics must satisfy: never drop an invalidated unit outside the round just compiled, $\mathrm{inv}(\Delta_n) \setminus R_n \subseteq R_{n+1}$. `transitiveStep`, `recompileAllFraction` and macro-downstream all *enlarge* the set, so they are covered without being modelled individually.
+
+<!-- break -->
+
+**Theorems:**
+
+- **T1, trace soundness** (`Task.run_eq_of_trace`): oracles that agree on the trace give the same output. Induction on the query tree; straightforward.
+- **T2, round invariant** (`round_preserves`): a unit is *up to date* if its output is its own compilation against the current interfaces and its keys cover that trace. A round compiling $R \supseteq$ dirty leaves exactly $\mathrm{inv}(\Delta) \setminus R$ dirty. The proof is where coverage and abstraction are used: a key with an unchanged hash gives unchanged answers, and T1 does the rest.
+- **T3a, fixed point at termination** (`zinc_sound`): for any sound policy, if the loop stops, no unit is dirty. The final state is a per-unit fixed point of separate compilation.
+- **T3b, uniqueness** (`fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`), **T3** (`zinc_eq_clean_of_*`): the fixed point is the clean build, *given* an extra hypothesis (next card).
+- **T4, termination** (`zinc_some_of_*`): the fuelled loop returns within $k + \lvert S\rvert + 1$ rounds for a policy monotone from round $k$ (`transitiveStep`), within 2 rounds with explicit interfaces (§4's "a signature change takes 2"), and within $\mathrm{height} + 2$ rounds for the plain policy on an acyclic graph.
+
+<!-- break -->
+
+**Two findings about Zinc.** Both came out of writing the proof.
+
+1. **`transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test; the next round is the full $\mathrm{inv}(\Delta_n)$, so classes can be revisited. In the plain regime, a mutually recursive pair whose inferred APIs keep changing ping-pongs forever (in the model). From `transitiveStep` on, the next round also includes $R_n$, so the round set only grows and the loop ends within $k + \lvert S\rvert + 1$ rounds whatever the shape of the class graph (T4).
+2. **"At termination the result equals the clean build" is false without a further hypothesis.** Termination gives a per-unit fixed point; the clean build is another one; separate compilation can have several (`A.x: typeof(B.y)`, `B.y: typeof(A.x)` admits any type, joint compilation reports a cyclic reference). This is the problem behind [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) ("include mutual dependencies in initial invalidation") and its revert. Two sufficient conditions, each a Scala best practice: **acyclic** unit dependencies, or **source-determined interfaces** (explicit result types on public members, which also bounds the loop at two rounds).
+
+<!-- break -->
+
+**The toy instance (`Toy.lean`, `Examples.lean`):** classes with typed members, an `implicit` flag and an optional `underlying` type; bodies made of `select c.m` (emits a JVM descriptor, so it needs erasure, a *dynamic* chain of `underlying` queries) and `implicitly[T]` over imports (candidates per class, then a shadowing check that is itself a lookup). Two extractors:
+
+| | name-only keys (today's rung 1) | repaired keys (`self`, `implicitScope`) |
+|---|---|---|
+| §15b value class `Int → Double` | `C` keeps `B.foo()I`: **undercompilation**, `not_obligations_nameOnly` exhibits the uncovered `underlying` query | `(A, self)` changed, `C` recompiled, equals clean |
+| §15a new `implicit val y` in `A` | `C` still resolves to `B.x` ([sbt/zinc#945](https://github.com/sbt/zinc/issues/945) family) | `(A, implicitScope)` changed, equals clean |
+| §15a shadowing `val x` in `A` | **caught**: the failed `lookup(A, x)` of the shadowing check is a recorded miss | caught |
+
+Each row is an `example` checked by evaluation, so it doubles as a scripted test. The shadowing row is the "name hashing happens to model it" remark of §15a, now a theorem. `repaired_sound` and `repaired_terminates` are the abstract T3 and T4 instantiated: `Obligations` is *proved* for the toy compiler, with $\pi$ a perfect hash.
+
+<!-- break -->
+
+**What the model clarifies:**
+
+- **Members vs decls vs Merkle (§7–10)** are three sound instances of one generalised model (next card): a materialised hash is a non-local hash kept fresh by recompiling the hierarchy; a Merkle hash is the same hash recomputed; decls keys make the walk explicit in $U$. The talk's §10 table is computed from the model.
+- **Name kinds (§12)** are the *key type* of the trace abstraction. Each rung of the ladder trades precision against a stronger coverage obligation (record misses).
+- **Bridge-side hashing (§11)** is the natural reading: the compiler supplies $\pi(c)(k)$ directly as a hash of the answers to the queries $k$ covers.
+- **Macros (§15c):** `macroObserve` queries must be recorded; "invalidate all clients" is the coarsest sound key, $\top$.
+- **Joint ≡ separate (§6)** is the compositionality axiom. Determinism is purity.
+- **The heuristics** are not special cases: any policy that only *adds* units is sound, and only termination depends on which one. Zinc's hierarchy walk at invalidation time is one such policy (`walkPolicy`), and in the model it turns the materialised design's three rounds into two.
+
+<!-- break -->
+
+**Non-local hashes (`NonLocal.lean`, `Hier.lean`).** To cover materialised members and Merkle composition, $\pi$ may read other units' interfaces, $\pi : (\mathit{Class} \to \mathit{Iface}) \to \mathit{Class} \to K \to \mathit{Hash}$, with a declared read set `hashDeps` (and its reverse, Zinc's `inheritance.reverse`). A key may then cover queries addressed to other units, and *which* queries it covers may depend on the interfaces: `(C, m)` covers exactly the queries the lookup of `m` from `C` walks through. Two things follow:
+
+- **T2′** (`GCompiler.round_preserves`): the round invariant holds provided $\Delta$ is diffed over the *affected* units, $R_n \cup \mathrm{hashDeps}^{-1}(R_n)$, with hashes recomputed from the current interfaces.
+- **T2-stale** (`Stale.lean`): diffing over $R_n$ alone undercompiles, with a two-unit counterexample. This is the risk in the bridge's TODO about using parent hashes.
+
+The Merkle hash that makes the per-query model work is the *verifying trace* of the walk (query, answer pairs; Build Systems à la Carte again), which is exactly §10's formula. Hashing only the *resolved* member is sound too, but by a different argument: the client's output depends on the lookup only through its result, which the per-query model cannot see. Materialised members are sound for that reason; Merkle chains are sound for the trace reason.
+
+<!-- break -->
+
+**Members vs decls vs Merkle, computed** (`Hier.lean`): classes with one type parameter, parents with a type argument, a right-to-left linearization walk with misses, clients `X (B.m)`, `Y (C.m)`, `Z (B.g)` over `A ← B ← C`, mixin `M`.
+
+| edit | decls + walk | materialised, plain | materialised + Zinc's walk | Merkle | Merkle, stale $\Delta$ |
+|---|---|---|---|---|---|
+| `A.m : Int → String` | `X Y`, 2 rounds | `B C X Y`, 3 | `B C X Y`, 2 | `X Y`, 2 | nothing, **wrong** |
+| `B extends A[Int] → A[String]`, `A.m : T` | `X Y Z`, 2 | `C X Y`, 3 | `C X Y`, 2 | `X Y Z`, 2 | |
+| mixin `M` gains `m` | `Y`, 2 | `C Y`, 3 | `C Y`, 2 | `Y`, 2 | |
+
+Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own compilation reads the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays; real Zinc recompiles `Z` through the name hash of `B` itself, §10a), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
+
+<!-- break -->
+
+**Erasure through inheritance, computed** (`Erasure.lean`): two type parameters, a value class `V` and an intersection `W with Z` referenced by name, and descendants whose bytecode depends on their ancestors' erasure (bridges, mixin and mirror forwarders). A class stores its own erased signatures when it compiles. A descendant records only the inheritance key on its direct parent, as Zinc does across subprojects. A client records the name, the class-name key and Zinc's `memberRef` on the owner, and emits a descriptor.
+
+- **As declared determines as seen from** (`asf_of_decl`): without a witness, Scala 3's hashes determine Scala 2's, so as declared is a sound over-approximation for the type-level observables, and strictly coarser (the precision case).
+- **Proved sound** (`Er_obligations`): as declared, with a macro's reads recorded and the trait-or-class kind in the class-name hash, plus either a recomputed witness or the dependency edge.
+
+Over 189,888 legal (base, edit) pairs, unclean runs by erasure input:
+
+| variant | unclean | generic | value class | intersection | recompiles |
+|---|---|---|---|---|---|
+| Scala 2 today, across subprojects | 12,064 | 4,608 | 3,648 | 3,808 | 337,856 |
+| Scala 2 today, one subproject | 2,176 | | | 2,176 | 381,376 |
+| Scala 2 + value-class annotation (sbt/zinc#1844) | 8,416 | 4,608 | | 3,808 | 351,360 |
+| Scala 2 + divergence-only witness | 7,456 | | 3,648 | 3,808 | 345,536 |
+| Scala 3 today | 7,456 | | 3,648 | 3,808 | 398,912 |
+| Scala 2 or 3 + erased signature at definition | 2,176 | | | 2,176 | 407,488 / 412,288 |
+| Scala 3 + dependency edge | 2,176 | | | 2,176 | 417,088 |
+| any of these + kind in the class-name hash | **0** | | | | 418,368 – 434,496 |
+
+- **Each input fails at its own hop.** Generic erasure fails only at the second hop, and only under as seen from: the divergence-only witness closes exactly those runs, and leaves Scala 2 failing exactly where Scala 3 fails today. Value classes fail at the second hop under both renderings. Intersections fail at the first hop when `Z` turns from trait into class (2,176 runs): the declarer never recompiles, so no witness and no dependency edge helps until the class-name hash covers the kind. A witness recomputed from current interfaces reaches descendants and clients, but the declarer's own descriptor stays stale. When `Z` gains `W` as a parent (1,632 runs), the first hop already holds.
+- **Cost of closing everything:** 24% more recompiles than Scala 2 today, 6% more than Scala 3 today. The dependency edge costs 3% more than the witness, because it recompiles descendants whose erasure reads `V` or `Z` even when that erasure did not move.
+- **What to take to Zinc:** the erased signature at definition (sbt/zinc#1844's alternative 1, retronym/zinc#26's option (a)) closes all three inputs at the second hop for both bridges. For intersections it also needs the first hop, a class-name hash that changes when a trait becomes a class.
+
+<!-- break -->
+
+**Future work: questions the model could answer with modest refinement.**
+
+- **Mutual recursion without the acyclic hypothesis.** Model #1284's SCC-closed initial invalidation: if every round is closed under mutual dependency, the group result is the joint fixed point and T3 should follow without acyclicity. That would say whether reverting #1284 traded soundness or only precision, and in which programs.
+- **Precision as a theorem.** Minimality relative to $\pi$: no unit outside $\mathrm{inv}(\Delta)$ has a covered key with a changed hash. With it, the rungs of §12 become comparable: prove rung $k+1$ invalidates a subset of rung $k$ given the extra coverage (recorded misses), and measure the gap on the §12 question of `size`/`apply` collisions.
+- **Class vs companion (#1796).** A key type with a namespace component; the precision theorem then quantifies what separating the hashes buys.
+- **Precision of the three hierarchy designs as a theorem.** The computed table suggests materialised ⊆ Merkle-chain and materialised ⊆ decls on `asSeenFrom` edits, and equality when member types mention no type parameter. State it over all programs of the toy, and add the "resolved-member" Merkle hash as a fourth design to show it matches materialised precision with local storage.
+- **Erasure through inheritance** (done: `Erasure.lean`). Remaining: union types and opaque types as Scala 3 erasure inputs; multiple inheritance (the erasure model is a chain); confirm against Zinc that a trait-to-class change moves only `Y;init;`, which is the model's premise for the first-hop failure.
+- **Descendants' own checks** (done: `Flat.lean`, `FlatRules.lean`). Override, conflict and abstract-member checks are queries from a descendant to its ancestors; recorded as keys, T2″ covers the name-filtered inheritance edge, and dropping any key kind undercompiles some scenario. As an invalidation *policy* over all single-class edits of a small program space, the rule set is clean only if `abstract` fires for names deferred in any ancestor of the descendant, not only in the changed class. On catalyst, adding an unused member to `TreeNode` recompiles 1,371 classes today and 420 with the rules, so about 950 of today's recompiles are refresh-only (assuming the PoC's result is sound, which a differential check would confirm).
+- **Inheritance edges as a measure.** In the materialised design every subclass recompiles on every ancestor edit. Count, on a real analysis, how many of those recompiles change the subclass's own output; the rest is the price of freshness, and the decls or Merkle designs would skip it.
+- **Macros and inline.** Add `inlineBody(m)` and `macroObserve(sym)` queries. Then: Scala 3 `inline` needs the *body* in $\pi$, not the signature; the macro-downstream policy is the coarsest sound answer when observation is not recorded, and recording `Quotes` reflection ([sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)) is the precise one. The cross-project case (behaviour does not flow through the API) is a stated non-coverage.
+- **Added and deleted units, and the source level.** $S$ is fixed today. Adding units, deletion, `dependents(deleted)` in $R_0$, the source→class mapping and `recompileAllFraction` at the source level are all absent.
+- **Libraries and pipelining.** External units with stamps instead of hashes; pipelining as a *weakened* compositionality obligation, where the early-output interface comes from a partial compile and must agree with the final one.
+- **Inheritance edges.** `inheritance` and `localInheritance` bypass the name filter; in the model they are keys with $\mathrm{covers} = \top$, and `Hier.lean` shows what they are *for*: keeping a materialised hash fresh. Which queries of a subclass's own compilation actually need $\top$, and is a `parents`/`decls` key enough for the rest?
+- **A non-termination witness.** Construct the ping-pong pair as a Lean `example` for the plain policy, so the claim that `transitiveStep` is necessary is machine-checked.
+- **Connecting to reality.** Instrument the real compiler to log queries, and check the bridge's recorded keys against the log with `coverage` as the oracle. That is differential testing (§19) at the level of obligations rather than outputs, and it would find uncovered observables *before* someone writes the scripted test.
+
+**Prior art to cite (verify the references before the talk):**
+
+- *Build Systems à la Carte*: traces, minimality, early cutoff.
+- Adapton (Hammer et al., PLDI 2014) and Salsa / rustc's query system: demand-driven incremental computation.
+- Incremental λ-calculus / "A theory of changes for higher-order languages" (Cai, Giarrusso, Rendel, Ostermann, PLDI 2014).
+- "What is Java binary compatibility?" (Drossopoulou, Wragg, Eisenbach, OOPSLA 1998): descriptors and linking, the §15b world.
+- CompCert's separate-compilation correctness work (Kang et al., POPL 2016): the compositionality axiom, proved for C.
+
+**Limits:**
+
+- The model proves the *algorithm* sound given the obligations. It says nothing about whether scalac/dotc meet them; that remains a testing problem.
+- `transitiveStep` is modelled as one step of dependents rather than the full closure; the bound only needs $\mathrm{inv} \cup R_n \subseteq R_{n+1}$.
+- Its value is that it turns informal knowledge ("implicits invalidate unconditionally", "value classes fold their underlying type into ancestors") into named hypotheses that a feature author must discharge (§17).
+
+---
+
+## Close
+
+### 23. Asks
+
+1. An **incremental-compilation item in the SIP / feature-PR template:** what new observables, where hashed, which test.
+2. **Differential tests** (incremental ≡ clean) in compiler CI, with a `v1/v2/client` harness next to the feature tests.
+3. **One shared scripted corpus** and a **written callback protocol** across the three bridges.
+4. **Determinism as a first-class requirement**, including **joint ≡ separate, byte for byte** (Scala and Java dependencies alike), checked over the whole pos test suite. It helps in three places: overcompilation, reproducible builds, cache hits.
+5. **Revisit π's shape** (members vs decls, Merkle parent hashes, a TASTy-derived summary), and measure before deciding. A Merkle PoC ([retronym/zinc#24](https://github.com/retronym/zinc/pull/24)) passes the scripted suite and, on Spark's catalyst, cuts an ancestor edit from 1,371 recompiled classes to 420 (13.8 s to 4.7 s, §10). Since measured: a differential incremental ≡ clean check over 146 catalyst edits found no undercompilation ([retronym/zinc#31](https://github.com/retronym/zinc/pull/31)), and the cross-subproject path holds its precision ([retronym/zinc#30](https://github.com/retronym/zinc/pull/30)).
+
+<!-- break -->
+
+6. **Record failed lookups** in both compilers, so qualified used-name keys (§12) and precise implicit/extension invalidation become possible.
+7. **Move hashing into the bridges** (opaque hashes over the callback), with a narrow discovery callback for test frameworks.
+8. **Ship a one-command bug report and a CI canary** (clean-vs-incremental on a sample of builds) that emit ready-to-run scripted tests (Notes N2).
+9. **Adopt the bridge obligations as the spec** (compositionality, coverage, abstraction, §22): the Lean model states them; the compiler teams own discharging them.
+
+### 24. Open questions
+
+- Should $\pi$ be *specified* (like TASTy) rather than "whatever ExtractAPI does"?
+- Is member-level $\pi$ a soundness requirement or an implementation convenience?
+- Could IDEs (Metals, IntelliJ's bytecode-based IC) and build tools share one summary format?
+- Should macro APIs (`Context`, `Quotes`) record what a macro observes, so that macro dependencies are exact rather than "invalidate everything"?
+- Should scalac/dotc keep their own Java source parsers at all, or delegate Java signatures to javac (e.g. a Turbine-style Java header compiler producing classfiles up front) so joint and separate views share one front end?
+
+---
+
+## Notes (content that doesn't fit the arc yet)
+
+### N1. The autumn 2026 fix wave, and LLMs as bug finders
+
+Lukas Rytz and Jason Zaugg, roughly June–October 2026. Many of these already appear as examples above; the list is the raw material for a "what we found this year" slide.
+
+**Undercompilation:**
+
+- Scala 3 pattern match after case class/extractor change → `NoSuchMethodError`, in every Scala 3 version ([scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [#26262](https://github.com/scala/scala3/pull/26262)). Came with `IncrementalCompileSimulator`.
+- Pipelining: a run can end before early TASTy is written, dropping Zinc callbacks ([scala/scala3#27139](https://github.com/scala/scala3/issues/27139)); `dependencyPhaseCompleted` was called before dependencies were sent ([#27125](https://github.com/scala/scala3/issues/27125)); Zinc now waits and announces "no early output" ([sbt/zinc#1822](https://github.com/sbt/zinc/pull/1822), [#1823](https://github.com/sbt/zinc/pull/1823), [#1817](https://github.com/sbt/zinc/pull/1817)).
+- With `-Xjava-tasty`, dependencies of Java sources weren't sent to Zinc ([scala/scala3#27133](https://github.com/scala/scala3/issues/27133)).
+- Making a parent class `final` doesn't recompile its subclasses: `HashAPI.hashAPI` never hashes a top-level class's own modifiers, access or annotations, so the incremental build passes and a clean build fails. Found by the baseline tests of the Merkle PoC (`merkle-header`, [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); fix [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841), which also hashes trait vs class (a client calling a class that becomes a trait kept `invokevirtual`).
+- Scala 3: removing a member's body did not recompile subclasses, which then failed with `AbstractMethodError`. The bridge never marked deferred terms abstract, since 2020 ([scala/scala3#27270](https://github.com/scala/scala3/issues/27270) → [#27271](https://github.com/scala/scala3/pull/27271)). Found porting the Merkle PoC to Scala 3.
+- Pipelining: after a failed compile, the early output was kept, so reverting the edit left downstream on signatures that never compiled ([sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843), merged). Predicted by the Lean model.
+- Implicit scope across subprojects: an ancestor's companion gaining an implicit did not reach clients in another project ([sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845), merged; objects' singleton types in [#1846](https://github.com/sbt/zinc/pull/1846)).
+- An added class that shadows a resolved name (inner package, wildcard import) is missed on 2.13 and 3 ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32), fix [#34](https://github.com/retronym/zinc/pull/34)); so are members added to package objects, top-level exports and givens ([retronym/zinc#35](https://github.com/retronym/zinc/pull/35)). Found with the Lean model.
+
+<!-- break -->
+
+**Overcompilation:**
+
+- A comment-only edit to a trait recompiled its heirs ([sbt/zinc#1794](https://github.com/sbt/zinc/issues/1794) → [#1799](https://github.com/sbt/zinc/pull/1799)).
+- Adding a member to an object recompiled classes inheriting its companion trait ([#1793](https://github.com/sbt/zinc/issues/1793) → [#1801](https://github.com/sbt/zinc/pull/1801)).
+- A compound type in a member signature was recorded as inheritance ([#1798](https://github.com/sbt/zinc/issues/1798) → [#1803](https://github.com/sbt/zinc/pull/1803)).
+- A private change in a trait recompiled classes that don't inherit it, from object/trait conflation ([#1795](https://github.com/sbt/zinc/issues/1795) → [#1807](https://github.com/sbt/zinc/pull/1807), `AnalysisCallback4`); the class/companion name-hash merge is still open ([#1796](https://github.com/sbt/zinc/issues/1796)). See §12.
+- Trait `extraHash` over-invalidations ([#1787](https://github.com/sbt/zinc/pull/1787)); refinement-owned type params ([#1782](https://github.com/sbt/zinc/pull/1782)).
+- A public member added to a class reads as a private change in every trait extending it: a trait's `extraHash` folds in its class parents' `extraHash`, which for a class is its whole API hash. Found by the Merkle PoC's benchmark on Spark's catalyst, where it recompiled every descendant of the traits extending `Expression`; the code predates the PoC, and its cost on `develop` alone is not yet measured.
+- Pipelining: any change recompiled everything depending on a Java class ([#1819](https://github.com/sbt/zinc/issues/1819) → [#1821](https://github.com/sbt/zinc/pull/1821)); a trait with a parent recompiled all heirs under Scala 3 ([#1820](https://github.com/sbt/zinc/issues/1820)).
+- Intermittent overcompilation from `Symbol.copy` ignoring its compilation unit ([scala/scala3#25520](https://github.com/scala/scala3/issues/25520) → [#27162](https://github.com/scala/scala3/pull/27162)).
+- Under `-release`, JDK classes were reported to Zinc as project classes ([scala/scala3#27117](https://github.com/scala/scala3/issues/27117)); the empty package was included in names of Java classes ([#27136](https://github.com/scala/scala3/pull/27136)).
+
+<!-- break -->
+
+**Test-infrastructure bugs (the oracle itself was wrong):**
+
+- Scripted tests shared a directory ([sbt/zinc#1802](https://github.com/sbt/zinc/pull/1802)).
+- `"scalaVersion": "2.13.y"` scripted projects never actually selected the in-tree `scala2-sbt-bridge` ([#1836](https://github.com/sbt/zinc/issues/1836) → [#1837](https://github.com/sbt/zinc/pull/1837)), so the in-tree bridge was untested by Zinc's suite. This is the drift risk of §18 in practice.
+
+**LLM-assisted bug finding:**
+
+- Many of these were *discovered*, not just fixed, with LLM agents: they read the invalidator, hypothesise a conflation, write a minimal scripted test, and observe over- or under-invalidation in the log.
+- The batch filed on 2026-09-14 (#1793–#1798) has that shape: one systematic probe per dependency kind.
+- **The clearest example:** [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), from an agent session (branch `claude/scripted-compilation-bug-tests`). It contains about 14 confirmed under/over-compilation cases on 2.13.y, each as a pending scripted test with root cause, fix sketch, cost of the fix ("pessimism") and which repo it belongs in. Draft fixes are stacked as [retronym/zinc#15](https://github.com/retronym/zinc/pull/15) and [retronym/zinc#17](https://github.com/retronym/zinc/pull/17)–[retronym/zinc#23](https://github.com/retronym/zinc/pull/23), and there is a "tried, no bug found" list, which shows the search was broader than its hits.
+- Rough signal from the Zinc repo: 27 of 106 non-merge commits since June 2026 carry an AI co-author or `Generated-by` trailer. That *undercounts*, since not every author adds trailers. (TODO: Lukas and Jason to confirm which bugs were agent-found and how.)
+
+<!-- break -->
+
+- **Why it works here:** incrementality bugs have a mechanical oracle (`checkRecompilations`, invalidation logs, clean-vs-incremental diffs), tiny reproducers, and a large but regular space of (feature × edit × dependency kind). That suits automated search well.
+- **Where it doesn't:** deciding the *right* key (§12) or obligation (§22) is still a design judgement. Agents found the conflations; humans chose `AnalysisCallback4`.
+- **Tie-in with §17:** a feature author could ask an agent to "enumerate edits to this feature's definitions and check incremental ≡ clean" as part of the PR. That is a cheap version of the missing checklist item.
+
+### N2. Best practice: a one-command under/over-compilation bug report
+
+Problem: by the time a user notices undercompilation (a runtime `NoSuchMethodError`, or "works after `clean`"), the pre-change state needed to reproduce it is gone. So reports arrive as "sbt is flaky".
+
+```mermaid
+flowchart TB
+  E["User hits NoSuchMethodError /<br/>'works after clean'"] --> R["report command"]
+  R --> S["snapshot: prev + current Analysis,<br/>source change set, versions, flags,<br/>invalidation log"]
+  R --> CL["clean compile + classfile diff"]
+  CL --> DX{"stale class d:<br/>name missing from U(d)?"}
+  DX -- yes --> COV["coverage bug"]
+  DX -- "no: hash didn't move" --> ABS["abstraction bug"]
+  S --> T["ready-to-run scripted test"]
+  CL --> T
+```
+
+<!-- break -->
+
+**What a good report command captures:**
+
+- the previous and current `Analysis` (the consistent format is deterministic and text-renderable, so it diffs well);
+- the source change set: VCS revision plus diff, or a content-addressed snapshot of changed sources kept by the build tool for the last N compiles;
+- compiler and Zinc versions, bridge provenance, scalac options, compile order, pipelining flags;
+- the invalidation log for the offending run (`relationsDebug`/`apiDebug`-level, as `checkInvalidationLog` uses);
+- for undercompilation: a background or on-demand **clean compile of the affected module and a classfile diff**. The diff names the stale classes, and for each, the used names $U(d)$ and the API diff of what changed. Either a name is missing (a coverage bug) or a hash didn't move (an abstraction bug), which are exactly §22's two obligations.
+
+<!-- break -->
+
+**Output:**
+
+- a ready-to-run scripted test directory (sources before, `changes/`, `test` script, `incOptions.properties`), so a maintainer or an agent (N1) can minimise it;
+- optionally anonymised: hash identifiers while keeping the structure.
+
+**Canary mode:** in CI, sample a fraction of incremental builds and also run a clean build; on a mismatch, emit the report automatically. Field data then flows into the scripted corpus.
+
+**Prior art to check:**
+
+- `ninja -d explain` and Bazel's execution log / `--explain` (why something reran);
+- Gradle build scans;
+- Kotlin build reports;
+- Swift driver incremental remarks;
+- rustc's incremental debugging flags.
+
+Most explain *overcompilation*; few help with *undercompilation*, which needs the clean-build diff.
+
+---
+
+## Appendix
+
+### Demo candidates (pick 2)
+
+- `@inline` + optimizer undercompilation (Scala 2, pre-1.10).
+- Scala 3 `unapply` change → `NoSuchMethodError` (pre-3.10).
+- `c += x` after upstream adds a `+=` member: runtime behaviour differs from a clean build (`assign-op-member-added`, [retronym/zinc#14](https://github.com/retronym/zinc/pull/14)). Replaces the sbt/zinc#945 demo, which didn't reproduce on 2.13.y.
+- Value class underlying-type change → `NoSuchMethodError` with the ExtractAPI hook disabled (`value-class-underlying`).
+- Joint vs separate: compile a Scala/Java pair both ways and `diff` the classfiles (`javap -v`); pick one of the open §6 issues.
+- Members-vs-decls cascade: edit a root trait, show the invalidation log across a deep hierarchy.
+
+### TODOs
+
+- Measure the inherited-vs-declared share of the analysis (count definitions and bytes) for scala/scala and one large app.
+- Verify how `memberRef` targets are chosen (declaring owner vs receiver type) in both bridges before presenting §10.
+- Confirm the sbt version where name hashing became the default, and verify the Kotlin/Swift/GHC rows against current docs.
+- Profile the cost of building `xsbti.api` trees (the `xsbt-api` phase plus the `api` callback) on scala/scala, to size the §11 win.
+- Check which external tools read `Analysis.apis` or the minimized `ClassLike` (sbt `definedTests`, Bloop, Mill, IntelliJ).
+- Verify the §22 citations (titles, venues, years).
+- Check the `x += y` and `Dynamic` cases (§16(h)) on Scala 3; #14 confirmed them on 2.13.y only.
+- Find a citable lines-per-second comparison of scalac/dotc vs javac for the "Why incrementality matters more for Scala" card.
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  const src = document.getElementById('talk-src').textContent;
+
+  // 1. Protect $…$ and $$…$$ from markdown, skipping fenced and inline code.
+  const maths = [];
+  function protectMath(text) {
+    return text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => token(m, true))
+      .replace(/(^|[^\\\w])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\w)/g, (_, pre, m) => pre + token(m, false));
+  }
+  function token(tex, display) { maths.push({ tex, display }); return 'MATHTOKEN' + (maths.length - 1) + 'X'; }
+  const fenceSplit = src.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const protectedSrc = fenceSplit.map((part, i) => {
+    if (i % 2 === 1) return part;
+    return part.split(/(`+[^`\n]*?`+)/).map((p, j) => (j % 2 === 1 ? p : protectMath(p))).join('');
+  }).join('');
+
+  // 2. Render markdown; mermaid fences become <pre class="mermaid">.
+  const md = window.markdownit({ html: true, linkify: false, typographer: false });
+  const defaultFence = md.renderer.rules.fence;
+  md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
+    const t = tokens[idx];
+    const lang = (t.info || '').trim().split(/\s+/)[0];
+    if (lang === 'mermaid') return '<pre class="mermaid">' + md.utils.escapeHtml(t.content) + '</pre>';
+    if (lang && window.hljs && hljs.getLanguage(lang)) {
+      return '<pre><code class="hljs language-' + lang + '">' + hljs.highlight(t.content, { language: lang }).value + '</code></pre>';
+    }
+    return defaultFence(tokens, idx, opts, env, self);
+  };
+  let html = md.render(protectedSrc);
+  html = html.replace(/MATHTOKEN(\d+)X/g, (_, i) => {
+    const m = maths[+i];
+    try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, strict: 'ignore' }); }
+    catch (e) { return '<code>' + md.utils.escapeHtml(m.tex) + '</code>'; }
+  });
+
+  // 3. Chunk into cards at h1/h2/h3/h4 and at <!-- break --> comments; drop <hr>.
+  const scratch = document.createElement('div');
+  scratch.innerHTML = html;
+  const main = document.getElementById('content');
+  let card = null, lastHeading = null;
+  function newCard(cls) { card = document.createElement('section'); card.className = 'card ' + (cls || ''); main.appendChild(card); return card; }
+  function slugFor(h) {
+    const text = h.textContent.trim();
+    const m = text.match(/^(\d+[a-z]?)\.\s/) || text.match(/^(N\d+)\.\s/);
+    if (m) return 's' + m[1].toLowerCase();
+    return text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+  Array.from(scratch.childNodes).forEach(node => {
+    if (node.nodeType === Node.COMMENT_NODE && /break/.test(node.textContent)) {
+      newCard();
+      if (lastHeading) { const c = document.createElement('div'); c.className = 'cont'; const n = lastHeading.querySelector('.num'); c.textContent = (n ? n.textContent + ' ' + lastHeading.textContent.slice(n.textContent.length) : lastHeading.textContent) + ' (cont.)'; card.appendChild(c); }
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = node.tagName;
+      if (tag === 'HR') return;
+      if (/^H[1-4]$/.test(tag)) {
+        newCard(tag === 'H2' ? 'part' : tag === 'H1' ? 'cover' : '');
+        const id = slugFor(node);
+        card.id = id;
+        const m = node.innerHTML.match(/^(\d+[a-z]?\.|N\d+\.)\s/);
+        if (m) node.innerHTML = '<span class="num">' + m[1] + '</span>' + node.innerHTML.slice(m[0].length);
+        if (tag !== 'H2') lastHeading = node;
+      }
+    }
+    if (!card) newCard('cover');
+    card.appendChild(node);
+  });
+
+  // 4. Link § references and "Notes N1" to their cards.
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('code, pre, a, .katex, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const textNodes = []; while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(n => {
+    const re = /§(\d+[a-c]?)((?:[–-]\d+)?)|Notes (N\d)/g;
+    if (!re.test(n.nodeValue)) return;
+    const frag = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
+    while ((m = re.exec(n.nodeValue))) {
+      frag.appendChild(document.createTextNode(n.nodeValue.slice(last, m.index)));
+      const a = document.createElement('a'); a.className = 'sref';
+      a.href = '#s' + (m[1] || m[3]).toLowerCase(); a.textContent = m[0];
+      frag.appendChild(a); last = re.lastIndex;
+    }
+    frag.appendChild(document.createTextNode(n.nodeValue.slice(last)));
+    n.parentNode.replaceChild(frag, n);
+  });
+
+  // 5. Table of contents.
+  const toc = document.getElementById('toc');
+  const cards = Array.from(main.querySelectorAll('.card'));
+  cards.forEach(c => {
+    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4');
+    if (!h || !c.id) return;
+    const li = document.createElement('li'); li.className = h.tagName.toLowerCase();
+    const num = h.querySelector('.num');
+    const label = num ? num.textContent + ' ' + h.textContent.slice(num.textContent.length) : h.textContent;
+    const a = document.createElement('a'); a.href = '#' + c.id; a.textContent = label; a.dataset.target = c.id;
+    li.appendChild(a); toc.appendChild(li);
+  });
+
+  // 6. Mermaid, themed to match; re-rendered on theme change.
+  const mermaidBlocks = Array.from(main.querySelectorAll('pre.mermaid'));
+  mermaidBlocks.forEach(b => { b.dataset.src = b.textContent; });
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  async function renderMermaid() {
+    mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
+      fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: true, curve: 'basis' } });
+    mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
+    try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
+  }
+  const firstRender = renderMermaid();
+
+  // 7. Navigation: current card, keyboard, focus mode, theme.
+  let current = 0, suppressObserverUntil = 0;
+  const counter = document.getElementById('counter');
+  function setCurrent(i, scroll, smooth) {
+    current = Math.max(0, Math.min(cards.length - 1, i));
+    cards.forEach((c, j) => c.classList.toggle('current', j === current));
+    counter.textContent = (current + 1) + ' / ' + cards.length;
+    const id = cards[current].id;
+    toc.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+    if (scroll) {
+      suppressObserverUntil = performance.now() + 1000;
+      if (document.body.classList.contains('focus')) window.scrollTo(0, 0);
+      else cards[current].scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'instant' });
+      if (id) history.replaceState(null, '', '#' + id);
+    }
+  }
+  const io = new IntersectionObserver(entries => {
+    if (document.body.classList.contains('focus') || performance.now() < suppressObserverUntil) return;
+    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length) setCurrent(cards.indexOf(visible[0].target), false);
+  }, { rootMargin: '0px 0px -60% 0px' });
+  cards.forEach(c => io.observe(c));
+  function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
+  function toggleTheme() {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('zinc-talk-theme', next); } catch (e) {}
+    renderMermaid();
+  }
+  try { const t = localStorage.getItem('zinc-talk-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
+  document.getElementById('btn-focus').onclick = toggleFocus;
+  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['j', 'ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); setCurrent(current + 1, true, true); }
+    else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
+    else if (e.key === 'f') toggleFocus();
+    else if (e.key === 't') toggleTheme();
+    else if (e.key === 'Escape') document.body.classList.remove('focus');
+  });
+  toc.addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  main.addEventListener('click', e => {
+    const a = e.target.closest('a.sref'); if (!a) return;
+    const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
+  setCurrent(start < 0 ? 0 : start, start > 0);
+  firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+})();
+</script>
+</body>
+</html>

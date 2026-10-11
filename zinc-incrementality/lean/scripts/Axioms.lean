@@ -70,6 +70,13 @@ import BinCompat.ZincBridgeLibs
 #print axioms BinCompat.ZincBridgeKeys.coverage_fails
 #print axioms BinCompat.ZincBridgeKeys.loop_witness
 #print axioms BinCompat.ZincBridgeLibs.library_client
+-- files as a layer
+#print axioms Zinc.XCompiler.round_preserves_charged
+#print axioms Zinc.XCompiler.zinc_sound_charged
+#print axioms Zinc.FileSpec.today_not_charged
+#print axioms Zinc.FileSpec.every_obligations
+#print axioms Zinc.Fi.fi_not_covered
+#print axioms Zinc.Fi.fi_loop
 -- SAM conversion and local classes
 #print axioms Zinc.Sam.fix_sound
 #print axioms Zinc.Sam.today_sound_argFree
