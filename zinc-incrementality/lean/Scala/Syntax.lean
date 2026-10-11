@@ -19,8 +19,12 @@ inductive Dialect | s212 | s213 | s3
 parameter of a definition `D`. Classes are owner paths, innermost first, as in `AsSeenFrom`; a
 top-level definition `D` is `[D]`. -/
 inductive Ty
-  | int | bool | unit | str | obj
+  | int | bool | unit | str | obj | any
   | ref (d : String)
+  /-- `Array[d]`, of a definition. -/
+  | arr (d : String)
+  /-- A Scala 3 opaque type alias `n` of `rep`, as seen outside its defining scope. -/
+  | opq (n : String) (rep : Ty)
   | this (c : List String)
   | tp (c : List String) (i : Nat)
   deriving DecidableEq, Repr
@@ -72,25 +76,47 @@ structure Mem where
   nullary : Bool := false
   /-- The body, when the source must say which definition ran. -/
   rhs : Option String := none
+  /-- A field without accessors (an enum case in its companion), private if `priv`. -/
+  fieldOnly : Bool := false
+  /-- Scala 3 `inline def`. -/
+  inline : Bool := false
   deriving DecidableEq, Repr
 
 def Mem.allParams (m : Mem) : List Ty := m.ext.toList ++ m.params
 
-/-- A parent: a definition, applied to a type argument if it has a type parameter. -/
-abbrev Parent := String × Option Ty
+/-- A parent: a definition, applied to type arguments if it has type parameters. -/
+abbrev Parent := String × List Ty
+
+/-- An enum case: a singleton (`case A`, or `case A extends E(1)` with the arguments), or a class
+case with fields (`case B(x: Int)`). -/
+structure EnumCase where
+  name : String
+  fields : List (String × Ty) := []
+  args : List String := []
+  deriving DecidableEq, Repr
 
 structure Decl where
   name : String
   kind : Kind := .cls
   abs : Bool := false
   final : Bool := false
-  /-- One type parameter `X`. -/
-  tparam : Bool := false
+  /-- The number of type parameters (`X`, `X1`, …; `Ty.tp [d] i`). -/
+  tparams : Nat := 0
   super : Option Parent := none
   traits : List Parent := []
   members : List Mem := []
   /-- A value class's parameter, `class V(val x: U) extends AnyVal`. -/
   under : Option (String × Ty) := none
+  /-- `case class` or `case object`; a case class's parameters are `cparams`. -/
+  isCase : Bool := false
+  cparams : List (String × Ty) := []
+  /-- The constructor's parameter types (after desugaring). -/
+  ctor : List Ty := []
+  /-- A Scala 3 `enum`'s cases (the definition is the enum class). -/
+  cases : List EnumCase := []
+  sealed : Bool := false
+  /-- Scala 3 opaque type aliases declared here: name and representation. -/
+  opaques : List (String × Ty) := []
   deriving DecidableEq, Repr
 
 def Decl.parents (d : Decl) : List Parent := d.super.toList ++ d.traits
@@ -101,7 +127,19 @@ structure Src where
   name : String
   cls : Option Decl := none
   obj : Option Decl := none
+  /-- The enclosing unit, for a nested definition: its name is `outer$Simple`. -/
+  outer : Option String := none
+  /-- Nested in the enclosing unit's object (static), rather than in its class or trait (inner). -/
+  inObj : Bool := false
+  /-- An anonymous class created in the object of this unit (an enum's singleton cases). -/
+  anonIn : Option String := none
   deriving DecidableEq, Repr
+
+/-- The name a nested definition has in source. -/
+def Src.simple (s : Src) : String :=
+  match s.outer with
+  | some o => String.ofList (s.name.toList.drop (o.length + 1))
+  | none => s.name
 
 abbrev Program := List Src
 
@@ -113,14 +151,17 @@ def Ty.show : Ty → String
   | .unit => "Unit"
   | .str => "String"
   | .obj => "Object"
+  | .any => "Any"
   | .tp _ 0 => "X"
   | .tp _ i => s!"X{i}"
   | .this c => s!"{c.headD ""}.this.type"
   | .ref d => d
+  | .arr d => s!"Array[{d}]"
+  | .opq n _ => n
 
 def Parent.show : Parent → String
-  | (p, none) => p
-  | (p, some a) => s!"{p}[{a.show}]"
+  | (p, []) => p
+  | (p, as) => s!"{p}[{", ".intercalate (as.map Ty.show)}]"
 
 def body : Ty → String
   | .int => "0"
@@ -128,35 +169,48 @@ def body : Ty → String
   | .unit => "()"
   | .str => "\"\""
   | .obj => "null"
+  | .any => "null"
   | .tp _ _ => "null.asInstanceOf[X]"
   | .this _ => "this"
-  | .ref _ => "???"
+  | .ref _ | .arr _ => "???"
+  | .opq _ r => body r
 
 def Mem.show (ov : Bool) (m : Mem) : String :=
   let mods := (match m.ext with | some t => s!"extension (self: {t.show}) " | none => "") ++
     (if m.static then "@static " else "") ++ (if m.ov.getD ov then "override " else "") ++
     (if m.priv then "private " else "") ++
-    (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "")
+    (if m.final then "final " else "") ++ (if m.lzy then "lazy " else "") ++ (if m.inline then "inline " else "")
   let kw := if m.isVal then "val" else "def"
   let ps := if m.params.isEmpty && (m.isVal || m.nullary) then ""
     else "(" ++ ", ".intercalate ((m.params.zipIdx.map fun (t, i) => s!"x{i}: {t.show}")) ++ ")"
   let rhs := if m.abs then "" else s!" = {m.rhs.getD (body m.res)}"
   s!"{mods}{kw} {m.name}{ps}: {m.res.show}{rhs}"
 
-/-- Print a definition; `ov n` says whether member `n` overrides an inherited one. -/
-def Decl.show (ov : String → Bool) (d : Decl) : String :=
-  let kw := match d.kind with
+/-- Print a definition, named `name` in source, with nested definitions `inner` in its body; `ov n`
+says whether member `n` overrides an inherited one. -/
+def Decl.show (ov : String → Bool) (d : Decl) (name : String := d.name) (inner : String := "") : String :=
+  let kw := if !d.cases.isEmpty then "enum" else match d.kind with
     | .trt => "trait" | .obj => "object" | _ => "class"
-  let mods := (if d.abs && d.kind == .cls then "abstract " else "") ++ (if d.final then "final " else "")
-  let tps := if d.tparam then "[X]" else ""
+  let mods := (if d.abs && d.kind == .cls then "abstract " else "") ++ (if d.final then "final " else "") ++
+    (if d.sealed then "sealed " else "") ++ (if d.isCase then "case " else "")
+  let tps := if d.tparams == 0 then "" else "[" ++ ", ".intercalate ((List.range d.tparams).map fun i => (Ty.tp [d.name] i).show) ++ "]"
   let ctor := match d.under with
     | some (x, t) => s!"(val {x}: {t.show})"
-    | none => ""
+    | none => if !d.cases.isEmpty && !d.cparams.isEmpty then
+        "(" ++ ", ".intercalate (d.cparams.map fun (p : String × Ty) => s!"val {p.1}: {p.2.show}") ++ ")"
+      else if d.isCase && d.kind != Kind.obj then
+        "(" ++ ", ".intercalate (d.cparams.map fun (p : String × Ty) => s!"{p.1}: {p.2.show}") ++ ")" else ""
   let ps := (match d.kind with | .vcls => ["AnyVal"] | _ => []) ++ d.parents.map Parent.show
   let ext := match ps with
     | [] => ""
     | p :: rest => " extends " ++ " with ".intercalate (p :: rest)
-  let ms := d.members.map fun m => "  " ++ m.show (ov m.name) ++ "\n"
-  s!"{mods}{kw} {d.name}{tps}{ctor}{ext} \{\n{String.join ms}}\n"
+  let caseLines := d.cases.map fun c =>
+    let fs := if c.fields.isEmpty then "" else
+      "(" ++ ", ".intercalate (c.fields.map fun (p : String × Ty) => s!"{p.1}: {p.2.show}") ++ ")"
+    let ext := if c.args.isEmpty then "" else s!" extends {name}(" ++ ", ".intercalate c.args ++ ")"
+    s!"  case {c.name}{fs}{ext}\n"
+  let opqLines := d.opaques.map fun (p : String × Ty) => s!"  opaque type {p.1} = {p.2.show}\n"
+  let ms := caseLines ++ opqLines ++ d.members.map fun m => "  " ++ m.show (ov m.name) ++ "\n"
+  s!"{mods}{kw} {name}{tps}{ctor}{ext} \{\n{String.join ms}{inner}}\n"
 
 end Scala

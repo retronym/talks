@@ -107,8 +107,18 @@ def read_class(path):
         return out
     fields = members()
     methods = members()
+    inner = []
+    na, = struct.unpack('>H', b[pos:pos + 2]); pos += 2
+    for _ in range(na):
+        an, al = struct.unpack('>HI', b[pos:pos + 6])
+        if utf(an) == 'InnerClasses':
+            n, = struct.unpack('>H', b[pos + 6:pos + 8])
+            for j in range(n):
+                ii, oi, ni, fl = struct.unpack('>HHHH', b[pos + 8 + 8 * j:pos + 16 + 8 * j])
+                inner.append((cls(ii), cls(oi) if oi else None, utf(ni) if ni else None, fl))
+        pos += 6 + al
     return dict(acc=acc, name=cls(this), sup=cls(sup) if sup else None, ifaces=ifaces,
-                fields=fields, methods=methods)
+                fields=fields, methods=methods, inner=inner)
 
 # --- canonical lines --------------------------------------------------------------------------
 
@@ -124,6 +134,12 @@ def dump(pid, c):
     a = c['acc']
     out[(pid, name, 'class')] = (flags([('interface', a & 0x200), ('abstract', a & 0x400), ('final', a & 0x10)]),
                                  f"super={strip(c['sup'])};ifaces={','.join(strip(i) for i in c['ifaces'])}")
+    for i, o, n, fl in c['inner']:
+        if i.startswith('java/') or i.startswith('scala/'):
+            continue
+        out[(pid, name, f'inner {strip(i)}')] = (flags([('public', fl & 1), ('private', fl & 2), ('protected', fl & 4),
+            ('static', fl & 8), ('final', fl & 0x10), ('interface', fl & 0x200), ('abstract', fl & 0x400)]),
+            f"outer={strip(o or '')};name={n or ''}")
     for a, n, d, _ in c['fields']:
         out[(pid, name, f'field {n} {strip(d)}')] = (flags([('private' if a & 2 else 'public', True),
             ('static', a & 8), ('final', a & 0x10)]), None)
@@ -147,7 +163,7 @@ def read_expected(path):
         if len(parts) < 4:
             continue
         pid, cls, key, fl = parts[:4]
-        if key == 'class':
+        if key == 'class' or key.startswith('inner'):
             out[(pid, cls, key)] = (fl, parts[4])
         elif key.startswith('field'):
             out[(pid, cls, key)] = (fl, None)

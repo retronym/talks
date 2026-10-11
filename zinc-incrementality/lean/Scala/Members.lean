@@ -115,7 +115,7 @@ def checkDecl (dl : Dialect) (d : Decl) : M (List Err) := do
       let lmo ← lin fuel mo
       -- `override` counts only if it overrides something in the owner (else "overrides nothing")
       let ov ← hasOverride mo m
-      let overridesInOwner := (hitsAbove lmo m.name).any (overridesIn mo.name lmo ((mo, none), m))
+      let overridesInOwner := (hitsAbove lmo m.name).any (overridesIn mo.name lmo ((mo, []), m))
       -- `checkOverride`: the first failing check of the first failing pair
       let mut found : Option Kind := none
       for oh in g.drop (i + 1) do
@@ -155,8 +155,11 @@ def checkDecl (dl : Dialect) (d : Decl) : M (List Err) := do
 
 /-- The errors the compiler reports for a program: those of the earliest phase that has any. -/
 def errors (dl : Dialect) (p : Program) : Except String (List Err) := do
-  let es ← p.flatMap (fun s => s.cls.toList ++ s.obj.toList) |>.mapM fun d =>
-    (checkDecl dl d).run.run p.env
+  -- the program as the back end sees it: desugared, against the library prelude
+  let q := p.desugar dl
+  let env := (prelude dl ++ q).env
+  let es ← q.flatMap (fun s => s.cls.toList ++ s.obj.toList) |>.mapM fun d =>
+    (checkDecl dl d).run.run env
   let es := es.flatten
   match (es.map (·.kind.phase)).min? with
   | some ph => pure (es.filter (·.kind.phase == ph))
@@ -204,12 +207,12 @@ def V.mem (owner : String) : V → Option Mem
 def program (t u : V) (uExt : Bool) (b : V) (bExt : Bool) (c : V) : Program :=
   let tD : Decl := { name := "T", kind := .trt, members := (t.mem "T").toList }
   let uD : Decl := { name := "U", kind := .trt, members := (u.mem "U").toList,
-                     traits := if uExt then [("T", none)] else [] }
+                     traits := if uExt then [("T", [])] else [] }
   let bD : Decl := { name := "B", abs := true, members := (b.mem "B").toList,
-                     traits := if bExt then [("T", none)] else [] }
+                     traits := if bExt then [("T", [])] else [] }
   let cD : Decl := { name := "C", abs := c == .abs, members := (c.mem "C").toList,
-                     super := some ("B", none),
-                     traits := [("T", none)] ++ (if u == .none then [] else [("U", none)]) }
+                     super := some ("B", []),
+                     traits := [("T", [])] ++ (if u == .none then [] else [("U", [])]) }
   [{ name := "T", cls := some tD }] ++ (if u == .none then [] else [{ name := "U", cls := some uD }]) ++
     [{ name := "B", cls := some bD }, { name := "C", cls := some cD }]
 
@@ -262,5 +265,22 @@ def reabsTrait : Program := program .conc .abs true .none false .none
 
 example : errors .s213 reabsClass = .ok [{ cls := "C", kind := .needsAbstract }] := by decide +kernel
 example : errors .s213 reabsTrait = .ok [] ∧ runs reabsTrait = [("C", "T")] := by decide +kernel
+
+/-! ## Case classes, through the desugaring
+
+The membership checks run on the desugared program, so a synthesized member is checked like a
+written one. `productPrefix` is always synthesized, so a superclass's `final productPrefix` is an
+error (scalac 2.13 and 3.9 both report "cannot override final member"); a superclass's `final
+toString` is not, because then `toString` is not synthesized. -/
+
+def caseOver (m : Mem) : Program :=
+  [{ name := "B", cls := some { name := "B", abs := true, members := [m] } },
+   { name := "P", cls := some { name := "P", isCase := true, cparams := [("x", .int)], super := some ("B", []) } }]
+
+example : errors .s213 (caseOver { name := "productPrefix", res := .str, nullary := true, final := true }) =
+    .ok [{ cls := "P", kind := .finalOverride }] := by decide +kernel
+-- (written without `override`: the model has no `Any`, so `override` would override nothing)
+example : errors .s213 (caseOver { name := "toString", res := .str, nullary := true, final := true }) =
+    .ok [] := by decide +kernel
 
 end Scala.Members
