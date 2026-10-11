@@ -17,7 +17,7 @@
 | I. What "the test passed" meant | §1 the property · §2 scripted tests · §3 the harness had bugs too · §4 determinism as a compiler property | 7 |
 | II. The model as an oracle | §5 writing the proofs · §6 the PoC passed the suite · §7 exhaustive search over the PoC's rules · §8 generated programs vs clean classfiles · §9 the model was wrong too | 9 |
 | III. The clean build was not a fixed reference | §10 catalyst, 146 edits · §11 six batch dependences · §12 why `DeterminismTest` missed them · §13 the fixes went back into `DeterminismTest` | 8 |
-| IV. From checking to predicting | §14 the bug map · §15 20 predictions, 20 failures · §16 checking resolved names · §17 checking recorded keys | 8 |
+| IV. From checking to predicting | §14 the bug map · §15 20 predictions, 20 failures · §16 checking resolved names · §17 checking recorded keys | 9 |
 | V. Checking the model | §18 calibration against scalac, javac and HotSpot · §19 checking the proofs · §20 testing fixes across repositories | 5 |
 | Close | §21 the sequence · §22 what to adopt | 3 |
 
@@ -230,13 +230,39 @@ Notes: 1 min.
 
 ### 14. A bug map: every known bug classified by root cause
 
-- Every one of 145 historical bugs classified by root cause (coverage, abstraction, compositionality, the policy, snapshots, or the compiler itself) and mapped to the part of the model that expresses it.
+- Every one of 145 historical bugs classified by root cause (coverage, abstraction, compositionality, the policy, snapshots, or the compiler itself) and mapped to the part of the model that expresses it ([`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md)).
 - 56 covered by the model, 38 partially, 50 gaps (24 of them compiler joint-vs-separate bugs). The 208 scripted tests are catalogued alongside.
 - The gaps are where to extend the model next; the covered bugs with no scripted test are where to look for new failures.
 
+<!-- break -->
+
+An excerpt (columns shortened):
+
+| bug | root cause | covered by | would the model have predicted it? |
+|---|---|---|---|
+| scala/scala3#26231: pattern match after a case class changes | coverage, abstraction | `TreeToy.lean`: the post-typer `_1`, `_2` and the `_N+1` sentinel; `Synthetic.lean` for the synthetic `unapply` | yes |
+| sbt/zinc#417: inheritance within one source file | coverage | `Files.lean`: the same-file edge dropped; the fix proved for every program | yes |
+| sbt/zinc#1796: `class A.x` and `object A.x` share a hash | abstraction | `ExtraHash.lean`: `merged_spurious`; `qualified_sound` states the fix | yes |
+| scala/scala3#18309: a using clause on a constructor, two modules | coverage | partially: `ImplicitScope.lean`, `Givens.lean`; the clients there summon directly | partially |
+| scala/scala3#22684: a match type and a given | compiler | gap (`comp`): the output depends on which units are in the group | – |
+
+By root cause:
+
+| root cause | bugs | covered | partially | gap |
+|---|---|---|---|---|
+| coverage | 38 | 18 | 13 | 7 |
+| compiler | 34 | 3 | 9 | 22 |
+| abstraction | 23 | 23 | 0 | 0 |
+| policy | 22 | 5 | 11 | 6 |
+| snapshot | 20 | 4 | 5 | 11 |
+| compositionality | 4 | 3 | 0 | 1 |
+| unknown | 3 | 0 | 0 | 3 |
+
+Every abstraction bug is covered: a hash that misses part of what it covers is the easiest failure to model. The compiler's own joint-vs-separate bugs are mostly gaps; the model's job for them is only to name the broken obligation, `comp`.
+
 <div class="fn">
 
-Notes: 1.5 min. `BUG-MAP.md`, `BUGS-catalogue.md`, `TESTS-catalogue.md` in `zinc-incrementality/lean/`.
+Notes: 2.5 min. [`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md) §1 and §5, with `BUGS-catalogue.md` and `TESTS-catalogue.md` beside it. "Predicts" is counterfactual: most instances were built after the bug they cover (52 yes, 26 partially, 16 no).
 
 </div>
 

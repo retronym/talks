@@ -1307,7 +1307,7 @@ Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug fa
 - Under pipelining, every edited Java class is compared in two forms, source and classfile, which recompiles for nothing (develop's pending `java-comment-change`). <span class="chip proof">proof attempt</span>
 - Five historical "hash" bugs cost recompiles but were not wrong; one hid a real difference. <span class="chip proof">proof attempt</span>
 
-The bug map classifies 145 historical bugs by root cause (an obligation, the policy, snapshots or the compiler) and maps each to the part of the model that expresses it (`BUG-MAP.md`: 56 covered, 38 partially, 50 gaps); `TESTS-catalogue.md` catalogues the 208 scripted tests. The model predicted 20 failures no test covered, 16 of them new bug families; all 20 failed on develop as predicted ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33), [#49](https://github.com/retronym/zinc/pull/49), [#50](https://github.com/retronym/zinc/pull/50), [#51](https://github.com/retronym/zinc/pull/51), [#53](https://github.com/retronym/zinc/pull/53), [#57](https://github.com/retronym/zinc/pull/57), [#58](https://github.com/retronym/zinc/pull/58)).
+The bug map classifies 145 historical bugs by root cause (an obligation, the policy, snapshots or the compiler) and maps each to the part of the model that expresses it ([`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md): 56 covered, 38 partially, 50 gaps); `TESTS-catalogue.md` catalogues the 208 scripted tests. The model predicted 20 failures no test covered, 16 of them new bug families; all 20 failed on develop as predicted ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33), [#49](https://github.com/retronym/zinc/pull/49), [#50](https://github.com/retronym/zinc/pull/50), [#51](https://github.com/retronym/zinc/pull/51), [#53](https://github.com/retronym/zinc/pull/53), [#57](https://github.com/retronym/zinc/pull/57), [#58](https://github.com/retronym/zinc/pull/58)).
 
 <!-- break -->
 
@@ -1528,7 +1528,7 @@ What this slide listed on 9 October, and where it is now:
 
 <div class="fn">
 
-Notes: 1 min. `BUG-MAP.md` lists the remaining gap clusters: SAM and local classes, inner and path-dependent classes, phantom binary dependencies, import renames and given priority, case classes and enums beyond synthetics, files.
+Notes: 1 min. [`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md) lists the remaining gap clusters: SAM and local classes, inner and path-dependent classes, phantom binary dependencies, import renames and given priority, case classes and enums beyond synthetics, files.
 
 </div>
 
