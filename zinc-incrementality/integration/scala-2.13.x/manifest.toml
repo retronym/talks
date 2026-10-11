@@ -35,6 +35,24 @@ pr = 11292
 title = "Use ObjectTpe, not ObjectTpeJava, as the parent of Java classes parsed from source"
 
 [[members]]
+id = "scala#11294"
+remote = "upstream"
+pr = 11294
+title = "Use invokeExact for the release fence MethodHandle in Statics"
+
+[[members]]
+id = "scala#11295"
+remote = "upstream"
+pr = 11295
+title = "Avoid per-tree allocations when checking unused types"
+
+[[members]]
+id = "scala#11296"
+remote = "upstream"
+pr = 11296
+title = "Avoid redundant IdentityHashMap.clear of knownFalseSubTypes"
+
+[[members]]
 id = "rz-scala#136"
 remote = "origin"
 pr = 136

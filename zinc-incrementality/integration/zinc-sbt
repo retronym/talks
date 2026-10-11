@@ -17,6 +17,11 @@
 #
 # Republishes only when the branch's tip or the target Zinc version changes. ZINC_SBT_FETCH=0
 # skips fetching the branch.
+#
+# ZINC_SBT_STARR=<branch of retronym/scala> (e.g. integration/2.13.x) also publishes that branch,
+# optimized, into the same Ivy home and passes -Dstarr.version, so building scala/scala itself
+# uses it as STARR: the whole toolchain under test, compiler included. It is cloned to
+# ~/code/.integration/starr-<branch> and republished only when its tip moves.
 set -euo pipefail
 
 branch=${1:?usage: zinc-sbt <integration branch, e.g. merkle-1.12.x> [sbt args...]}
@@ -60,6 +65,20 @@ scalaCompilerBridgeBinaryJar := { if (scalaVersion.value.startsWith("2.13.")) So
 EOF
 
 sbt_flags=(--no-server -Dsbt.ivy.home="$ivy" -Dsbt.boot.directory="$ivy/boot" -Dsbt.global.base="$ivy/global/1.0")
+
+if [[ -n ${ZINC_SBT_STARR:-} ]]; then
+  starr=$root/starr-${ZINC_SBT_STARR//\//-}
+  if [[ ! -d $starr ]]; then
+    git clone -q --reference-if-able "$HOME/code/scala/scala" --branch "$ZINC_SBT_STARR" \
+      https://github.com/retronym/scala.git "$starr"
+  elif [[ ${ZINC_SBT_FETCH:-1} != 0 ]]; then
+    git -C "$starr" fetch -q origin "$ZINC_SBT_STARR"
+    git -C "$starr" checkout -q -B "$ZINC_SBT_STARR" FETCH_HEAD
+  fi
+  starr_version=$("$(dirname "$0")/publish-scala2-starr" "$starr" "$ivy")
+  sbt_flags+=(-Dstarr.version="$starr_version")
+  echo "zinc-sbt: STARR $starr_version = retronym/scala $ZINC_SBT_STARR" >&2
+fi
 
 find_boot() { compgen -G "$ivy/boot/scala-*/org.scala-sbt/sbt/$sbt_version" | head -1; }
 boot=$(find_boot || true)

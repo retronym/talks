@@ -55,3 +55,14 @@ The argument can also be any other branch of retronym/zinc, such as a PR branch,
 ```bash
 ~/code/retronym/talks/zinc-incrementality/integration/zinc-sbt backport/1.12.x-merkle-hash-poc
 ```
+
+### The integration compiler as STARR
+
+To build scala/scala itself with the whole toolchain under test, the compiler included, set `ZINC_SBT_STARR` to a branch of retronym/scala. `zinc-sbt` clones it to `~/code/.integration/starr-<branch>`, and [`publish-scala2-starr`](publish-scala2-starr) publishes it into the same private Ivy home, optimized as `setupPublishCore` builds a release. `zinc-sbt` then starts sbt with `-Dstarr.version=<base>-bin-<sha>-SNAPSHOT`:
+
+```bash
+cd ~/code/scala/scala
+ZINC_SBT_STARR=integration/2.13.x ~/code/retronym/talks/zinc-incrementality/integration/zinc-sbt merkle-1.12.x
+```
+
+The first run publishes the compiler (several minutes). Later runs republish only when the branch's tip moves.

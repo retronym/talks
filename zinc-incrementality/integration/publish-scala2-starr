@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Publish a scala/scala checkout to a private Ivy home, for use as STARR (`-Dstarr.version=...`).
+#
+#   publish-scala2-starr <scala checkout> <ivy home>
+#
+# Builds as `setupPublishCore` does (optimizer on, as for a release), so the compiler's own
+# performance is representative. Prints the published version, `<base>-bin-<sha>-SNAPSHOT`, and
+# republishes only when the checkout's HEAD moves.
+set -euo pipefail
+checkout=$(cd "$1" && pwd)
+mkdir -p "$2"
+ivy=$(cd "$2" && pwd)
+
+sha=$(git -C "$checkout" rev-parse HEAD)
+stamp=$ivy/starr-published
+if [[ -f $stamp && $(head -1 "$stamp") == "$sha" ]]; then
+  sed -n 2p "$stamp"
+  exit 0
+fi
+
+echo "publish-scala2-starr: publishing $checkout ${sha:0:10} to $ivy" >&2
+(cd "$checkout" && sbt -J-Xmx4G --ivy "$ivy" --batch --no-server --color=false --supershell=false \
+  setupPublishCore generateBuildCharacterPropertiesFile publishLocal) >&2
+version=$(sed -n 's/^maven.version.number=//p' "$checkout/buildcharacter.properties")
+[[ -n $version ]] || { echo "publish-scala2-starr: no maven.version.number in buildcharacter.properties" >&2; exit 1; }
+[[ -f $ivy/local/org.scala-lang/scala-compiler/$version/jars/scala-compiler.jar ]] ||
+  { echo "publish-scala2-starr: scala-compiler $version not in $ivy/local" >&2; exit 1; }
+printf '%s\n%s\n' "$sha" "$version" > "$stamp"
+echo "$version"
