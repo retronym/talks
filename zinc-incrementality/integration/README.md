@@ -6,6 +6,7 @@ The Zinc fixes are spread over many open PRs across retronym/zinc, sbt/zinc, ret
 |---|---|---|---|
 | `integration/develop` | retronym/zinc | sbt/zinc `develop` | [zinc-develop](zinc-develop/manifest.toml) |
 | `integration/merkle` | retronym/zinc | `integration/develop` | [zinc-merkle](zinc-merkle/manifest.toml) |
+| `integration/develop-1.12.x` | retronym/zinc | sbt/zinc `1.12.x` | [zinc-develop-1.12.x](zinc-develop-1.12.x/manifest.toml) |
 | `integration/merkle-1.12.x` | retronym/zinc | sbt/zinc `1.12.x` | [zinc-merkle-1.12.x](zinc-merkle-1.12.x/manifest.toml) |
 | `integration/2.13.x` | retronym/scala | scala/scala `2.13.x` | [scala-2.13.x](scala-2.13.x/manifest.toml) |
 | `integration/scala3-main` | retronym/scala3 | scala/scala3 `main` | [scala3-main](scala3-main/manifest.toml) |
@@ -66,3 +67,7 @@ ZINC_SBT_STARR=integration/2.13.x ~/code/retronym/talks/zinc-incrementality/inte
 ```
 
 The first run publishes the compiler (several minutes). Later runs republish only when the branch's tip moves.
+
+## Baselines for comparing Merkle
+
+`integration/merkle` is built on `integration/develop`, so the two differ by Merkle alone. `integration/merkle-1.12.x` is not built that way: rz#48 is one squashed series whose bottom commits (rz#9 and a backport of sbt/zinc#1765) are not Merkle. `integration/develop-1.12.x` is those commits on their own, and serves as its baseline. When rz#48's non-Merkle commits change, change that manifest to match.

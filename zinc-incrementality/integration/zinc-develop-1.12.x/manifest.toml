@@ -1,0 +1,32 @@
+branch = "integration/develop-1.12.x"
+repo = "~/code/sbt/zinc"
+push = "origin"
+
+# The baseline for a Merkle bakeoff on sbt 1.12: integration/merkle-1.12.x without Merkle. These
+# members are the non-Merkle commits at the bottom of rz#48, so the two branches differ by Merkle
+# alone. Keep them in step with rz#48.
+base = { remote = "upstream", branch = "1.12.x" }
+
+[[members]]
+id = "rz#9"
+remote = "origin"
+pr = 9
+title = "[1.x] Pipelining fixes (backport of #1817, #1818, #1822)"
+
+# Exists only as a commit in rz#48 (769a5c7fe), not as a PR of its own.
+[[members]]
+id = "sz#1765"
+patch = "fixups/1765-invalidation-debug-logs.patch"
+title = "[1.x] Improve Zinc invalidation debug logs (backport of #1765)"
+
+[[excluded]]
+id = "rz#48"
+reason = "Merkle; see integration/merkle-1.12.x"
+
+[[excluded]]
+id = "backport/1.12.x-z1-overcompilation"
+reason = "not in integration/merkle-1.12.x either"
+
+[[excluded]]
+id = "backport/1.12.x-z2-name-kinds"
+reason = "not in integration/merkle-1.12.x either"
