@@ -349,7 +349,7 @@ object C { import A._, B._; implicitly[Int] }
 | trace | the queries a compilation asked, in order; each depends on the last answer | `A` implicits: none · `B` implicits: `x` · `A` member `x`: none |
 | key | what Zinc stores for `C`: a class and an aspect of it | `(B, x)`, `(A, x)`, and `(A, implicits)` if the bridge records it |
 | covers | a key covers a query if the query's answer cannot change while the key's hash stays the same | `(A, x)` covers "does `A` have a member `x`?" |
-| hash (`π`) | per key, a hash of that aspect of the class's API | the name hash of `x` in `A` |
+| hash (`π`) | per key, a hash of the part of the class's API the key names. For a name key `(A, x)`: the signatures (types and modifiers) of every non-private member of `A` named `x`, overloads and inherited members included. Not the string `"x"` | `A` gains `val x: Int`: the hash of `(A, x)` changes from that of no members to that of `val x: Int` |
 | Δ, invalidated | the keys whose hash changed in a round; the classes that recorded one | `A` gains `val x`: Δ ∋ `(A, x)`, so `C` is invalidated |
 | up to date | a class's output is what compiling it now would give, and its keys cover that compilation's trace | |
 | run | one program and one edit, built incrementally and clean; *unclean* if they differ | |
