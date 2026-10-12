@@ -1,7 +1,7 @@
 import V1.Uniqueness
 import Mathlib.Data.Finset.Card
 
--- Snapshot of `zinc-incrementality/lean/Zinc/Termination.lean`, unchanged apart from the namespace.
+-- Snapshot of `zinc-incrementality/lean/Zinc/Termination.lean` (now `packages/inc-comp/IncComp/Termination.lean` in retronym/jvm-lang-models), unchanged apart from the namespace.
 
 /-!
 # T4: termination

@@ -167,6 +167,8 @@ body.focus .focus-counter { display: block; }
 
 **Status:** first draft of the slides. Each card is one slide (a few are split with `<!-- break -->`). The small grey block under a slide holds speaker notes, the evidence in the Lean model, the time budget and links to bugs; it is not meant to be shown.
 
+**Lean model:** [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models) at `4faa126ffd12acc1e45ac41c636751b26b863949`. Lean files, documents and declarations cited below link to that commit; `bin/lean_refs.py` checks that they exist there.
+
 **Audience:** Scala tooling people: compiler, build-tool and IDE maintainers. They know Zinc as users and some of its internals, know dependent types and maybe Curry–Howard, but not Lean.
 
 **Thesis:** incremental compilation is sound relative to a small set of obligations on the compiler. Writing the obligations down in Lean replaced fixing Zinc bugs one report at a time with a repeatable process: model a language feature as a new kind of query, re-prove the obligations or find the counterexample, check the model exhaustively, then test real Zinc against the model's program space.
@@ -175,13 +177,13 @@ body.focus .focus-counter { display: block; }
 
 <!-- break -->
 
-**Where the Lean lives:** the full model is `../zinc-incrementality/lean/` (Lean and Mathlib `v4.34.1`, no `sorry`). This talk's own Lean is `lean/`:
+**Where the Lean lives:** the full model is [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models) at the commit pinned above (Lean and Mathlib `v4.34.1`, no `sorry`). This talk's own Lean is `lean/`:
 
 - `lean/Primer.lean`: the primer's code, no Mathlib, checked with `lean lean/Primer.lean`. Written for this draft.
-- `lean/V1/`: Parts V–VI. The abstract model (`Task`, `Model`, `Soundness`, `Uniqueness`, `Termination`) copied from the full model with only the namespace changed, plus a typecheck-only toy (`Toy.lean`: lookups with misses, implicits with shadowing, no erasure) and its checked examples (`Examples.lean`).
-- `lean/V2/`: Part VII. The general model (`Model.lean`, the full model's `NCompiler`); `Embed.lean`, new, which proves V1's local model is a special case (`lift_obligations`, `zinc_lift`); the toy with erasure through a value class and a mixin forwarder (`Toy.lean`, `Examples.lean`); and the stale-Δ counterexample (`Stale.lean`).
+- `lean/V1/`: Parts V–VI. The abstract model (`Task`, `Model`, `Soundness`, `Uniqueness`, `Termination`) copied from the full model with only the namespace changed, plus a typecheck-only toy ([`Toy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean): lookups with misses, implicits with shadowing, no erasure) and its checked examples ([`Examples.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean)).
+- `lean/V2/`: Part VII. The general model (`Model.lean`, the full model's [`NCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean#L32)); `Embed.lean`, new, which proves V1's local model is a special case (`lift_obligations`, `zinc_lift`); the toy with erasure through a value class and a mixin forwarder ([`Toy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean), [`Examples.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean)); and the stale-Δ counterexample ([`Stale.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean)).
 
-`lake build` in `lean/` builds all three, with no `sorry`. The Lake project reuses the full model's Mathlib (`v4.34.1`).
+`lake build` in `lean/` builds all three, with no `sorry`. The Lake project requires Mathlib `v4.34.1` itself.
 
 All Lean and tool output is shown as screenshots.
 
@@ -218,7 +220,7 @@ $$\mathit{incremental}(\mathit{state}, \mathit{sources}') \;\equiv\; \mathit{cle
 
 <div class="fn">
 
-Notes: 30 s. This audience knows it; the point is to fix the equation we will prove. In the model the right-hand side is `Compiler.clean`; the theorems that conclude it are `zinc_eq_clean_of_wf` and `zinc_eq_clean_of_explicit` (`Zinc/Uniqueness.lean`).
+Notes: 30 s. This audience knows it; the point is to fix the equation we will prove. In the model the right-hand side is [`Compiler.clean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L139); the theorems that conclude it are `zinc_eq_clean_of_wf` and `zinc_eq_clean_of_explicit` ([`Zinc/Uniqueness.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Uniqueness.lean)).
 
 </div>
 
@@ -259,7 +261,7 @@ Notes: 2.5 min. Recap of `zinc-incrementality` §2–4. Mention the `transitiveS
 
 <div class="fn">
 
-Notes: 1.5 min. Verify the history (when each step landed) before presenting. The table is read off `IncrementalCommon.scala` (`byLibraryDep`, `detectAPIChanges`) and `IncrementalNameHashing.invalidateClassesExternally`. The model extension is designed in `zinc-incrementality/lean/PLAN.md` Phase 8. In the model: subprojects as a policy on one loop (§19), checked against one loop per project; snapshots, libraries and pipelining in §23a–b.
+Notes: 1.5 min. Verify the history (when each step landed) before presenting. The table is read off `IncrementalCommon.scala` (`byLibraryDep`, `detectAPIChanges`) and `IncrementalNameHashing.invalidateClassesExternally`. The model extension is designed in [`zinc-incrementality/lean/PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md) Phase 8. In the model: subprojects as a policy on one loop (§19), checked against one loop per project; snapshots, libraries and pipelining in §23a–b.
 
 Bugs of note: [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (implicit scope across projects, merged) · [sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843) (early output kept after a failed pipelined compile, merged) · [retronym/zinc#26](https://github.com/retronym/zinc/pull/26) (erasure across subprojects) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14) (`compile-to-jar-no-op-recompiles`) · [scala/scala3#27139](https://github.com/scala/scala3/issues/27139), [scala/scala3#27125](https://github.com/scala/scala3/issues/27125) (pipelining callbacks) · [sbt/zinc#1819](https://github.com/sbt/zinc/issues/1819) (pipelining and Java) · [scala/scala3#27117](https://github.com/scala/scala3/issues/27117) (JDK classes reported as project classes under `-release`)
 
@@ -350,7 +352,7 @@ These assumptions are the specification of `ExtractAPI` and `ExtractUsedNames`. 
 
 <div class="fn">
 
-Notes: 1.5 min. Value classes and implicit scope break coverage (a question with no recorded key). Batch-dependent output breaks compositionality. Evidence: `Compiler.Obligations` (`Zinc/Model.lean`).
+Notes: 1.5 min. Value classes and implicit scope break coverage (a question with no recorded key). Batch-dependent output breaks compositionality. Evidence: [`Compiler.Obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L67) (`Zinc/Model.lean`).
 
 </div>
 
@@ -460,7 +462,7 @@ def trace (e : (q : Q) → A q) : Task Q A α → List Q
 
 <div class="fn">
 
-Notes: 1 min. This is the free monad of *Build Systems à la Carte* with a dependent answer type. `Zinc/Task.lean` is this definition plus a `Monad` instance.
+Notes: 1 min. This is the free monad of *Build Systems à la Carte* with a dependent answer type. [`Zinc/Task.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/query/Query/Task.lean) is this definition plus a `Monad` instance.
 
 </div>
 
@@ -520,7 +522,7 @@ theorem run_eq_of_trace (t : Task Q A α) (e e' : (q : Q) → A q)
 
 <div class="fn">
 
-Notes: 2 min. Highlight the `induction … with | pure | ask` skeleton and grey out the tactic lines. This is **T1** (`Task.run_eq_of_trace` in `Zinc/Task.lean`). It is why recording a trace is enough: if no traced answer changed, the output did not change.
+Notes: 2 min. Highlight the `induction … with | pure | ask` skeleton and grey out the tactic lines. This is **T1** ([`Task.run_eq_of_trace`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/query/Query/Task.lean#L40) in [`Zinc/Task.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/query/Query/Task.lean)). It is why recording a trace is enough: if no traced answer changed, the output did not change.
 
 </div>
 
@@ -539,7 +541,7 @@ The model's counterexamples are written this way: "this incremental build differ
 
 <div class="fn">
 
-Notes: 3 min. Screenshot of the infoview with a goal mid-proof, from T1. Caveat: the full model uses `native_decide`, which compiles the check instead of running it in the kernel and so trusts Lean's compiler (it adds the `Lean.ofReduceBool` axiom). Kernel `decide` gets stuck on Mathlib's `Finset` there (`PLAN.md` step 8).
+Notes: 3 min. Screenshot of the infoview with a goal mid-proof, from T1. Caveat: the full model uses `native_decide`, which compiles the check instead of running it in the kernel and so trusts Lean's compiler (it adds the `Lean.ofReduceBool` axiom). Kernel `decide` gets stuck on Mathlib's `Finset` there ([`PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md) step 8).
 
 </div>
 
@@ -600,7 +602,7 @@ def search (ty : Ty) (imports : List Cls) : List Cls → T (Option (Cls × Name)
 
 <div class="fn">
 
-Notes: 2.5 min. `lean/V1/Toy.lean` (`shadowed`, `firstEligible`, `search`). The scripted test is `source-dependencies/implicit-search`. V1's toy has no erasure; the full model's `Zinc/Toy.lean` does, and so does `lean/V2/Toy.lean`.
+Notes: 2.5 min. `lean/V1/Toy.lean` (`shadowed`, `firstEligible`, `search`). The scripted test is `source-dependencies/implicit-search`. V1's toy has no erasure; the full model's [`Zinc/Toy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean) does, and so does `lean/V2/Toy.lean`.
 
 </div>
 
@@ -627,7 +629,7 @@ For `class C extends B with M`, `B extends A[Int]`, a client's `C.m` asks:
 
 <div class="fn">
 
-Notes: 2 min. `Zinc/Hier.lean`. Same shape as the primer's `resolve`, plus parents with type arguments and a right-to-left walk.
+Notes: 2 min. [`Zinc/Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean). Same shape as the primer's `resolve`, plus parents with type arguments and a right-to-left walk.
 
 </div>
 
@@ -659,7 +661,7 @@ def zinc (S) (src) (P : Policy) : ℕ → ℕ → Finset CUnit → State → Opt
 
 <div class="fn">
 
-Notes: 2 min. `lean/V1/Model.lean` (`round`, `changed`, `invalidated`, `Policy`, `Policy.Sound`, `zinc`); `round` simplified on the slide. The stop test matches `IncrementalCommon.invalidateAfterInternalCompilation`.
+Notes: 2 min. `lean/V1/Model.lean` (`round`, `changed`, `invalidated`, `Policy`, [`Policy.Sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L117), `zinc`); `round` simplified on the slide. The stop test matches `IncrementalCommon.invalidateAfterInternalCompilation`.
 
 </div>
 
@@ -686,7 +688,7 @@ structure Obligations : Prop where
 
 <div class="fn">
 
-Notes: 1.5 min. `Compiler.Obligations` (`lean/V1/Model.lean`). The `final` example is HashAPI omitting a top-level class's modifiers, found by the PoC baseline; trait vs class is [retronym/zinc#27](https://github.com/retronym/zinc/issues/27). Both are fixed upstream by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026), which hashes a top-level class's kind, modifiers, access and annotations; it supersedes retronym/zinc#27.
+Notes: 1.5 min. [`Compiler.Obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L67) (`lean/V1/Model.lean`). The `final` example is HashAPI omitting a top-level class's modifiers, found by the PoC baseline; trait vs class is [retronym/zinc#27](https://github.com/retronym/zinc/issues/27). Both are fixed upstream by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026), which hashes a top-level class's kind, modifiers, access and annotations; it supersedes retronym/zinc#27.
 
 </div>
 
@@ -708,7 +710,7 @@ flowchart BT
 
 <div class="fn">
 
-Notes: 1 min. T1 `run_eq_of_trace`; T2 `round_preserves`; T3a `zinc_sound`; T3b `fixpoint_unique_of_wf` (A) / `_of_explicit` (B); T3 `zinc_eq_clean_of_wf` / `_of_explicit`; T4 `zinc_some_of_monotoneFrom`, `_of_explicit`, `_of_wf`. Files: `lean/V1/Task.lean`, `Soundness.lean`, `Uniqueness.lean`, `Termination.lean` (copies of the full model's).
+Notes: 1 min. T1 [`run_eq_of_trace`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/query/Query/Task.lean#L40); T2 `round_preserves`; T3a `zinc_sound`; T3b [`fixpoint_unique_of_wf`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Uniqueness.lean#L64) (A) / `_of_explicit` (B); T3 `zinc_eq_clean_of_wf` / `_of_explicit`; T4 `zinc_some_of_monotoneFrom`, `_of_explicit`, `_of_wf`. Files: `lean/V1/Task.lean`, [`Soundness.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Soundness.lean), [`Uniqueness.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Uniqueness.lean), [`Termination.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Termination.lean) (copies of the full model's).
 
 </div>
 
@@ -739,7 +741,7 @@ Separately compiled, any type is a consistent answer; joint compilation reports 
 
 <div class="fn">
 
-Notes: 1.5 min. `PLAN.md` "Two findings"; `fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`. Finding 2 is the problem behind [sbt/zinc#1284](https://github.com/sbt/zinc/issues/1284) ("include mutual dependencies in initial invalidation") and its revert, [#1462](https://github.com/sbt/zinc/issues/1462). Finding 1 is §14a. Both findings corrected `zinc-incrementality` §3–4.
+Notes: 1.5 min. [`PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md) "Two findings"; [`fixpoint_unique_of_wf`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Uniqueness.lean#L64), `fixpoint_unique_of_explicit`. Finding 2 is the problem behind [sbt/zinc#1284](https://github.com/sbt/zinc/issues/1284) ("include mutual dependencies in initial invalidation") and its revert, [#1462](https://github.com/sbt/zinc/issues/1462). Finding 1 is §14a. Both findings corrected `zinc-incrementality` §3–4.
 
 Bugs of note: [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) · [sbt/zinc#1462](https://github.com/sbt/zinc/pull/1462) · [sbt/zinc#1420](https://github.com/sbt/zinc/issues/1420)
 
@@ -779,7 +781,7 @@ cycle 7  A B C    error: recursive method x needs result type
 
 - Only the brute-force cycle compiles all three together, and reports what a clean build reports. With the default `transitiveStep = 3` that is cycle 4.
 - Two classes never do this in Zinc: the class whose API changed is recompiled with its dependent, so a 2-cycle compiles together at once. The search shows the same: the model's first loop, which left that class out, also diverged on 2-cycles.
-- **Proved** (`zinc_diverges`): without `transitiveStep`, the loop on the Lean version of this program does not stop, for any amount of fuel.
+- **Proved** ([`zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217)): without `transitiveStep`, the loop on the Lean version of this program does not stop, for any amount of fuel.
 
 <div class="status">
 
@@ -792,7 +794,7 @@ cycle 7  A B C    error: recursive method x needs result type
 
 <div class="fn">
 
-Notes: 2 min. `Zinc/PingPong.lean` (`zincPolicy`, `zinc_diverges`, `transitiveStep_stops`), `lake exe exhaustive pingpong` (9 s). Zinc scripted test `inferred-type-cycle-rounds` ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33)); the cycle listing is from its invalidation log, `[diff] def …` lines. Not a soundness bug: the cost is rounds, and the final error is right. It does say `transitiveStep` is load-bearing: set it high enough and the rounds never end.
+Notes: 2 min. [`Zinc/PingPong.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean) (`zincPolicy`, [`zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217), [`transitiveStep_stops`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L263)), `lake exe exhaustive pingpong` (9 s). Zinc scripted test `inferred-type-cycle-rounds` ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33)); the cycle listing is from its invalidation log, `[diff] def …` lines. Not a soundness bug: the cost is rounds, and the final error is right. It does say `transitiveStep` is load-bearing: set it high enough and the rounds never end.
 
 </div>
 
@@ -814,7 +816,7 @@ object C { import A._, B._; implicitly[Int] }
 | adds `implicit val y` | **wrong**: `C` keeps `B.x` | right: `(A, implicitScope)` changed |
 | adds a plain `val x`, shadowing `B.x` | right: `C`'s failed lookup of `x` in `A` was recorded | right |
 
-The shadowing row is why name hashing copes with shadowing: the miss is itself a lookup. Implicit search is a query kind with no key, so name-only keys fail coverage (`not_obligations_nameOnly`, a theorem) and keying every query kind meets it (`obligations_repaired`); every cell is a checked `example`.
+The shadowing row is why name hashing copes with shadowing: the miss is itself a lookup. Implicit search is a query kind with no key, so name-only keys fail coverage ([`not_obligations_nameOnly`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L229), a theorem) and keying every query kind meets it ([`obligations_repaired`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L223)); every cell is a checked `example`.
 
 <div class="status">
 
@@ -843,7 +845,7 @@ def keysRepaired (tr : List (Cls × Q)) : Finset (Cls × K) :=
 
 <div class="fn">
 
-Notes: 1.5 min. `lean/V1/Toy.lean`, `lean/V1/Examples.lean`; `repaired_sound` and `repaired_terminates` instantiate T3 and T4. In V1, `not_obligations_nameOnly` exhibits an implicit search with no key. The shadowing row is why name hashing handles shadowing: the miss is a lookup. The value-class row of the full model moves to §16 (V2).
+Notes: 1.5 min. `lean/V1/Toy.lean`, `lean/V1/Examples.lean`; [`repaired_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean#L117) and [`repaired_terminates`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean#L129) instantiate T3 and T4. In V1, [`not_obligations_nameOnly`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L229) exhibits an implicit search with no key. The shadowing row is why name hashing handles shadowing: the miss is a lookup. The value-class row of the full model moves to §16 (V2).
 
 </div>
 
@@ -905,7 +907,7 @@ def forwarders : List Cls → T (List (Cls × Name))
 
 <div class="fn">
 
-Notes: 1 min. `lean/V2/Toy.lean`, `lean/V2/Examples.lean`; the keys are `(A, self)` and `(M, decls)`. The forwarder is simplified: no check that a class ahead of the trait declares the name. The full set of codegen queries is `Zinc/Flat.lean`'s `fwd`, `fhas`, `mirror`, `under`, `hdr`; `Fl_obligations` proves it covered. The receiver-kind row was found by the conformance harness (§27).
+Notes: 1 min. `lean/V2/Toy.lean`, `lean/V2/Examples.lean`; the keys are `(A, self)` and `(M, decls)`. The forwarder is simplified: no check that a class ahead of the trait declares the name. The full set of codegen queries is [`Zinc/Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean)'s `fwd`, `fhas`, `mirror`, `under`, `hdr`; [`Fl_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L676) proves it covered. The receiver-kind row was found by the conformance harness (§27).
 
 </div>
 
@@ -920,11 +922,11 @@ object X { (new C).m }         // X records the key (C, m)
 - Suppose `C`'s hash for `m` is computed from `C` and its ancestors, as Merkle hashing does: a *non-local* hash.
 - Edit `P`. Zinc recompiles `P` and diffs the hashes of the classes it recompiled: only `P`'s. Nobody recomputes `(C, m)`, so `X` is not invalidated and keeps `m: Int`. **Wrong.**
 - The fix: also recompute the hashes of every class whose hash reads a recompiled class, here `C`. Then `(C, m)` changes and `X` is recompiled.
-- Proved on a two-class version: `stale_unsound` (diffing only the recompiled classes leaves a class stale) and `stale_affected` (diffing the classes whose hashes read them invalidates it).
+- Proved on a two-class version: [`stale_unsound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L130) (diffing only the recompiled classes leaves a class stale) and [`stale_affected`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L135) (diffing the classes whose hashes read them invalidates it).
 
 <div class="fn">
 
-Notes: 1.5 min. `lean/V2/Stale.lean`; T2″/T3a″ in `lean/V2/Model.lean` (the full model's `NCompiler`: answers and hashes may read several interfaces). Materialised inherited members are non-local in the same way. This is the risk in the bridge's TODO about using parent hashes.
+Notes: 1.5 min. `lean/V2/Stale.lean`; T2″/T3a″ in `lean/V2/Model.lean` (the full model's [`NCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean#L32): answers and hashes may read several interfaces). Materialised inherited members are non-local in the same way. This is the risk in the bridge's TODO about using parent hashes.
 
 </div>
 
@@ -957,7 +959,7 @@ So the general theorems cover everything in Part VI, and the rest of the talk us
 
 <div class="fn">
 
-Notes: included in the 1.5 min. `lean/V2/Embed.lean`. The full model does the same for every variant with `toX` into `XCompiler` (`General.lean`).
+Notes: included in the 1.5 min. `lean/V2/Embed.lean`. The full model does the same for every variant with `toX` into [`XCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean#L20) ([`General.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean)).
 
 </div>
 
@@ -980,14 +982,14 @@ class B extends A[Int]
 
 With one model for all three we can:
 
-- **Relate schemes by theorem.** `asf_of_decl`: Scala 3's hashes determine Scala 2's. So for anything a client observes through typing, Scala 3 is sound wherever Scala 2 is, and recompiles at least as much. The converse fails, with a checked example (a parent's type argument changes a member only as seen from the subclass).
+- **Relate schemes by theorem.** [`asf_of_decl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L570): Scala 3's hashes determine Scala 2's. So for anything a client observes through typing, Scala 3 is sound wherever Scala 2 is, and recompiles at least as much. The converse fails, with a checked example (a parent's type argument changes a member only as seen from the subclass).
 - **Compare schemes on one program space.** Same programs, same edits: undercompiling runs and total recompiles per scheme (§20's table is one such comparison).
 - **Check a proposed scheme before implementing it.** A change to hashing ([retronym/zinc#27](https://github.com/retronym/zinc/issues/27), [#28](https://github.com/retronym/zinc/issues/28)) is a new `π`/`keys`; the model says whether it meets the obligations and what it costs.
 - The Merkle scheme is a working PoC ([retronym/zinc#24](https://github.com/retronym/zinc/issues/24)): on Spark's catalyst, adding a member to `TreeNode` recompiles 420 classes where Zinc recompiles 1,371. Its descendant rules, six at first and eight now, are what most of §25 is about (overflow §18a).
 
 <div class="fn">
 
-Notes: 2 min. In the model: Scala 2 is `Hier.W` and `Erasure` `.asf` (`W_obligations`); Scala 3 is `Erasure` `.decl` (`Er_obligations`, with an erasure witness or a dependency on `V`); Merkle is `Hier.Mk` and `Flat.Fl` (`Mk_obligations`, `Fl_obligations`, `flat_sound`). `Zinc/Hier.lean`, `Zinc/HierSound.lean`, `Zinc/Erasure.lean` (`Rend .asf | .decl`, `asf_of_decl`, `asfInh_of_declInh`), `Zinc/Flat.lean`. Scala 3 renders inherited members as declared since [lampepfl/dotty#1244](https://github.com/lampepfl/dotty/issues/1244) (2016). The PoC now runs on Scala 3 too ([retronym/zinc#39](https://github.com/retronym/zinc/pull/39); compiler side on retronym/scala3), which needed one more rule, `exports`: Scala 3 records a wildcard `export` as inheritance from the exported class. Precision case: as declared recompiles `B` and `X` for nothing on `B extends A[Int] → A[Long]` with `A.m: T`.
+Notes: 2 min. In the model: Scala 2 is [`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238) and `Erasure` `.asf` ([`W_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L209)); Scala 3 is `Erasure` `.decl` ([`Er_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1004), with an erasure witness or a dependency on `V`); Merkle is [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) and [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579) ([`Mk_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L248), [`Fl_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L676), [`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760)). [`Zinc/Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean), [`Zinc/HierSound.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean), [`Zinc/Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean) (`Rend .asf | .decl`, [`asf_of_decl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L570), [`asfInh_of_declInh`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L586)), [`Zinc/Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean). Scala 3 renders inherited members as declared since [lampepfl/dotty#1244](https://github.com/lampepfl/dotty/issues/1244) (2016). The PoC now runs on Scala 3 too ([retronym/zinc#39](https://github.com/retronym/zinc/pull/39); compiler side on retronym/scala3), which needed one more rule, `exports`: Scala 3 records a wildcard `export` as inheritance from the exported class. Precision case: as declared recompiles `B` and `X` for nothing on `B extends A[Int] → A[Long]` with `A.m: T`.
 
 </div>
 
@@ -1015,7 +1017,7 @@ Same edit, two layouts (`implicit-scope-grandparent-companion`: `B`, an ancestor
 
 <div class="fn">
 
-Notes: 1 min. `Zinc/ImplicitScope.lean`: `report develop (.proj oneP) gp₀ gp₁ {B}` and `(.proj twoP)`. `Zinc/Erasure.lean` uses the same device. Compositionality is the axiom `comp` in general and a lemma in each toy, where interfaces are determined by source (`Toy.comp`, `Fl_comp`, `Is_comp`).
+Notes: 1 min. [`Zinc/ImplicitScope.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean): `report develop (.proj oneP) gp₀ gp₁ {B}` and `(.proj twoP)`. [`Zinc/Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean) uses the same device. Compositionality is the axiom `comp` in general and a lemma in each toy, where interfaces are determined by source ([`Toy.comp`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L196), [`Fl_comp`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L650), [`Is_comp`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean#L497)).
 
 </div>
 
@@ -1057,7 +1059,7 @@ Unclean runs out of 189,888 (program, edit) pairs:
 | + erased signature at the definition | 0 | 0 | 2,176 |
 | + trait/class kind in the class-name hash | 0 | 0 | **0** |
 
-`dep_obligations`, `fresh_obligations`: the last row is sound.
+[`dep_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1123), [`fresh_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1119): the last row is sound.
 
 <div class="status">
 
@@ -1070,7 +1072,7 @@ Unclean runs out of 189,888 (program, edit) pairs:
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Erasure.lean`; `lake exe exhaustive erasure` (13 variants, 24 s). The last row costs 24% more recompiles than Scala 2 today, 6% more than Scala 3 today. Outcome: [retronym/zinc#27](https://github.com/retronym/zinc/issues/27), [#28](https://github.com/retronym/zinc/issues/28).
+Notes: 1.5 min. [`Zinc/Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean); `lake exe exhaustive erasure` (13 variants, 24 s). The last row costs 24% more recompiles than Scala 2 today, 6% more than Scala 3 today. Outcome: [retronym/zinc#27](https://github.com/retronym/zinc/issues/27), [#28](https://github.com/retronym/zinc/issues/28).
 
 Bugs of note: [sbt/zinc#444](https://github.com/sbt/zinc/pull/444) (value class underlying type in the name hash) · [sbt/zinc#1844](https://github.com/sbt/zinc/pull/1844) (closed) · [retronym/zinc#26](https://github.com/retronym/zinc/pull/26) (upstream grandparent erasure) · [retronym/zinc#27](https://github.com/retronym/zinc/pull/27) · [retronym/zinc#28](https://github.com/retronym/zinc/pull/28)
 
@@ -1099,7 +1101,7 @@ Macros.hasAnyField[C]                       // C's members include inherited one
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Flat.lean` query `all`; `PLAN.md` Phase 5. Not modelled: macro expansion itself, Scala 3 `inline` bodies.
+Notes: 1.5 min. [`Zinc/Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) query `all`; [`PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md) Phase 5. Not modelled: macro expansion itself, Scala 3 `inline` bodies.
 
 Bugs of note: [sbt/zinc#1316](https://github.com/sbt/zinc/pull/1316) (type arguments as macro-expansion dependencies) · [sbt/zinc#1432](https://github.com/sbt/zinc/pull/1432) (that edge dropped by the analysis format) · [sbt/zinc#1574](https://github.com/sbt/zinc/issues/1574) (macwire) · [scala/scala3#22999](https://github.com/scala/scala3/issues/22999) (macro annotations) · [sbt/zinc#1478](https://github.com/sbt/zinc/issues/1478)
 
@@ -1116,8 +1118,8 @@ object X { implicitly[Show[C]] } // sa → sb
 
 The fix ([sbt/zinc#1845](https://github.com/sbt/zinc/issues/1845)) publishes, per class, a summary of its ancestors' implicit names. The model shows:
 
-- recomputed from current interfaces, it is sound with no special rule inside a subproject (`is_obligations`, `is_sound`);
-- stored as Zinc stores it, it equals the recomputed one on consistent states (`stored_eq_recomputed`);
+- recomputed from current interfaces, it is sound with no special rule inside a subproject ([`is_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean#L518), [`is_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean#L574));
+- stored as Zinc stores it, it equals the recomputed one on consistent states ([`stored_eq_recomputed`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean#L678));
 - it must be part of the class's API hash, which is what another subproject compares; otherwise `C`'s clients there go stale (312 unclean runs over 120 programs × 9 edits);
 - one gap remains: the implicit scope of an object's singleton type (136 unclean runs; 0 if the summary is published for objects too). [sbt/zinc#1845](https://github.com/sbt/zinc/issues/1845) is merged with that gap documented; [sbt/zinc#1846](https://github.com/sbt/zinc/issues/1846) closes it.
 
@@ -1132,7 +1134,7 @@ The fix ([sbt/zinc#1845](https://github.com/sbt/zinc/issues/1845)) publishes, pe
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/ImplicitScope.lean`; `lake exe exhaustive implicit` (120 programs, 1,080 pairs).
+Notes: 1.5 min. [`Zinc/ImplicitScope.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean); `lake exe exhaustive implicit` (120 programs, 1,080 pairs).
 
 Bugs of note: [sbt/zinc#945](https://github.com/sbt/zinc/issues/945) (removing `implicit` not noticed) · [scala/scala3#18309](https://github.com/scala/scala3/issues/18309) (constructor implicits) · [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845) (the fix, merged) · [sbt/zinc#1846](https://github.com/sbt/zinc/pull/1846) (objects' singleton types, open)
 
@@ -1165,7 +1167,7 @@ A downstream subproject stores a snapshot of each upstream class's API. At its n
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Classpath.lean` (`inv_external`, `downstream_sound`, `fresh_refreshAll`, `fresh_refreshRef_local`), `Zinc/Snapshot.lean` (`stale_after_revert`, `refreshAll_after_revert`), `ImplicitScope.reportComposed`, `lake exe exhaustive composed`. The composed run differs only for the no-fold ablation (384 vs 312 unclean), where Zinc's `apiHash` gate hides a name-hash change. PoC fix: [`9904df698`](https://github.com/retronym/zinc/commit/9904df698). Lean on [retronym/talks#16](https://github.com/retronym/talks/issues/16).
+Notes: 1.5 min. [`Zinc/Classpath.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Classpath.lean) (`inv_external`, `downstream_sound`, `fresh_refreshAll`, `fresh_refreshRef_local`), [`Zinc/Snapshot.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Snapshot.lean) (`stale_after_revert`, [`refreshAll_after_revert`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Snapshot.lean#L173)), [`ImplicitScope.reportComposed`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean#L861), `lake exe exhaustive composed`. The composed run differs only for the no-fold ablation (384 vs 312 unclean), where Zinc's `apiHash` gate hides a name-hash change. PoC fix: [`9904df698`](https://github.com/retronym/zinc/commit/9904df698). Lean on [retronym/talks#16](https://github.com/retronym/talks/issues/16).
 
 </div>
 
@@ -1193,7 +1195,7 @@ Notes: 1.5 min. `Zinc/Classpath.lean` (`inv_external`, `downstream_sound`, `fres
 
 <div class="fn">
 
-Notes: 1.5 min. Early agreement is `Task.run_congr`, with a Java class's two views in `JavaOrder.early_view`; the failed-upstream scenarios are `Zinc/PipelineLifecycle.lean` (`stale_after_revert`, `rollback_detects`); `Zinc/Inline.lean` (`pipelined_ne_final`, `not_obligations_today`, `obligations_withBodies`).
+Notes: 1.5 min. Early agreement is [`Task.run_congr`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/query/Query/Task.lean#L79), with a Java class's two views in [`JavaOrder.early_view`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/JavaOrder.lean#L191); the failed-upstream scenarios are [`Zinc/PipelineLifecycle.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PipelineLifecycle.lean) (`stale_after_revert`, [`rollback_detects`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PipelineLifecycle.lean#L67)); [`Zinc/Inline.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Inline.lean) ([`pipelined_ne_final`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Inline.lean#L232), `not_obligations_today`, [`obligations_withBodies`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Inline.lean#L171)).
 
 Bugs of note: [sbt/zinc#537](https://github.com/sbt/zinc/issues/537) → [sbt/zinc#1310](https://github.com/sbt/zinc/pull/1310) (`@inline`, 5 years) · [scala/scala3#11861](https://github.com/scala/scala3/issues/11861) → [scala/scala3#12931](https://github.com/scala/scala3/pull/12931) (nested inline) · [scala/bug#5333](https://github.com/scala/bug/issues/5333) (Java constants) · [scala/scala3#27139](https://github.com/scala/scala3/issues/27139), [sbt/zinc#1819](https://github.com/sbt/zinc/issues/1819) (pipelining) · [sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843) (roll back early output after a failed compile, merged)
 
@@ -1247,7 +1249,7 @@ object Client { def v: Int = Foo.v }  // add a.b.Foo with v: String
 
 <div class="fn">
 
-Notes: 1.5 min. `Zinc/Tree.lean` (`TCompiler`, `round_preserves`, `zinc_sound`), `Zinc/TreeToy.lean` (`not_obligations_today`, `obligations_fixed`); `Zinc/Added.lean` (`added_today_wrong`, `added_fixed_clean`, `deleted_today_clean`; adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32)), probed on `develop`; the fix is [retronym/zinc#34](https://github.com/retronym/zinc/pull/34) (coarse: it ignores the client's package and imports, because the bridge records an import's selectors but not its qualifier; catalyst numbers in its description). Searching name resolution mechanically (scopes, package objects, exports, givens) found more of this shape, all confirmed on `develop`: pending tests [retronym/zinc#35](https://github.com/retronym/zinc/pull/35), model in [retronym/talks#21](https://github.com/retronym/talks/pull/21). The fix for Scala 3 records `_N+1` ([scala/scala3#26262](https://github.com/scala/scala3/issues/26262), in 3.10.0); the draft fix for Scala 2 records `op=` from the source position ([retronym/zinc#15](https://github.com/retronym/zinc/issues/15)).
+Notes: 1.5 min. [`Zinc/Tree.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Tree.lean) ([`TCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Tree.lean#L24), `round_preserves`, `zinc_sound`), [`Zinc/TreeToy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/TreeToy.lean) (`not_obligations_today`, `obligations_fixed`); [`Zinc/Added.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Added.lean) ([`added_today_wrong`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Added.lean#L193), [`added_fixed_clean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Added.lean#L196), [`deleted_today_clean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Added.lean#L199); adding and deleting are edits from and to an absent source). Pending scripted tests `added-class-*` ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32)), probed on `develop`; the fix is [retronym/zinc#34](https://github.com/retronym/zinc/pull/34) (coarse: it ignores the client's package and imports, because the bridge records an import's selectors but not its qualifier; catalyst numbers in its description). Searching name resolution mechanically (scopes, package objects, exports, givens) found more of this shape, all confirmed on `develop`: pending tests [retronym/zinc#35](https://github.com/retronym/zinc/pull/35), model in [retronym/talks#21](https://github.com/retronym/talks/pull/21). The fix for Scala 3 records `_N+1` ([scala/scala3#26262](https://github.com/scala/scala3/issues/26262), in 3.10.0); the draft fix for Scala 2 records `op=` from the source position ([retronym/zinc#15](https://github.com/retronym/zinc/issues/15)).
 
 Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231) → [scala/scala3#26262](https://github.com/scala/scala3/pull/26262) (pattern matching) · [retronym/zinc#14](https://github.com/retronym/zinc/pull/14), [#15](https://github.com/retronym/zinc/pull/15), [#17](https://github.com/retronym/zinc/pull/17) (`+=`, `Dynamic`, extractors)
 
@@ -1259,7 +1261,7 @@ Bugs of note: [scala/scala3#26231](https://github.com/scala/scala3/issues/26231)
 
 ### 24. The model as a specification
 
-One framework: a compiler is a `Task` over queries; the bridge is `keys`, `π`, `covers`; three obligations (compositionality, coverage, abstraction) and a sound policy give T3a. Every variant (local, keys from the tree, non-local hash, upstream snapshots) lifts into one general form, `XCompiler`, and T2, T3a, T4 (for monotone policies) and T5 are proved once (`General.lean`).
+One framework: a compiler is a `Task` over queries; the bridge is `keys`, `π`, `covers`; three obligations (compositionality, coverage, abstraction) and a sound policy give T3a. Every variant (local, keys from the tree, non-local hash, upstream snapshots) lifts into one general form, [`XCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean#L20), and T2, T3a, T4 (for monotone policies) and T5 are proved once ([`General.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean)).
 
 Each language feature is then an *instance*: its lookup as the task, today's bridge as the keys, each historical bug as a failed obligation with a witness, each fix as a key with an `Obligations` proof. Precision is a definition next to soundness: the classes a key invalidates beyond those whose traced answers changed.
 
@@ -1274,7 +1276,7 @@ No theorem is proved by `native_decide`; CI checks the axioms of 74 theorems. En
 
 <div class="fn">
 
-Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug families F1–F3, G1–G2, upstream F1); `InlineOpaqueSpec`, `MacroDeps` (I1–I3, O1, [scala3#23852](https://github.com/scala/scala3/issues/23852), [#22999](https://github.com/scala/scala3/issues/22999), [#27125](https://github.com/scala/scala3/issues/27125)); `JavaSpec`, `JavaSealedSpec`, `JavaOrder` (J1–J4, S1–S2); `Cycles` … `ExtraHash` ([sbt/zinc#1284](https://github.com/sbt/zinc/issues/1284), [#1812](https://github.com/sbt/zinc/issues/1812), [#1782](https://github.com/sbt/zinc/issues/1782), [#1842](https://github.com/sbt/zinc/issues/1842), [#1843](https://github.com/sbt/zinc/issues/1843), [scala3#19910](https://github.com/scala/scala3/issues/19910), [#26231](https://github.com/scala/scala3/issues/26231), [sbt/zinc#87](https://github.com/sbt/zinc/issues/87), [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796)). `DESIGN-spec.md`, `General.lean`, `PLAN.md`'s proved-vs-checked table, `REVIEW-2026-10-11.md`. The earlier per-feature table (`obligations_repaired`, `D/W/Mk_obligations`, `Fl_obligations`, `Er_obligations`, `is_obligations`) is unchanged underneath; those instances lift too.
+Notes: 1.5 min. Instances: `SplitProof.Spec`, `SpecGivens`, `Extensions` (bug families F1–F3, G1–G2, upstream F1); `InlineOpaqueSpec`, `MacroDeps` (I1–I3, O1, [scala3#23852](https://github.com/scala/scala3/issues/23852), [#22999](https://github.com/scala/scala3/issues/22999), [#27125](https://github.com/scala/scala3/issues/27125)); `JavaSpec`, `JavaSealedSpec`, `JavaOrder` (J1–J4, S1–S2); `Cycles` … `ExtraHash` ([sbt/zinc#1284](https://github.com/sbt/zinc/issues/1284), [#1812](https://github.com/sbt/zinc/issues/1812), [#1782](https://github.com/sbt/zinc/issues/1782), [#1842](https://github.com/sbt/zinc/issues/1842), [#1843](https://github.com/sbt/zinc/issues/1843), [scala3#19910](https://github.com/scala/scala3/issues/19910), [#26231](https://github.com/scala/scala3/issues/26231), [sbt/zinc#87](https://github.com/sbt/zinc/issues/87), [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796)). [`DESIGN-spec.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/specification.md), [`General.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean), [`PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md)'s proved-vs-checked table, [`REVIEW-2026-10-11.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/reviews/2026-10-11-morning.md). The earlier per-feature table ([`obligations_repaired`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L223), `D/W/Mk_obligations`, [`Fl_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L676), [`Er_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1004), [`is_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean#L518)) is unchanged underneath; those instances lift too.
 
 </div>
 
@@ -1319,7 +1321,7 @@ Notes: 1.5 min. Counted at `master` on 12 October, excluding `.lake/` and `scrat
 - A macro reads its argument's ancestors, so the PoC follows macro edges from descendants (437,696 without). <span class="chip search">search in the model</span>
 - Refreshing only the upstream snapshots a recompiled class referenced goes stale after a revert, so the PoC refreshes every changed upstream class. <span class="chip harness">generated tests</span>
 - Under pipelining, Java's dependencies on its own subproject's classes went external, and even a body-only edit recompiled about 1,700 catalyst classes ([retronym/zinc#55](https://github.com/retronym/zinc/pull/55); found by benchmark, then modelled). <span class="chip bench">benchmark on real code</span>
-- Bridge-side hashing kept only one of a class and its companion, so a change to a case class's own member went unseen; it also cost most of the PoC's gain with pipelining on ([retronym/zinc#56](https://github.com/retronym/zinc/pull/56); found by benchmark, then modelled in `Companions.lean`). <span class="chip bench">benchmark on real code</span>
+- Bridge-side hashing kept only one of a class and its companion, so a change to a case class's own member went unseen; it also cost most of the PoC's gain with pipelining on ([retronym/zinc#56](https://github.com/retronym/zinc/pull/56); found by benchmark, then modelled in [`Companions.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Companions.lean)). <span class="chip bench">benchmark on real code</span>
 
 **Fixes to Zinc and the compilers**
 
@@ -1337,7 +1339,7 @@ Notes: 1.5 min. Counted at `master` on 12 October, excluding `.lake/` and `scrat
 - Under pipelining, every edited Java class is compared in two forms, source and classfile, which recompiles for nothing (develop's pending `java-comment-change`). <span class="chip proof">proof attempt</span>
 - Five historical "hash" bugs cost recompiles but were not wrong; one hid a real difference. <span class="chip proof">proof attempt</span>
 
-The bug map classifies 145 historical bugs by root cause (an obligation, the policy, snapshots or the compiler) and maps each to the part of the model that expresses it ([`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md): 56 covered, 38 partially, 50 gaps); `TESTS-catalogue.md` catalogues the 208 scripted tests. The model predicted 20 failures no test covered, 16 of them new bug families; all 20 failed on develop as predicted ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33), [#49](https://github.com/retronym/zinc/pull/49), [#50](https://github.com/retronym/zinc/pull/50), [#51](https://github.com/retronym/zinc/pull/51), [#53](https://github.com/retronym/zinc/pull/53), [#57](https://github.com/retronym/zinc/pull/57), [#58](https://github.com/retronym/zinc/pull/58)).
+The bug map classifies 145 historical bugs by root cause (an obligation, the policy, snapshots or the compiler) and maps each to the part of the model that expresses it ([`BUG-MAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bug-map.md): 56 covered, 38 partially, 50 gaps); [`TESTS-catalogue.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/tests.md) catalogues the 208 scripted tests. The model predicted 20 failures no test covered, 16 of them new bug families; all 20 failed on develop as predicted ([retronym/zinc#33](https://github.com/retronym/zinc/pull/33), [#49](https://github.com/retronym/zinc/pull/49), [#50](https://github.com/retronym/zinc/pull/50), [#51](https://github.com/retronym/zinc/pull/51), [#53](https://github.com/retronym/zinc/pull/53), [#57](https://github.com/retronym/zinc/pull/57), [#58](https://github.com/retronym/zinc/pull/58)).
 
 <!-- break -->
 
@@ -1360,7 +1362,7 @@ The rule fired only for names deferred in the edited class. `m` is deferred in `
 
 <div class="fn">
 
-Notes: 2.5 min. Evidence, in order: `FlatRules.lean`, `Flat.lean` (a grandparent edit), the `Flat` space's ablations, `Flat.lean` (T2″), `Snapshot.stale_after_revert` (PoC [`9904df698`](https://github.com/retronym/zinc/commit/9904df698)), IncBench on [retronym/zinc#24](https://github.com/retronym/zinc/pull/24); `Erasure.lean`, `ImplicitScope.lean`, `Added.lean`, `SplitProof.Spec`/`SpecGivens` (F2, F3, G1, G2), the harness (F6); `PingPong.zinc_diverges`, `Cycles.lean` (C1, C2), `JavaOrder.exclusion_exact`/`flip_spurious`, `HashForms.lean`. Of the 20 predictions, [rz#33](https://github.com/retronym/zinc/issues/33) is a termination property and three restate the erasure family already fixed by hand. `Zinc/FlatRules.lean`; [retronym/talks#5](https://github.com/retronym/talks/issues/5), [#8](https://github.com/retronym/talks/issues/8), [#9](https://github.com/retronym/talks/issues/9). A `Report` is (classes recompiled, rounds, equals clean build). The catalogue and map: `BUGS-catalogue.md`, `TESTS-catalogue.md`, `BUG-MAP.md`. The same edit, a member losing its body, is also a bug in plain Zinc on Scala 3: the bridge never marks a deferred `def` or `val` abstract, so `B` is not recompiled and fails at runtime with `AbstractMethodError` (since 2020; [scala/scala3#27270](https://github.com/scala/scala3/issues/27270), fix [scala/scala3#27271](https://github.com/scala/scala3/pull/27271)). Found while porting the PoC to Scala 3.
+Notes: 2.5 min. Evidence, in order: [`FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean), [`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) (a grandparent edit), the `Flat` space's ablations, [`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) (T2″), [`Snapshot.stale_after_revert`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Snapshot.lean#L170) (PoC [`9904df698`](https://github.com/retronym/zinc/commit/9904df698)), IncBench on [retronym/zinc#24](https://github.com/retronym/zinc/pull/24); [`Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean), [`ImplicitScope.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean), [`Added.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Added.lean), `SplitProof.Spec`/`SpecGivens` (F2, F3, G1, G2), the harness (F6); [`PingPong.zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217), [`Cycles.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Cycles.lean) (C1, C2), [`TCompiler.exclusion_exact`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/JavaOrder.lean#L246)/[`flip_spurious`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/JavaOrder.lean#L276), [`HashForms.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HashForms.lean). Of the 20 predictions, [rz#33](https://github.com/retronym/zinc/issues/33) is a termination property and three restate the erasure family already fixed by hand. [`Zinc/FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean); [retronym/talks#5](https://github.com/retronym/talks/issues/5), [#8](https://github.com/retronym/talks/issues/8), [#9](https://github.com/retronym/talks/issues/9). A `Report` is (classes recompiled, rounds, equals clean build). The catalogue and map: [`BUGS-catalogue.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bugs.md), [`TESTS-catalogue.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/tests.md), [`BUG-MAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bug-map.md). The same edit, a member losing its body, is also a bug in plain Zinc on Scala 3: the bridge never marks a deferred `def` or `val` abstract, so `B` is not recompiled and fails at runtime with `AbstractMethodError` (since 2020; [scala/scala3#27270](https://github.com/scala/scala3/issues/27270), fix [scala/scala3#27271](https://github.com/scala/scala3/pull/27271)). Found while porting the PoC to Scala 3.
 
 </div>
 
@@ -1389,7 +1391,7 @@ Two stronger checks since: the harness compares *recompiled sets*, not only verd
 
 <div class="fn">
 
-Notes: 2 min. `Conformance.lean`; the harness is `sbt.internal.inc.bench.Conformance` in [retronym/zinc#25](https://github.com/retronym/zinc/pull/25), on `develop` in [retronym/zinc#36](https://github.com/retronym/zinc/pull/36). It orders cases by a covering array over the program's factors and finds each known bug family within 7–436 cases. Also reproduced: a pipelining revert after a failed upstream compile, fixed in [sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843).
+Notes: 2 min. [`Conformance.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/harness/Harness/Conformance.lean); the harness is `sbt.internal.inc.bench.Conformance` in [retronym/zinc#25](https://github.com/retronym/zinc/pull/25), on `develop` in [retronym/zinc#36](https://github.com/retronym/zinc/pull/36). It orders cases by a covering array over the program's factors and finds each known bug family within 7–436 cases. Also reproduced: a pipelining revert after a failed upstream compile, fixed in [sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843).
 
 </div>
 
@@ -1427,27 +1429,27 @@ Notes: 2 min. [retronym/zinc#31](https://github.com/retronym/zinc/pull/31) and i
 
 Zinc asks whether a client must be recompiled; MiMa asks whether its old classfile still links. Both are a task's trace against an edited environment, so T1 applies to linkage unchanged.
 
-- `Jvm/Link.lean`: JVM resolution and selection as a `Task`; a catalogue of 45 library edits (method removed, class becomes interface, default conflict, access changes, …) with the `LinkError` each produces and the client spaces that break (58,400 programs). Calibrated on HotSpot 21, 25 and 27: every program agrees, except where it hits two known JDK 21 bugs ([JDK-8356942](https://bugs.openjdk.org/browse/JDK-8356942), [JDK-8350029](https://bugs.openjdk.org/browse/JDK-8350029)).
-- `Scala/`: a scalac subset lowered to `Jvm.World` as a `Task`, calibrated against scalac 2.12, 2.13 and 3 ([talks#39](https://github.com/retronym/talks/issues/39)); one `asSeenFrom` shared with the IntelliJ type-system TCK ([talks#56](https://github.com/retronym/talks/issues/56)).
-- The theorem that ties them: for a front end meeting Zinc's obligations, a client Zinc does not invalidate links against the new library exactly as a fresh build would. Proved as B4 (`untouched_eq_clean`): Zinc-clean implies binary-compatible; the converse fails, and that gap is what MiMa reports. Pointed at MiMa, the model found five gaps (40 false negatives on the space).
+- [`Jvm/Link.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/jvm/Jvm/Link.lean): JVM resolution and selection as a `Task`; a catalogue of 45 library edits (method removed, class becomes interface, default conflict, access changes, …) with the [`LinkError`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/jvm/Jvm/Link.lean#L110) each produces and the client spaces that break (58,400 programs). Calibrated on HotSpot 21, 25 and 27: every program agrees, except where it hits two known JDK 21 bugs ([JDK-8356942](https://bugs.openjdk.org/browse/JDK-8356942), [JDK-8350029](https://bugs.openjdk.org/browse/JDK-8350029)).
+- `Scala/`: a scalac subset lowered to [`Jvm.World`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/jvm/Jvm/Link.lean#L70) as a `Task`, calibrated against scalac 2.12, 2.13 and 3 ([talks#39](https://github.com/retronym/talks/issues/39)); one `asSeenFrom` shared with the IntelliJ type-system TCK ([talks#56](https://github.com/retronym/talks/issues/56)).
+- The theorem that ties them: for a front end meeting Zinc's obligations, a client Zinc does not invalidate links against the new library exactly as a fresh build would. Proved as B4 ([`untouched_eq_clean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/links/Links/ZincBridge.lean#L130)): Zinc-clean implies binary-compatible; the converse fails, and that gap is what MiMa reports. Pointed at MiMa, the model found five gaps (40 false negatives on the space).
 
 <div class="fn">
 
-Notes: 1 min. `ROADMAP.md` on `claude/bincompat-lean` (tracks J, S, B); [talks#50](https://github.com/retronym/talks/issues/50), [#39](https://github.com/retronym/talks/issues/39), [#56](https://github.com/retronym/talks/issues/56). The layers live beside `Zinc/`, not in it.
+Notes: 1 min. [`ROADMAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/roadmap.md) on `claude/bincompat-lean` (tracks J, S, B); [talks#50](https://github.com/retronym/talks/issues/50), [#39](https://github.com/retronym/talks/issues/39), [#56](https://github.com/retronym/talks/issues/56). The layers live beside `Zinc/`, not in it.
 
 </div>
 
 ### 28. What the model does not show
 
 - That scalac or dotc meet the obligations. Still a testing problem; §27's `uncovered` verdict checks the bridge's keys per case, and the calibrations (§27b) check the tasks, but neither is a proof.
-- Files: Zinc recompiles files, not classes. Modelled (`Files.lean`: rounds closed under files, imports charged to one class; T2 and T3a as `zinc_sound_charged`); T3 and T4 for files are not.
-- Precision is now a definition (`Necessary`, `OverInvalidated`) and a theorem per key (`narrowed_le_global`), but still not a comparison of whole designs.
+- Files: Zinc recompiles files, not classes. Modelled ([`Files.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Files.lean): rounds closed under files, imports charged to one class; T2 and T3a as [`zinc_sound_charged`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Files.lean#L174)); T3 and T4 for files are not.
+- Precision is now a definition (`Necessary`, [`OverInvalidated`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/SplitProof.lean#L880)) and a theorem per key ([`narrowed_le_global`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/SplitProof.lean#L910)), but still not a comparison of whole designs.
 - Hash collisions: hashes are modelled as injective.
 - The newest instances are narrow by their authors' own account: two-unit cycles; naming and hash forms prove coverage and abstraction but not full soundness of the renamed compiler; one annotation per definition; one pipelining bug ([scala3#20119](https://github.com/scala/scala3/issues/20119)) has no model; the Scala 3 fixes need dotty.
 
 <div class="fn">
 
-Notes: 45 s. `zinc-incrementality` §22 "Limits"; `PLAN.md`'s status table; the "Known limits" row of the dashboard.
+Notes: 45 s. `zinc-incrementality` §22 "Limits"; [`PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md)'s status table; the "Known limits" row of the dashboard.
 
 </div>
 
@@ -1517,7 +1519,7 @@ class C extends M     // C implements f, its setter, and calls M.$init$
 
 <div class="fn">
 
-Notes: 1 min, first to cut. `Zinc/Flat.lean` (`Mod`, private members), `FlatRules` `traitPub`.
+Notes: 1 min, first to cut. [`Zinc/Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) (`Mod`, private members), `FlatRules` `traitPub`.
 
 Bugs of note: [sbt/zinc#1787](https://github.com/sbt/zinc/pull/1787) (trait `extraHash` over-invalidation) · [sbt/zinc#1794](https://github.com/sbt/zinc/issues/1794) → [sbt/zinc#1799](https://github.com/sbt/zinc/pull/1799) (comment-only trait edit recompiled heirs) · [sbt/zinc#1795](https://github.com/sbt/zinc/issues/1795) → [sbt/zinc#1807](https://github.com/sbt/zinc/pull/1807) (object/trait conflation)
 
@@ -1538,7 +1540,7 @@ Proofs say "sound, given a cover". Running every program in a bounded space, wit
 
 <div class="fn">
 
-Notes: 1 min, in overflow since the specification reframe: these are checks of an instance, not theorems. `Exhaustive.lean` (`lake exe exhaustive`); full table in `PLAN.md` Phase 5. Each minimal counterexample becomes a checked `example` and a scripted test. Caveat: these are executions, not theorems; the space is bounded; hashes are modelled as injective. A whole-space `native_decide` is too slow for the build.
+Notes: 1 min, in overflow since the specification reframe: these are checks of an instance, not theorems. [`Exhaustive.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/harness/Harness/Exhaustive.lean) (`lake exe exhaustive`); full table in [`PLAN.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/phases.md) Phase 5. Each minimal counterexample becomes a checked `example` and a scripted test. Caveat: these are executions, not theorems; the space is bounded; hashes are modelled as injective. A whole-space `native_decide` is too slow for the build.
 
 </div>
 
@@ -1549,16 +1551,16 @@ What this slide listed on 9 October, and where it is now:
 | feature | then | now |
 |---|---|---|
 | exports, top-level definitions, package objects | needed a source → class mapping | names, exports and givens modelled (`SplitProof.Spec`, `SpecGivens`, `DerivedApi`); fixed in [retronym/zinc#47](https://github.com/retronym/zinc/issues/47) |
-| class vs companion | keys with a namespace component | `ExtraHash.lean`: the lineage [sbt/zinc#542](https://github.com/sbt/zinc/issues/542) → [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) as alternating soundness and precision fixes; namespaced keys are the condition [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) must meet |
-| annotations, parameter annotations, literal types | more of the declaration in the answer | `Annotations.lean`: [sbt/zinc#1842](https://github.com/sbt/zinc/pull/1842) is coverage, [scala3#22999](https://github.com/scala/scala3/issues/22999) abstraction |
+| class vs companion | keys with a namespace component | [`ExtraHash.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/ExtraHash.lean): the lineage [sbt/zinc#542](https://github.com/sbt/zinc/issues/542) → [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) as alternating soundness and precision fixes; namespaced keys are the condition [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) must meet |
+| annotations, parameter annotations, literal types | more of the declaration in the answer | [`Annotations.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Annotations.lean): [sbt/zinc#1842](https://github.com/sbt/zinc/pull/1842) is coverage, [scala3#22999](https://github.com/scala/scala3/issues/22999) abstraction |
 | Java sources | a second front end and compositionality between views | `JavaSpec`, `JavaSealedSpec`, `JavaOrder`: `Mixed` is sound exactly when the source and classfile views agree |
 | inline, opaque, macros | — | `InlineOpaqueSpec`, `MacroDeps` |
-| SAM conversion | an inheritance edge the source does not spell out | `Sam.lean`: SAM conversion and local classes; two predictions confirmed ([retronym/zinc#58](https://github.com/retronym/zinc/pull/58)) |
-| files as units | — | `Files.lean`: rounds closed under files, imports charged to one class (`zinc_sound_charged`) |
+| SAM conversion | an inheritance edge the source does not spell out | [`Sam.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Sam.lean): SAM conversion and local classes; two predictions confirmed ([retronym/zinc#58](https://github.com/retronym/zinc/pull/58)) |
+| files as units | — | [`Files.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Files.lean): rounds closed under files, imports charged to one class ([`zinc_sound_charged`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Files.lean#L174)) |
 
 <div class="fn">
 
-Notes: 1 min. [`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md) lists the remaining gap clusters: SAM and local classes, inner and path-dependent classes, phantom binary dependencies, import renames and given priority, case classes and enums beyond synthetics, files.
+Notes: 1 min. [`BUG-MAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bug-map.md) lists the remaining gap clusters: SAM and local classes, inner and path-dependent classes, phantom binary dependencies, import renames and given priority, case classes and enums beyond synthetics, files.
 
 </div>
 
@@ -1568,8 +1570,8 @@ Notes: 1 min. [`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-
 
 ### D. Demos, as screenshot sequences (pick two)
 
-1. **A counterexample by evaluation.** `FlatRules.lean`, the `abstract` example (§25): the infoview with `abstractAll := true` (green), then `false` (red), then `#eval` showing `⟨[], 1, false⟩`.
-2. **A proof that breaks where a key is missing.** `Toy.lean`: map `keyOf .underlying` to `.name x` instead of `.self`; `coverage_repaired` fails with the uncovered `underlying` query in the goal. To check: that the goal is readable.
+1. **A counterexample by evaluation.** [`FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean), the `abstract` example (§25): the infoview with `abstractAll := true` (green), then `false` (red), then `#eval` showing `⟨[], 1, false⟩`.
+2. **A proof that breaks where a key is missing.** [`Toy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean): map `keyOf .underlying` to `.name x` instead of `.self`; [`coverage_repaired`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L214) fails with the uncovered `underlying` query in the goal. To check: that the goal is readable.
 3. **`lake exe exhaustive erasure`**: 24 s, prints the 13-variant table.
 4. **The conformance harness finding a Zinc bug.** `lake exe conformance > cases.jsonl`, the harness on the baseline with `--order covering`, stopping at the class-becomes-trait divergence; then the `javap` diff (`invokevirtual` vs `invokeinterface`).
 
@@ -1577,11 +1579,11 @@ My pick: 1 and 4, with 3 as a fallback.
 
 ### C. Work before this is presentable
 
-- §10 and §18 still quote the full model (`Zinc/Hier.lean`, `Zinc/Erasure.lean`, `Zinc/Flat.lean`); §11's `round` is simplified on the slide.
+- §10 and §18 still quote the full model ([`Zinc/Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean), [`Zinc/Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean), [`Zinc/Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean)); §11's `round` is simplified on the slide.
 - Screenshots: P1, P3/P4 infoview, the demos.
-- `lean/V2/Embed.lean` is now subsumed by the full model's `General.lean` (every variant lifts into `XCompiler`); decide whether the talk's V1/V2 snapshots follow it or stay frozen.
-- §18: the Scala 2 row is split across two files (`Hier.W` for typing, `Erasure` `.asf` for codegen). One instance per scheme over one program space would make the slide's table a single comparison.
-- Precision: definitions and per-key theorems exist now (`Necessary`, `OverInvalidated`, `narrowed_le_global`); a design-to-design theorem (P2.6) is still open.
+- `lean/V2/Embed.lean` is now subsumed by the full model's [`General.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean) (every variant lifts into [`XCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/General.lean#L20)); decide whether the talk's V1/V2 snapshots follow it or stay frozen.
+- §18: the Scala 2 row is split across two files ([`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238) for typing, `Erasure` `.asf` for codegen). One instance per scheme over one program space would make the slide's table a single comparison.
+- Precision: definitions and per-key theorems exist now (`Necessary`, [`OverInvalidated`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/SplitProof.lean#L880), [`narrowed_le_global`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/SplitProof.lean#L910)); a design-to-design theorem (P2.6) is still open.
 - Screenshots to add: the `uncovered` verdict ([retronym/zinc#54](https://github.com/retronym/zinc/pull/54)) on a clean-but-uncovered case; the C1-vs-[sbt/zinc#1780](https://github.com/sbt/zinc/pull/1780) test; `#print axioms` from the CI run.
 - Freeze the numbers from [retronym/zinc#24](https://github.com/retronym/zinc/issues/24), [#25](https://github.com/retronym/zinc/issues/25), [#31](https://github.com/retronym/zinc/issues/31), [#41](https://github.com/retronym/zinc/issues/41), [#47](https://github.com/retronym/zinc/issues/47) and [#55](https://github.com/retronym/zinc/issues/55) at a commit; the catalyst tables in §27a come from [#47](https://github.com/retronym/zinc/issues/47) and [#41](https://github.com/retronym/zinc/issues/41).
 - Lean syntax highlighting in `template.html` (highlight.js has no Lean grammar).
@@ -1594,7 +1596,7 @@ My pick: 1 and 4, with 3 as a fallback.
 
 1. Audience: Scala tooling.
 2. Overlap with `zinc-incrementality` Part VII: leave until this talk is fleshed out.
-3. The full model stays in `zinc-incrementality/lean/`; this talk adds `lean/` with the primer and V1/V2 snapshots.
+3. The full model stays in `zinc-incrementality/lean/` (since 12 October it is [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models)); this talk adds `lean/` with the primer and V1/V2 snapshots.
 4. Screenshots, not live Lean.
 5. Merkle PoC: one line in §18; the slide (§18a) is in overflow.
 6. Agents: one line (§29).

@@ -1,6 +1,6 @@
 import V1.Task
 
--- Snapshot of `zinc-incrementality/lean/Zinc/Model.lean`, unchanged apart from the namespace.
+-- Snapshot of `zinc-incrementality/lean/Zinc/Model.lean` (now `packages/inc-comp/IncComp/Model.lean` in retronym/jvm-lang-models), unchanged apart from the namespace.
 
 /-!
 # The abstract model of a compiler and of Zinc's loop

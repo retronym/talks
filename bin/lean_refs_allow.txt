@@ -1,0 +1,2 @@
+# Names that look like Lean theorems in the talks but are not declarations of the models.
+native_decide  # a tactic

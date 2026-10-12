@@ -2,6 +2,8 @@
 
 **Status:** outline for review. Each `###` is one slide. The grey block under a slide holds notes, evidence and time; it is not shown.
 
+**Lean model:** [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models) at `4faa126ffd12acc1e45ac41c636751b26b863949`. Lean files, documents and declarations cited below link to that commit; `bin/lean_refs.py` checks that they exist there.
+
 **Audience:** Scala tooling people and anyone who maintains a compiler or build tool. No Lean needed; the model is shown only through what it checked and predicted.
 
 **Thesis:** each test oracle for Zinc had a blind spot, and in each case the Lean model is what exposed it and suggested the next check. The model was tested in turn: against Zinc, against scalac, javac and HotSpot, and by checking its own proofs. Most of this happened between 6 and 11 October 2026.
@@ -88,7 +90,7 @@ Notes: 2.5 min. `zinc-incrementality` §6a. Scala 3's counterpart, scala/scala3#
 
 <span class="chip proof">proof attempt</span>
 
-- Zinc's loop stops only because of `transitiveStep`. Without it, three classes whose types are inferred from each other alternate for ever; this is proved for any amount of fuel (`PingPong.zinc_diverges`).
+- Zinc's loop stops only because of `transitiveStep`. Without it, three classes whose types are inferred from each other alternate for ever; this is proved for any amount of fuel ([`PingPong.zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217)).
 - Stopping does not mean the result equals the clean build. With mutually inferred types, separate compilation can have several fixed points; joint compilation reports a cyclic reference.
 - No test stated either as a property of the loop. The search then found the three-class witness (§7), and both became scripted tests (retronym/zinc#33, #49).
 
@@ -122,7 +124,7 @@ Notes: 2 min. `zinc-incrementality` §19. One line on Merkle only; the design is
 
 <div class="fn">
 
-Notes: 2.5 min. retronym/talks#5, #8, #9; `FlatRules.lean`, `Snapshot.lean`. The same `abstract` edit is a bug in plain Zinc on Scala 3 since 2020 (scala/scala3#27270), found later while porting the PoC; mention it here or at §15.
+Notes: 2.5 min. retronym/talks#5, #8, #9; [`FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean), [`Snapshot.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Snapshot.lean). The same `abstract` edit is a bug in plain Zinc on Scala 3 since 2020 (scala/scala3#27270), found later while porting the PoC; mention it here or at §15.
 
 </div>
 
@@ -139,11 +141,11 @@ flowchart LR
 - The oracle changed from "which classes recompiled" to "are the classfiles equal to a clean build's".
 - Cases are ordered by a covering array over the program's factors; each known bug family appears within 7–436 cases.
 - Found in Zinc within hours: a class that becomes a trait (the client keeps `invokevirtual`) and an upstream grandparent's erasure (retronym/zinc#26). It also hit the `final` parent the PoC's own tests had found; sbt/zinc#1841 fixes both header cases.
-- Found in the PoC: refreshing only some upstream snapshots goes stale after an edit and its revert. The model then proved the fix sufficient (`Snapshot.stale_after_revert`, `refreshAll_after_revert`).
+- Found in the PoC: refreshing only some upstream snapshots goes stale after an edit and its revert. The model then proved the fix sufficient ([`Snapshot.stale_after_revert`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Snapshot.lean#L170), [`refreshAll_after_revert`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Snapshot.lean#L173)).
 
 <div class="fn">
 
-Notes: 2.5 min. `Conformance.lean`; `sbt.internal.inc.bench.Conformance`.
+Notes: 2.5 min. [`Conformance.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/harness/Harness/Conformance.lean); `sbt.internal.inc.bench.Conformance`.
 
 </div>
 
@@ -230,7 +232,7 @@ Notes: 1 min.
 
 ### 14. A bug map: every known bug classified by root cause
 
-- Every one of 145 historical bugs classified by root cause (coverage, abstraction, compositionality, the policy, snapshots, or the compiler itself) and mapped to the part of the model that expresses it ([`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md)).
+- Every one of 145 historical bugs classified by root cause (coverage, abstraction, compositionality, the policy, snapshots, or the compiler itself) and mapped to the part of the model that expresses it ([`BUG-MAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bug-map.md)).
 - 56 covered by the model, 38 partially, 50 gaps (24 of them compiler joint-vs-separate bugs). The 208 scripted tests are catalogued alongside.
 - The gaps are where to extend the model next; the covered bugs with no scripted test are where to look for new failures.
 
@@ -240,10 +242,10 @@ An excerpt (columns shortened):
 
 | bug | root cause | covered by | would the model have predicted it? |
 |---|---|---|---|
-| scala/scala3#26231: pattern match after a case class changes | coverage, abstraction | `TreeToy.lean`: the post-typer `_1`, `_2` and the `_N+1` sentinel; `Synthetic.lean` for the synthetic `unapply` | yes |
-| sbt/zinc#417: inheritance within one source file | coverage | `Files.lean`: the same-file edge dropped; the fix proved for every program | yes |
-| sbt/zinc#1796: `class A.x` and `object A.x` share a hash | abstraction | `ExtraHash.lean`: `merged_spurious`; `qualified_sound` states the fix | yes |
-| scala/scala3#18309: a using clause on a constructor, two modules | coverage | partially: `ImplicitScope.lean`, `Givens.lean`; the clients there summon directly | partially |
+| scala/scala3#26231: pattern match after a case class changes | coverage, abstraction | [`TreeToy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/TreeToy.lean): the post-typer `_1`, `_2` and the `_N+1` sentinel; [`Synthetic.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Synthetic.lean) for the synthetic `unapply` | yes |
+| sbt/zinc#417: inheritance within one source file | coverage | [`Files.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Files.lean): the same-file edge dropped; the fix proved for every program | yes |
+| sbt/zinc#1796: `class A.x` and `object A.x` share a hash | abstraction | [`ExtraHash.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/ExtraHash.lean): [`merged_spurious`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/ExtraHash.lean#L38); [`qualified_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/ExtraHash.lean#L50) states the fix | yes |
+| scala/scala3#18309: a using clause on a constructor, two modules | coverage | partially: [`ImplicitScope.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/ImplicitScope.lean), [`Givens.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/ZincNames/Givens.lean); the clients there summon directly | partially |
 | scala/scala3#22684: a match type and a given | compiler | gap (`comp`): the output depends on which units are in the group | – |
 
 By root cause:
@@ -262,7 +264,7 @@ Every abstraction bug is covered: a hash that misses part of what it covers is t
 
 <div class="fn">
 
-Notes: 2.5 min. [`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md) §1 and §5, with `BUGS-catalogue.md` and `TESTS-catalogue.md` beside it. "Predicts" is counterfactual: most instances were built after the bug they cover (52 yes, 26 partially, 16 no).
+Notes: 2.5 min. [`BUG-MAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bug-map.md) §1 and §5, with [`BUGS-catalogue.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bugs.md) and [`TESTS-catalogue.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/tests.md) beside it. "Predicts" is counterfactual: most instances were built after the bug they cover (52 yes, 26 partially, 16 no).
 
 </div>
 
@@ -306,7 +308,7 @@ Notes: 1.5 min. The harness-bug theme from §3 again.
 
 <div class="fn">
 
-Notes: 2.5 min. Central review finding 6 (`REVIEW-2026-10-11-central.md`).
+Notes: 2.5 min. Central review finding 6 ([`REVIEW-2026-10-11-central.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/history/reviews/2026-10-11-central.md)).
 
 </div>
 

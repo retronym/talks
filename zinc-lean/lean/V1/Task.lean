@@ -1,6 +1,6 @@
 import Mathlib.Data.Finset.Basic
 
--- Snapshot of `zinc-incrementality/lean/Zinc/Task.lean`, unchanged apart from the namespace.
+-- Snapshot of `zinc-incrementality/lean/Zinc/Task.lean` (now `packages/query/Query/Task.lean` in retronym/jvm-lang-models), unchanged apart from the namespace.
 
 /-!
 # Tasks with dynamic dependencies

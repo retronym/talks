@@ -3,7 +3,7 @@ import V2.Model
 /-!
 # A non-local hash compared only on the recompiled set is unsound
 
-Rewritten from `zinc-incrementality/lean/Zinc/Stale.lean` for the general model. Two units. `P`
+Rewritten from `zinc-incrementality/lean/Zinc/Stale.lean` (now `packages/inc-comp/IncComp/Stale.lean` in retronym/jvm-lang-models) for the general model. Two units. `P`
 (a parent) exposes one value; `C` (a client) asks `P` for it and emits it. `C` records a single
 key `(C, k)` whose hash reads both interfaces, Merkle-style (`hashDeps C = {P, C}`). The
 obligations hold.

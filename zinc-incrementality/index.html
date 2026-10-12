@@ -167,6 +167,8 @@ body.focus .focus-counter { display: block; }
 
 **Status:** draft of the slides. Each card is one slide (a few are split with `<!-- break -->`). Evidence and links stay on the slides here, because this talk doubles as a reference; the two companion talks put them in notes under each slide.
 
+**Lean model:** [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models) at `4faa126ffd12acc1e45ac41c636751b26b863949`. Lean files, documents and declarations cited below link to that commit; `bin/lean_refs.py` checks that they exist there.
+
 **Audience:** maintainers of scalac / dotc, IDEs (Metals, IntelliJ), build tools (sbt, Mill, Bazel, Pants, Gradle). They know the compilers; most don't know Zinc's internals.
 
 **Thesis:** every language feature has consequences for incremental compilation, whether or not its designer considered them. Incremental soundness is a property of the *compiler's* API summary, which now lives in the compiler repos. So it should be designed, specified and tested alongside each feature, not reverse-engineered from user bug reports years later.
@@ -317,7 +319,7 @@ $$\text{stop iff } \big(\mathrm{inv}(\Delta\mathrm{API}_n) \setminus R_n\big) \c
 $$R_{n+1} = \begin{cases} \mathrm{inv}(\Delta\mathrm{API}_n) \cup X_n & n < \mathtt{transitiveStep} \\ \mathrm{closure}(\mathrm{inv}(\Delta\mathrm{API}_n)) \cup X_n \cup R_n & n \ge \mathtt{transitiveStep} \end{cases}$$
 
 - $R_n$ is subtracted in the stop test only; `nextInvalidations` is the unsubtracted set. A class compiled in round 1 is recompiled again in round 3 if one of its dependencies' APIs changes in round 2, which happens with cycles in the class graph. A class in $R_n$ that depends on another class in $R_n$ whose API changed is recompiled in round $n+1$ although it was compiled jointly with the new API: overcompilation by construction. (TODO: confirm in the invalidation log of a two-class cycle.)
-- Without an assumption on the class graph the plain regime need not terminate: three classes whose inferred types read each other in a cycle alternate pair by pair for ever (§22; `PingPong.zinc_diverges`). Two cannot, because the class whose API changed is recompiled with its dependent. `transitiveStep` is what guarantees termination.
+- Without an assumption on the class graph the plain regime need not terminate: three classes whose inferred types read each other in a cycle alternate pair by pair for ever (§22; [`PingPong.zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217)). Two cannot, because the class whose API changed is recompiled with its dependent. `transitiveStep` is what guarantees termination.
 - **Typical round counts:** a body-only change takes 1 round (early cutoff); a signature change takes 2.
 - **Inferred types ripple:** a change to the inferred result type of a public `def` changes the API of every unedited class whose own public signature is inferred from it, adding a round per level. Explicit result types on public members are also an incremental-compilation best practice: they make interfaces source-determined, which caps a signature change at two rounds and guarantees the result matches a clean build (§22, T3).
 
@@ -620,7 +622,7 @@ flowchart BT
 
 <!-- break -->
 
-**What the model says (§22, `Hier.lean`):** the three are three ways to make the hash of an inherited member depend on the ancestor, and all three are sound instances of the same theorem.
+**What the model says (§22, [`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean)):** the three are three ways to make the hash of an inherited member depend on the ancestor, and all three are sound instances of the same theorem.
 
 | design | what the client records | where the walk happens | hash | rounds on an inherited-member edit | recompiles the hierarchy? |
 |---|---|---|---|---|---|
@@ -631,7 +633,7 @@ flowchart BT
 - **Zinc is already partly decls + walk.** A client of `B.m`, with `m` inherited from `A`, already has a `memberRef` on `A` under the name `m`, and the invalidator already walks the `memberRef` clients of every inheritor, filtered by the ancestor's changed names (§9). Within a subproject that is enough: the PoC needed no composed hashes there, only to stop materialising inherited members and to stop recompiling every descendant.
 - **Where Merkle composition is required: across subprojects.** A downstream subproject sees only the stored API, and the upstream analysis it looks up carries no relations, so there is nothing to walk. The PoC composes each upstream class's name hashes over its stored linearization (`structure.parents`) at lookup time. Without that, `macros/macro-type-change-3` undercompiles: a macro that reflects over `baseClasses` selects no member, so no `memberRef` names the ancestor. Ancestors contribute their class-side hash, not the merged class-and-object `apiHash`, because companion-object members are not inherited (Java statics are, §12); this is another face of [sbt/zinc#1796](https://github.com/sbt/zinc/issues/1796) (§12).
 - **Soundness requirement or convenience?** Convenience. Any of the three works; what is *required* is either a non-local hash kept fresh (by recompiling the hierarchy, or by recomputing hashes over the inheritance closure, `affected` in the model) or local keys that name every ancestor visited.
-- **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles (`Stale.lean`, T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
+- **Merkle hashes must be recomputed:** memoised non-local hashes must be recomputed for the hash dependents of whatever was recompiled. Diffing them over the recompiled set alone undercompiles ([`Stale.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean), T2-stale). Zinc's materialised design pays for freshness with hierarchy recompiles; the walk at invalidation time is what makes that affordable.
 - **Precision comes from the hash function.** On an `asSeenFrom` edit (`B extends A[Int]` → `A[String]`), the model's materialised hash moves only the names whose rendering changed (in Zinc, the name hash of `B` itself also moves, so every client that mentions `B` recompiles; §10a); the decls design moves every client of `B` through `(B, parents)`; the §5 Merkle formula moves every inherited name of `B`. A Merkle hash of the *resolved* member would be as precise as materialised, with the same freshness obligation.
 - **Precision for clients, soundness for descendants.** As-declared members plus the parents' type arguments determine the as-seen-from rendering, but not the other way round: the as-seen-from rendering loses erasure (§15b). So the resolved-member hash can only be a precision key for `memberRef` clients. The descendant rules (overrides, bridges, forwarders) must key on the declared member.
 
@@ -643,7 +645,7 @@ flowchart BT
 
 #### 10a. Worked example: materialised members vs Merkle hashing
 
-The program is the one `Hier.lean` checks, written as Scala. `A` is an abstract class, so `B` and `C` contain no code generated from `A`'s members.
+The program is the one [`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean) checks, written as Scala. `A` is an abstract class, so `B` and `C` contain no code generated from `A`'s members.
 
 ```scala
 abstract class A[T] { def m: Int = 0; def g: Int = 0 }
@@ -714,7 +716,7 @@ flowchart LR
 
 **Edit 2: `asSeenFrom`.** Start from `A[T] { def m: T = ???; def g: Int = 0 }` and change `B extends A[Int]` to `B extends A[String]`.
 
-- *Materialised, in the model (`Hier.lean`):* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
+- *Materialised, in the model ([`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean)):* `B`'s rendering of `m` changes from `Int` to `String`; `g` is still `Int`, so $h_B(g)$ is unchanged. Result: **`C X Y`**; `Z` stays.
 - *Materialised, in today's Zinc:* **`C X Y Z`**, pinned by the PoC's `merkle-as-seen-from` test on its baseline commit. `Z` mentions the type `B`, so the name `B` is in $U(Z)$, and the name hash of `B` itself covers `B`'s header, parents included. The model has no key for a class's own name.
 - *Scala 3's bridge:* the modified names are **`B`** only, against `B, m` with the Scala 2 bridge. Scala 3 renders `m: T` as declared, so only the class-name key moves. That is the decls design's `(B, parents)` key, and no client was missed: every client that selects through a `B` records `B` as a used name (scripted cases `asf-typearg-*`, directly, via a grandparent and via an alias, all three bridges clean).
 - *Merkle (§5 formula):* the parent and its type argument are inside *every* $h_B(n)$, so $h_B(g)$ changes too. Result: **`X Y Z`**; `Z` is recompiled although nothing it uses changed.
@@ -731,8 +733,8 @@ flowchart LR
 
 - **overrides**: a member `D` declares that overrides an ancestor's member must still conform to it (and may need a bridge);
 - **conflicts**: members of the same name inherited from two parents must be reconciled (Edit 3);
-- **abstract members**: a concrete `D` must implement every abstract member it inherits, so the rule counts names deferred in *any* ancestor of `D`, not only in the edited class. Deleting `B`'s implementation of `A`'s abstract `m` leaves `class C extends B` unimplemented (`merkle-abstract-ancestor`). The narrower rule leaves 672 of 142,500 single-class edits unclean in the Lean model's exhaustive check (`FlatRules.lean`), and the widened one none;
-- **the ancestor's header**: parents, type parameters, self type, `final`/`sealed`. The cross-subproject Merkle composition (§10) reads each class's *stored* linearization, which is only sound if every transitive descendant of a class whose parents changed is recompiled (`flat_sound`, `Flat.lean`). No scripted test fails without this rule, because a header change already invalidates every `memberRef` client of every descendant, and each descendant is a `memberRef` client of its direct parent through its extends clause; the rule is defence in depth for a descendant not recorded that way;
+- **abstract members**: a concrete `D` must implement every abstract member it inherits, so the rule counts names deferred in *any* ancestor of `D`, not only in the edited class. Deleting `B`'s implementation of `A`'s abstract `m` leaves `class C extends B` unimplemented (`merkle-abstract-ancestor`). The narrower rule leaves 672 of 142,500 single-class edits unclean in the Lean model's exhaustive check ([`FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean)), and the widened one none;
+- **the ancestor's header**: parents, type parameters, self type, `final`/`sealed`. The cross-subproject Merkle composition (§10) reads each class's *stored* linearization, which is only sound if every transitive descendant of a class whose parents changed is recompiled ([`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760), [`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean)). No scripted test fails without this rule, because a header change already invalidates every `memberRef` client of every descendant, and each descendant is a `memberRef` client of its direct parent through its extends clause; the rule is defence in depth for a descendant not recorded that way;
 - **trait mixin forwarders**: if $P$ is a trait, `D`'s bytecode has a forwarder for each concrete member of $P$;
 - **static forwarders**: if `D` is a top-level object that itself extends $P$, its mirror class (or its companion class) has a static forwarder for every member, inherited ones included. A case class's companion object does not extend the case class's parents; a first version of the rule missed that and fired for every case class in catalyst.
 
@@ -742,7 +744,7 @@ So after an edit to ancestor $P$ with changed names $N$, descendant $D$ must rec
 
 $$N \cap \big(\mathrm{decls}(D) \cup \textstyle\bigcup_{Q \in \mathrm{ancestors}(D) \setminus \{P\}} \mathrm{decls}(Q)\big) \neq \emptyset \quad\text{or}\quad \mathrm{header}(P) \text{ changed} \quad\text{or}\quad P \text{ is a trait} \quad\text{or}\quad D \text{ has a mirror class}$$
 
-and, for concrete $D$, if $N$ contains a name deferred in any ancestor of $D$. The rules are to a descendant's refchecks and codegen what $U(d)$ is to a client's lookups: the key abstraction of the part of its trace that reads other classes (§12). The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. (`Flat.lean` models the override, conflict and abstract checks as queries from the descendant to its ancestors, recorded as keys; `FlatRules.lean` checks the rules as an invalidation policy, exhaustively over a small program space. The forwarder rules were found by thinking about bytecode, not by the model.)
+and, for concrete $D$, if $N$ contains a name deferred in any ancestor of $D$. The rules are to a descendant's refchecks and codegen what $U(d)$ is to a client's lookups: the key abstraction of the part of its trace that reads other classes (§12). The materialised design recompiles *every* descendant regardless, because its stored hashes are stale. Merkle and decls designs can restrict the recompile to this set; the saving is the descendants outside it, which in Edit 1 is all of them. ([`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) models the override, conflict and abstract checks as queries from the descendant to its ancestors, recorded as keys; [`FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean) checks the rules as an invalidation policy, exhaustively over a small program space. The forwarder rules were found by thinking about bytecode, not by the model.)
 
 <!-- break -->
 
@@ -755,10 +757,10 @@ and, for concrete $D$, if $N$ contains a name deferred in any ancestor of $D$. T
 | ancestor edit | recompile every descendant to refresh its hashes | recompute descendants' hashes; recompile clients, plus descendants whose own compilation reads the change |
 | `asSeenFrom` edit | in the model, only the names whose rendering changed; in Zinc, also every client that mentions the class (Scala 3's bridge moves only the class-name key) | every name inherited through that parent |
 | linearization edit | recompile the class (needed anyway: conflict check, mixin forwarder) | the recorded miss changes the hash; the class still recompiles for its own reasons |
-| freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles (`Stale.lean`) |
+| freshness obligation | met by recompiling | met by recomputing over the inheritance closure; skipping that undercompiles ([`Stale.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean)) |
 | rounds | 2 with Zinc's walk | 2 |
 
-The recompiled sets are the ones `Hier.lean` checks (§22); the walk policy is what brings the materialised design down to two rounds.
+The recompiled sets are the ones [`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean) checks (§22); the walk policy is what brings the materialised design down to two rounds.
 
 ### 11. Who computes the hash? Bridge-side hashing vs projecting into xsbti.api
 
@@ -1064,14 +1066,14 @@ class B extends A { override def m: Int = 2 }   // app
 | `value-class-mirror-forwarder`, `value-class-mixin-forwarder` (`m: V`, `V`'s underlying changes) | missing forwarder change | same | same |
 
 - The third row is the price: an ancestor edit that as-seen-from hides recompiles the descendant, here needlessly. It is the same mechanism that catches the first row.
-- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. The model confirms it for these two cases (§22, `Erasure.lean`).
+- Neither rendering determines erasure through a value class referenced *by name* (last row). One witness covers both cases: annotate each inherited member with its owner-side erased descriptor. Then a change in `V`'s underlying type changes `A`'s rendering of `m: V`, and inheritance invalidation reaches the forwarders. The model confirms it for these two cases (§22, [`Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean)).
 
 <!-- break -->
 
 **Erasure has more inputs than value classes.** An erasure-only change reaches a descendant in two hops: the declaring class must notice that its own erasure moved, and the descendant must notice that the declaration's erasure moved. Each input fails at a different hop.
 
 - **Generic erasure** is a function of the owner's declaration (`T` erases to `Object`, or to its bound, which is also declared there). The declarer always notices, and as declared rendering carries it to descendants, as Scala 3 already does. Scala 2 fails at the second hop, and the fix there is the rendering (retronym/zinc#26).
-- **Value classes:** `V`'s own name hash covers its underlying type (sbt/zinc#444), so the declarer notices. Descendants notice either through a witness in the declarer's API or through a dependency on `V` recorded where codegen erases the inherited signature. In the model these give the same results; `Flat.lean`'s erasure keys are that edge.
+- **Value classes:** `V`'s own name hash covers its underlying type (sbt/zinc#444), so the declarer notices. Descendants notice either through a witness in the declarer's API or through a dependency on `V` recorded where codegen erases the inherited signature. In the model these give the same results; [`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean)'s erasure keys are that edge.
 - **Intersections** (pending tests on sbt/zinc#1844): `def m: X with Y` erases to `X` while both are traits, and to `Y` once `trait Y` becomes `abstract class Y`, or once `Y extends X`. The trait-to-class edit moves only `Y;init;`, not the name `Y`, so even the declarer may not notice. A dependency edge on `Y` can't fix that. A witness (the erased signature hashed at the definition, sbt/zinc#1844's preferred direction) fixes the second hop only if the first hop holds.
 - **Other inputs:** union erasure depends on the class hierarchy, and an opaque type erases to its right-hand side. Both are likely Scala 3 analogues.
 
@@ -1351,7 +1353,7 @@ flowchart LR
 
 ### 22. Zinc's loop, proved sound relative to the compiler
 
-**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful result: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: `lean/` in this directory, Lean 4 + Mathlib, about 27,000 lines, no `sorry`. `zinc-lean` presents it in full (its §24a breaks the 27,000 lines down by language feature); this section is the summary. Theorem names below refer to it.
+**Is there scope?** Yes, provided we prove Zinc's algorithm sound *relative to stated obligations on the compiler*, rather than verifying scalac. That is the useful result: the hypotheses of the theorem *are* the bridge spec that §17 and §23 ask for. The model exists: [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models), Lean 4 + Mathlib, about 27,000 lines, no `sorry`. `zinc-lean` presents it in full (its §24a breaks the 27,000 lines down by language feature); this section is the summary. Theorem names below refer to it.
 
 ```mermaid
 flowchart TB
@@ -1381,7 +1383,7 @@ $$\forall d \in G.\ \mathit{group}(G, \mathit{src}, e)(d) = F_d\big(e[G \mapsto 
 
 <!-- break -->
 
-**The bridge obligations** (`Compiler.Obligations`), which is what a feature author must discharge:
+**The bridge obligations** ([`Compiler.Obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L67)), which is what a feature author must discharge:
 
 - **Compositionality** (`comp`): item 4 above. Every §6 bug is a violation.
 - **Coverage** (`coverage`): every traced query, including misses (§15a) and closure queries such as `underlying(A)` (§15b), is covered by a recorded key:
@@ -1392,36 +1394,36 @@ $$\forall q \in \mathrm{trace}(F_d).\ \exists k \in U(d).\ q \sqsubseteq k$$
 
 $$\pi(c)(k) = \pi(c')(k) \implies \forall q \sqsubseteq k.\ \mathrm{ans}_q(c) = \mathrm{ans}_q(c')$$
 
-- **Policy soundness** (`Policy.Sound`), the only thing the heuristics must satisfy: never drop an invalidated unit outside the round just compiled, $\mathrm{inv}(\Delta_n) \setminus R_n \subseteq R_{n+1}$. `transitiveStep`, `recompileAllFraction` and macro-downstream all *enlarge* the set, so they are covered without being modelled individually.
+- **Policy soundness** ([`Policy.Sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L117)), the only thing the heuristics must satisfy: never drop an invalidated unit outside the round just compiled, $\mathrm{inv}(\Delta_n) \setminus R_n \subseteq R_{n+1}$. `transitiveStep`, `recompileAllFraction` and macro-downstream all *enlarge* the set, so they are covered without being modelled individually.
 
 <!-- break -->
 
 **Theorems:**
 
-- **T1, trace soundness** (`Task.run_eq_of_trace`): oracles that agree on the trace give the same output. Induction on the query tree; straightforward.
+- **T1, trace soundness** ([`Task.run_eq_of_trace`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/query/Query/Task.lean#L40)): oracles that agree on the trace give the same output. Induction on the query tree; straightforward.
 - **T2, round invariant** (`round_preserves`): a unit is *up to date* if its output is its own compilation against the current interfaces and its keys cover that trace. A round compiling $R \supseteq$ dirty leaves exactly $\mathrm{inv}(\Delta) \setminus R$ dirty. The proof is where coverage and abstraction are used: a key with an unchanged hash gives unchanged answers, and T1 does the rest.
 - **T3a, fixed point at termination** (`zinc_sound`): for any sound policy, if the loop stops, no unit is dirty. The final state is a per-unit fixed point of separate compilation.
-- **T3b, uniqueness** (`fixpoint_unique_of_wf`, `fixpoint_unique_of_explicit`), **T3** (`zinc_eq_clean_of_*`): the fixed point is the clean build, *given* an extra hypothesis (next card).
+- **T3b, uniqueness** ([`fixpoint_unique_of_wf`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Uniqueness.lean#L64), `fixpoint_unique_of_explicit`), **T3** (`zinc_eq_clean_of_*`): the fixed point is the clean build, *given* an extra hypothesis (next card).
 - **T4, termination** (`zinc_some_of_*`): the fuelled loop returns within $k + \lvert S\rvert + 1$ rounds for a policy monotone from round $k$ (`transitiveStep`), within 2 rounds with explicit interfaces (§4's "a signature change takes 2"), and within $\mathrm{height} + 2$ rounds for the plain policy on an acyclic graph.
 
 <!-- break -->
 
 **Two findings about Zinc.** <span class="chip proof">proof attempt</span> Both came out of writing the proof; the non-termination witness then came from a search (three classes).
 
-1. **`transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test; the next round is the full $\mathrm{inv}(\Delta_n)$, so classes can be revisited. In the plain regime, three classes whose inferred types read each other in a cycle alternate pair by pair for ever (`PingPong.zinc_diverges`, for any fuel; scripted test [retronym/zinc#33](https://github.com/retronym/zinc/pull/33)). Two classes cannot: the class whose API changed is recompiled with its dependent. From `transitiveStep` on, the next round also includes $R_n$, so the round set only grows and the loop ends within $k + \lvert S\rvert + 1$ rounds whatever the shape of the class graph (T4).
+1. **`transitiveStep` is what guarantees termination.** Zinc subtracts the round just compiled only in the stop test; the next round is the full $\mathrm{inv}(\Delta_n)$, so classes can be revisited. In the plain regime, three classes whose inferred types read each other in a cycle alternate pair by pair for ever ([`PingPong.zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217), for any fuel; scripted test [retronym/zinc#33](https://github.com/retronym/zinc/pull/33)). Two classes cannot: the class whose API changed is recompiled with its dependent. From `transitiveStep` on, the next round also includes $R_n$, so the round set only grows and the loop ends within $k + \lvert S\rvert + 1$ rounds whatever the shape of the class graph (T4).
 2. **"At termination the result equals the clean build" is false without a further hypothesis.** Termination gives a per-unit fixed point; the clean build is another one; separate compilation can have several (`A.x: typeof(B.y)`, `B.y: typeof(A.x)` admits any type, joint compilation reports a cyclic reference). This is the problem behind [sbt/zinc#1284](https://github.com/sbt/zinc/pull/1284) ("include mutual dependencies in initial invalidation") and its revert. Two sufficient conditions, each a Scala best practice: **acyclic** unit dependencies, or **source-determined interfaces** (explicit result types on public members, which also bounds the loop at two rounds).
 
 <!-- break -->
 
-**The toy instance (`Toy.lean`, `Examples.lean`):** classes with typed members, an `implicit` flag and an optional `underlying` type; bodies made of `select c.m` (emits a JVM descriptor, so it needs erasure, a *dynamic* chain of `underlying` queries) and `implicitly[T]` over imports (candidates per class, then a shadowing check that is itself a lookup). Two extractors:
+**The toy instance ([`Toy.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean), [`Examples.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean)):** classes with typed members, an `implicit` flag and an optional `underlying` type; bodies made of `select c.m` (emits a JVM descriptor, so it needs erasure, a *dynamic* chain of `underlying` queries) and `implicitly[T]` over imports (candidates per class, then a shadowing check that is itself a lookup). Two extractors:
 
 | | name-only keys (today's rung 1) | repaired keys (`self`, `implicitScope`) |
 |---|---|---|
-| §15b value class `Int → Double` | `C` keeps `B.foo()I`: **undercompilation**, `not_obligations_nameOnly` exhibits the uncovered `underlying` query | `(A, self)` changed, `C` recompiled, equals clean |
+| §15b value class `Int → Double` | `C` keeps `B.foo()I`: **undercompilation**, [`not_obligations_nameOnly`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Toy.lean#L229) exhibits the uncovered `underlying` query | `(A, self)` changed, `C` recompiled, equals clean |
 | §15a new `implicit val y` in `A` | `C` still resolves to `B.x` ([sbt/zinc#945](https://github.com/sbt/zinc/issues/945) family) | `(A, implicitScope)` changed, equals clean |
 | §15a shadowing `val x` in `A` | **caught**: the failed `lookup(A, x)` of the shadowing check is a recorded miss | caught |
 
-Each row is an `example` checked by evaluation, so it doubles as a scripted test. The shadowing row is the "name hashing happens to model it" remark of §15a, now a theorem. `repaired_sound` and `repaired_terminates` are the abstract T3 and T4 instantiated: `Obligations` is *proved* for the toy compiler, with $\pi$ a perfect hash.
+Each row is an `example` checked by evaluation, so it doubles as a scripted test. The shadowing row is the "name hashing happens to model it" remark of §15a, now a theorem. [`repaired_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean#L117) and [`repaired_terminates`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Examples.lean#L129) are the abstract T3 and T4 instantiated: `Obligations` is *proved* for the toy compiler, with $\pi$ a perfect hash.
 
 <!-- break -->
 
@@ -1436,16 +1438,16 @@ Each row is an `example` checked by evaluation, so it doubles as a scripted test
 
 <!-- break -->
 
-**Non-local hashes (`NonLocal.lean`, `Hier.lean`).** To cover materialised members and Merkle composition, $\pi$ may read other units' interfaces, $\pi : (\mathit{Class} \to \mathit{Iface}) \to \mathit{Class} \to K \to \mathit{Hash}$, with a declared read set `hashDeps` (and its reverse, Zinc's `inheritance.reverse`). A key may then cover queries addressed to other units, and *which* queries it covers may depend on the interfaces: `(C, m)` covers exactly the queries the lookup of `m` from `C` walks through. Two things follow:
+**Non-local hashes ([`NonLocal.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocal.lean), [`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean)).** To cover materialised members and Merkle composition, $\pi$ may read other units' interfaces, $\pi : (\mathit{Class} \to \mathit{Iface}) \to \mathit{Class} \to K \to \mathit{Hash}$, with a declared read set `hashDeps` (and its reverse, Zinc's `inheritance.reverse`). A key may then cover queries addressed to other units, and *which* queries it covers may depend on the interfaces: `(C, m)` covers exactly the queries the lookup of `m` from `C` walks through. Two things follow:
 
-- **T2′** (`GCompiler.round_preserves`): the round invariant holds provided $\Delta$ is diffed over the *affected* units, $R_n \cup \mathrm{hashDeps}^{-1}(R_n)$, with hashes recomputed from the current interfaces.
-- **T2-stale** (`Stale.lean`): diffing over $R_n$ alone undercompiles, with a two-unit counterexample. This is the risk in the bridge's TODO about using parent hashes.
+- **T2′** ([`GCompiler.round_preserves`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocal.lean#L159)): the round invariant holds provided $\Delta$ is diffed over the *affected* units, $R_n \cup \mathrm{hashDeps}^{-1}(R_n)$, with hashes recomputed from the current interfaces.
+- **T2-stale** ([`Stale.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean)): diffing over $R_n$ alone undercompiles, with a two-unit counterexample. This is the risk in the bridge's TODO about using parent hashes.
 
 The Merkle hash that makes the per-query model work is the *verifying trace* of the walk (query, answer pairs; Build Systems à la Carte again), which is exactly §10's formula. Hashing only the *resolved* member is sound too, but by a different argument: the client's output depends on the lookup only through its result, which the per-query model cannot see. Materialised members are sound for that reason; Merkle chains are sound for the trace reason.
 
 <!-- break -->
 
-**Members vs decls vs Merkle, computed** (`Hier.lean`): classes with one type parameter, parents with a type argument, a right-to-left linearization walk with misses, clients `X (B.m)`, `Y (C.m)`, `Z (B.g)` over `A ← B ← C`, mixin `M`.
+**Members vs decls vs Merkle, computed** ([`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean)): classes with one type parameter, parents with a type argument, a right-to-left linearization walk with misses, clients `X (B.m)`, `Y (C.m)`, `Z (B.g)` over `A ← B ← C`, mixin `M`.
 
 | edit | decls + walk | materialised, plain | materialised + Zinc's walk | Merkle | Merkle, stale $\Delta$ |
 |---|---|---|---|---|---|
@@ -1453,14 +1455,14 @@ The Merkle hash that makes the per-query model work is the *verifying trace* of 
 | `B extends A[Int] → A[String]`, `A.m : T` | `X Y Z`, 2 | `C X Y`, 3 | `C X Y`, 2 | `X Y Z`, 2 | |
 | mixin `M` gains `m` | `Y`, 2 | `C Y`, 3 | `C Y`, 2 | `Y`, 2 | |
 
-Every cell is a checked `example`; `D_obligations`, `W_obligations`, `Mk_obligations` prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own compilation reads the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays; real Zinc recompiles `Z` through the name hash of `B` itself, §10a), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
+Every cell is a checked `example`; [`D_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L148), [`W_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L209), [`Mk_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L248) prove all three designs sound. In the model, decls and Merkle never recompile the hierarchy; materialised must, to refresh its hashes, and the walk policy only saves the round. In Scala, descendants whose own compilation reads the change recompile in every design (§10a). On the `asSeenFrom` row materialised is the most precise (`Z` stays; real Zinc recompiles `Z` through the name hash of `B` itself, §10a), decls over-approximates through `(B, parents)`, and the §5 Merkle formula through the parents in its hash.
 
 <!-- break -->
 
-**Erasure through inheritance, computed** (`Erasure.lean`): two type parameters, a value class `V` and an intersection `W with Z` referenced by name, and descendants whose bytecode depends on their ancestors' erasure (bridges, mixin and mirror forwarders). A class stores its own erased signatures when it compiles. A descendant records only the inheritance key on its direct parent, as Zinc does across subprojects. A client records the name, the class-name key and Zinc's `memberRef` on the owner, and emits a descriptor.
+**Erasure through inheritance, computed** ([`Erasure.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean)): two type parameters, a value class `V` and an intersection `W with Z` referenced by name, and descendants whose bytecode depends on their ancestors' erasure (bridges, mixin and mirror forwarders). A class stores its own erased signatures when it compiles. A descendant records only the inheritance key on its direct parent, as Zinc does across subprojects. A client records the name, the class-name key and Zinc's `memberRef` on the owner, and emits a descriptor.
 
-- **As declared determines as seen from** (`asf_of_decl`): without a witness, Scala 3's hashes determine Scala 2's, so as declared is a sound over-approximation for the type-level observables, and strictly coarser (the precision case).
-- **Proved sound** (`Er_obligations`): as declared, with a macro's reads recorded and the trait-or-class kind in the class-name hash, plus either a recomputed witness or the dependency edge.
+- **As declared determines as seen from** ([`asf_of_decl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L570)): without a witness, Scala 3's hashes determine Scala 2's, so as declared is a sound over-approximation for the type-level observables, and strictly coarser (the precision case).
+- **Proved sound** ([`Er_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1004)): as declared, with a macro's reads recorded and the trait-or-class kind in the class-name hash, plus either a recomputed witness or the dependency edge.
 
 Over 189,888 legal (base, edit) pairs, unclean runs by erasure input:
 
@@ -1481,7 +1483,7 @@ Over 189,888 legal (base, edit) pairs, unclean runs by erasure input:
 
 <!-- break -->
 
-**Since this section was first written,** the model grew to cover most of what it listed as future work: mutual recursion and #1284's rule (`Cycles.lean`), class vs companion (`ExtraHash.lean`), macros and inline (`MacroDeps`, `InlineOpaque*`), added and deleted classes (`Added.lean`), files (`Files.lean`), libraries and pipelining (`Classpath.lean`, `PipelineLifecycle.lean`), a non-termination witness (`PingPong.zinc_diverges`), and a check of the recorded keys against real Zinc ([retronym/zinc#54](https://github.com/retronym/zinc/pull/54)). `zinc-lean` §24–28 presents them, and [`BUG-MAP.md`](https://github.com/retronym/talks/blob/master/zinc-incrementality/lean/BUG-MAP.md) maps 145 historical Zinc and compiler bugs onto the model by root cause (56 covered, 38 partially, 50 gaps).
+**Since this section was first written,** the model grew to cover most of what it listed as future work: mutual recursion and #1284's rule ([`Cycles.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Cycles.lean)), class vs companion ([`ExtraHash.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/ExtraHash.lean)), macros and inline (`MacroDeps`, `InlineOpaque*`), added and deleted classes ([`Added.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Added.lean)), files ([`Files.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/Files.lean)), libraries and pipelining ([`Classpath.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Classpath.lean), [`PipelineLifecycle.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PipelineLifecycle.lean)), a non-termination witness ([`PingPong.zinc_diverges`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PingPong.lean#L217)), and a check of the recorded keys against real Zinc ([retronym/zinc#54](https://github.com/retronym/zinc/pull/54)). `zinc-lean` §24–28 presents them, and [`BUG-MAP.md`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/docs/evidence/bug-map.md) maps 145 historical Zinc and compiler bugs onto the model by root cause (56 covered, 38 partially, 50 gaps).
 
 **Still open:**
 
@@ -1546,7 +1548,7 @@ Lukas Rytz and Jason Zaugg, roughly June–October 2026. Many of these already a
 - With `-Xjava-tasty`, dependencies of Java sources weren't sent to Zinc ([scala/scala3#27133](https://github.com/scala/scala3/issues/27133)). <span class="chip hand">by hand or user report</span>
 - Making a parent class `final` doesn't recompile its subclasses: `HashAPI.hashAPI` never hashes a top-level class's own modifiers, access or annotations, so the incremental build passes and a clean build fails. Found by the baseline tests of the Merkle PoC (`merkle-header`, [retronym/zinc#24](https://github.com/retronym/zinc/pull/24)); fixed by [sbt/zinc#1841](https://github.com/sbt/zinc/pull/1841) (merged 11 October 2026), which also hashes trait vs class (a client calling a class that becomes a trait kept `invokevirtual`). <span class="chip hand">by hand or user report</span>
 - Scala 3: removing a member's body did not recompile subclasses, which then failed with `AbstractMethodError`. The bridge never marked deferred terms abstract, since 2020 ([scala/scala3#27270](https://github.com/scala/scala3/issues/27270) → [#27271](https://github.com/scala/scala3/pull/27271)). Found porting the Merkle PoC to Scala 3. <span class="chip hand">by hand or user report</span>
-- Pipelining: after a failed compile, the early output was kept, so reverting the edit left downstream on signatures that never compiled ([sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843), merged). Found by hand; the Lean model explained it afterwards (`PipelineLifecycle.lean`). <span class="chip hand">by hand or user report</span>
+- Pipelining: after a failed compile, the early output was kept, so reverting the edit left downstream on signatures that never compiled ([sbt/zinc#1843](https://github.com/sbt/zinc/pull/1843), merged). Found by hand; the Lean model explained it afterwards ([`PipelineLifecycle.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Loop/PipelineLifecycle.lean)). <span class="chip hand">by hand or user report</span>
 - Implicit scope across subprojects: an ancestor's companion gaining an implicit did not reach clients in another project ([sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845), merged). <span class="chip hand">by hand or user report</span> Objects' singleton types are the remaining gap, found by the model's search ([#1846](https://github.com/sbt/zinc/pull/1846), draft). <span class="chip search">search in the model</span>
 - An added class that shadows a resolved name (inner package, wildcard import) is missed on 2.13 and 3 ([retronym/zinc#32](https://github.com/retronym/zinc/pull/32), fix [#34](https://github.com/retronym/zinc/pull/34)); so are members added to package objects, top-level exports and givens ([retronym/zinc#35](https://github.com/retronym/zinc/pull/35)). Found with the Lean model. <span class="chip search">search in the model</span>
 

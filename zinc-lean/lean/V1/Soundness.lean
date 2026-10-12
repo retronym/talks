@@ -1,6 +1,6 @@
 import V1.Model
 
--- Snapshot of `zinc-incrementality/lean/Zinc/Soundness.lean`, unchanged apart from the namespace.
+-- Snapshot of `zinc-incrementality/lean/Zinc/Soundness.lean` (now `packages/inc-comp/IncComp/Soundness.lean` in retronym/jvm-lang-models), unchanged apart from the namespace.
 
 /-!
 # T2 and T3a: the round invariant and the fixed point at termination

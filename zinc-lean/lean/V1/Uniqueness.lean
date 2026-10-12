@@ -1,6 +1,6 @@
 import V1.Soundness
 
--- Snapshot of `zinc-incrementality/lean/Zinc/Uniqueness.lean`, unchanged apart from the namespace.
+-- Snapshot of `zinc-incrementality/lean/Zinc/Uniqueness.lean` (now `packages/inc-comp/IncComp/Uniqueness.lean` in retronym/jvm-lang-models), unchanged apart from the namespace.
 
 /-!
 # T3b: fixed points of separate compilation are unique (under a hypothesis), hence T3

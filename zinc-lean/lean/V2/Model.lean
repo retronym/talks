@@ -1,7 +1,7 @@
 import V1.Soundness
 import Mathlib.Data.Fintype.Basic
 
--- Snapshot of `zinc-incrementality/lean/Zinc/NonLocalAns.lean`, unchanged apart from the namespace.
+-- Snapshot of `zinc-incrementality/lean/Zinc/NonLocalAns.lean` (now `packages/inc-comp/IncComp/NonLocalAns.lean` in retronym/jvm-lang-models), unchanged apart from the namespace.
 -- In V2 this is the one general model; `V2/Embed.lean` shows V1's local model is a special case.
 
 /-!

@@ -3,7 +3,7 @@ import V1.Toy
 /-!
 # Scripted tests for the typecheck-only toy
 
-Simplified from `zinc-incrementality/lean/Zinc/Examples.lean`. Each example runs Zinc's loop
+Simplified from `zinc-incrementality/lean/Zinc/Examples.lean` (now `packages/zinc/Zinc/Examples.lean` in retronym/jvm-lang-models). Each example runs Zinc's loop
 (`Policy.plain`, from `R₀ = {A}`) on a three-class program after an edit to `A`, and compares the
 result with a clean build of the new sources.
 -/

@@ -3,7 +3,7 @@ import V1.Termination
 /-!
 # A small Scala, typechecking only
 
-Simplified from `zinc-incrementality/lean/Zinc/Toy.lean`: no value classes and no erasure, so a
+Simplified from `zinc-incrementality/lean/Zinc/Toy.lean` (now `packages/zinc/Zinc/Toy.lean` in retronym/jvm-lang-models): no value classes and no erasure, so a
 selection's output is the member's Scala type. Erasure comes back in `V2`.
 
 * classes with typed members, some implicit;

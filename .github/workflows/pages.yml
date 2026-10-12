@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Lean references exist at each talk's pinned commit of retronym/jvm-lang-models
+        run: python3 bin/lean_refs.py
       - name: Build talks and assemble the site
         run: python3 bin/build-site.py --check
       - uses: actions/upload-pages-artifact@v3
