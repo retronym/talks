@@ -29,6 +29,12 @@ remote = "upstream"
 pr = 1852
 title = "Reuse one hasher across name groups in NameHashing"
 
+[[members]]
+id = "sz#1851"
+remote = "upstream"
+pr = 1851
+title = "Print annotation arguments once in the API phase"
+
 # fixes
 [[members]]
 id = "rz#27"
@@ -254,6 +260,10 @@ reason = "1.12.x backport; see integration/merkle-1.12.x"
 [[excluded]]
 id = "rz#67"
 reason = "the same branch as sz#1852"
+
+[[excluded]]
+id = "rz#66"
+reason = "the same branch as sz#1851"
 
 [[excluded]]
 id = "rz#24"
