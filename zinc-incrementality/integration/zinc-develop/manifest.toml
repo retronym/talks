@@ -23,6 +23,12 @@ remote = "upstream"
 pr = 1842
 title = "Record dependencies on the annotations of definitions"
 
+[[members]]
+id = "sz#1852"
+remote = "upstream"
+pr = 1852
+title = "Reuse one hasher across name groups in NameHashing"
+
 # fixes
 [[members]]
 id = "rz#27"
@@ -244,6 +250,10 @@ reason = "1.12.x backport; see integration/merkle-1.12.x"
 [[excluded]]
 id = "rz#48"
 reason = "1.12.x backport; see integration/merkle-1.12.x"
+
+[[excluded]]
+id = "rz#67"
+reason = "the same branch as sz#1852"
 
 [[excluded]]
 id = "rz#24"

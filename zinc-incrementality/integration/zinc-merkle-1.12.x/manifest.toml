@@ -13,6 +13,14 @@ remote = "origin"
 pr = 48
 title = "[1.x] Merkle name hashes PoC: pipelining backports (rz#9), #1765, the PoC, #41, #56, #55, #30, #61, #63"
 
+# Not Merkle, but it changes how fast every class is hashed, so it is in integration/develop-1.12.x
+# too and the two branches still differ by Merkle alone.
+[[members]]
+id = "rz#68"
+remote = "origin"
+pr = 68
+title = "[1.x] Reuse one hasher across name groups in NameHashing (backport of sbt/zinc#1852)"
+
 [[excluded]]
 id = "backport/1.12.x-z1-overcompilation"
 reason = "not Merkle (decision 5)"
