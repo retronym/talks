@@ -21,6 +21,11 @@ remote = "origin"
 pr = 68
 title = "[1.x] Reuse one hasher across name groups in NameHashing (backport of sbt/zinc#1852)"
 
+[[members]]
+id = "rz#68+rz#48"
+patch = "fixups/68-legacy-hashapi-trait-hash.patch"
+title = "Hash traits in LegacyHashAPI as rz#48 hashes them in HashAPI"
+
 [[excluded]]
 id = "backport/1.12.x-z1-overcompilation"
 reason = "not Merkle (decision 5)"

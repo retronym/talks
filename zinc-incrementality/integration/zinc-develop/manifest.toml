@@ -43,6 +43,11 @@ pr = 27
 title = "Distinguish traits from classes in the class-name hash"
 
 [[members]]
+id = "sz#1852+rz#27"
+patch = "fixups/1852-legacy-hashapi-trait-hash.patch"
+title = "Hash traits in LegacyHashAPI as rz#27 hashes them in HashAPI"
+
+[[members]]
 id = "rz#28"
 remote = "origin"
 pr = 28

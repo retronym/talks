@@ -1,0 +1,37 @@
+From 2cb1766a53cff0d116cc446fb5de26c39f818c47 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Thu, 15 Oct 2026 17:38:00 +1000
+Subject: [PATCH] Hash traits in LegacyHashAPI as rz#27 hashes them in HashAPI
+
+sz#1852 keeps a copy of HashAPI from before it, to check that it
+hashes identically. rz#27 makes HashAPI hash whether a class is a
+trait, so with both merged the copy no longer matches, and
+HashingEquivalenceSpecification fails. Whichever of the two lands
+second has to make the same change to the copy.
+---
+ .../zinc-apiinfo/src/test/scala/xsbt/api/LegacyHashAPI.scala    | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/internal/zinc-apiinfo/src/test/scala/xsbt/api/LegacyHashAPI.scala b/internal/zinc-apiinfo/src/test/scala/xsbt/api/LegacyHashAPI.scala
+index 43556f89a..3ac57c05d 100644
+--- a/internal/zinc-apiinfo/src/test/scala/xsbt/api/LegacyHashAPI.scala
++++ b/internal/zinc-apiinfo/src/test/scala/xsbt/api/LegacyHashAPI.scala
+@@ -124,6 +124,7 @@ final class LegacyHashAPI private (
+   private final val StructureHash = 60
+ 
+   private val ClassHash = 70
++  private final val TraitHash = 71
+ 
+   private final val TrueHash = 97
+   private final val FalseHash = 98
+@@ -249,6 +250,7 @@ final class LegacyHashAPI private (
+       hashTypesSymmetric(c.childrenOfSealedClass, includeDefinitions)
+ 
+     val isTrait = c.definitionType() == DefinitionType.Trait
++    if isTrait then extend(TraitHash)
+     hashStructure(c.structure, includeDefinitions, isTrait)
+   def hashField(f: FieldLike): Unit =
+     f match
+-- 
+2.56.0
+
