@@ -19,6 +19,12 @@ pr = 61
 title = "Merkle bridge: only static annotations make an inherited member visible to discovery"
 
 [[members]]
+id = "rz#69"
+remote = "origin"
+pr = 69
+title = "Merkle: hashes that are stable across JVM runs"
+
+[[members]]
 id = "rz#30"
 remote = "origin"
 pr = 30
