@@ -53,6 +53,36 @@ pr = 27277
 title = "Name the parameter of a Java enum's synthetic valueOf `name`, as javac does"
 
 [[members]]
+id = "scala3#27290"
+remote = "upstream"
+pr = 27290
+title = "Optimizer: bound producer/consumer analysis cost in local optimizations"
+
+[[members]]
+id = "scala3#27291"
+remote = "upstream"
+pr = 27291
+title = "Cache SourceFile.ext"
+
+[[members]]
+id = "scala3#27292"
+remote = "upstream"
+pr = 27292
+title = "Avoid boxing when computing SourceFile line indices"
+
+[[members]]
+id = "scala3#27296"
+remote = "upstream"
+pr = 27296
+title = "Avoid spinning in SingleDenotation.goBack for late-created symbols"
+
+[[members]]
+id = "scala3#27297"
+remote = "upstream"
+pr = 27297
+title = "Avoid memory leaks in when compilation reuses ContextBase"
+
+[[members]]
 id = "rz-scala3#11"
 remote = "origin"
 pr = 11
