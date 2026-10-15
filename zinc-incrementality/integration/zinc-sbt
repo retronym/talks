@@ -91,12 +91,18 @@ if [[ -z $boot ]]; then
 fi
 boot_stamp=$boot/zinc-sbt-$zinc_version
 if [[ ! -f $boot_stamp || $(cat "$boot_stamp") != "$sha" ]]; then
-  for jar in "$boot"/*-"$zinc_version".jar; do
-    module=$(basename "$jar" "-$zinc_version.jar")
-    src=$ivy/local/org.scala-sbt/$module/$zinc_version/jars/$module.jar
-    [[ -f $src ]] || { echo "zinc-sbt: no published $module" >&2; exit 1; }
+  # Other sbt modules can share Zinc's version (lm-core 1.12.0 with Zinc 1.12.0 in sbt 1.12.1),
+  # so swap the boot jars of the modules the branch published, not every jar at that version.
+  swapped=0
+  for src in "$ivy"/local/org.scala-sbt/*/"$zinc_version"/jars/*.jar; do
+    module=$(basename "$src" .jar)
+    jar=$boot/$module-$zinc_version.jar
+    [[ -f $jar ]] || continue
     cp "$src" "$jar"
+    swapped=$((swapped + 1))
   done
+  [[ -f $boot/zinc_2.12-$zinc_version.jar && $swapped -gt 0 ]] ||
+    { echo "zinc-sbt: no Zinc $zinc_version jars in $boot to replace" >&2; exit 1; }
   echo "$sha" > "$boot_stamp"
 fi
 
