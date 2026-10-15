@@ -6,12 +6,6 @@ base = { remote = "upstream", branch = "develop" }
 
 # upstream PRs (sbt/zinc)
 [[members]]
-id = "sz#1841"
-remote = "upstream"
-pr = 1841
-title = "Hash a top-level class's kind, modifiers, access and annotations"
-
-[[members]]
 id = "sz#1846"
 remote = "upstream"
 pr = 1846
@@ -28,12 +22,6 @@ id = "sz#1852"
 remote = "upstream"
 pr = 1852
 title = "Reuse one hasher across name groups in NameHashing"
-
-[[members]]
-id = "sz#1851"
-remote = "upstream"
-pr = 1851
-title = "Print annotation arguments once in the API phase"
 
 # fixes
 [[members]]

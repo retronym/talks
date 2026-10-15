@@ -5,18 +5,6 @@ push = "origin"
 base = { remote = "upstream", branch = "2.13.x" }
 
 [[members]]
-id = "scala#11287"
-remote = "upstream"
-pr = 11287
-title = "Forward-port zinc bridge fixes to scala2-sbt-bridge (sbt/zinc#1316, #1324, #1507, #1782, #1803)"
-
-[[members]]
-id = "scala#11289"
-remote = "upstream"
-pr = 11289
-title = "Make forwarder signatures independent of the compilation batch"
-
-[[members]]
 id = "scala#11290"
 remote = "upstream"
 pr = 11290
@@ -29,28 +17,10 @@ pr = 11291
 title = "Order base types of the same depth by name rather than by symbol id"
 
 [[members]]
-id = "scala#11292"
-remote = "upstream"
-pr = 11292
-title = "Use ObjectTpe, not ObjectTpeJava, as the parent of Java classes parsed from source"
-
-[[members]]
-id = "scala#11294"
-remote = "upstream"
-pr = 11294
-title = "Use invokeExact for the release fence MethodHandle in Statics"
-
-[[members]]
 id = "scala#11295"
 remote = "upstream"
 pr = 11295
 title = "Avoid per-tree allocations when checking unused types"
-
-[[members]]
-id = "scala#11296"
-remote = "upstream"
-pr = 11296
-title = "Avoid redundant IdentityHashMap.clear of knownFalseSubTypes"
 
 [[members]]
 id = "rz-scala#136"

@@ -11,70 +11,10 @@ pr = 27264
 title = "Make Java source parsing agree with ClassfileParser for throws clauses and constant expressions"
 
 [[members]]
-id = "scala3#27269"
-remote = "upstream"
-pr = 27269
-title = "Fix TastyPrinter reading signed constant payloads as Nat"
-
-[[members]]
-id = "scala3#27271"
-remote = "upstream"
-pr = 27271
-title = "Mark deferred terms abstract in the API sent to Zinc"
-
-[[members]]
-id = "scala3#27272"
-remote = "upstream"
-pr = 27272
-title = "Exclude inline parameters again when hashing inline bodies in ExtractAPI"
-
-[[members]]
-id = "scala3#27274"
-remote = "upstream"
-pr = 27274
-title = "Fix match-case completion labels for non-enum Java classes"
-
-[[members]]
-id = "scala3#27275"
-remote = "upstream"
-pr = 27275
-title = "Fix #27273: Mark Java enum constants from classfiles StableRealizable"
-
-[[members]]
-id = "scala3#27276"
-remote = "upstream"
-pr = 27276
-title = "Vulpix: don't shut down the test pool while tests are running"
-
-[[members]]
-id = "scala3#27277"
-remote = "upstream"
-pr = 27277
-title = "Name the parameter of a Java enum's synthetic valueOf `name`, as javac does"
-
-[[members]]
 id = "scala3#27290"
 remote = "upstream"
 pr = 27290
 title = "Optimizer: bound producer/consumer analysis cost in local optimizations"
-
-[[members]]
-id = "scala3#27291"
-remote = "upstream"
-pr = 27291
-title = "Cache SourceFile.ext"
-
-[[members]]
-id = "scala3#27292"
-remote = "upstream"
-pr = 27292
-title = "Avoid boxing when computing SourceFile line indices"
-
-[[members]]
-id = "scala3#27296"
-remote = "upstream"
-pr = 27296
-title = "Avoid spinning in SingleDenotation.goBack for late-created symbols"
 
 [[members]]
 id = "scala3#27297"

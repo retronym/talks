@@ -13,18 +13,6 @@ pr = 24
 title = "[PoC] Merkle name hashes, bridge-side hashing, coarse library ancestors (with merged #25, #29, #31, #38, #39, #41, #55, #56)"
 
 [[members]]
-id = "rz#61"
-remote = "origin"
-pr = 61
-title = "Merkle bridge: only static annotations make an inherited member visible to discovery"
-
-[[members]]
-id = "rz#69"
-remote = "origin"
-pr = 69
-title = "Merkle: hashes that are stable across JVM runs"
-
-[[members]]
 id = "rz#30"
 remote = "origin"
 pr = 30
