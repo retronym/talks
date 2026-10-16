@@ -17,3 +17,9 @@ id = "rz#30"
 remote = "origin"
 pr = 30
 title = "Merkle PoC across modules: Spark catalyst → core, traitDirect fix, IncBench --verify"
+
+[[members]]
+id = "rz#70"
+remote = "origin"
+pr = 70
+title = "Merkle: scripted tests that pin the PoC's recompiled sets beside today's"
