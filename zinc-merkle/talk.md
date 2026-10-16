@@ -18,7 +18,7 @@
 |---|---|---|
 | I. What the analysis stores | §1 the contract · §1a three kinds of reference · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale | 11 |
 | II. What we are free to change | §7 traces, keys, hashes and invalidation · §8 the obligations · §9 what is free and what is fixed · §10 two consequences | 7 |
-| III. Merkle hashing | §11 store declarations, compose the rest · §12 the running example under Merkle · §13 inside and across subprojects · §14 descendants read their ancestors · §15 where it is more precise, and where not | 11 |
+| III. Merkle hashing | §11 how a name's hash is computed, today and with Merkle · §12 the running example under Merkle · §13 inside and across subprojects · §14 descendants read their ancestors · §15 where it is more precise, and where not | 11 |
 | IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one traversal, several outputs | 8 |
 | V. Measurements | §21 results so far · §22 what is measured next | 4 |
 | Close | §23 status and next steps | 1 |
@@ -366,7 +366,7 @@ If `C`'s hash for `m` is composed from `P`'s, and Zinc compares hashes only for 
 
 <div class="fn">
 
-Notes: 1.5 min. Today's materialised hashes are non-local too: `B`'s hash for `m` reads `A`. Zinc meets the obligation by recompiling `B`, which is §5. The second item is [retronym/zinc#69](https://github.com/retronym/zinc/pull/69) (merged into the PoC): on scala/scala every no-op compile recompiled ~380 sources before it. `MerkleHashesStabilitySpec` composes the same analysis in this JVM and a forked one.
+Notes: 1.5 min. Today's hashes are non-local too (§11): `B`'s hash for `m` reads `A`, and Zinc meets the obligation by recompiling `B` (§5). The second item is [retronym/zinc#69](https://github.com/retronym/zinc/pull/69) (merged into the PoC): on scala/scala every no-op compile recompiled ~380 sources before it. `MerkleHashesStabilitySpec` composes the same analysis in this JVM and a forked one.
 
 </div>
 
@@ -374,11 +374,34 @@ Notes: 1.5 min. Today's materialised hashes are non-local too: `B`'s hash for `m
 
 ## Part III — Merkle hashing
 
-### 11. Store declarations, compose the rest
+### 11. How a name's hash is computed, today and with Merkle hashing
 
-Each class stores its own declarations and its linearization. A name's hash for class `C` is composed from the hashes of the ancestors that declare it:
+In both designs `B`'s hash for `m` depends on `A`. They differ in who computes it, from what, and when it is recomputed.
 
-$$h_C(n) = h\big(\mathrm{own}_C(n),\ \langle\, (P,\ \mathrm{own}_P(n)) \mid P \in \mathrm{lin}(C),\ n \in \mathrm{decls}(P) \,\rangle\big)$$
+<div class="cols">
+
+<div>
+
+**Today: the compiler renders the inherited member**
+
+```mermaid
+flowchart BT
+  hA["h_A(m) = h(m: Int)"]
+  hM["M: no m"]
+  hB["h_B(m) = h(m: Int as seen from B)"]
+  hC["h_C(m) = h(m: Int as seen from C)"]
+  hB -.-> hA
+  hC -.-> hA
+  hC -.-> hM
+```
+
+Dotted: read from the compiler's symbols when the class is compiled.
+
+</div>
+
+<div>
+
+**Merkle: Zinc composes the ancestors' hashes**
 
 ```mermaid
 flowchart BT
@@ -391,20 +414,35 @@ flowchart BT
   hC --> hM
 ```
 
-- The hash of a descendant is a hash of its ancestors' hashes: a Merkle tree over the inheritance graph.
-- Storage is the sum of the classes' declarations, not of their members.
-- The composed hash is recomputed, not recompiled, when an ancestor changes. That is the `affected` rule of §8: the descendants are in `affected(R)` because their `hashDeps` include the ancestor.
-- `h_M(m) = h(none)` records that `M` has no `m`, so a later `M.m` changes `h_C(m)`.
+Solid: read from the stored hashes, by Zinc.
+
+</div>
+
+</div>
+
+| | today | Merkle |
+|---|---|---|
+| `h_C(n)` | $h(\text{the member } n \text{ that lookup in } C \text{ finds, as seen from } C)$ | $h\big(\mathrm{own}_C(n),\ \langle (P,\ \mathrm{own}_P(n)) \mid P \in \mathrm{lin}(C),\ n \in \mathrm{decls}(P) \rangle\big)$ |
+| computed by | the bridge, when `C` is compiled | Zinc, from hashes already in the analysis |
+| reads | `C`'s ancestors, through the compiler's symbols | `C`'s stored linearization and its ancestors' stored hashes |
+| stored per class | a hash for every member, own and inherited | a hash for every declaration |
+| after an edit to `A`, `h_C(m)` is made current by | recompiling `C` | recomputing it, without compiling |
+
+- Both hashes are non-local: `hashDeps(C)` contains `A`. So both must meet §10's obligation to recompute after `A` changes; today does it by recompiling every descendant (§5).
+- The Merkle hash of a descendant is a hash of its ancestors' hashes, as in a Merkle tree, here over the inheritance graph.
+- `h_M(m) = h(none)` records that `M` has no `m`, so a later `M.m` changes `h_C(m)`. Today the same edit reaches `C` because `C` is recompiled.
 
 <div class="fn">
 
-Notes: 2 min. The formula is the flattened form the PoC builds (`MerkleHashes.composed`, decision 1 in `PLAN-merkle-poc.md`): it reads the stored linearization, so there is no recursion and no new persisted field. The recursive form over direct parents is `zinc-incrementality` §10. The bridge's 2009 doc comment has a TODO asking for exactly this, and Scala 3's `ExtractAPI` a 2016 TODO for a lazy `parentStructures`. In the model: [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) (recursive), [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579) (flattened, sound by [`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760) if a class whose header changed recompiles all its descendants).
+Notes: 2.5 min. Today: Scala 2's `ExtractAPI.mkStructureWithInherited` renders `nonPrivateMembers` minus decls with `memberInfo` (as seen from the class); Scala 3 renders them as declared, with the parents' type arguments in `parents` (`zinc-incrementality` §7). Merkle: the flattened form the PoC builds (`MerkleHashes.composed`, decision 1 in `PLAN-merkle-poc.md`); it reads the stored linearization, so there is no recursion and no new persisted field. The recursive form over direct parents is `zinc-incrementality` §10. The bridge's 2009 doc comment has a TODO asking for parent hashes, and Scala 3's `ExtractAPI` a 2016 TODO for a lazy `parentStructures`. In the model: today is [`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238); Merkle is [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) (recursive) and [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579) (flattened, sound by [`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760) if a class whose header changed recompiles all its descendants).
 
 </div>
 
 ### 12. The running example under Merkle
 
 <div class="cols">
+
+<div>
 
 **Today**
 
@@ -431,6 +469,10 @@ class C
             +22 platform names
 ```
 
+</div>
+
+<div>
+
 **Merkle**
 
 ```zan
@@ -451,6 +493,8 @@ class C
   names     C   h(header of C)
             +22 platform stubs
 ```
+
+</div>
 
 </div>
 

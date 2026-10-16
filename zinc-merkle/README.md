@@ -6,4 +6,4 @@ Talk on two changes to what Zinc stores and who computes it: Merkle name hashes 
 - [`PLAN.md`](PLAN.md) tracks the work behind it: the analysis notation and the tool that prints it, scripted tests, performance tests, demos.
 - `research/` holds notes the talk draws on.
 - `make` builds `index.html` (needs only `python3`). `make watch` rebuilds on change.
-- Authoring conventions and viewing keys are as in `../zinc-incrementality/README.md`. In addition, ` ```zan ` fences are highlighted as the analysis notation of §3, and `<div class="cols">` lays out two titled blocks side by side.
+- Authoring conventions and viewing keys are as in `../zinc-incrementality/README.md`. In addition, ` ```zan ` fences are highlighted as the analysis notation of §3, and `<div class="cols">` holding two `<div>`s lays them out side by side.
