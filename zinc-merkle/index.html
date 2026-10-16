@@ -475,7 +475,7 @@ Notes: 1.5 min. IncBench, `--build/--edits` mode, pipelining off, one repetition
 
 Two changes, built as a proof of concept:
 
-1. **Merkle hashing** (Part III). A class's entry in the analysis stores its own declarations. A descendant's hash for a name is composed from its ancestors' hashes, by Zinc, without compiling the descendant. A descendant is recompiled only when its own compilation reads the change.
+1. **Merkle hashing** (Part III). A class's entry in the analysis stores its own declarations. A descendant's hash for a name is composed from its ancestors' hashes, by Zinc, without compiling the descendant. Today a descendant is recompiled after any change to an ancestor's API, often only to update its entry in the analysis, with byte-identical classfiles as the result (§5). With Merkle hashing a descendant is recompiled only when its own compilation reads the change.
 2. **In-bridge hashing** (Part IV). The compiler bridge computes the hashes from compiler types and sends Zinc the hashes and a small summary of the class, instead of an `xsbti.api` tree for Zinc to hash.
 
 - Scala 2: both changes in Zinc and its compiler bridge. Scala 3: the same changes in the compiler's `ExtractAPI` and `sbt-bridge`. Java sources are out of scope.
@@ -753,7 +753,8 @@ class A
 | today | `B C X Y` | 2 |
 | Merkle | `X Y` | 2 |
 
-`B` and `C` are not recompiled: nothing their own compilation reads changed (§14 says what that means).
+- **Before:** `B` and `C` had to be recompiled to update their entries in the analysis, although their classfiles come out byte-identical.
+- **Now:** their entries do not change, so they are not recompiled. Where their hashes for `m` are needed, Zinc recomputes them from `A`'s. A descendant is recompiled only when its own compilation reads the change (§14).
 
 <div class="fn">
 
