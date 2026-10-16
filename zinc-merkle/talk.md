@@ -16,12 +16,14 @@
 
 | part | sections | min |
 |---|---|---|
-| I. What the analysis stores | §1 the contract · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale | 9 |
+| I. What the analysis stores | §1 the contract · §1a three kinds of reference · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale | 11 |
 | II. What we are free to change | §7 Zinc as keys and hashes · §8 the obligations · §9 what is free and what is fixed · §10 two consequences | 7 |
 | III. Merkle hashing | §11 store declarations, compose the rest · §12 the running example under Merkle · §13 inside and across subprojects · §14 descendants read their ancestors · §15 where it is more precise, and where not | 11 |
 | IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one walk, several outputs | 8 |
 | V. Measurements | §21 results so far · §22 what is measured next | 4 |
 | Close | §23 status and next steps | 1 |
+
+The total is now ~42 min; §1a's second card can move to the notes if time is short.
 
 ---
 
@@ -37,6 +39,55 @@
 <div class="fn">
 
 Notes: 1 min. The contract is §1 of every companion talk; one slide here.
+
+</div>
+
+### 1a. Three kinds of reference
+
+A build is split into **subprojects** (sbt projects, Mill modules), each compiled by its own Zinc run into its own output directory, with its own analysis file. A class can refer to three kinds of class. Below, `app` and `lib` are subprojects, `app` depends on `lib`, and both have the Scala library on their classpath:
+
+```mermaid
+flowchart LR
+  subgraph APP["app"]
+    X["X"] -- "internal" --> C["C"]
+  end
+  subgraph LIB["lib"]
+    B["B"] --> A["A"]
+  end
+  subgraph JAR["scala-library.jar"]
+    L["AbstractIterator"]
+  end
+  C -- "external" --> B
+  X -- "library" --> L
+```
+
+| kind | what Zinc records | how a change is found | what is invalidated | when |
+|---|---|---|---|---|
+| **internal**: same subproject | class → class edges (`memberRef.internal`, `inheritance.internal`) and used names | the hashes of the classes just compiled, against their previous hashes | clients filtered by changed name; every descendant, and its clients | after every round, until nothing changes |
+| **external**: another subproject of the build | class → upstream class name (`memberRef.external`, …), and a copy of each upstream class's stored API as last seen (`apis.external`) | that copy, against the upstream analysis as it is now | clients filtered by changed name; every descendant in this subproject, and its clients | once, before the first round |
+| **library**: a jar or the JDK | source → jar or classfile (`libraryDep`) | the jar's or classfile's stamp | every source that depends on it, unfiltered | once, before the first round |
+
+<div class="fn">
+
+Notes: 2 min. Zinc's own words are internal, external and library (or binary). `IncrementalCommon.detectInitialChanges` finds all three kinds of initial change; `invalidateInitial` turns external API changes into invalidations (`invalidateClassesExternally`: name-filtered `memberRef.external` clients, plus `inheritance.external` descendants walked transitively inside this subproject, and their name-filtered clients) and library changes into sources (`usesLibrary`); only internal changes feed later rounds. The upstream analysis is read through `Lookup.lookupAnalyzedClass`; sbt also has a fast path, `ExternalLookup`, that can skip it. With pipelining, downstream compiles against upstream's early output (pickles), but the order of the Zinc runs is the same.
+
+</div>
+
+<!-- break -->
+
+**Why the three are treated differently.**
+
+| difference | inherent, pragmatic or historical |
+|---|---|
+| No rounds across subprojects: a downstream change never recompiles upstream | **Inherent.** Subprojects form an acyclic graph and are compiled in order; upstream's outputs are finished before downstream starts, and nothing downstream can change them. |
+| Downstream sees upstream's stored API, but not its relations | **Pragmatic.** Each analysis is written only by its own subproject's run, and downstream needs to know *what* changed upstream, not why. The cost: there is nothing to walk across the boundary, which is where Merkle composition is needed (§13). |
+| A library has a stamp, not an API | **Partly inherent:** there is no compiler run that sees its source, so an API would have to be read back from classfiles. **Mostly pragmatic:** libraries change rarely, so recompiling every user on a change is acceptable. |
+| Library members are copied into every descendant's API today | **Historical.** Every ancestor's members were copied before Merkle hashing; libraries are what is left of that design, since they have no stored API to compose from (§19). |
+| The same program recompiles differently laid out as one subproject or as two | **Historical.** Inside a subproject Zinc can follow relations from every class it recompiled, round after round; across, it starts once from what changed in upstream's stored API. When an ancestor's companion gained an implicit, the first layout was clean and the second missed a client, until [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845). The model treats the layout as a policy on one loop (`zinc-lean` §19). |
+
+<div class="fn">
+
+Notes: included in the 2 min. The point to carry into Part III: the three kinds differ in what the downstream side can *see*, and the hashing scheme has to work with what is visible at each boundary. Whether a class is internal or external is a build-layout decision; nothing in the language distinguishes them.
 
 </div>
 
@@ -73,6 +124,7 @@ flowchart BT
   Z -. "memberRef" .-> A
 ```
 
+- All seven classes are in one subproject, so every edge is internal (§1a).
 - Each source defines classes; each class gets an entry in the analysis.
 - Zinc records two kinds of edge between classes: **inheritance** (the extends clause) and **memberRef** (anything else: a type mentioned, a member selected).
 - A client of `b.m` records a memberRef edge to `B`, the type it selected through, *and* to `A`, the owner of `m`. Keep that second edge in mind: it is why Merkle hashing needs no composed hashes inside a subproject (§13).
