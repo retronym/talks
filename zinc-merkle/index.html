@@ -1,0 +1,1079 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merkle hashing in Zinc</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --rule: #e4e2dc;
+  --accent: #b4441f;
+  --accent-soft: #f6e4dc;
+  --link: #1f5fa8;
+  --code-bg: #f2f1ec;
+  --part-bg: #1d1d1f;
+  --part-ink: #f6f5f1;
+  --kw: #a3361a; --str: #2f7a3a; --com: #8a8a8f; --typ: #1f5fa8; --num: #7a3fa0;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+  --chip-proof: #6b3fa0; --chip-proof-bg: #efe6f8; --chip-search: #1f5fa8; --chip-search-bg: #e2ecf8;
+  --chip-harness: #2f7a3a; --chip-harness-bg: #e2f2e5; --chip-bench: #8a5a00; --chip-bench-bg: #f8edd6;
+  --chip-hand: #55555a; --chip-hand-bg: #ecebe6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+    --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+    --part-bg: #ececee; --part-ink: #141416;
+    --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
+    --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
+    --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+  --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+  --part-bg: #ececee; --part-ink: #141416;
+  --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
+  --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
+  --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
+}
+
+* { box-sizing: border-box; }
+html { scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; }
+:not(pre) > code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre.mermaid { background: transparent; text-align: center; padding: 8px 0; }
+.hljs-keyword, .hljs-built_in { color: var(--kw); }
+.hljs-string { color: var(--str); }
+.hljs-comment { color: var(--com); font-style: italic; }
+.hljs-type, .hljs-title { color: var(--typ); }
+.hljs-number, .hljs-literal { color: var(--num); }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+nav.toc {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 24px 16px 40px 20px; border-right: 1px solid var(--rule); font-size: 13.5px;
+}
+nav.toc .title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+nav.toc .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--ink); }
+nav.toc li a:hover { background: var(--accent-soft); text-decoration: none; }
+nav.toc li.h2 > a { font-weight: 600; margin-top: 12px; color: var(--muted); text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; }
+nav.toc li.h4 > a { padding-left: 22px; color: var(--muted); }
+nav.toc li a.active { background: var(--accent-soft); color: var(--accent); }
+.controls { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.controls button {
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+}
+.controls button:hover { border-color: var(--accent); }
+
+main { padding: 32px 40px 120px; max-width: 980px; width: 100%; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 26px 32px; margin: 0 0 22px; box-shadow: var(--shadow);
+}
+.card.part { background: var(--part-bg); color: var(--part-ink); border: none; padding: 36px 32px; }
+.card.part h2 { margin: 0; font-size: 28px; letter-spacing: -.01em; }
+.card.part code { background: transparent; color: inherit; }
+.card.cover h1 { font-size: 34px; line-height: 1.2; margin: 0 0 18px; letter-spacing: -.02em; }
+.card h3 { margin: 0 0 14px; font-size: 22px; letter-spacing: -.01em; }
+.card h4 { margin: 0 0 12px; font-size: 18px; }
+.card .cont { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.card h3 .num, .card h4 .num { color: var(--accent); margin-right: .35em; }
+.card > :last-child { margin-bottom: 0; }
+.card ul, .card ol { padding-left: 1.3em; }
+.card li { margin: .25em 0; }
+.card li > ul { margin: .2em 0; }
+strong { font-weight: 650; }
+.katex-display { margin: 14px 0; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.katex { font-size: 1.05em; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { border-bottom: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); color: var(--muted); }
+a.sref { white-space: nowrap; }
+
+/* Focus mode: one card at a time, bigger type, for presenting */
+body.focus nav.toc { display: none; }
+body.focus .layout { grid-template-columns: 1fr; }
+body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
+body.focus .card { display: none; min-height: 80vh; }
+body.focus .card.current { display: block; outline: none; }
+body.focus .card.part.current { display: flex; align-items: center; }
+body.focus .card.part h2 { font-size: 44px; }
+.focus-counter { display: none; position: fixed; bottom: 14px; right: 18px; color: var(--muted); font-size: 13px; }
+body.focus .focus-counter { display: block; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  main { padding: 16px 16px 80px; }
+  .card { padding: 18px 16px; }
+}
+@media print {
+  nav.toc, .focus-counter { display: none; }
+  .layout { display: block; }
+  .card { break-inside: avoid; box-shadow: none; }
+}
+.card .fn { margin-top: 1.2em; padding-top: .5em; border-top: 1px solid var(--rule); font-size: .78em; color: var(--muted); }
+.card .fn p, .card .fn ul { margin: .2em 0; }
+.card .cols { display: grid; grid-template-rows: auto auto; grid-auto-flow: column; grid-auto-columns: 1fr; column-gap: 1.2em; }
+.card .cols > * { min-width: 0; }
+.hljs-addition { color: var(--str); }
+.hljs-deletion { color: var(--kw); }
+.hljs-meta { color: var(--num); font-weight: 600; }
+.card .status { margin-top: 1em; padding: .5em .8em; border-left: 3px solid var(--rule); font-size: .9em; }
+.card .status p, .card .status ul { margin: .2em 0; }
+.chip { display: inline-block; padding: .1em .6em; border-radius: 999px; font-size: .8em; font-weight: 600; white-space: nowrap; }
+.chip.proof { color: var(--chip-proof); background: var(--chip-proof-bg); }
+.chip.search { color: var(--chip-search); background: var(--chip-search-bg); }
+.chip.harness { color: var(--chip-harness); background: var(--chip-harness-bg); }
+.chip.bench { color: var(--chip-bench); background: var(--chip-bench-bg); }
+.chip.hand { color: var(--chip-hand); background: var(--chip-hand-bg); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <div class="title">Merkle hashing in Zinc</div>
+    <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
+    <div class="controls">
+      <button id="btn-focus" type="button">Focus mode</button>
+      <button id="btn-theme" type="button">Theme</button>
+    </div>
+    <ol id="toc"></ol>
+  </nav>
+  <main id="content"></main>
+</div>
+<div class="focus-counter" id="counter"></div>
+
+<script type="text/markdown" id="talk-src"># Merkle hashing and in-bridge hashing in Zinc
+
+**Status:** first draft, for review with [`PLAN.md`](PLAN.md). Each card is one slide (a few are split with `<!-- break -->`). The small grey block under a slide holds speaker notes, sources and the time budget; it is not meant to be shown. The analysis listings (§3–§5, §11–§12) are written by hand from the code of `develop` and the PoC; [`PLAN.md`](PLAN.md) step D1 replaces them with listings printed from real analysis files.
+
+**Audience:** Scala tooling people: compiler, build-tool and IDE maintainers. They know Zinc as users, some of its internals, and what a name hash is. They need not have seen the companion talks.
+
+**Thesis:** Zinc's analysis file stores, for every class, every member it inherits, as hashes. That is a choice, not a requirement. The Lean model states what any hashing scheme must satisfy, and two changes that satisfy it remove most of the cost: Merkle hashing stores each class's own declarations and composes the rest, and in-bridge hashing computes the hashes in the compiler instead of building a tree for Zinc to hash and discard.
+
+**Companion talks:** `zinc-incrementality` (Zinc's design; §7–§11 are the long form of Parts I and III here), `zinc-lean` (the model; §12, §17, §18 are the long form of Part II), `zinc-testing` (how the PoC was tested).
+
+**Code:** the PoC is [retronym/zinc#24](https://github.com/retronym/zinc/pull/24) (draft, Scala 2 bridge in Zinc), with the cross-module work in [#30](https://github.com/retronym/zinc/pull/30) and the Scala 3 compiler side in [retronym/scala3#5](https://github.com/retronym/scala3/pull/5). `integration/merkle` in retronym/zinc combines them (`zinc-incrementality/integration/`). **Lean model:** [retronym/jvm-lang-models](https://github.com/retronym/jvm-lang-models) at `4faa126ffd12acc1e45ac41c636751b26b863949`.
+
+<!-- break -->
+
+**Contents (~40 min):**
+
+| part | sections | min |
+|---|---|---|
+| I. What the analysis stores | §1 the contract · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale | 9 |
+| II. What we are free to change | §7 Zinc as keys and hashes · §8 the obligations · §9 what is free and what is fixed · §10 two consequences | 7 |
+| III. Merkle hashing | §11 store declarations, compose the rest · §12 the running example under Merkle · §13 inside and across subprojects · §14 descendants read their ancestors · §15 where it is more precise, and where not | 11 |
+| IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one walk, several outputs | 8 |
+| V. Measurements | §21 results so far · §22 what is measured next | 4 |
+| Close | §23 status and next steps | 1 |
+
+---
+
+## Part I — What the analysis stores
+
+### 1. An incremental build must equal a clean build
+
+- Zinc compiles the sources that changed, then asks which other classes could compile differently because of what changed, and compiles those, until nothing more is invalidated.
+- It decides this by comparing hashes stored in the *analysis file* from the previous compile with the hashes the new compile produced.
+- So the analysis file determines both what Zinc can detect and what each compile costs: it is written on every compile and read on every compile.
+- This talk is about what goes into that file, and what we may change about it.
+
+<div class="fn">
+
+Notes: 1 min. The contract is §1 of every companion talk; one slide here.
+
+</div>
+
+### 2. Sources, classes, and the edges between them
+
+```scala
+// A.scala
+abstract class A[T] { def m: Int = 0; def g: Int = 0 }
+// B.scala
+class B extends A[Int]
+// M.scala, C.scala
+trait M
+class C extends B with M
+// X.scala, Y.scala, Z.scala
+object X { def f(b: B) = b.m }   // client of B.m
+object Y { def f(c: C) = c.m }   // client of C.m
+object Z { def f(b: B) = b.g }   // client of B.g
+```
+
+```mermaid
+flowchart BT
+  subgraph SRC["source files"]
+    direction LR
+    sA["A.scala"]; sB["B.scala"]; sC["C.scala"]; sM["M.scala"]; sX["X.scala"]; sY["Y.scala"]; sZ["Z.scala"]
+  end
+  B["B"] == "inherits" ==> A["A"]
+  C["C"] == "inherits" ==> B
+  C == "inherits" ==> M["M"]
+  X["X"] -. "memberRef" .-> B
+  X -. "memberRef" .-> A
+  Y -. "memberRef" .-> C
+  Y -. "memberRef" .-> A
+  Z -. "memberRef" .-> B
+  Z -. "memberRef" .-> A
+```
+
+- Each source defines classes; each class gets an entry in the analysis.
+- Zinc records two kinds of edge between classes: **inheritance** (the extends clause) and **memberRef** (anything else: a type mentioned, a member selected).
+- A client of `b.m` records a memberRef edge to `B`, the type it selected through, *and* to `A`, the owner of `m`. Keep that second edge in mind: it is why Merkle hashing needs no composed hashes inside a subproject (§13).
+- Each class also records its **used names**: `X` used `B` and `m`.
+
+<div class="fn">
+
+Notes: 1.5 min. This is the program of `zinc-incrementality` §10a and of [`Hier.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean), and the PoC's scripted test `merkle-member-type`. The owner edge comes from `ExtractDependencies`, which records a memberRef on the owner of every selected member. Edges to library classes (`Int`, `AnyRef`) are recorded too, as library dependencies; omitted here.
+
+</div>
+
+### 3. A notation for the analysis file
+
+The analysis file is protobuf (or a text format nobody reads). This talk prints it in a notation with one block per source and per class:
+
+```zan
+source B.scala                     -- stamps: content hash of the source
+  defines B                        -- relations.classes
+  products B.class                 -- relations.srcProd
+
+class B                            -- apis.internal(B): an AnalyzedClass
+  header    class B[]              -- name, kind, access, modifiers, type parameters
+  parents   A[Int], AnyRef, Any    -- structure.parents: the linearization, as seen from B
+  decls     -                      -- declarations kept in the stored API
+  api       #B                     -- apiHash: one hash of the whole class
+  names     B   h(header of B)     -- nameHashes: one hash per (name, scope)
+            m   h(m: Int)
+            g   h(g: Int)
+            +22 platform names     -- toString, equals, ... from AnyRef and Any
+  inherits  A                      -- relations.inheritance.internal
+  memberRef A                      -- relations.memberRef.internal
+  uses      A, Int                 -- relations.names: the class's used names
+```
+
+- `h(…)` is the hash of what is written inside it. Hashes are opaque; only equality between two compiles matters.
+- In a diff between two compiles, a line starting `~` has a changed hash, `+` is added and `-` removed.
+- Left out: library dependencies, product stamps, compile setup, source infos. They do not change between the designs in this talk.
+
+<div class="fn">
+
+Notes: 1.5 min. Field names are those of `xsbti.api.AnalyzedClass` (`apiHash`, `nameHashes`, `extraHash`, `api`) and `sbt.internal.inc.Relations` (`classes`, `srcProd`, `inheritance`, `memberRef`, `names`). `extraHash` equals `apiHash` except for traits, where it adds private fields and super accessors; it is omitted until §14. `header` is a name for the parts of `ClassLike` that minimization keeps. [`PLAN.md`](PLAN.md) D1: a small tool, `zan`, that reads a real analysis file and prints this notation, so every listing in the talk can be regenerated.
+
+</div>
+
+### 4. The running example, as Zinc stores it today
+
+```zan
+class A
+  header    abstract class A[T]
+  parents   AnyRef, Any
+  decls     -
+  names     A   h(header of A)
+            m   h(m: Int)
+            g   h(g: Int)
+            +22 platform names
+
+class B
+  parents   A[Int], AnyRef, Any
+  decls     -
+  names     B   h(header of B)
+            m   h(m: Int)          -- copied from A, as seen from B
+            g   h(g: Int)          -- copied from A, as seen from B
+            +22 platform names
+  inherits  A
+
+class C
+  parents   M, B, A[Int], AnyRef, Any
+  decls     -
+  names     C   h(header of C)
+            m   h(m: Int)          -- copied from A, as seen from C
+            g   h(g: Int)          -- copied from A, as seen from C
+            +22 platform names
+  inherits  B, M
+
+object X
+  names     X   h(header of X)
+            f   h(f(b: B): Int)
+            +22 platform names
+  memberRef B, A
+  uses      B, m, Int
+```
+
+- **No member is stored, only its hash.** `APIUtil.minimize` drops every member from the stored API (except `main` methods, for discovery). The members survive only as name hashes.
+- **Every inherited member is hashed again in every descendant**, as seen from that descendant, and the hash is computed when *that descendant* is compiled.
+- The hierarchy's whole API is in the file once per class that inherits it.
+
+<div class="fn">
+
+Notes: 1.5 min. Scala 2's `ExtractAPI.mkStructureWithInherited`: `inherited` = `nonPrivateMembers` minus decls, each rendered with `memberInfo` (as seen from the class). Scala 3 renders inherited members as declared (`zinc-incrementality` §7); the storage is the same. Since 2009 (Harrah, [42c5d47b](https://github.com/scala/scala/commit/42c5d47b99f6d4ed215957d784934c3580c36968)). The platform count is illustrative; D1 prints the real one.
+
+</div>
+
+### 5. An edit, today: `A.m: Int` becomes `A.m: String`
+
+```zan
+class A
+~ names     m   h(m: String)
+
+class B                            -- still says m: Int until B is recompiled
+  names     m   h(m: Int)
+
+class C
+  names     m   h(m: Int)
+```
+
+```mermaid
+flowchart LR
+  A1["A edited"] --> R1["round 1: compile A<br/>A's name m changed"]
+  R1 --> R2["round 2: compile B, C (descendants)<br/>and X, Y (memberRef clients of A's descendants, name m)"]
+  R2 --> D["done: B C X Y recompiled"]
+```
+
+- `B` and `C` are recompiled although their bytecode cannot change: neither declares, overrides or calls `m`. They are recompiled to recompute their stored hashes.
+- `X` and `Y` must recompile: their `m` changed type. `Z` uses only `g` and stays.
+- Zinc does not need `B`'s new hash to find `X`: its invalidator already walks the hierarchy, and `X` has a memberRef edge to `A` under the name `m`. The descendants' hashes are refreshed, then compared, and the comparison finds nothing new.
+
+<div class="fn">
+
+Notes: 1.5 min. `merkle-member-type` pins this on the PoC's baseline commit: `B C X Y` in two rounds. The walk is `invalidateClassesInternally`: the memberRef clients of every descendant, filtered by the ancestor's changed names (`zinc-incrementality` §9).
+
+</div>
+
+### 6. The cost at scale
+
+Spark 4.0.1, `sql/catalyst`: 2,527 classes in one module. `TreeNode` has 261 descendants, `Expression` 257.
+
+| edit | classes recompiled | rounds | wall |
+|---|---|---|---|
+| `TreeNode`: body only | 10 | 1 | 0.8 s |
+| `TreeNode`: add a member nobody uses | 1,371 | 3 | 14.4 s |
+| `Expression`: add a member nobody uses | 1,200 | 3 | 10.7 s |
+| clean build, warm | 2,527 | 1 | 11.4 s |
+
+- Adding a member nobody uses to `TreeNode` costs more than a clean build of the module.
+- Of the 212,389 name hashes in catalyst's analysis, 118,343 (56%) are members inherited from classes in the same module. They are a quarter of the file on disk.
+- Every compile also builds the `xsbti.api` tree these hashes are computed from: in catalyst's clean build, 1,093 MB allocated in the `xsbt-api` phase, against 1,250 MB for the typer.
+
+<div class="status">
+
+<span class="chip bench">benchmark on real code</span>
+
+</div>
+
+<div class="fn">
+
+Notes: 1.5 min. IncBench, `--build/--edits` mode, pipelining off, one repetition; A side of the table in `zinc-incrementality` §10. Allocation from `-Yprofile-enabled`, mean of 2 warm clean builds (PLAN-merkle-poc.md, "Extraction cost"). The 56% figure is from [retronym/zinc#30](https://github.com/retronym/zinc/pull/30).
+
+</div>
+
+---
+
+## Part II — What we are free to change
+
+### 7. Zinc in four words: traces, keys, hashes, invalidation
+
+```mermaid
+flowchart LR
+  T["trace(X)<br/>the questions compiling X<br/>asked about other classes"] -- "extract" --> K["keys U(X)<br/>(B, m), (A, m), (B, B)"]
+  I["interfaces I<br/>what the analysis knows<br/>about every class"] -- "π" --> H["hash of each key"]
+  K --> CMP{"hash changed<br/>since last compile?"}
+  H --> CMP
+  CMP -- "yes" --> INV["X is invalidated"]
+```
+
+- A **query** is one question a compilation asks about another class: "what is the type of `B`'s member `m`?".
+- A **key** is what Zinc records instead of the query: a class and a name.
+- **π** maps the analysis and a key to a hash.
+- A class is **invalidated** when one of its keys' hashes changed.
+
+| model | Zinc |
+|---|---|
+| `keys d tr`, written U(d) | memberRef edges plus used names |
+| `π I c k` | `nameHashes` of class `c`, entry `k` |
+| `covers q k` | the key `(A, m)` covers "what is `A.m`?" |
+| `hashDeps I c` | which classes' interfaces `π I c _` reads |
+
+<div class="fn">
+
+Notes: 1.5 min. [`NCompiler`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean#L32) in [`NonLocalAns.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean). The model's fields, written as a diagram; no Lean syntax is needed on this slide. `zinc-lean` §6a has the full vocabulary.
+
+</div>
+
+### 8. The obligations
+
+Zinc's loop returns the clean build (T3) for any choice of `π`, `keys`, `covers` and `hashDeps` that meets four obligations:
+
+| obligation | in words | in the model |
+|---|---|---|
+| **compositionality** | a class compiled with others gets the output it would get compiled alone against their interfaces | `comp` |
+| **coverage** | every query in a trace is covered by a recorded key | ∀ q ∈ trace(d), ∃ k ∈ U(d), covers q k |
+| **abstraction** | an unchanged hash means unchanged answers to every query its key covers | π I c k = π I′ c k → answer I q = answer I′ q |
+| **locality** | a hash reads only the interfaces in `hashDeps` | I = I′ on hashDeps(c) → π I c = π I′ c |
+
+and one rule for the loop: after compiling `R`, compare hashes over the classes whose hashes read `R`, not only over `R`:
+
+$$\mathrm{affected}(R) = R \cup \{\, c \mid \mathrm{hashDeps}(c) \cap R \neq \emptyset \,\}$$
+
+<div class="fn">
+
+Notes: 2 min. [`NCompiler.Obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean#L58) and `affected` in the same file; T2″ is `round_preserves`, T3a″ `zinc_sound`. The formulas are paraphrases with the interface argument kept; the Lean is in `zinc-lean` §12. For a local hash `hashDeps(c) = {c}` and `affected(R) = R`, which is Zinc today ([`Embed.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Embed.lean) proves the local model is a special case).
+
+</div>
+
+### 9. What is free and what is fixed
+
+The compiler and its traces are fixed: they are what the compiler does. Everything Zinc stores is a choice.
+
+| choice | Zinc today | Merkle (Part III) | in-bridge hashing (Part IV) |
+|---|---|---|---|
+| what a class stores | every member, own and inherited | own declarations and the linearization | same as Merkle |
+| `π`: what a name hash covers | the member as seen from the class | the class's own declaration, composed with its ancestors' | the same equivalence, other values |
+| `hashDeps` | the class alone | the class and its stored ancestors | same as Merkle |
+| who computes `π` | Zinc, over an `xsbti.api` tree | Zinc | the compiler bridge, over compiler types |
+| keys | memberRef edges and used names | the same, plus keys for what a descendant's own compilation reads (§14) | same as Merkle |
+| policy: which descendants recompile | all of them | those whose own compilation reads the change | same as Merkle |
+
+- If the new choice meets the obligations, the theorems apply unchanged. There is nothing to re-prove about the loop.
+- The model already contains all three schemes: Scala 2's bridge ([`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238)), Scala 3's (`Erasure .decl`), and Merkle ([`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257), [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579)), each with its obligations proved.
+
+<div class="fn">
+
+Notes: 2 min. The point of Part II: hashing and relations are ours to change, so long as the model's obligations hold. [`W_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L209), [`Mk_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L248), [`Fl_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L676), [`Er_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1004). `zinc-lean` §18 has the comparison.
+
+</div>
+
+### 10. Two consequences
+
+**A hash that reads other classes must be recomputed when they change.**
+
+```scala
+trait P { def m: Int = 1 }     // edit: def m: String = ""
+class C extends P
+object X { (new C).m }         // X records the key (C, m)
+```
+
+If `C`'s hash for `m` is composed from `P`'s, and Zinc compares hashes only for the classes it recompiled (`P`), nobody recomputes `(C, m)` and `X` keeps `m: Int`. The model has the counterexample, [`stale_unsound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L130), and the fix, [`stale_affected`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L135): compare over `affected(R)`.
+
+**A hash must be a function of the interface.** If the same class gets a different hash in a different JVM, or in a different batch, every compile looks like a change. This is overcompilation, not unsoundness, and the PoC had three such bugs: an enum's identity hash, `Object.wait`'s `@throws` annotation present only if another unit in the run had typed a call to `wait`, and an absent class side counted as top-level.
+
+<div class="fn">
+
+Notes: 1.5 min. Today's materialised hashes are non-local too: `B`'s hash for `m` reads `A`. Zinc meets the obligation by recompiling `B`, which is §5. The second item is [retronym/zinc#69](https://github.com/retronym/zinc/pull/69) (merged into the PoC): on scala/scala every no-op compile recompiled ~380 sources before it. `MerkleHashesStabilitySpec` composes the same analysis in this JVM and a forked one.
+
+</div>
+
+---
+
+## Part III — Merkle hashing
+
+### 11. Store declarations, compose the rest
+
+Each class stores its own declarations and its linearization. A name's hash for class `C` is composed from the hashes of the ancestors that declare it:
+
+$$h_C(n) = h\big(\mathrm{own}_C(n),\ \langle\, (P,\ \mathrm{own}_P(n)) \mid P \in \mathrm{lin}(C),\ n \in \mathrm{decls}(P) \,\rangle\big)$$
+
+```mermaid
+flowchart BT
+  hA["h_A(m) = h(m: Int)"]
+  hM["h_M(m) = h(none)"]
+  hB["h_B(m) = h(-, A: h_A(m))"]
+  hC["h_C(m) = h(-, M: h_M(m), B: h_B(m))"]
+  hB --> hA
+  hC --> hB
+  hC --> hM
+```
+
+- The hash of a descendant is a hash of its ancestors' hashes: a Merkle tree over the inheritance graph.
+- Storage is the sum of the classes' declarations, not of their members.
+- The composed hash is recomputed, not recompiled, when an ancestor changes. That is the `affected` rule of §8: the descendants are in `affected(R)` because their `hashDeps` include the ancestor.
+- `h_M(m) = h(none)` records that `M` has no `m`, so a later `M.m` changes `h_C(m)`.
+
+<div class="fn">
+
+Notes: 2 min. The formula is the flattened form the PoC builds (`MerkleHashes.composed`, decision 1 in `PLAN-merkle-poc.md`): it reads the stored linearization, so there is no recursion and no new persisted field. The recursive form over direct parents is `zinc-incrementality` §10. The bridge's 2009 doc comment has a TODO asking for exactly this, and Scala 3's `ExtractAPI` a 2016 TODO for a lazy `parentStructures`. In the model: [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) (recursive), [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579) (flattened, sound by [`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760) if a class whose header changed recompiles all its descendants).
+
+</div>
+
+### 12. The running example under Merkle
+
+<div class="cols">
+
+**Today**
+
+```zan
+class A
+  decls     -
+  names     A   h(header of A)
+            m   h(m: Int)
+            g   h(g: Int)
+            +22 platform names
+
+class B
+  decls     -
+  names     B   h(header of B)
+            m   h(m: Int)
+            g   h(g: Int)
+            +22 platform names
+
+class C
+  decls     -
+  names     C   h(header of C)
+            m   h(m: Int)
+            g   h(g: Int)
+            +22 platform names
+```
+
+**Merkle**
+
+```zan
+class A
+  decls     def m, def g, <init>
+  names     A   h(header of A)
+            m   h(m: Int)
+            g   h(g: Int)
+            +22 platform stubs
+
+class B
+  decls     <init>
+  names     B   h(header of B)
+            +22 platform stubs
+
+class C
+  decls     <init>
+  names     C   h(header of C)
+            +22 platform stubs
+```
+
+</div>
+
+- `B` and `C` lose `m` and `g`; the stored record of what they inherit is their `parents` line, which both designs already store.
+- `decls` is new: a stub per declaration (name, access, modifiers; no types). §14's rules read it.
+- Platform members (`toString`, …) stay, as typeless stubs. Library ancestors are §19.
+
+<!-- break -->
+
+**The edit again: `A.m: Int` becomes `A.m: String`.**
+
+```zan
+class A
+~ names     m   h(m: String)
+
+-- B and C: nothing stored changed. Their composed hashes are recomputed:
+~ h_B(m) = h(-, A: h(m: String))
+~ h_C(m) = h(-, M: h(none), B: h_B(m))
+```
+
+| | recompiled | rounds |
+|---|---|---|
+| today | `B C X Y` | 2 |
+| Merkle | `X Y` | 2 |
+
+`B` and `C` are not recompiled: nothing their own compilation reads changed (§14 says what that means).
+
+<div class="fn">
+
+Notes: 2.5 min. Scripted test `merkle-member-type`: `checkRecompilations 2 X Y` on the PoC; `B C X Y` on the baseline commit. Hand-written listing until D1. The minimized API with stubs is `APIUtil.minimizeStructure` in the PoC; it drops the erased-signature witness, which only feeds the hash. Inside one subproject the PoC does not even compute `h_B(m)`: next slide.
+
+</div>
+
+### 13. Inside a subproject, and across subprojects
+
+```mermaid
+flowchart LR
+  subgraph IN["inside a subproject"]
+    direction TB
+    Xi["X"] -. "memberRef, name m" .-> Ai["A (owner of m)"]
+    Xi -. "memberRef" .-> Bi["B"]
+    Bi == "inherits" ==> Ai
+  end
+  subgraph ACROSS["across subprojects"]
+    direction TB
+    Xa["X (downstream)"] -. "external memberRef" .-> Ba["B (upstream analysis:<br/>stored API, no relations)"]
+    Ba -. "compose over<br/>stored parents" .-> Aa["A (upstream)"]
+  end
+```
+
+- **Inside a subproject no composed hash is needed.** `X` already has an edge to `A`, the owner of `m`, and Zinc already walks from a changed class to the memberRef clients of its descendants, filtered by name. That walk visits the same classes the composed hash reads. The PoC's change here is only to stop storing inherited members and stop recompiling every descendant.
+- **Across subprojects it is needed.** A downstream compile sees the upstream analysis's stored API, but not its relations, so there is nothing to walk. The PoC composes the upstream class's name hashes over its stored linearization when it looks the class up.
+- `macros/macro-type-change-3` is the test that requires composition: a macro reflects over `baseClasses`, selects no member, so no edge names the ancestor.
+
+<div class="fn">
+
+Notes: 2 min. In model terms the walk is a *decls + walk* scheme: local hashes, and keys that name every ancestor visited (`zinc-incrementality` §10, table "What the model says"). Both satisfy the obligations; the choice is about where the work happens. `MerkleHashes.composed` is called from `Lookup` for external classes. An ancestor contributes its `extraHash` (class side only), not its `apiHash`, because companion-object members are not inherited; its implicits come from both sides, since a companion's implicits are in the implicit scope of its descendants.
+
+</div>
+
+### 14. Descendants read their ancestors too
+
+A descendant's compilation reads its ancestors in places its used names do not record: refchecks and code generation. Each rule names one such read; a descendant recompiles when one fires.
+
+| rule | the descendant `D` recompiles when the change to ancestor `P`… | why | test that fails without it |
+|---|---|---|---|
+| overrides | touches a name `D` declares | override conformance, bridges | `merkle-override` |
+| conflicts | touches a name another ancestor of `D` declares | inherited members must be reconciled | `merkle-conflict` |
+| abstract | touches a name deferred in any ancestor, and `D` is concrete | `D` must implement it | `merkle-abstract`, `-abstract-ancestor` |
+| header | changes `P`'s parents, type parameters, self type or modifiers | keeps `D`'s stored linearization fresh | (none: defence in depth) |
+| trait | is to a trait `P` | mixin forwarders in `D`'s bytecode | `merkle-trait-override` |
+| mirror | reaches a top-level object `D` | static forwarders in its mirror class | `merkle-mirror` |
+| annotated | touches an annotated member | sbt's test discovery reads inherited annotations | `merkle-discovery` |
+| exports (Scala 3) | is to a class `D` wildcard-exports | Scala 3 records `export x.*` as inheritance | `merkle3-export-add` |
+
+- In the model these are keys of the descendant's own trace: queries from `D` to its ancestors, as [`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) models the override, conflict and abstract checks. In Zinc they are a policy over the inheritance edge.
+- Ablation is the test plan: each rule has a scripted test that undercompiles with that rule off, and `descendantRules=none` fails all of them.
+
+<div class="fn">
+
+Notes: 2 min. `DescendantRules.scala` in the PoC; presets `all` (today), `default`, `none`, `strict`. `uses` and `fallbacks` were dropped by ablation: a descendant is a memberRef client of its parent (constructor call), so ordinary invalidation reaches it. The exhaustive check in [`FlatRules.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/FlatRules.lean) found that `abstract` must count names deferred in *any* ancestor (672 of 142,500 single-class edits unclean with the narrower rule). The forwarder rules were found by thinking about bytecode, not by the model. Cross-subproject versions: `merkle-x-*`.
+
+</div>
+
+### 15. Where Merkle hashing is more precise, and where it is not
+
+| edit | today | Merkle | test |
+|---|---|---|---|
+| ancestor member's type changes, descendants neither declare nor use it | descendants + clients | clients | `merkle-member-type` |
+| ancestor gains a member nobody uses | every descendant | the ancestor | `transitive-class`, `class-based-inheritance` |
+| same, ancestor in an upstream subproject | every downstream descendant | none downstream | `merkle-x-member-type` |
+| same, ancestor is a trait | every descendant | direct mixers only (forwarders) | `merkle-trait`, `merkle-trait-direct` |
+| a parent's type argument changes (`A[Int]` → `A[String]`) | `C X Y Z` | `C X Y Z` | `merkle-as-seen-from` |
+| a parent is added (header) | all descendants and their clients | the same | `merkle-header`, `merkle-subproject-header-cascade` |
+
+- The win is the common edit: a member added, removed or changed in a base class, where the descendants do not touch it.
+- No change on header edits: the class-name hash covers the parents, so every client naming the class recompiles in both designs.
+- `asSeenFrom` edits are no better: every name inherited through that parent moves. A hash of the *resolved* member would be as precise as today's, with the same recompute obligation.
+
+<div class="fn">
+
+Notes: 2 min. The table is to be checked against `research/test-coverage.md`, which classifies all 74 `merkle*` tests and lists the precision cases no test pins yet; [`PLAN.md`](PLAN.md) T1–T8 adds them, each with the baseline set pinned beside the PoC set. `merkle-as-seen-from` pins `C X Y Z` on the baseline; the model's materialised design gives `C X Y`, since it has no key for a class's own name (`zinc-incrementality` §10a Edit 2).
+
+</div>
+
+---
+
+## Part IV — In-bridge hashing
+
+### 16. A tree built to be hashed and discarded
+
+```mermaid
+flowchart LR
+  T1["compiler symbols<br/>and types"] --> P1["xsbti.api tree<br/>every member, with types"]
+  P1 -- "callback.api(src, tree)" --> H1["Zinc: HashAPI,<br/>NameHashing"]
+  H1 --> M1["minimize:<br/>keep header, parents, stubs"]
+  M1 --> S1["analysis file"]
+```
+
+- For every compiled class, on every compile, the bridge builds a full `xsbti.api` tree, Zinc hashes it, and then drops almost all of it (§4: no member is stored).
+- On catalyst the tree is most of the `xsbt-api` phase's allocation: 1,093 MB today, 704 MB once Merkle stops materialising inherited members.
+- The tree is a general reflection of the type system. Incremental compilation needs a hash of it.
+
+<div class="fn">
+
+Notes: 1.5 min. `AnalysisCallback.api`, then `Incremental.scala`; `APIUtil.minimize` keeps the stub unless `apiDebug` is set. Numbers: PLAN-merkle-poc.md "Extraction cost", catalyst warm clean builds, mean of 2.
+
+</div>
+
+### 17. The obligations are about equality only
+
+- Abstraction says: *equal* hashes mean equal answers. It does not say what the values are.
+- A hash is only ever compared with the previous hash of the same class from the same producer. A new bridge or compiler version already forces a full recompile.
+- So the bridge may compute different values, with a different function, from compiler types directly, provided it makes the same classes equal:
+
+$$\pi_{\text{bridge}}(x) = \pi_{\text{bridge}}(y) \iff \pi_{\text{Zinc}}(x) = \pi_{\text{Zinc}}(y)$$
+
+- The `⇒` direction is needed for soundness, `⇐` for precision.
+- **Check mode tests exactly this.** The bridge sends the tree and its own hashes; Zinc hashes the tree too and reports any class where the two disagree on whether a hash changed since the previous compile.
+
+<div class="fn">
+
+Notes: 1.5 min. `ApiHashCheck`, under `apiCheck=true` or `-Dxsbt.api.check=true`; `AnalysisCallback5.apiCheck(source, full, thin, hashes)`. It also checks, within one compile, the set of name-hash keys, `hasMacro`, and the thin class against `APIUtil.minimize(full)`.
+
+</div>
+
+### 18. Three steps, and what each saved
+
+| step | what moved | `xsbt-api` allocation, catalyst |
+|---|---|---|
+| tree (Merkle PoC) | nothing: Zinc hashes the tree | 704–737 MB |
+| H1 | Zinc's hashing ported to run over the tree in the bridge; send a thin class plus hashes | (proves the callback and the check) |
+| H2 | hash directly from compiler types; build only the thin class | 512 MB |
+| H3 | caches shared across the units of a run, so an ancestor is hashed once | 376–381 MB |
+
+- **Equivalence:** check mode found 0 disagreements on the scripted smoke suite (76 tests), on catalyst member edits (10,200 classes, 6,390 comparisons) and header edits (23,673 classes, 19,797 comparisons). A hasher with member signatures deliberately dropped gives 6 disagreements and two undercompiling tests.
+- Recompiled sets are identical to the tree path's on every catalyst edit.
+- Scala 3 (retronym/scala3#5): on sbt's `main` module, 20 MB for the tree, 23 MB with H2, all `merkle*` tests with 0 disagreements.
+
+<div class="fn">
+
+Notes: 2 min. PLAN-merkle-poc.md "H2 status" and "H2 results"; times there were taken on a loaded machine and are not quoted. What remains of the allocation is mostly `ExtractUsedNames` (a closure per tree node in `processMacroExpansion`), then the per-class name-hash groups. On scala/scala (library, reflect, compiler), taking ancestors' declarations without override checks cut inherited-member selection from 90–100 ms to 2–3 ms per module.
+
+</div>
+
+### 19. Library ancestors
+
+- A library class has no stored API to compose from, so before this change its members were still copied into every descendant and hashed on every compile: a continual cost, paid for precision on a rare event.
+- Now library members are typeless stubs. When a jar changes, Zinc folds its stamp into the hash of every name a class has only by inheritance, and recompiles the classes whose stored linearization contains a class from that jar.
+- A library change then shows up as ordinary name changes, here and downstream.
+- Coarser: a jar change moves every inherited name, `toString` included.
+
+| ablation | `merkle-libjar-override` |
+|---|---|
+| stubs plus stamp folding (default) | passes |
+| stubs only | undercompiles: `E extends D extends L` (jar), `E` never names the jar, `L` changes an abstract member |
+
+<div class="fn">
+
+Notes: 1 min. `LibraryAncestors.scala`, `libraryAncestors=names|members|stubs-only`. Measured on catalyst: no difference in allocation beyond noise (1,772 of 39,530 inherited members are from libraries). The case is the model: a library ancestor costs nothing per compile. Next: per-name hashes of library classes cached by stamp, so only the names that changed move.
+
+</div>
+
+### 20. One walk over compiler types, several outputs
+
+The bridge now has two walks that must agree: one builds trees (Java, older bridges, `apiDebug`, check mode), one hashes. A proposal, after ASM's reader and writers:
+
+```mermaid
+flowchart LR
+  D["bridge driver<br/>(walks symbols and types once)"] --> V{{"ApiVisitor events"}}
+  V --> TB["TreeBuilder<br/>xsbti.api, today's format"]
+  V --> HS["Hasher<br/>ClassHashes"]
+  V --> PR["Printer<br/>canonical text, for logs"]
+  TR["TreeReader<br/>stored or Java trees"] --> V
+```
+
+- `HashAPI` becomes `TreeReader → Hasher`, so Java, old bridges and the new bridge share one hash function, and check mode can compare values exactly.
+- The hasher lives in `compiler-interface`, so Zinc owns the name-hash contract again, and Scala 2 and Scala 3 share it.
+- The printer produces the "what changed" explanation from the code that made the decision.
+
+<div class="fn">
+
+Notes: 1 min. `DESIGN-api-visitor.md` (thought experiment, worktree `merkle-hashing-visitor-api`). Types are an algebra with backend-chosen handles, so the driver memoises once for every backend. Not built.
+
+</div>
+
+---
+
+## Part V — Measurements
+
+### 21. Results so far
+
+| corpus, edit | today | Merkle | source |
+|---|---|---|---|
+| generated tree, 511 classes over 4 modules: root gains a member | 511 classes, 22.1 s | 1 class, 0.6 s | IncBench |
+| catalyst: `TreeNode` gains an unused member | 1,371, 3 rounds, 14.4 s | 420, 2 rounds, 4.5 s | IncBench |
+| catalyst: `Expression` gains an unused member | 1,200, 10.7 s | 388, 3.4 s | IncBench |
+| catalyst: `TreeNode` gains a parent | 2,304, 29.0 s | 1,987, 22.7 s | IncBench |
+| catalyst → `sql/core`: `TreeNode` member, classes in core | 518 | 44 | rz#30 |
+| joern (Scala 3): `AstCreatorBase` member | 73 classfiles | 1 | sbt 2 harness |
+| catalyst: name hashes stored | 212,389 | 94,046 | |
+| catalyst: analysis on disk | 1.88 MB | 1.45 MB | |
+| catalyst: `xsbt-api` allocation, clean build | 1,093 MB | 376–381 MB (with H2, H3) | `-Yprofile-enabled` |
+
+- Every incremental result above was compared with a clean build's classfiles: 146 catalyst edits, equal for develop and for the PoC once six scalac batch dependences were fixed.
+- Clean builds are not slower (11.4 s and 11.1 s on catalyst).
+
+<div class="status">
+
+<span class="chip bench">benchmark on real code</span> <span class="chip harness">generated tests</span>
+
+</div>
+
+<div class="fn">
+
+Notes: 2 min. One repetition for the catalyst rows; medians of 3 for the generated tree. The joern and sbt/sbt runs are in PLAN-merkle-poc.md "Scala 3"; zinc and sbt/sbt showed no gain (shallow hierarchies; sbt's cascade is macros). The six batch dependences are `zinc-testing` §11.
+
+</div>
+
+### 22. What is measured next
+
+- **Three configurations on every corpus:** today, Merkle, Merkle with in-bridge hashing. Clean builds must not get slower.
+- **More corpora:** scala/scala (library, reflect, compiler) through `zinc-sbt merkle-1.12.x`; Pekko (cross-module traits); the full catalyst → core build; joern and sbt/sbt on Scala 3.
+- **A fixed set of edit kinds,** each applied to a minimal program and to a real class: body only; add, remove and change an unused member; add an overload of a used member; change a parent's type argument; add a parent; edit a trait; change a jar.
+- **More than recompiled counts:** Zinc's own time per incremental compile (invalidation, analysis build, store), analysis load and save time, retained heap of a loaded analysis.
+- **Every timed run also checks** its classfiles against a clean build. A fast result from an unclean build is discarded.
+
+<div class="fn">
+
+Notes: 2 min. [`PLAN.md`](PLAN.md) "Performance tests" has the matrix and the method.
+
+</div>
+
+---
+
+## Close
+
+### 23. Status and next steps
+
+- Merkle hashing and in-bridge hashing are a working PoC for Scala 2 and Scala 3, passing the scripted suite, the generated-program harness and 146 real edits, and running on scala/scala, sbt, zinc and joern builds.
+- The model said what we were allowed to change, and found two rules the tests had not (`abstract` over every ancestor; `header` for the stored linearization).
+- Next: the measurement matrix (§22); the visitor design (§20), so that Zinc owns the hash function again; then deciding what to propose upstream, and in what order.
+
+<div class="fn">
+
+Notes: 1 min. Upstream: everything here is in retronym/zinc and retronym/scala3 drafts; no upstream PR is proposed in this talk.
+
+</div>
+
+---
+
+## Notes for Jason
+
+### D. Demos
+
+1. **Minimal, analysis side by side.** The §2 program, compiled by `integration/develop` and `integration/merkle`; `zan` prints both analyses before and after the edit, then the invalidation log with each rule's reason. About 2 minutes, scripted.
+2. **catalyst, `TreeNode` gains an unused member.** IncBench `--edits` on both sides, live or recorded: 1,371 classes against 420.
+3. **Check mode.** One catalyst edit with `-Dxsbt.api.check=true`: the `[api-check]` summary with 0 disagreements; then the deliberately broken hasher and its disagreements.
+
+### Q. Open questions
+
+1. Is Part II's notation enough, or does the audience need one Lean listing ([`NCompiler.Obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean#L56)) on screen?
+2. §15 depends on the test-coverage review; precision rows without a test should be dropped or get a test first.
+3. The two-column layout in §12 needs a `cols` class in the template; otherwise the two listings go on two cards.
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script>
+// A small Lean 4 grammar for highlight.js (it ships none).
+if (window.hljs) hljs.registerLanguage('lean', function (hljs) {
+  return {
+    name: 'Lean',
+    keywords: {
+      $pattern: /[A-Za-z_][A-Za-z0-9_'!?]*/,
+      keyword: 'def theorem lemma example abbrev inductive structure class instance where extends deriving namespace section end open variable universe import ' +
+        'fun match with do let if then else for in return mut by at from have show suffices calc termination_by decreasing_by noncomputable private protected partial',
+      built_in: 'simp simp_all rw rfl exact refine intro intros induction cases rcases obtain constructor apply decide native_decide omega aesop unfold split trivial contradiction exfalso use assumption subst funext ext congr',
+      type: 'Type Prop Sort Nat Int Bool Option List Finset Set String Unit',
+      literal: 'true false none some pure'
+    },
+    contains: [
+      hljs.COMMENT('/-', '-/', { contains: ['self'] }),
+      hljs.COMMENT('--', '$'),
+      hljs.QUOTE_STRING_MODE,
+      { className: 'number', begin: /\b\d+(\.\d+)?\b/ },
+      { className: 'meta', begin: /#(eval|check|print|reduce)\b/ },
+      { className: 'type', begin: /[ℕℤ]/ },
+      { className: 'keyword', begin: /[∀∃λ↦→←↔⟨⟩∧∨¬]/ }
+    ]
+  };
+});
+// A grammar for the analysis notation (zan) used in the Merkle talk.
+if (window.hljs) hljs.registerLanguage('zan', function (hljs) {
+  return {
+    name: 'Zinc analysis notation',
+    keywords: {
+      $pattern: /[A-Za-z]+/,
+      keyword: 'source class object trait defines products header parents decls api extra names inherits memberRef uses',
+      built_in: 'platform stubs names none'
+    },
+    contains: [
+      hljs.COMMENT('--', '$'),
+      { className: 'meta', begin: /^~/ },
+      { className: 'addition', begin: /^\+[^+\d].*$/ },
+      { className: 'deletion', begin: /^-[^-].*$/ },
+      { className: 'number', begin: /\bh(_[A-Z]\w*)?\(/, end: /\)/, contains: ['self'] },
+      { className: 'number', begin: /#\w+/ }
+    ]
+  };
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  const src = document.getElementById('talk-src').textContent;
+
+  // 1. Protect $…$ and $$…$$ from markdown, skipping fenced and inline code.
+  const maths = [];
+  function protectMath(text) {
+    return text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => token(m, true))
+      .replace(/(^|[^\\\w])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\w)/g, (_, pre, m) => pre + token(m, false));
+  }
+  function token(tex, display) { maths.push({ tex, display }); return 'MATHTOKEN' + (maths.length - 1) + 'X'; }
+  const fenceSplit = src.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const protectedSrc = fenceSplit.map((part, i) => {
+    if (i % 2 === 1) return part;
+    return part.split(/(`+[^`\n]*?`+)/).map((p, j) => (j % 2 === 1 ? p : protectMath(p))).join('');
+  }).join('');
+
+  // 2. Render markdown; mermaid fences become <pre class="mermaid">.
+  const md = window.markdownit({ html: true, linkify: false, typographer: false });
+  const defaultFence = md.renderer.rules.fence;
+  md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
+    const t = tokens[idx];
+    const lang = (t.info || '').trim().split(/\s+/)[0];
+    if (lang === 'mermaid') return '<pre class="mermaid">' + md.utils.escapeHtml(t.content) + '</pre>';
+    if (lang && window.hljs && hljs.getLanguage(lang)) {
+      return '<pre><code class="hljs language-' + lang + '">' + hljs.highlight(t.content, { language: lang }).value + '</code></pre>';
+    }
+    return defaultFence(tokens, idx, opts, env, self);
+  };
+  let html = md.render(protectedSrc);
+  html = html.replace(/MATHTOKEN(\d+)X/g, (_, i) => {
+    const m = maths[+i];
+    try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, strict: 'ignore' }); }
+    catch (e) { return '<code>' + md.utils.escapeHtml(m.tex) + '</code>'; }
+  });
+
+  // 3. Chunk into cards at h1/h2/h3/h4 and at <!-- break --> comments; drop <hr>.
+  const scratch = document.createElement('div');
+  scratch.innerHTML = html;
+  const main = document.getElementById('content');
+  let card = null, lastHeading = null;
+  function newCard(cls) { card = document.createElement('section'); card.className = 'card ' + (cls || ''); main.appendChild(card); return card; }
+  function slugFor(h) {
+    const text = h.textContent.trim();
+    const m = text.match(/^(\d+[a-z]?)\.\s/) || text.match(/^(N\d+)\.\s/);
+    if (m) return 's' + m[1].toLowerCase();
+    return text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+  Array.from(scratch.childNodes).forEach(node => {
+    if (node.nodeType === Node.COMMENT_NODE && /break/.test(node.textContent)) {
+      newCard();
+      if (lastHeading) { const c = document.createElement('div'); c.className = 'cont'; const n = lastHeading.querySelector('.num'); c.textContent = (n ? n.textContent + ' ' + lastHeading.textContent.slice(n.textContent.length) : lastHeading.textContent) + ' (cont.)'; card.appendChild(c); }
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = node.tagName;
+      if (tag === 'HR') return;
+      if (/^H[1-4]$/.test(tag)) {
+        newCard(tag === 'H2' ? 'part' : tag === 'H1' ? 'cover' : '');
+        const id = slugFor(node);
+        card.id = id;
+        const m = node.innerHTML.match(/^(\d+[a-z]?\.|N\d+\.)\s/);
+        if (m) node.innerHTML = '<span class="num">' + m[1] + '</span>' + node.innerHTML.slice(m[0].length);
+        if (tag !== 'H2') lastHeading = node;
+      }
+    }
+    if (!card) newCard('cover');
+    card.appendChild(node);
+  });
+
+  // 4. Link § references and "Notes N1" to their cards.
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('code, pre, a, .katex, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const textNodes = []; while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(n => {
+    const re = /§(\d+[a-c]?)((?:[–-]\d+)?)|Notes (N\d)/g;
+    if (!re.test(n.nodeValue)) return;
+    const frag = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
+    while ((m = re.exec(n.nodeValue))) {
+      frag.appendChild(document.createTextNode(n.nodeValue.slice(last, m.index)));
+      const a = document.createElement('a'); a.className = 'sref';
+      a.href = '#s' + (m[1] || m[3]).toLowerCase(); a.textContent = m[0];
+      frag.appendChild(a); last = re.lastIndex;
+    }
+    frag.appendChild(document.createTextNode(n.nodeValue.slice(last)));
+    n.parentNode.replaceChild(frag, n);
+  });
+
+  // 5. Table of contents.
+  const toc = document.getElementById('toc');
+  const cards = Array.from(main.querySelectorAll('.card'));
+  cards.forEach(c => {
+    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4');
+    if (!h || !c.id) return;
+    const li = document.createElement('li'); li.className = h.tagName.toLowerCase();
+    const num = h.querySelector('.num');
+    const label = num ? num.textContent + ' ' + h.textContent.slice(num.textContent.length) : h.textContent;
+    const a = document.createElement('a'); a.href = '#' + c.id; a.textContent = label; a.dataset.target = c.id;
+    li.appendChild(a); toc.appendChild(li);
+  });
+
+  // 6. Mermaid, themed to match; re-rendered on theme change.
+  const mermaidBlocks = Array.from(main.querySelectorAll('pre.mermaid'));
+  mermaidBlocks.forEach(b => { b.dataset.src = b.textContent; });
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  async function renderMermaid() {
+    mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
+      fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: true, curve: 'basis' } });
+    mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
+    try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
+  }
+  const firstRender = renderMermaid();
+
+  // 7. Navigation: current card, keyboard, focus mode, theme.
+  let current = 0, suppressObserverUntil = 0;
+  const counter = document.getElementById('counter');
+  function setCurrent(i, scroll, smooth) {
+    current = Math.max(0, Math.min(cards.length - 1, i));
+    cards.forEach((c, j) => c.classList.toggle('current', j === current));
+    counter.textContent = (current + 1) + ' / ' + cards.length;
+    const id = cards[current].id;
+    toc.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+    if (scroll) {
+      suppressObserverUntil = performance.now() + 1000;
+      if (document.body.classList.contains('focus')) window.scrollTo(0, 0);
+      else cards[current].scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'instant' });
+      if (id) history.replaceState(null, '', '#' + id);
+    }
+  }
+  const io = new IntersectionObserver(entries => {
+    if (document.body.classList.contains('focus') || performance.now() < suppressObserverUntil) return;
+    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length) setCurrent(cards.indexOf(visible[0].target), false);
+  }, { rootMargin: '0px 0px -60% 0px' });
+  cards.forEach(c => io.observe(c));
+  function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
+  function toggleTheme() {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('zinc-talk-theme', next); } catch (e) {}
+    renderMermaid();
+  }
+  try { const t = localStorage.getItem('zinc-talk-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
+  document.getElementById('btn-focus').onclick = toggleFocus;
+  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['j', 'ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); setCurrent(current + 1, true, true); }
+    else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
+    else if (e.key === 'f') toggleFocus();
+    else if (e.key === 't') toggleTheme();
+    else if (e.key === 'Escape') document.body.classList.remove('focus');
+  });
+  toc.addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  main.addEventListener('click', e => {
+    const a = e.target.closest('a.sref'); if (!a) return;
+    const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
+  setCurrent(start < 0 ? 0 : start, start > 0);
+  firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+})();
+</script>
+</body>
+</html>
