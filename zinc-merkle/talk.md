@@ -1,6 +1,6 @@
 # Merkle hashing and in-bridge hashing in Zinc
 
-**Status:** first draft, for review with [`PLAN.md`](PLAN.md). Each card is one slide (a few are split with `<!-- break -->`). The small grey block under a slide holds speaker notes, sources and the time budget; it is not meant to be shown. The analysis listings (§3–§5, §11–§12) are written by hand from the code of `develop` and the PoC; [`PLAN.md`](PLAN.md) step D1 replaces them with listings printed from real analysis files.
+**Status:** first draft, for review with [`PLAN.md`](PLAN.md). Each card is one slide (a few are split with `<!-- break -->`). The small grey block under a slide holds speaker notes, sources and the time budget; it is not meant to be shown. A chip under each heading says what the slide describes: <span class="chip today">status quo</span> Zinc and the compilers as released, <span class="chip poc">PoC</span> the proof of concept, <span class="chip model">model</span> the Lean model, <span class="chip proposal">proposal, not built</span>. A slide with none introduces a concept. The analysis listings (§3–§5, §11–§12) are written by hand from the code of `develop` and the PoC; [`PLAN.md`](PLAN.md) step D1 replaces them with listings printed from real analysis files.
 
 **Audience:** Scala tooling people: compiler, build-tool and IDE maintainers. They know Zinc as users, some of its internals, and what a name hash is. They need not have seen the companion talks.
 
@@ -16,14 +16,14 @@
 
 | part | sections | min |
 |---|---|---|
-| I. What the analysis stores | §1 the contract · §1a three kinds of reference · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale | 11 |
+| I. What the analysis stores | §1 the contract · §1a three kinds of reference · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale · §6a what this talk proposes | 12 |
 | II. What we are free to change | §7 traces, keys, hashes and invalidation · §8 the obligations · §9 what is free and what is fixed · §10 two consequences | 7 |
 | III. Merkle hashing | §11 how a name's hash is computed, today and with Merkle · §12 the running example under Merkle · §13 inside and across subprojects · §14 descendants read their ancestors · §15 where it is more precise, and where not | 11 |
-| IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one traversal, several outputs | 8 |
+| IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one traversal, several outputs · §20a the three designs side by side | 9 |
 | V. Measurements | §21 results so far · §22 what is measured next | 4 |
 | Close | §23 status and next steps | 1 |
 
-The total is now ~42 min; §1a's second card can move to the notes if time is short.
+The total is ~44 min; §1a's second card and §20a can move to the notes if time is short.
 
 ---
 
@@ -31,7 +31,7 @@ The total is now ~42 min; §1a's second card can move to the notes if time is sh
 
 ### 1. An incremental build must equal a clean build
 
-- Zinc compiles the sources that changed, then asks which other classes could compile differently because of what changed, and compiles those, until nothing more is invalidated.
+- Zinc compiles the sources that changed, then asks which other classes could compile differently because of what changed, and compiles those, until nothing more is invalidated. Each of these compiles is a *round*.
 - It decides this by comparing hashes stored in the *analysis file* from the previous compile with the hashes the new compile produced.
 - So the analysis file determines both what Zinc can detect and what each compile costs: it is written on every compile and read on every compile.
 - This talk is about what goes into that file, and what we may change about it.
@@ -43,6 +43,8 @@ Notes: 1 min. The contract is §1 of every companion talk; one slide here.
 </div>
 
 ### 1a. Three kinds of reference
+
+<p class="kind"><span class="chip today">status quo</span></p>
 
 A build is split into **subprojects** (sbt projects, Mill modules), each compiled by its own Zinc run into its own output directory, with its own analysis file. A class can refer to three kinds of class. Below, `app` and `lib` are subprojects, `app` depends on `lib`, and both have the Scala library on their classpath:
 
@@ -80,9 +82,8 @@ Notes: 2 min. Zinc's own words are internal, external and library (or binary). `
 | difference | inherent, pragmatic or historical |
 |---|---|
 | No rounds across subprojects: a downstream change never recompiles upstream | **Inherent.** Subprojects form an acyclic graph and are compiled in order; upstream's outputs are finished before downstream starts, and nothing downstream can change them. |
-| Downstream sees upstream's stored API, but not its relations | **Pragmatic.** Each analysis is written only by its own subproject's run, and downstream needs to know *what* changed upstream, not why. The cost: downstream cannot find which upstream classes inherit from a changed upstream class, because those inheritance edges are in upstream's relations. So a change to upstream `A` has to show up in the stored API of upstream `B` itself, which is why the PoC composes `B`'s hashes from `A`'s across subprojects (§13). |
+| Downstream sees upstream's stored API, but not its relations | **Pragmatic.** Each analysis is written only by its own subproject's run, and downstream needs to know *what* changed upstream, not why. The cost: downstream cannot find which upstream classes inherit from a changed upstream class, because those inheritance edges are in upstream's relations. So a change to upstream `A` reaches a downstream client of `B` only if `B`'s own stored API changes too. Today it does, because upstream recompiles `B` and stores `A`'s members in it again (§5); §13 shows what replaces that. |
 | A library has a stamp, not an API | **Partly inherent:** there is no compiler run that sees its source, so an API would have to be read back from classfiles. **Mostly pragmatic:** libraries change rarely, so recompiling every user on a change is acceptable. |
-| Library members are copied into every descendant's API today | **Historical.** Every ancestor's members were copied before Merkle hashing; libraries are what is left of that design, since they have no stored API to compose from (§19). |
 | The same program recompiles differently laid out as one subproject or as two | **Historical.** Inside a subproject Zinc can follow relations from every class it recompiled, round after round; across, it starts once from what changed in upstream's stored API. When an ancestor's companion gained an implicit, the first layout was clean and the second missed a client, until [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845). The model treats the layout as a policy on one loop (`zinc-lean` §19). |
 
 <div class="fn">
@@ -92,6 +93,8 @@ Notes: included in the 2 min. The point to carry into Part III: the three kinds 
 </div>
 
 ### 2. Sources, classes, and the edges between them
+
+<p class="kind"><span class="chip today">status quo</span></p>
 
 ```scala
 // A.scala
@@ -127,7 +130,7 @@ flowchart BT
 - All seven classes are in one subproject, so every edge is internal (§1a).
 - Each source defines classes; each class gets an entry in the analysis.
 - Zinc records two kinds of edge between classes: **inheritance** (the extends clause) and **memberRef** (anything else: a type mentioned, a member selected).
-- A client of `b.m` records a memberRef edge to `B`, the type it selected through, *and* to `A`, the owner of `m`. The second edge is why Merkle hashing needs no composed hashes inside a subproject (§13).
+- A client of `b.m` records a memberRef edge to `B`, the type it selected through, *and* to `A`, the owner of `m`. The second edge matters again in §13.
 - Each class also records its **used names**: `X` used `B` and `m`.
 
 <div class="fn">
@@ -137,6 +140,8 @@ Notes: 1.5 min. This is the program of `zinc-incrementality` §10a and of [`Hier
 </div>
 
 ### 3. A notation for the analysis file
+
+<p class="kind"><span class="chip today">status quo</span></p>
 
 The analysis file is protobuf, or optionally text. This talk prints it in a notation with one block per source and per class:
 
@@ -170,6 +175,8 @@ Notes: 1.5 min. Field names are those of `xsbti.api.AnalyzedClass` (`apiHash`, `
 </div>
 
 ### 4. The running example, as Zinc stores it today
+
+<p class="kind"><span class="chip today">status quo</span></p>
 
 ```zan
 class A
@@ -219,6 +226,8 @@ Notes: 1.5 min. Scala 2's `ExtractAPI.mkStructureWithInherited`: `inherited` = `
 
 ### 5. An edit, today: `A.m: Int` becomes `A.m: String`
 
+<p class="kind"><span class="chip today">status quo</span></p>
+
 ```zan
 class A
 ~ names     m   h(m: String)
@@ -249,6 +258,8 @@ Notes: 1.5 min. `merkle-member-type` pins this on the PoC's baseline commit: `B 
 
 ### 6. The cost at scale
 
+<p class="kind"><span class="chip today">status quo</span></p>
+
 Spark 4.0.1, `sql/catalyst`: 2,527 classes in one module. `TreeNode` has 261 descendants, `Expression` 257.
 
 | edit | classes recompiled | rounds | wall |
@@ -274,11 +285,32 @@ Notes: 1.5 min. IncBench, `--build/--edits` mode, pipelining off, one repetition
 
 </div>
 
+### 6a. What this talk proposes
+
+<p class="kind"><span class="chip poc">PoC</span></p>
+
+Two changes, built as a proof of concept:
+
+1. **Merkle hashing** (Part III). A class's entry in the analysis stores its own declarations. A descendant's hash for a name is composed from its ancestors' hashes, by Zinc, without compiling the descendant. A descendant is recompiled only when its own compilation reads the change.
+2. **In-bridge hashing** (Part IV). The compiler bridge computes the hashes from compiler types and sends Zinc the hashes and a small summary of the class, instead of an `xsbti.api` tree for Zinc to hash.
+
+- Scala 2: both changes in Zinc and its compiler bridge. Scala 3: the same changes in the compiler's `ExtractAPI` and `sbt-bridge`. Java sources are out of scope.
+- It passes Zinc's scripted suite, 74 Merkle-specific scripted tests and 11 that pin its recompiled sets beside today's. Everything is a draft in forks; nothing is proposed upstream yet.
+- Part II first says why changing what Zinc stores is allowed at all.
+
+<div class="fn">
+
+Notes: 1 min. [retronym/zinc#24](https://github.com/retronym/zinc/pull/24) (Scala 2), [#30](https://github.com/retronym/zinc/pull/30) (cross-module), [#70](https://github.com/retronym/zinc/pull/70) (precision tests), [retronym/scala3#5](https://github.com/retronym/scala3/pull/5) (Scala 3 compiler side); `integration/merkle` combines the Zinc side.
+
+</div>
+
 ---
 
 ## Part II — What we are free to change
 
 ### 7. Traces, keys, hashes and invalidation
+
+<p class="kind"><span class="chip model">model</span></p>
 
 ```mermaid
 flowchart LR
@@ -309,6 +341,8 @@ Notes: 1.5 min. [`NCompiler`](https://github.com/retronym/jvm-lang-models/blob/4
 
 ### 8. The obligations
 
+<p class="kind"><span class="chip model">model</span></p>
+
 Zinc's loop returns the clean build (T3) for any choice of `π`, `keys`, `covers` and `hashDeps` that meets four obligations:
 
 | obligation | in words | in the model |
@@ -330,27 +364,31 @@ Notes: 2 min. [`NCompiler.Obligations`](https://github.com/retronym/jvm-lang-mod
 
 ### 9. What is free and what is fixed
 
-The compiler and its traces are fixed: they are what the compiler does. Everything Zinc stores is a choice.
+<p class="kind"><span class="chip model">model</span><span class="chip today">status quo</span></p>
 
-| choice | Zinc today | Merkle (Part III) | in-bridge hashing (Part IV) |
-|---|---|---|---|
-| what a class stores | every member, own and inherited | own declarations and the linearization | same as Merkle |
-| `π`: what a name hash covers | the member as seen from the class | the class's own declaration, composed with its ancestors' | the same equivalence, other values |
-| `hashDeps` | the class alone | the class and its stored ancestors | same as Merkle |
-| who computes `π` | Zinc, over an `xsbti.api` tree | Zinc | the compiler bridge, over compiler types |
-| keys | memberRef edges and used names | the same, plus keys for what a descendant's own compilation reads (§14) | same as Merkle |
-| policy: which descendants recompile | all of them | those whose own compilation reads the change | same as Merkle |
+The compiler and its traces are fixed: they are what the compiler does. Everything Zinc stores is a choice, constrained only by the obligations.
 
-- If the new choice meets the obligations, the theorems apply unchanged. There is nothing to re-prove about the loop.
-- The model already contains all three schemes: Scala 2's bridge ([`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238)), Scala 3's (`Erasure .decl`), and Merkle ([`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257), [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579)), each with its obligations proved.
+| choice | Zinc today | what the obligations require |
+|---|---|---|
+| what a class stores | every member, own and inherited, as name hashes | nothing directly: only what its hashes cover |
+| `π`: what a name hash covers | the member as seen from the class | abstraction: an unchanged hash means unchanged answers to the queries its key covers |
+| `hashDeps`: what a hash reads | the class and its ancestors, read when the class is compiled (§11) | locality, and comparing hashes over `affected(R)` (§10) |
+| who computes `π` | Zinc, over an `xsbti.api` tree from the bridge | nothing: only equality between hashes matters (§17) |
+| keys | memberRef edges and used names | coverage: every query a compilation asks is covered by a key |
+| which descendants recompile | all of them | a policy may recompile more than is invalidated, never less |
+
+- A new choice that meets the obligations needs nothing new proved about Zinc's loop: the theorems apply to it unchanged.
+- Part III changes the first, second, third and last rows; Part IV the fourth. §20a puts the three designs side by side.
 
 <div class="fn">
 
-Notes: 2 min. The point of Part II: hashing and relations are ours to change, so long as the model's obligations hold. [`W_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L209), [`Mk_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L248), [`Fl_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L676), [`Er_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1004). `zinc-lean` §18 has the comparison.
+Notes: 2 min. The point of Part II: hashing and relations are ours to change, so long as the model's obligations hold. The policy condition is [`Policy.Sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Model.lean#L117). `zinc-lean` §18 compares the schemes in the model.
 
 </div>
 
 ### 10. Two consequences
+
+<p class="kind"><span class="chip model">model</span><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
 
 **A hash that reads other classes must be recomputed when they change.**
 
@@ -360,13 +398,15 @@ class C extends P
 object X { (new C).m }         // X records the key (C, m)
 ```
 
-If `C`'s hash for `m` is composed from `P`'s, and Zinc compares hashes only for the classes it recompiled (`P`), nobody recomputes `(C, m)` and `X` keeps `m: Int`. The model has the counterexample, [`stale_unsound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L130), and the fix, [`stale_affected`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L135): compare over `affected(R)`.
+- `C`'s hash for `m` reads `P`. If Zinc compiled only `P` and compared hashes only for `P`, nobody would recompute `(C, m)`, and `X` would keep `m: Int`.
+- The model has this counterexample, [`stale_unsound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L130), and the fix, [`stale_affected`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/Stale.lean#L135): compare hashes over `affected(R)`, which contains `C`.
+- **Today** Zinc meets this by recompiling every descendant of `P`, which recomputes `C`'s hash (§5). A design that does not recompile `C` must recompute its hash instead.
 
-**A hash must be a function of the interface.** If the same class gets a different hash in a different JVM, or in a different batch, every compile looks like a change. This is overcompilation, not unsoundness, and the PoC had three such bugs: an enum's identity hash, `Object.wait`'s `@throws` annotation present only if another unit in the run had typed a call to `wait`, and an absent class side counted as top-level.
+**A hash must be a function of the interface.** If the same class gets a different hash in a different JVM, or in a different batch, every compile looks like a change: overcompilation, not unsoundness. **The PoC** had three such bugs: an enum's identity hash, `Object.wait`'s `@throws` annotation present only if another unit in the run had typed a call to `wait`, and an absent class side counted as top-level.
 
 <div class="fn">
 
-Notes: 1.5 min. Today's hashes are non-local too (§11): `B`'s hash for `m` reads `A`, and Zinc meets the obligation by recompiling `B` (§5). The second item is [retronym/zinc#69](https://github.com/retronym/zinc/pull/69) (merged into the PoC): on scala/scala every no-op compile recompiled ~380 sources before it. `MerkleHashesStabilitySpec` composes the same analysis in this JVM and a forked one.
+Notes: 1.5 min. The second item is [retronym/zinc#69](https://github.com/retronym/zinc/pull/69) (merged into the PoC): on scala/scala every no-op compile recompiled ~380 sources before it. `MerkleHashesStabilitySpec` composes the same analysis in this JVM and a forked one.
 
 </div>
 
@@ -375,6 +415,8 @@ Notes: 1.5 min. Today's hashes are non-local too (§11): `B`'s hash for `m` read
 ## Part III — Merkle hashing
 
 ### 11. How a name's hash is computed, today and with Merkle hashing
+
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
 
 In both designs `B`'s hash for `m` depends on `A`. They differ in who computes it, from what, and when it is recomputed.
 
@@ -439,6 +481,8 @@ Notes: 2.5 min. Today: Scala 2's `ExtractAPI.mkStructureWithInherited` renders `
 </div>
 
 ### 12. The running example under Merkle
+
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
 
 <div class="cols">
 
@@ -530,6 +574,8 @@ Notes: 2.5 min. `merkle-precision-member-type` pins `X Y` and, with every descen
 
 ### 13. Inside a subproject, and across subprojects
 
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
+
 ```mermaid
 flowchart LR
   subgraph IN["inside a subproject"]
@@ -545,6 +591,7 @@ flowchart LR
   end
 ```
 
+- **Today** no composition is needed anywhere: when `A` changes, `B` is recompiled (§5) and stores `A`'s `m` again, so `B`'s stored API changes, here and as seen from downstream.
 - **Inside a subproject no composed hash is needed.** `X` has an edge to `A`, the owner of `m`, and invalidation by inheritance (§5) reaches the clients of `A`'s descendants that use a changed name. Between them they invalidate the same clients that a composed hash for `B` would. The PoC's change here is only to stop storing inherited members and stop recompiling every descendant.
 - **Across subprojects it is needed.** A downstream compile reads the upstream analysis's stored APIs, but not its relations, so it cannot find which upstream classes inherit from the one that changed (§1a). The PoC composes the upstream class's name hashes over its stored linearization when it looks the class up, so a change to `A` changes `B`'s composed hashes.
 - `macros/macro-type-change-3` is the test that requires composition: a macro reflects over `baseClasses`, selects no member, so no edge names the ancestor.
@@ -557,7 +604,9 @@ Notes: 2 min. In model terms, inside a subproject the PoC uses local hashes and 
 
 ### 14. Descendants read their ancestors too
 
-A descendant's compilation reads its ancestors in places its used names do not record: refchecks and code generation. Each rule names one such read; a descendant recompiles when one fires.
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
+
+A descendant's compilation reads its ancestors in places its used names do not record: refchecks and code generation. **Today** every descendant recompiles after an ancestor changes (§5), so these reads need no rule. **The PoC** recompiles a descendant only when one of these rules fires; each rule names one such read.
 
 | rule | the descendant `D` recompiles when the change to ancestor `P`… | why | test that fails without it |
 |---|---|---|---|
@@ -580,6 +629,8 @@ Notes: 2 min. `DescendantRules.scala` in the PoC; presets `all` (today), `defaul
 </div>
 
 ### 15. Where Merkle hashing is more precise, and where it is not
+
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
 
 Each row is a scripted test that compiles the same program twice, with the PoC's rules and with every descendant recompiled as today, and pins both sets. The "today" column also matches sbt/zinc `develop`.
 
@@ -612,6 +663,8 @@ Notes: 2 min. Tests from [retronym/zinc#70](https://github.com/retronym/zinc/pul
 
 ### 16. A tree built to be hashed and discarded
 
+<p class="kind"><span class="chip today">status quo</span></p>
+
 ```mermaid
 flowchart LR
   T1["compiler symbols<br/>and types"] --> P1["xsbti.api tree<br/>every member, with types"]
@@ -632,6 +685,8 @@ Notes: 1.5 min. `AnalysisCallback.api`, then `Incremental.scala`; `APIUtil.minim
 
 ### 17. The obligations are about equality only
 
+<p class="kind"><span class="chip model">model</span></p>
+
 - Abstraction says: *equal* hashes mean equal answers. It does not say what the values are.
 - A hash is only ever compared with the previous hash of the same class from the same producer. A new bridge or compiler version already forces a full recompile.
 - So the bridge may compute different values, with a different function, from compiler types directly, provided it makes the same classes equal:
@@ -648,6 +703,8 @@ Notes: 1.5 min. `ApiHashCheck`, under `apiCheck=true` or `-Dxsbt.api.check=true`
 </div>
 
 ### 18. Three steps, and what each saved
+
+<p class="kind"><span class="chip poc">PoC</span></p>
 
 | step | what moved | `xsbt-api` allocation, catalyst |
 |---|---|---|
@@ -668,7 +725,10 @@ Notes: 2 min. PLAN-merkle-poc.md "H2 status" and "H2 results"; times there were 
 
 ### 19. Library ancestors
 
-- A library class has no stored API to compose from, so before this change its members were still copied into every descendant and hashed on every compile. Every compile paid for a precision that matters only when a jar changes.
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
+
+- **Today** every ancestor's members are copied into every descendant (§4), libraries' included. When a jar changes, every source that depends on it recompiles (§1a), and the descendants' copies are refreshed with them.
+- **The PoC** stops copying members of ancestors that have a stored API (§12). A library class has none to compose from, so at first its members were still copied into every descendant and hashed on every compile. Every compile paid for a precision that matters only when a jar changes.
 - Now library members are typeless stubs. When a jar changes, Zinc folds its stamp into the hash of every name a class has only by inheritance, and recompiles the classes whose stored linearization contains a class from that jar.
 - A library change then shows up as ordinary name changes, here and downstream.
 - Coarser: a jar change moves every inherited name, `toString` included.
@@ -685,6 +745,8 @@ Notes: 1 min. `LibraryAncestors.scala`, `libraryAncestors=names|members|stubs-on
 </div>
 
 ### 20. One traversal of compiler types, several outputs
+
+<p class="kind"><span class="chip proposal">proposal, not built</span></p>
 
 The bridge now has two traversals of compiler types that must agree: one builds trees (Java, older bridges, `apiDebug`, check mode), one hashes. A proposal, after ASM's reader and writers:
 
@@ -707,11 +769,34 @@ Notes: 1 min. `DESIGN-api-visitor.md` (thought experiment, worktree `merkle-hash
 
 </div>
 
+### 20a. The three designs side by side
+
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
+
+| choice (§9) | Zinc today | Merkle (Part III) | with in-bridge hashing (Part IV) |
+|---|---|---|---|
+| what a class stores | every member, own and inherited | own declarations (as stubs) and the linearization | same as Merkle |
+| `π`: what a name hash covers | the member as seen from the class | the class's own declaration, composed with its ancestors' | the same equivalence, other values |
+| `hashDeps` | the class and its ancestors, read when it is compiled | the class and its stored ancestors, read by Zinc | same as Merkle |
+| who computes `π` | Zinc, over an `xsbti.api` tree | Zinc | the compiler bridge, over compiler types |
+| keys | memberRef edges and used names | the same, plus the descendant rules (§14) | same as Merkle |
+| which descendants recompile | all of them | those whose own compilation reads the change | same as Merkle |
+
+- The model contains all three: Scala 2's bridge ([`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238)), Scala 3's (`Erasure .decl`), and Merkle ([`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257), [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579)), each with its obligations proved.
+
+<div class="fn">
+
+Notes: 1 min. A recap of §9 with the two new columns. [`W_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L209), [`Mk_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/HierSound.lean#L248), [`Fl_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L676), [`Er_obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Features/Erasure.lean#L1004).
+
+</div>
+
 ---
 
 ## Part V — Measurements
 
 ### 21. Results so far
+
+<p class="kind"><span class="chip today">status quo</span><span class="chip poc">PoC</span></p>
 
 | corpus, edit | today | Merkle | source |
 |---|---|---|---|
@@ -742,6 +827,8 @@ Notes: 2 min. One repetition for the catalyst rows; medians of 3 for the generat
 
 ### 22. What is measured next
 
+<p class="kind"><span class="chip poc">PoC</span></p>
+
 - **Three configurations on every corpus:** today, Merkle, Merkle with in-bridge hashing. Clean builds must not get slower.
 - **More corpora:** scala/scala (library, reflect, compiler) through `zinc-sbt merkle-1.12.x`; Pekko (cross-module traits); the full catalyst → core build; joern and sbt/sbt on Scala 3.
 - **A fixed set of edit kinds,** each applied to a minimal program and to a real class: body only; add, remove and change an unused member; add an overload of a used member; change a parent's type argument; add a parent; edit a trait; change a jar.
@@ -759,6 +846,8 @@ Notes: 2 min. [`PLAN.md`](PLAN.md) "Performance tests" has the matrix and the me
 ## Close
 
 ### 23. Status and next steps
+
+<p class="kind"><span class="chip poc">PoC</span></p>
 
 - Merkle hashing and in-bridge hashing are a working PoC for Scala 2 and Scala 3, passing the scripted suite, the generated-program harness and 146 real edits, and running on scala/scala, sbt, zinc and joern builds.
 - The model said what we were allowed to change, and found two rules the tests had not (`abstract` over every ancestor; `header` for the stored linearization).

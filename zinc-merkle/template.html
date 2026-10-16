@@ -25,6 +25,8 @@
   --chip-proof: #6b3fa0; --chip-proof-bg: #efe6f8; --chip-search: #1f5fa8; --chip-search-bg: #e2ecf8;
   --chip-harness: #2f7a3a; --chip-harness-bg: #e2f2e5; --chip-bench: #8a5a00; --chip-bench-bg: #f8edd6;
   --chip-hand: #55555a; --chip-hand-bg: #ecebe6;
+  --chip-today: #4a5260; --chip-today-bg: #e4e7ec; --chip-poc: #0f6e5c; --chip-poc-bg: #d8f0e8;
+  --chip-model: #3b4bb0; --chip-model-bg: #e4e7f8;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -36,6 +38,8 @@
     --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
     --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
     --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
+    --chip-today: #b8c0cc; --chip-today-bg: #2a2e35; --chip-poc: #7fd8bf; --chip-poc-bg: #17322b;
+    --chip-model: #a8b4ff; --chip-model-bg: #232845;
   }
 }
 :root[data-theme="dark"] {
@@ -47,6 +51,8 @@
   --chip-proof: #d1a3ff; --chip-proof-bg: #2e2340; --chip-search: #7fb2ff; --chip-search-bg: #1c2a40;
   --chip-harness: #8fd19e; --chip-harness-bg: #1d3323; --chip-bench: #f0c060; --chip-bench-bg: #3a2e14;
   --chip-hand: #b8b8c0; --chip-hand-bg: #2e2e33;
+  --chip-today: #b8c0cc; --chip-today-bg: #2a2e35; --chip-poc: #7fd8bf; --chip-poc-bg: #17322b;
+  --chip-model: #a8b4ff; --chip-model-bg: #232845;
 }
 
 * { box-sizing: border-box; }
@@ -153,6 +159,12 @@ body.focus .focus-counter { display: block; }
 .chip.harness { color: var(--chip-harness); background: var(--chip-harness-bg); }
 .chip.bench { color: var(--chip-bench); background: var(--chip-bench-bg); }
 .chip.hand { color: var(--chip-hand); background: var(--chip-hand-bg); }
+.chip.today { color: var(--chip-today); background: var(--chip-today-bg); }
+.chip.poc { color: var(--chip-poc); background: var(--chip-poc-bg); }
+.chip.model { color: var(--chip-model); background: var(--chip-model-bg); }
+.chip.proposal { color: var(--muted); background: transparent; border: 1px dashed var(--muted); }
+.card p.kind { margin: -.3em 0 .8em; }
+.card p.kind .chip { margin-right: .4em; }
 </style>
 </head>
 <body>

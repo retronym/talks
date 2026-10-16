@@ -20,6 +20,7 @@ DONE:
 - Outline and first draft of every slide (`talk.md`), built (`index.html`).
 - `zan` highlighting and a two-column layout in `template.html`.
 - Test-coverage review of the PoC's `merkle*` tests: `research/test-coverage.md`.
+- Arc review (2026-10-16): every slide is marked status quo, PoC, model or proposal; the PoC is introduced in §6a before any slide relies on it; §9 shows only today's choices and the obligations, and the three-design comparison moved to §20a; §10, §13, §14 and §19 state today's counterpart before the PoC's.
 
 TODO:
 
