@@ -62,6 +62,8 @@ code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .
 :not(pre) > code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
 pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
 pre.mermaid { background: transparent; text-align: center; padding: 8px 0; }
+/* A scaled-down diagram renders label text a little wider than Mermaid measured it. */
+pre.mermaid foreignObject { overflow: visible; }
 .hljs-keyword, .hljs-built_in { color: var(--kw); }
 .hljs-string { color: var(--str); }
 .hljs-comment { color: var(--com); font-style: italic; }
@@ -1749,6 +1751,8 @@ if (window.hljs) hljs.registerLanguage('lean', function (hljs) {
     mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
       fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: true, curve: 'basis' } });
     mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
+    // Mermaid sizes labels by measuring text: measure with the web font, not a fallback.
+    if (document.fonts) await document.fonts.ready;
     try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
   }
   const firstRender = renderMermaid();
