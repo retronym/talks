@@ -24,7 +24,7 @@ DONE:
 TODO:
 
 - D1, then replace the hand-written listings in §3–§5 and §12.
-- Check §15's table against the coverage review once T1–T8 exist.
+- §15's table now cites the `merkle-precision-*` tests (done).
 - Review pass for plain prose; check every Lean link with `bin/lean_refs.py`.
 
 ## The analysis notation (`zan`)
@@ -60,12 +60,24 @@ Acceptance: the §4/§5/§12 listings regenerate from one command per side, and 
 
 ## Scripted tests
 
-The coverage review is in `research/test-coverage.md`. The talk needs, for every precision claim in §15, one test that pins the PoC's recompiled set *and* the baseline's. Proposed additions (T-numbers match the review's gap list once it lands):
+The coverage review is in `research/test-coverage.md`: of the 74 `merkle*` tests, five failed on develop for precision, the rest pin soundness or pass either way, and the baseline's recompiled sets were written down only in history.
 
-- T1–T8: precision tests for the edit kinds the review finds unpinned, each run under the PoC's `default` rules and under `descendantRules=all`, which reproduces today's behaviour inside one build, so one test shows both numbers.
-- A size assertion: the scripted harness checks the number of stored name hashes for a class (`> checkNameHashes B 1+platform`), so §12's claim that `B` stores no inherited names is tested.
+DONE, on retronym/zinc `claude/merkle-precision-tests` (13014e466, on top of rz#24's head fba089141; not pushed):
 
-These go on the PoC branch (`claude/merkle-hash-poc-path-ec0cd8`, retronym/zinc#24) as draft commits; nothing upstream.
+- Ten `merkle-precision-*` tests, each compiling one program as two projects, `merkle` (`descendantRules = default`) and `all` (`descendantRules = all`), and pinning both recompiled sets: `member-type`, `deep`, `remove-unused`, `uses-other`, `add-overload`, `trait-vs-class`, `protected`, `conflict`, `case-class`, `header`. All pass. The `all` side was rerun on `integration/develop` (38cb22d04): the same sets, except that develop takes a third round on the header edit (`B C`, then `X Z`; the PoC does all four in round 2).
+- `merkle-precision-decls-only`, with new scripted commands `checkNameHash` / `checkNoNameHash` over the subproject's own analysis: `B` has a name hash for its own member, none for `A`'s; a library ancestor's members stay.
+- Round-0 pins added to `merkle-member-type`, `merkle-trait-direct`, `merkle-subproject`, `merkle-exports-scala2-fbound`, `merkle-x-member-type`. The middle two also passed on develop before.
+
+TODO:
+
+- T9: run every rule test under `descendantRules=-<rule>` and `none`, and keep the table of which fail (the talk's ablation claim is checked by hand only).
+- Gap 6: a cross-subproject chain with an upstream intermediate class (`lib.B` not recompiled, `app.C` not recompiled).
+- Gap 8: a sealed root with an open grandchild in another file; the child-added step needs checking.
+- A scripted test in check mode (`apiCheck = true`) asserting no `[api-check]` disagreements, so the equivalence claim of §17 is tested in CI.
+- The four upstream tests whose expectations rz#24 changed run with `apiDebug = true` (tree path); add `apiDebug = false` variants.
+- Run the `merkle-precision-*` tests under Scala 3 (`ZINC_SCRIPTED_DEFAULT_LABEL=3.x`) on the patched compiler.
+- `merkle-x-trait-class-ancestor` (rz#30) needs its round-0 pin (`app/checkRecompilations 0 p.B`).
+- When ready, move the commit into rz#24.
 
 ## Performance tests
 
@@ -164,4 +176,4 @@ Per clean build:
 
 1. Should Part II show one Lean listing, or only the tables?
 2. Is the side-by-side layout readable on a projector, or should §12 be two cards?
-3. Which precision rows in §15 survive once T1–T8 are run?
+3. §15 shows ten rows; is that too many for one slide, or should the minor ones (`protected`, `case-class`) move to the notes?

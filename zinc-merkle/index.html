@@ -598,7 +598,7 @@ class A
 
 <div class="fn">
 
-Notes: 2.5 min. Scripted test `merkle-member-type`: `checkRecompilations 2 X Y` on the PoC; `B C X Y` on the baseline commit. Hand-written listing until D1. The minimized API with stubs is `APIUtil.minimizeStructure` in the PoC; it drops the erased-signature witness, which only feeds the hash. Inside one subproject the PoC does not even compute `h_B(m)`: next slide.
+Notes: 2.5 min. `merkle-precision-member-type` pins `X Y` and, with every descendant recompiled, `B C X Y`; `merkle-precision-decls-only` checks that `B` stores no name hash for `m` or `g` (`checkNoNameHash`). Hand-written listing until D1. The minimized API with stubs is `APIUtil.minimizeStructure` in the PoC; it drops the erased-signature witness, which only feeds the hash. Inside one subproject the PoC does not even compute `h_B(m)`: next slide.
 
 </div>
 
@@ -639,13 +639,13 @@ A descendant's compilation reads its ancestors in places its used names do not r
 | conflicts | touches a name another ancestor of `D` declares | inherited members must be reconciled | `merkle-conflict` |
 | abstract | touches a name deferred in any ancestor, and `D` is concrete | `D` must implement it | `merkle-abstract`, `-abstract-ancestor` |
 | header | changes `P`'s parents, type parameters, self type or modifiers | keeps `D`'s stored linearization fresh | (none: defence in depth) |
-| trait | is to a trait `P` | mixin forwarders in `D`'s bytecode | `merkle-trait-override` |
+| traitDirect | is to a trait `P` that `D` mixes in first (no class ancestor of `D` has `P`) | mixin forwarders in `D`'s bytecode | `merkle-trait-override`, `merkle-trait-direct` |
 | mirror | reaches a top-level object `D` | static forwarders in its mirror class | `merkle-mirror` |
 | annotated | touches an annotated member | sbt's test discovery reads inherited annotations | `merkle-discovery` |
 | exports (Scala 3) | is to a class `D` wildcard-exports | Scala 3 records `export x.*` as inheritance | `merkle3-export-add` |
 
 - In the model these are keys of the descendant's own trace: queries from `D` to its ancestors, as [`Flat.lean`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean) models the override, conflict and abstract checks. In Zinc they are a policy over the inheritance edge.
-- Ablation is the test plan: each rule has a scripted test that undercompiles with that rule off, and `descendantRules=none` fails all of them.
+- Ablation is the test plan: each rule has a scripted test that undercompiles with that rule off, and `descendantRules=none` fails all of them. (Checked by hand so far; [`PLAN.md`](PLAN.md) T9 records it as a table.)
 
 <div class="fn">
 
@@ -655,22 +655,28 @@ Notes: 2 min. `DescendantRules.scala` in the PoC; presets `all` (today), `defaul
 
 ### 15. Where Merkle hashing is more precise, and where it is not
 
-| edit | today | Merkle | test |
-|---|---|---|---|
-| ancestor member's type changes, descendants neither declare nor use it | descendants + clients | clients | `merkle-member-type` |
-| ancestor gains a member nobody uses | every descendant | the ancestor | `transitive-class`, `class-based-inheritance` |
-| same, ancestor in an upstream subproject | every downstream descendant | none downstream | `merkle-x-member-type` |
-| same, ancestor is a trait | every descendant | direct mixers only (forwarders) | `merkle-trait`, `merkle-trait-direct` |
-| a parent's type argument changes (`A[Int]` → `A[String]`) | `C X Y Z` | `C X Y Z` | `merkle-as-seen-from` |
-| a parent is added (header) | all descendants and their clients | the same | `merkle-header`, `merkle-subproject-header-cascade` |
+Each row is a scripted test that compiles the same program twice, with the PoC's rules and with every descendant recompiled as today, and pins both sets. The "today" column also matches sbt/zinc `develop`.
 
-- The win is the common edit: a member added, removed or changed in a base class, where the descendants do not touch it.
-- No change on header edits: the class-name hash covers the parents, so every client naming the class recompiles in both designs.
-- `asSeenFrom` edits are no better: every name inherited through that parent moves. A hash of the *resolved* member would be as precise as today's, with the same recompute obligation.
+| edit | today | Merkle | `merkle-precision-…` |
+|---|---|---|---|
+| `A.m` changes type; `B`, `C` neither declare nor use it | `B C X Y` | `X Y` | `member-type` |
+| the same, in a chain `A B C D` with a client of `m` at each level | `B C D` + 4 clients | 4 clients | `deep` |
+| `A` loses a member nobody uses | `B C` | nothing | `remove-unused` |
+| `A` gains an overload of `m`, used through `C` | `B C X` | `X` | `add-overload` |
+| `A.m` changes; `B`'s body uses `A.g` | `B X` | `X` | `uses-other` |
+| a protected member changes; `B` calls it, `C` does not | `B C` | `B` | `protected` |
+| `A.m` becomes `final`; `C` also gets `m` from a trait | `B C` | `C` (conflicts rule) | `conflict` |
+| trait `T.n` changes; `B` mixes in `T`, `C extends B` | `B C Y` | `B Y` (forwarder in `B`) | `trait-vs-class` |
+| `A` gains a parent | `B C X Z`, 3 rounds | `B C X Z`, 2 rounds | `header` |
+| a parent's type argument changes (`A[Int]` → `A[String]`) | `C X Y Z` | `C X Y Z` | `merkle-as-seen-from` |
+
+- The gain is on the common edit: a member added, removed or changed in a base class that the descendants do not touch.
+- A header edit recompiles the same classes: the class-name hash covers the parents, so every client naming the class recompiles in both designs. (On catalyst the PoC still recompiled fewer, 1,987 against 2,304, through the rules on the descendants' own descendants.)
+- An `asSeenFrom` edit is no better: every name inherited through that parent moves. A hash of the *resolved* member would be as precise as today's, with the same recompute obligation.
 
 <div class="fn">
 
-Notes: 2 min. The table is to be checked against `research/test-coverage.md`, which classifies all 74 `merkle*` tests and lists the precision cases no test pins yet; [`PLAN.md`](PLAN.md) T1–T8 adds them, each with the baseline set pinned beside the PoC set. `merkle-as-seen-from` pins `C X Y Z` on the baseline; the model's materialised design gives `C X Y`, since it has no key for a class's own name (`zinc-incrementality` §10a Edit 2).
+Notes: 2 min. Tests on retronym/zinc branch `claude/merkle-precision-tests` (local, not yet pushed), on top of rz#24: each has projects `merkle` (`descendantRules = default`) and `all` (`descendantRules = all`). The `all` sets were rerun on `integration/develop` (38cb22d04) and agree, except that develop recompiles the header edit in three rounds (`B C`, then `X Z`). Cross-subproject: `merkle-x-member-type` pins `0 p.B p.C` in the downstream app; only the client `X` recompiles. `research/test-coverage.md` classifies all 74 `merkle*` tests: before these, five failed on develop for precision and the baseline sets were only in history. `merkle-as-seen-from`: the model's materialised design gives `C X Y`, since it has no key for a class's own name (`zinc-incrementality` §10a Edit 2).
 
 </div>
 
