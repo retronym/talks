@@ -62,7 +62,7 @@ Acceptance: the §4/§5/§12 listings regenerate from one command per side, and 
 
 The coverage review is in `research/test-coverage.md`: of the 74 `merkle*` tests, five failed on develop for precision, the rest pin soundness or pass either way, and the baseline's recompiled sets were written down only in history.
 
-DONE, on retronym/zinc `claude/merkle-precision-tests` (13014e466, on top of rz#24's head fba089141; not pushed):
+DONE, on retronym/zinc `claude/merkle-precision-tests` (13014e466, on top of rz#24's head fba089141; pushed, no PR):
 
 - Ten `merkle-precision-*` tests, each compiling one program as two projects, `merkle` (`descendantRules = default`) and `all` (`descendantRules = all`), and pinning both recompiled sets: `member-type`, `deep`, `remove-unused`, `uses-other`, `add-overload`, `trait-vs-class`, `protected`, `conflict`, `case-class`, `header`. All pass. The `all` side was rerun on `integration/develop` (38cb22d04): the same sets, except that develop takes a third round on the header edit (`B C`, then `X Z`; the PoC does all four in round 2).
 - `merkle-precision-decls-only`, with new scripted commands `checkNameHash` / `checkNoNameHash` over the subproject's own analysis: `B` has a name hash for its own member, none for `A`'s; a library ancestor's members stay.
