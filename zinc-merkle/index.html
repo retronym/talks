@@ -631,16 +631,16 @@ Dotted: read from the compiler's symbols when the class is compiled.
 
 ```mermaid
 flowchart BT
-  hA["h_A(m) = h(m: Int)"]
-  hM["h_M(m) = h(none)"]
-  hB["h_B(m) = h(-, A: h_A(m))"]
-  hC["h_C(m) = h(-, M: h_M(m), B: h_B(m))"]
+  hA["A stores m: h(m: Int)"]
+  hM["M stores no m"]
+  hB["h_B(m) = h[A: h(m: Int)]"]
+  hC["h_C(m) = h[A: h(m: Int)]"]
   hB --> hA
-  hC --> hB
   hC --> hM
+  hC --> hA
 ```
 
-Solid: read from the stored hashes, by Zinc.
+Solid: read from the stored hashes, by Zinc. `C`'s linearization is `M, B, A`; only `A` has an entry for `m`.
 
 </div>
 
@@ -648,19 +648,20 @@ Solid: read from the stored hashes, by Zinc.
 
 | | today | Merkle |
 |---|---|---|
-| `h_C(n)` | $h(\text{the member } n \text{ that lookup in } C \text{ finds, as seen from } C)$ | $h\big(\mathrm{own}_C(n),\ \langle (P,\ \mathrm{own}_P(n)) \mid P \in \mathrm{lin}(C),\ n \in \mathrm{decls}(P) \rangle\big)$ |
+| `h_C(n)` | $h(\text{the member } n \text{ that lookup in } C \text{ finds, as seen from } C)$ | $h[\, (P,\ \mathrm{own}_P(n)) \mid P \in C, \mathrm{lin}(C),\ n \in \mathrm{decls}(P) \,]$ |
 | computed by | the bridge, when `C` is compiled | Zinc, from hashes already in the analysis |
 | reads | `C`'s ancestors, through the compiler's symbols | `C`'s stored linearization and its ancestors' stored hashes |
 | stored per class | a hash for every member, own and inherited | a hash for every declaration |
 | after an edit to `A`, `h_C(m)` is made current by | recompiling `C` | recomputing it, without compiling |
 
 - Both hashes are non-local: `hashDeps(C)` contains `A`. So both must meet §10's obligation to recompute after `A` changes; today does it by recompiling every descendant (§5).
+- **Reading the Merkle formula:** go through `C` and then the classes in its stored linearization, in order; for each class `P` that declares `n`, take the pair (`P`, the hash `P` stores for its own `n`); hash that list. `h[A: h(m: Int)]` is the list with one pair.
 - The Merkle hash of a descendant is a hash of its ancestors' hashes, as in a Merkle tree, here over the inheritance graph.
-- `h_M(m) = h(none)` records that `M` has no `m`, so a later `M.m` changes `h_C(m)`. Today the same edit reaches `C` because `C` is recompiled.
+- A class that declares no `m`, such as `M` or `B`, adds no pair. If `M` later declares `m`, `M` joins the list (it is in `C`'s stored linearization), and `h_C(m)` changes. Today the same edit reaches `C` because `C` is recompiled.
 
 <div class="fn">
 
-Notes: 2.5 min. Today: Scala 2's `ExtractAPI.mkStructureWithInherited` renders `nonPrivateMembers` minus decls with `memberInfo` (as seen from the class); Scala 3 renders them as declared, with the parents' type arguments in `parents` (`zinc-incrementality` §7). Merkle: the flattened form the PoC builds (`MerkleHashes.composed`, decision 1 in `PLAN-merkle-poc.md`); it reads the stored linearization, so there is no recursion and no new persisted field. The recursive form over direct parents is `zinc-incrementality` §10. The bridge's 2009 doc comment has a TODO asking for parent hashes, and Scala 3's `ExtractAPI` a 2016 TODO for a lazy `parentStructures`. In the model: today is [`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238); Merkle is [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) (recursive) and [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579) (flattened, sound by [`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760) if a class whose header changed recompiles all its descendants).
+Notes: 2.5 min. Today: Scala 2's `ExtractAPI.mkStructureWithInherited` renders `nonPrivateMembers` minus decls with `memberInfo` (as seen from the class); Scala 3 renders them as declared, with the parents' type arguments in `parents` (`zinc-incrementality` §7). Merkle: the flattened form the PoC builds (`MerkleHashes.composed`, decision 1 in `PLAN-merkle-poc.md`): it groups the stored name hashes of the class and of each class in its stored linearization by name and hashes the (class name, hash) pairs. It reads the stored linearization, so there is no recursion and no new persisted field. The recursive form over direct parents (`zinc-incrementality` §10, and the model's [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) linked below) instead gives every parent an entry, with an explicit "no `m`" for a parent that lacks it; the flattened form does not need one, because the linearization already lists every ancestor. The bridge's 2009 doc comment has a TODO asking for parent hashes, and Scala 3's `ExtractAPI` a 2016 TODO for a lazy `parentStructures`. In the model: today is [`Hier.W`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L238); Merkle is [`Hier.Mk`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Hier.lean#L257) (recursive) and [`Flat.Fl`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L579) (flattened, sound by [`flat_sound`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/zinc/Zinc/Bridges/Flat.lean#L760) if a class whose header changed recompiles all its descendants).
 
 </div>
 
@@ -736,12 +737,16 @@ class C
 
 ```zan
 class A
-~ names     m   h(m: String)
+~ names     m   h(m: String)        -- the only stored hash that changed
 
--- B and C: nothing stored changed. Their composed hashes are recomputed:
-~ h_B(m) = h(-, A: h(m: String))
-~ h_C(m) = h(-, M: h(none), B: h_B(m))
+-- B and C store no hash for m, so nothing stored for them changed.
+-- Where a composed hash is needed (§13), Zinc computes it from A's:
+~ h_B(m) = h[A: h(m: String)]       -- was h[A: h(m: Int)]
+~ h_C(m) = h[A: h(m: String)]       -- was h[A: h(m: Int)]
 ```
+
+- The `~` lines are computed, not stored: each lists the pair (`A`, `A`'s own hash for `m`), and that pair changed.
+- Today (§5) `B` and `C` store `h(m: Int)` themselves, and keep it until they are recompiled.
 
 | | recompiled | rounds |
 |---|---|---|
