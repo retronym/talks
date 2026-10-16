@@ -189,9 +189,9 @@ body.focus .focus-counter { display: block; }
 | part | sections | min |
 |---|---|---|
 | I. What the analysis stores | §1 the contract · §1a three kinds of reference · §2 sources, classes and edges · §3 a notation for the analysis · §4 the running example today · §5 an edit, today · §6 the cost at scale | 11 |
-| II. What we are free to change | §7 Zinc as keys and hashes · §8 the obligations · §9 what is free and what is fixed · §10 two consequences | 7 |
+| II. What we are free to change | §7 traces, keys, hashes and invalidation · §8 the obligations · §9 what is free and what is fixed · §10 two consequences | 7 |
 | III. Merkle hashing | §11 store declarations, compose the rest · §12 the running example under Merkle · §13 inside and across subprojects · §14 descendants read their ancestors · §15 where it is more precise, and where not | 11 |
-| IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one walk, several outputs | 8 |
+| IV. In-bridge hashing | §16 a tree built to be hashed and discarded · §17 the obligation is about equality only · §18 three steps and what they saved · §19 library ancestors · §20 one traversal, several outputs | 8 |
 | V. Measurements | §21 results so far · §22 what is measured next | 4 |
 | Close | §23 status and next steps | 1 |
 
@@ -241,7 +241,7 @@ flowchart LR
 
 <div class="fn">
 
-Notes: 2 min. Zinc's own words are internal, external and library (or binary). `IncrementalCommon.detectInitialChanges` finds all three kinds of initial change; `invalidateInitial` turns external API changes into invalidations (`invalidateClassesExternally`: name-filtered `memberRef.external` clients, plus `inheritance.external` descendants walked transitively inside this subproject, and their name-filtered clients) and library changes into sources (`usesLibrary`); only internal changes feed later rounds. The upstream analysis is read through `Lookup.lookupAnalyzedClass`; sbt also has a fast path, `ExternalLookup`, that can skip it. With pipelining, downstream compiles against upstream's early output (pickles), but the order of the Zinc runs is the same.
+Notes: 2 min. Zinc's own words are internal, external and library (or binary). `IncrementalCommon.detectInitialChanges` finds all three kinds of initial change; `invalidateInitial` turns external API changes into invalidations (`invalidateClassesExternally`: name-filtered `memberRef.external` clients, plus every class in this subproject that inherits from the upstream class, directly or transitively, and the name-filtered clients of each) and library changes into sources (`usesLibrary`); only internal changes feed later rounds. The upstream analysis is read through `Lookup.lookupAnalyzedClass`; sbt also has a fast path, `ExternalLookup`, that can skip it. With pipelining, downstream compiles against upstream's early output (pickles), but the order of the Zinc runs is the same.
 
 </div>
 
@@ -252,7 +252,7 @@ Notes: 2 min. Zinc's own words are internal, external and library (or binary). `
 | difference | inherent, pragmatic or historical |
 |---|---|
 | No rounds across subprojects: a downstream change never recompiles upstream | **Inherent.** Subprojects form an acyclic graph and are compiled in order; upstream's outputs are finished before downstream starts, and nothing downstream can change them. |
-| Downstream sees upstream's stored API, but not its relations | **Pragmatic.** Each analysis is written only by its own subproject's run, and downstream needs to know *what* changed upstream, not why. The cost: there is nothing to walk across the boundary, which is where Merkle composition is needed (§13). |
+| Downstream sees upstream's stored API, but not its relations | **Pragmatic.** Each analysis is written only by its own subproject's run, and downstream needs to know *what* changed upstream, not why. The cost: downstream cannot find which upstream classes inherit from a changed upstream class, because those inheritance edges are in upstream's relations. So a change to upstream `A` has to show up in the stored API of upstream `B` itself, which is why the PoC composes `B`'s hashes from `A`'s across subprojects (§13). |
 | A library has a stamp, not an API | **Partly inherent:** there is no compiler run that sees its source, so an API would have to be read back from classfiles. **Mostly pragmatic:** libraries change rarely, so recompiling every user on a change is acceptable. |
 | Library members are copied into every descendant's API today | **Historical.** Every ancestor's members were copied before Merkle hashing; libraries are what is left of that design, since they have no stored API to compose from (§19). |
 | The same program recompiles differently laid out as one subproject or as two | **Historical.** Inside a subproject Zinc can follow relations from every class it recompiled, round after round; across, it starts once from what changed in upstream's stored API. When an ancestor's companion gained an implicit, the first layout was clean and the second missed a client, until [sbt/zinc#1845](https://github.com/sbt/zinc/pull/1845). The model treats the layout as a policy on one loop (`zinc-lean` §19). |
@@ -299,7 +299,7 @@ flowchart BT
 - All seven classes are in one subproject, so every edge is internal (§1a).
 - Each source defines classes; each class gets an entry in the analysis.
 - Zinc records two kinds of edge between classes: **inheritance** (the extends clause) and **memberRef** (anything else: a type mentioned, a member selected).
-- A client of `b.m` records a memberRef edge to `B`, the type it selected through, *and* to `A`, the owner of `m`. Keep that second edge in mind: it is why Merkle hashing needs no composed hashes inside a subproject (§13).
+- A client of `b.m` records a memberRef edge to `B`, the type it selected through, *and* to `A`, the owner of `m`. The second edge is why Merkle hashing needs no composed hashes inside a subproject (§13).
 - Each class also records its **used names**: `X` used `B` and `m`.
 
 <div class="fn">
@@ -310,7 +310,7 @@ Notes: 1.5 min. This is the program of `zinc-incrementality` §10a and of [`Hier
 
 ### 3. A notation for the analysis file
 
-The analysis file is protobuf (or a text format nobody reads). This talk prints it in a notation with one block per source and per class:
+The analysis file is protobuf, or optionally text. This talk prints it in a notation with one block per source and per class:
 
 ```zan
 source B.scala                     -- stamps: content hash of the source
@@ -379,7 +379,7 @@ object X
   uses      B, m, Int
 ```
 
-- **No member is stored, only its hash.** `APIUtil.minimize` drops every member from the stored API (except `main` methods, for discovery). The members survive only as name hashes.
+- **No member is stored, only its hash.** `APIUtil.minimize` drops every member from the stored API (except `main` methods, for discovery). The members are kept only as name hashes.
 - **Every inherited member is hashed again in every descendant**, as seen from that descendant, and the hash is computed when *that descendant* is compiled.
 - The hierarchy's whole API is in the file once per class that inherits it.
 
@@ -411,11 +411,11 @@ flowchart LR
 
 - `B` and `C` are recompiled although their bytecode cannot change: neither declares, overrides or calls `m`. They are recompiled to recompute their stored hashes.
 - `X` and `Y` must recompile: their `m` changed type. `Z` uses only `g` and stays.
-- Zinc does not need `B`'s new hash to find `X`: its invalidator already walks the hierarchy, and `X` has a memberRef edge to `A` under the name `m`. The descendants' hashes are refreshed, then compared, and the comparison finds nothing new.
+- Zinc does not need `B`'s new hash to find `X`. `X` has a memberRef edge to `A`, the owner of `m`, and used the name `m`, so the change to `A` invalidates `X` directly. Zinc also invalidates, for each descendant of `A`, its memberRef clients that use a changed name; this is *invalidation by inheritance*. `B`'s and `C`'s refreshed hashes are then compared, and the comparison finds no client that is not already invalidated.
 
 <div class="fn">
 
-Notes: 1.5 min. `merkle-member-type` pins this on the PoC's baseline commit: `B C X Y` in two rounds. The walk is `invalidateClassesInternally`: the memberRef clients of every descendant, filtered by the ancestor's changed names (`zinc-incrementality` §9).
+Notes: 1.5 min. `merkle-member-type` pins this on the PoC's baseline commit: `B C X Y` in two rounds. Invalidation by inheritance is in `invalidateClassesInternally` (`invalidateByInheritance`, then the memberRef clients of every descendant, filtered by the ancestor's changed names; `zinc-incrementality` §9).
 
 </div>
 
@@ -450,7 +450,7 @@ Notes: 1.5 min. IncBench, `--build/--edits` mode, pipelining off, one repetition
 
 ## Part II — What we are free to change
 
-### 7. Zinc in four words: traces, keys, hashes, invalidation
+### 7. Traces, keys, hashes and invalidation
 
 ```mermaid
 flowchart LR
@@ -673,13 +673,13 @@ flowchart LR
   end
 ```
 
-- **Inside a subproject no composed hash is needed.** `X` already has an edge to `A`, the owner of `m`, and Zinc already walks from a changed class to the memberRef clients of its descendants, filtered by name. That walk visits the same classes the composed hash reads. The PoC's change here is only to stop storing inherited members and stop recompiling every descendant.
-- **Across subprojects it is needed.** A downstream compile sees the upstream analysis's stored API, but not its relations, so there is nothing to walk. The PoC composes the upstream class's name hashes over its stored linearization when it looks the class up.
+- **Inside a subproject no composed hash is needed.** `X` has an edge to `A`, the owner of `m`, and invalidation by inheritance (§5) reaches the clients of `A`'s descendants that use a changed name. Between them they invalidate the same clients that a composed hash for `B` would. The PoC's change here is only to stop storing inherited members and stop recompiling every descendant.
+- **Across subprojects it is needed.** A downstream compile reads the upstream analysis's stored APIs, but not its relations, so it cannot find which upstream classes inherit from the one that changed (§1a). The PoC composes the upstream class's name hashes over its stored linearization when it looks the class up, so a change to `A` changes `B`'s composed hashes.
 - `macros/macro-type-change-3` is the test that requires composition: a macro reflects over `baseClasses`, selects no member, so no edge names the ancestor.
 
 <div class="fn">
 
-Notes: 2 min. In model terms the walk is a *decls + walk* scheme: local hashes, and keys that name every ancestor visited (`zinc-incrementality` §10, table "What the model says"). Both satisfy the obligations; the choice is about where the work happens. `MerkleHashes.composed` is called from `Lookup` for external classes. An ancestor contributes its `extraHash` (class side only), not its `apiHash`, because companion-object members are not inherited; its implicits come from both sides, since a companion's implicits are in the implicit scope of its descendants.
+Notes: 2 min. In model terms, inside a subproject the PoC uses local hashes and keys that name every ancestor a member lookup visited (`zinc-incrementality` §10, "decls + walk" in the table "What the model says"); across subprojects it uses non-local composed hashes. Both satisfy the obligations; the choice is about where the work happens. `MerkleHashes.composed` is called from `Lookup` for external classes. An ancestor contributes its `extraHash` (class side only), not its `apiHash`, because companion-object members are not inherited; its implicits come from both sides, since a companion's implicits are in the implicit scope of its descendants.
 
 </div>
 
@@ -725,7 +725,7 @@ Each row is a scripted test that compiles the same program twice, with the PoC's
 | a parent's type argument changes (`A[Int]` → `A[String]`) | `C X Y Z` | `C X Y Z` | `merkle-as-seen-from` |
 
 - The gain is on the common edit: a member added, removed or changed in a base class that the descendants do not touch.
-- A header edit recompiles the same classes: the class-name hash covers the parents, so every client naming the class recompiles in both designs. (On catalyst the PoC still recompiled fewer, 1,987 against 2,304, through the rules on the descendants' own descendants.)
+- A header edit recompiles the same classes: the class-name hash covers the parents, so every client naming the class recompiles in both designs. (On catalyst the PoC recompiled fewer on a header edit, 1,987 against 2,304; which classes make the difference is not yet analysed.)
 - An `asSeenFrom` edit is no better: every name inherited through that parent moves. A hash of the *resolved* member would be as precise as today's, with the same recompute obligation.
 
 <div class="fn">
@@ -796,7 +796,7 @@ Notes: 2 min. PLAN-merkle-poc.md "H2 status" and "H2 results"; times there were 
 
 ### 19. Library ancestors
 
-- A library class has no stored API to compose from, so before this change its members were still copied into every descendant and hashed on every compile: a continual cost, paid for precision on a rare event.
+- A library class has no stored API to compose from, so before this change its members were still copied into every descendant and hashed on every compile. Every compile paid for a precision that matters only when a jar changes.
 - Now library members are typeless stubs. When a jar changes, Zinc folds its stamp into the hash of every name a class has only by inheritance, and recompiles the classes whose stored linearization contains a class from that jar.
 - A library change then shows up as ordinary name changes, here and downstream.
 - Coarser: a jar change moves every inherited name, `toString` included.
@@ -808,17 +808,17 @@ Notes: 2 min. PLAN-merkle-poc.md "H2 status" and "H2 results"; times there were 
 
 <div class="fn">
 
-Notes: 1 min. `LibraryAncestors.scala`, `libraryAncestors=names|members|stubs-only`. Measured on catalyst: no difference in allocation beyond noise (1,772 of 39,530 inherited members are from libraries). The case is the model: a library ancestor costs nothing per compile. Next: per-name hashes of library classes cached by stamp, so only the names that changed move.
+Notes: 1 min. `LibraryAncestors.scala`, `libraryAncestors=names|members|stubs-only`. Measured on catalyst: no difference in allocation beyond noise (1,772 of 39,530 inherited members are from libraries). The reason to do it anyway: with stubs, a library ancestor costs its descendants nothing per compile. Next: per-name hashes of library classes cached by stamp, so only the names that changed move.
 
 </div>
 
-### 20. One walk over compiler types, several outputs
+### 20. One traversal of compiler types, several outputs
 
-The bridge now has two walks that must agree: one builds trees (Java, older bridges, `apiDebug`, check mode), one hashes. A proposal, after ASM's reader and writers:
+The bridge now has two traversals of compiler types that must agree: one builds trees (Java, older bridges, `apiDebug`, check mode), one hashes. A proposal, after ASM's reader and writers:
 
 ```mermaid
 flowchart LR
-  D["bridge driver<br/>(walks symbols and types once)"] --> V{{"ApiVisitor events"}}
+  D["bridge driver<br/>(traverses symbols and types once)"] --> V{{"ApiVisitor events"}}
   V --> TB["TreeBuilder<br/>xsbti.api, today's format"]
   V --> HS["Hasher<br/>ClassHashes"]
   V --> PR["Printer<br/>canonical text, for logs"]
@@ -911,8 +911,8 @@ Notes: 1 min. Upstream: everything here is in retronym/zinc and retronym/scala3 
 ### Q. Open questions
 
 1. Is Part II's notation enough, or does the audience need one Lean listing ([`NCompiler.Obligations`](https://github.com/retronym/jvm-lang-models/blob/4faa126ffd12acc1e45ac41c636751b26b863949/packages/inc-comp/IncComp/NonLocalAns.lean#L56)) on screen?
-2. §15 depends on the test-coverage review; precision rows without a test should be dropped or get a test first.
-3. The two-column layout in §12 needs a `cols` class in the template; otherwise the two listings go on two cards.
+2. §15 has ten rows; should the minor ones (`protected`, `case-class`) move to the notes?
+3. Is the two-column layout in §12 readable on a projector, or should the listings go on two cards?
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
