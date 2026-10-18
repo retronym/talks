@@ -26,14 +26,14 @@ Twelve cells: two builds × two compilers × three Zincs.
 |---|---|
 | Build | scala/scala at a pinned `2.13.x` commit; scala/scala3 at a pinned `main` commit |
 | Compiler | base; integration. *Base* is the commit the integration branch is built on, and *integration* is `integration/2.13.x` or `integration/scala3-main` (decision 4) |
-| Zinc | released 1.12; `integration/develop-1.12.x` (Zinc perf fixes, name hashing); `integration/merkle-1.12.x` (Merkle) |
+| Zinc | `integration/bench-1.12.x` (baseline: sbt/zinc `1.12.x` plus the harness); `integration/develop-1.12.x` (Zinc perf fixes, name hashing); `integration/merkle-1.12.x` (Merkle) |
 
 Each comparison is a pair of cells that differ in one axis:
 
-- **Compiler:** base vs. integration compiler, on released Zinc.
-- **Zinc performance:** released Zinc vs. `develop-1.12.x`, on the base compiler.
+- **Compiler:** base vs. integration compiler, on the baseline Zinc.
+- **Zinc performance:** the baseline Zinc vs. `develop-1.12.x`, on the base compiler.
 - **Algorithm:** `develop-1.12.x` vs. `merkle-1.12.x`. Both carry the Zinc perf fixes, so the difference is the algorithm alone.
-- **All together:** the base compiler on released Zinc vs. the integration compiler with Merkle Zinc.
+- **All together:** the base compiler on the baseline Zinc vs. the integration compiler with Merkle Zinc.
 
 Every cell runs the same edit script for its build, so a step means the same edit in all six cells of a build.
 
@@ -53,7 +53,7 @@ So the harness gets its own PR on `1.12.x`, which doesn't depend on Merkle:
 
 - `merkle-1.12.x` gets the harness from that PR instead of rz#48. rz#48 gets a fixup that deletes its copy, rather than a rewrite of its series.
 - `develop-1.12.x` adds the same PR.
-- The released-Zinc cell is a new integration branch, `bench-1.12.x`: the `v1.12.x` release tag plus the harness PR and nothing else.
+- The baseline Zinc is a new integration branch, `bench-1.12.x`: sbt/zinc `1.12.x` plus the harness PR and nothing else. It is built on the same `1.12.x` tip as the other two, not on a release tag, so each differs from it by our PRs alone.
 
 A harness change then rebuilds all three, and the dashboard records the harness commit per cell.
 
@@ -130,7 +130,7 @@ After each barrier the orchestrator writes the six data files that the mockup's 
 scala/scala is the tracer bullet: every stage of the pipeline works end to end for it, with the dashboard live, before scala/scala3 starts.
 
 - [x] Dashboard mockup with sample data.
-- [ ] **M1 Harness PR on 1.12.x.** IncBench, `PhaseTimings` and `--verify` in their own PR. Add it to `develop-1.12.x` and `merkle-1.12.x`, with a fixup in rz#48 that deletes its copy, and create the `bench-1.12.x` manifest.
+- [x] **M1 Harness PR on 1.12.x.** retronym/zinc#71 has IncBench, `PhaseTimings` and `--verify`. It is in `bench-1.12.x` (new), `develop-1.12.x` and `merkle-1.12.x`, byte-identical in all three; rz#48 has a fixup that deletes its copy.
 - [ ] **M2 scala/scala export.** The sbt export command, the frozen `build.json` for `library`, `reflect` and `compiler` at `integration/2.13.x`'s base, and a clean build through IncBench in one cell whose classfiles match sbt's.
 - [ ] **M3 Measurements.** Per-phase scalac timings, the Zinc split and cycles with reasons, as JSON lines from one cell.
 - [ ] **M4 Lockstep.** The `serve` mode and the orchestrator, first with the two scala/scala cells that differ only in algorithm, then all six.

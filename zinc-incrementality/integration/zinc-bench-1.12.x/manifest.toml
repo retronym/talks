@@ -1,0 +1,14 @@
+branch = "integration/bench-1.12.x"
+repo = "~/code/sbt/zinc"
+push = "origin"
+
+# The baseline Zinc for the IncBench campaign (PLAN-incbench-campaign.md): sbt/zinc 1.12.x with
+# the harness and nothing else. integration/develop-1.12.x and integration/merkle-1.12.x are built
+# on the same base with the same harness, so each differs from this branch by its own changes.
+base = { remote = "upstream", branch = "1.12.x" }
+
+[[members]]
+id = "rz#71"
+remote = "origin"
+pr = 71
+title = "[1.x] IncBench: incremental-compile benchmarks with --verify, and Zinc phase timings"

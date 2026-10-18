@@ -25,6 +25,13 @@ remote = "origin"
 pr = 68
 title = "[1.x] Reuse one hasher across name groups in NameHashing (backport of sbt/zinc#1852)"
 
+# The IncBench harness, identical in every Zinc the IncBench campaign compares.
+[[members]]
+id = "rz#71"
+remote = "origin"
+pr = 71
+title = "[1.x] IncBench: incremental-compile benchmarks with --verify, and Zinc phase timings"
+
 [[excluded]]
 id = "rz#48"
 reason = "Merkle; see integration/merkle-1.12.x"

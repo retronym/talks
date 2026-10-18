@@ -26,6 +26,13 @@ id = "rz#68+rz#48"
 patch = "fixups/68-legacy-hashapi-trait-hash.patch"
 title = "Hash traits in LegacyHashAPI as rz#48 hashes them in HashAPI"
 
+# The IncBench harness, identical in every Zinc the IncBench campaign compares.
+[[members]]
+id = "rz#71"
+remote = "origin"
+pr = 71
+title = "[1.x] IncBench: incremental-compile benchmarks with --verify, and Zinc phase timings"
+
 [[excluded]]
 id = "backport/1.12.x-z1-overcompilation"
 reason = "not Merkle (decision 5)"
