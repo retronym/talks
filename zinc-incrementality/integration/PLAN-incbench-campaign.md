@@ -1,6 +1,6 @@
 # Plan: an IncBench campaign over scala/scala and scala/scala3
 
-**Status:** draft for review. Only the dashboard mockup exists.
+**Status:** reviewed; the open questions are answered below. Only the dashboard mockup exists. scala/scala goes first as a tracer bullet through the whole pipeline; scala/scala3 follows.
 
 ## Problem
 
@@ -14,6 +14,8 @@ A single campaign should answer all three on the two builds we know best, with e
 
 The campaign takes hours. We want to watch it run and read partial results that already compare like with like, not wait for the end.
 
+This is not a precision benchmark. It is meant to show where time and recompilation go and which way each change moves them, on real builds. Effects that need many repetitions to resolve are for `compiler-benchmark` or JMH afterwards.
+
 The dashboard mockup, with sample data, is at <https://claude.ai/artifact/UiitoMvUkQD64vUYbHjH6Z>. Its six datasets are the data model below, less a few fields the mockup doesn't draw yet.
 
 ## The matrix
@@ -23,15 +25,15 @@ Twelve cells: two builds × two compilers × three Zincs.
 | Axis | Values |
 |---|---|
 | Build | scala/scala at a pinned `2.13.x` commit; scala/scala3 at a pinned `main` commit |
-| Compiler | released; integration (`integration/2.13.x` as STARR, `integration/scala3-main` as the reference compiler) |
+| Compiler | base; integration. *Base* is the commit the integration branch is built on, and *integration* is `integration/2.13.x` or `integration/scala3-main` (decision 4) |
 | Zinc | released 1.12; `integration/develop-1.12.x` (Zinc perf fixes, name hashing); `integration/merkle-1.12.x` (Merkle) |
 
 Each comparison is a pair of cells that differ in one axis:
 
-- **Compiler:** released vs. integration compiler, on released Zinc.
-- **Zinc performance:** released Zinc vs. `develop-1.12.x`, on the released compiler.
+- **Compiler:** base vs. integration compiler, on released Zinc.
+- **Zinc performance:** released Zinc vs. `develop-1.12.x`, on the base compiler.
 - **Algorithm:** `develop-1.12.x` vs. `merkle-1.12.x`. Both carry the Zinc perf fixes, so the difference is the algorithm alone.
-- **All together:** released everything vs. the integration compiler with Merkle Zinc.
+- **All together:** the base compiler on released Zinc vs. the integration compiler with Merkle Zinc.
 
 Every cell runs the same edit script for its build, so a step means the same edit in all six cells of a build.
 
@@ -49,7 +51,7 @@ The three Zincs must differ only in the changes being measured, so IncBench, `Ph
 
 So the harness gets its own PR on `1.12.x`, which doesn't depend on Merkle:
 
-- `merkle-1.12.x` gets the harness from that PR instead of rz#48. rz#48 drops those parts of its series.
+- `merkle-1.12.x` gets the harness from that PR instead of rz#48. rz#48 gets a fixup that deletes its copy, rather than a rewrite of its series.
 - `develop-1.12.x` adds the same PR.
 - The released-Zinc cell is a new integration branch, `bench-1.12.x`: the `v1.12.x` release tag plus the harness PR and nothing else.
 
@@ -66,16 +68,18 @@ Scope, so a clean build stays in minutes:
 
 Generated sources (scala/scala's version properties, scala/scala3's unpacked scalajs-ir) are captured by the export as plain files, so no generator runs during the campaign.
 
-### 4. The compiler is the bootstrap compiler, swapped per cell
+### 4. The compiler is a set of jars, built from source on both sides
 
-Both builds compile themselves with an earlier compiler: STARR for scala/scala, the reference compiler for scala/scala3. A compiler cell swaps that compiler and leaves the sources alone, so the work being compiled is the same in both compiler cells.
+Both builds compile themselves with an earlier compiler: STARR for scala/scala, the reference compiler for scala/scala3. In-process, that compiler is just the jars IncBench hands Zinc as its `ScalaInstance`, so a compiler cell swaps jars and leaves the frozen sources alone. Nothing has to be published under a version the build would accept.
 
-- **scala/scala:** released 2.13.18 vs. `integration/2.13.x` published by `publish-scala2-starr`.
-- **scala/scala3:** the released reference version vs. `integration/scala3-main` published by `publish-scala3-snapshot` under the reference compiler's version line. This one is untested; see open questions.
+The baseline is not the last release. It is the commit the integration branch is built on, built the same way as the integration compiler. Against a release, the comparison would also carry every upstream change since that release; against its own base, it measures our open PRs and nothing else.
 
-For Scala 2 the bridge is compiled from the cell's Zinc checkout. For Scala 3 the bridge ships with the compiler, so the Scala 3 Zinc cells differ only in Zinc's own code, and for Merkle in the bridge-side hashing that only `integration/scala3-merkle` has. Using `scala3-merkle` as the integration compiler for the Merkle cell would mix two axes, so the Scala 3 Merkle cells run Merkle with the tree-path bridge, and bridge hashing on Scala 3 is a follow-up campaign.
+- **scala/scala:** upstream `2.13.x` at `integration/2.13.x`'s base, and `integration/2.13.x`, each built as `publish-scala2-starr` builds STARR (optimized, as a release is). The frozen build is that same base commit.
+- **scala/scala3:** upstream `main` at `integration/scala3-main`'s base, and `integration/scala3-main`, each as its non-bootstrapped compiler, library, tasty-core, interfaces and sbt bridge jars. The frozen build is that base commit's non-bootstrapped modules, which the bootstrapped build already compiles with a compiler built from the same sources.
 
-### 5. Lockstep, one compile at a time
+For Scala 2 the bridge is compiled from the cell's Zinc checkout. For Scala 3 the bridge comes with the compiler, so the Scala 3 Zinc cells differ only in Zinc's own code. Merkle's bridge-side hashing for Scala 3 is only in `integration/scala3-merkle`. Using it as the integration compiler would mix two axes, so the Scala 3 Merkle cells run Merkle with the standard bridge, and bridge hashing on Scala 3 is a follow-up campaign.
+
+### 5. Lockstep, one compile at a time, one build at a time
 
 An orchestrator, a Python script in this directory beside `build-integration`, starts every cell's JVM once and sends it commands on stdin: `prepare` (load the build, clean build, warm up), `step k`, `shutdown`. Each command answers with one JSON line.
 
@@ -87,11 +91,11 @@ For each step *k*:
 
 Only one cell compiles at any moment, so the others' JVMs are idle. Results are comparable after every step, and drift in the machine (thermals, background work) spreads evenly over cells instead of landing on whichever ran last.
 
-**Memory.** Twelve warm JVMs on 48 GB is the main risk. The plan is `-Xmx3g` for scala/scala cells and `-Xmx4g` for scala/scala3 cells, with G1 returning idle heap (`-XX:G1PeriodicGCInterval`), which is about 42 GB at worst. The first milestone measures resident memory of an idle warm cell. If twelve don't fit, the campaign runs as two waves of six, one build at a time, and the dashboard shows the second build as queued.
+**Two waves.** Twelve warm JVMs don't fit comfortably in 48 GB, so the campaign runs as two waves of six cells: scala/scala first, then scala/scala3. Lockstep holds within a wave. The dashboard shows the second build's cells as queued until its wave starts.
 
 ### 6. What each step records
 
-A step applies its edit and compiles. That is repeated `reps` times (default 3), with the revert and its compile between repetitions. The first repetition is a warm-up and isn't counted; the median of the rest is.
+A step applies its edit and compiles, once. `prepare` warms the JVM with the clean build and a few no-op and body-edit compiles before step 1, so the first timed step isn't paying for JIT. One repetition is the starting point: the campaign is about direction and attribution, not precise timings. `reps` stays an option, and a step can be rerun on its own when a number looks wrong.
 
 - **Wall time** of the whole incremental compile.
 - **scalac, per phase:** scalac's profiler (`-Yprofile-enabled -Yprofile-destination`) per compiler run, summed over the step's cycles. Phases are mapped to shared groups so both compilers chart alike: parse and name, typer, pickle and checks, API extraction, dependencies, transforms, backend. API extraction includes Zinc's per-class hashing, which runs inside it through `callback.api`.
@@ -114,32 +118,34 @@ After each barrier the orchestrator writes the six data files that the mockup's 
 
 | File | One row per | Fields |
 |---|---|---|
-| `campaign` | campaign | name, start, reps, cells, steps per cell, steps done, current step, elapsed, estimated remaining, machine, harness commit |
+| `campaign` | campaign | name, start, wave, reps, cells, steps per cell, steps done, current step, elapsed, estimated remaining, machine, harness commit |
 | `cells` | cell | id, build, compiler and its version, Zinc and its commit, algorithm |
-| `steps` | cell × step | edit, status, order in its lockstep round, start offset, median, min and max wall time, scalac time, Zinc time, sources, classes, cycles, verify verdict |
+| `steps` | cell × step | edit, status, order in its lockstep round, start offset, wall time (median, min and max when `reps` > 1), scalac time, Zinc time, sources, classes, cycles, verify verdict |
 | `phases` | cell × step × part | group, phase name, milliseconds, allocated bytes |
 | `cycles` | cell × step × cycle | sources, classes, reason |
 | `edits` | build × step | kind, file, description, patch |
 
 ## Milestones
 
+scala/scala is the tracer bullet: every stage of the pipeline works end to end for it, with the dashboard live, before scala/scala3 starts.
+
 - [x] Dashboard mockup with sample data.
-- [ ] **M1 Harness PR on 1.12.x.** IncBench, `PhaseTimings` and `--verify`, out of rz#48 into their own PR. Add it to `develop-1.12.x` and `merkle-1.12.x`, and create the `bench-1.12.x` manifest. Measure an idle warm cell's memory.
-- [ ] **M2 scala/scala export.** The sbt export command, the frozen `build.json` for `library`, `reflect` and `compiler`, and a clean build through IncBench in one cell that matches sbt's classfiles.
+- [ ] **M1 Harness PR on 1.12.x.** IncBench, `PhaseTimings` and `--verify` in their own PR. Add it to `develop-1.12.x` and `merkle-1.12.x`, with a fixup in rz#48 that deletes its copy, and create the `bench-1.12.x` manifest.
+- [ ] **M2 scala/scala export.** The sbt export command, the frozen `build.json` for `library`, `reflect` and `compiler` at `integration/2.13.x`'s base, and a clean build through IncBench in one cell whose classfiles match sbt's.
 - [ ] **M3 Measurements.** Per-phase scalac timings, the Zinc split and cycles with reasons, as JSON lines from one cell.
-- [ ] **M4 Lockstep.** The `serve` mode and the orchestrator, first with the two scala/scala Zinc cells that differ only in algorithm.
-- [ ] **M5 scala/scala3.** Its export, Scala 3's profiler, and the reference-compiler swap.
-- [ ] **M6 Integration compilers** for both builds.
-- [ ] **M7 Live dashboard.** Real files replace the sample data, pushed after each lockstep step.
-- [ ] **M8 The full campaign,** then a write-up of what each comparison showed.
+- [ ] **M4 Lockstep.** The `serve` mode and the orchestrator, first with the two scala/scala cells that differ only in algorithm, then all six.
+- [ ] **M5 Live dashboard.** Real files replace the sample data, pushed after each lockstep step.
+- [ ] **M6 Wave 1: scala/scala,** all six cells, with a short write-up of what each comparison showed.
+- [ ] **M7 scala/scala3.** Its export, the compiler jars for both sides, and a check that Scala 3's profiler output reads like Scala 2's.
+- [ ] **M8 Wave 2: scala/scala3,** and the combined write-up.
 
-## Open questions
+## Answered questions
 
-1. **Scala 3's profiler.** Does the current reference compiler support `-Yprofile-enabled` with per-phase CSV output like Scala 2's? If not, the fallback is `-Vprofile` or a phase-timing plugin.
-2. **The integration compiler for scala/scala3.** Can `integration/scala3-main` be published under a version the build accepts as its reference compiler, or does the cell need a patched `Build.scala` in the frozen export?
-3. **Memory.** Twelve warm JVMs, or two waves of six (decision 5)?
-4. **Reps.** Three, with one discarded as warm-up, keeps the campaign to hours. Is the spread small enough on this machine for that to detect the effects we expect, or do we need five?
-5. **rz#48's history.** Moving the harness out of rz#48 rewrites a hand-maintained series. Is a new harness PR plus a fixup that deletes it from rz#48 acceptable instead?
+1. **Scala 3's profiler.** Scala 3 has had `-Yprofile-enabled` and `-Yprofile-destination` since 0.7.0, a port of scalac's profiler (scala/scala3@fcc30d4c7c), plus `-Yprofile-trace` for a Chrome trace. M7 checks that its per-phase output parses like Scala 2's.
+2. **The integration compiler for scala/scala3.** In-process, the compiler is jars, so nothing is published under the reference compiler's version (decision 4).
+3. **Memory.** Two waves of six, scala/scala first (decision 5).
+4. **Reps.** One, as the starting point. The campaign isn't for precise timings (decision 6).
+5. **rz#48.** A fixup that deletes the harness from it, not a rewrite of its series (decision 2).
 
 ## Prior art
 
