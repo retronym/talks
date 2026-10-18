@@ -26,6 +26,13 @@ id = "rz#68+rz#48"
 patch = "fixups/68-legacy-hashapi-trait-hash.patch"
 title = "Hash traits in LegacyHashAPI as rz#48 hashes them in HashAPI"
 
+# Not Merkle; in integration/develop-1.12.x too.
+[[members]]
+id = "rz#73"
+remote = "origin"
+pr = 73
+title = "[1.x] Don't count `macro ???` definitions as macros"
+
 # The IncBench harness, identical in every Zinc the IncBench campaign compares.
 [[members]]
 id = "rz#71"

@@ -25,6 +25,12 @@ remote = "origin"
 pr = 68
 title = "[1.x] Reuse one hasher across name groups in NameHashing (backport of sbt/zinc#1852)"
 
+[[members]]
+id = "rz#73"
+remote = "origin"
+pr = 73
+title = "[1.x] Don't count `macro ???` definitions as macros"
+
 # The IncBench harness, identical in every Zinc the IncBench campaign compares.
 [[members]]
 id = "rz#71"

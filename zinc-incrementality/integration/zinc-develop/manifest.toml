@@ -77,6 +77,12 @@ remote = "origin"
 pr = 37
 title = "Avoid per-node allocation in the bridge's used-name extraction"
 
+[[members]]
+id = "rz#74"
+remote = "origin"
+pr = 74
+title = "[2.x] Don't count `macro ???` definitions as macros"
+
 # pending tests
 [[members]]
 id = "rz#33"
