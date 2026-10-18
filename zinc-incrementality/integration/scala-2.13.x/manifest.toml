@@ -59,10 +59,10 @@ pr = 137
 title = "Warn when a class does not implement a Java interface's re-declared default (scala/bug#12224)"
 
 [[members]]
-id = "rz-scala#138"
-remote = "origin"
-pr = 138
-title = "Make Analyzer an abstract class"
+id = "scala#11306"
+remote = "upstream"
+pr = 11306
+title = "Avoid megamorphic interface calls to the analyzer when several Globals share a JVM"
 
 [[members]]
 id = "rz-scala#147"
@@ -125,12 +125,12 @@ id = "scala#11307"
 reason = "the same branch as rz-scala#142"
 
 [[excluded]]
-id = "scala#11306"
-reason = "an alternative to rz-scala#138 (Analyzer as an abstract class)"
+id = "rz-scala#138"
+reason = "superseded by scala#11306"
 
 [[excluded]]
 id = "rz-scala#150"
-reason = "an alternative to rz-scala#138 (Analyzer as a class)"
+reason = "an alternative to scala#11306 (Analyzer as a class)"
 
 [[excluded]]
 id = "scala#11312"
