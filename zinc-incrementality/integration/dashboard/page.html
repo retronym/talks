@@ -1,0 +1,1111 @@
+<style>
+.ib { font-family: var(--font-anthropic-sans); display: grid; gap: var(--cds-gap-xl); }
+.ib h1, .ib h2, .ib h3, .ib p { margin: 0; }
+.ib-head { display: grid; gap: var(--cds-gap-xs); }
+.ib-head h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); text-wrap: balance; }
+.ib-take { color: var(--color-fg-muted); max-width: 70ch; }
+.ib-badge { justify-self: start; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 0 var(--cds-pad-sm); }
+.ib-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: var(--cds-gap-md); }
+.ib-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); min-width: 0; display: grid; gap: var(--cds-gap-sm); align-content: start; }
+.ib-card h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.ib-note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.ib-prose { font-size: var(--cds-font-size-body); line-height: 1.5; display: grid; gap: var(--cds-gap-sm); max-width: 68ch; }
+.ib-prose ul { margin: 0; padding-left: 1.2em; display: grid; gap: var(--cds-gap-xs); }
+.ib-section { display: grid; gap: var(--cds-gap-md); }
+.ib-section > h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.ib-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; }
+.ib-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: var(--cds-gap-md); }
+.ib-stat { display: grid; gap: 2px; }
+.ib-stat dt { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.ib-stat dd { margin: 0; font-variant-numeric: tabular-nums; font-size: var(--cds-font-size-body); }
+.ib-bar { height: 0.5rem; border-radius: 999px; background: var(--cds-chart-grid); overflow: hidden; }
+.ib-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--cds-chart-status-critical); width: 0; }
+.ib-bar.ok > span { background: var(--color-ok); }
+.ib-matrix { display: grid; gap: var(--cds-gap-md); }
+.ib-mrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--cds-gap-sm); }
+.ib-mrow h3 { grid-column: 1 / -1; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.ib-cell { border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-sm) var(--cds-pad-md); display: grid; gap: 2px; background: var(--color-bg); cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.ib-cell:focus-visible, .ib-chip:focus-visible, .ib-seg button:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.ib-cell[aria-pressed="true"] { border-color: var(--color-fg); }
+.ib-cell .k { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.ib-cell .v { font-variant-numeric: tabular-nums; }
+.ib-state { justify-self: start; font-size: var(--cds-font-size-caption); border-radius: 999px; padding: 0 var(--cds-pad-xs); border: 1px solid var(--color-border-line); color: var(--color-fg-muted); }
+.ib-state[data-state="running"] { color: var(--color-warn); border-color: currentColor; }
+.ib-state[data-state="finished"] { color: var(--color-ok); border-color: currentColor; }
+.ib-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; }
+.ib-seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; }
+.ib-seg button { font: inherit; font-size: var(--cds-font-size-caption); padding: 2px var(--cds-pad-sm); background: transparent; color: var(--color-fg-muted); border: 0; cursor: pointer; }
+.ib-seg button[aria-pressed="true"] { background: var(--color-bg); color: var(--color-fg); }
+.ib-chips { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); }
+.ib-chip { font: inherit; font-size: var(--cds-font-size-caption); min-width: 2rem; padding: 2px var(--cds-pad-xs); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: transparent; color: var(--color-fg); cursor: pointer; font-variant-numeric: tabular-nums; }
+.ib-chip[aria-pressed="true"] { background: var(--color-fg); color: var(--color-bg); }
+.ib-chip[data-status="queued"] { color: var(--color-fg-muted); }
+.ib-select { font: inherit; font-size: var(--cds-font-size-caption); padding: 2px var(--cds-pad-xs); background: var(--color-bg); color: var(--color-fg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); max-width: 100%; }
+.ib-chart { position: relative; min-width: 0; }
+.ib-chart svg { display: block; overflow: visible; }
+.ib-timeline { min-height: 22rem; }
+.ib-small { min-height: 13rem; }
+.ib-breakdown { min-height: 18rem; }
+.ib-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.ib-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ib-legend i { width: 0.7rem; height: 0.7rem; border-radius: 2px; display: inline-block; }
+.ib-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); max-width: 18rem; z-index: 2; }
+.ib-tip .h { color: var(--cds-text-secondary); }
+.ib-tip .r { display: flex; justify-content: space-between; gap: var(--cds-gap-md); font-variant-numeric: tabular-nums; }
+.ib-scroll { overflow: auto; max-height: 26rem; }
+.ib-graph-wrap { position: relative; }
+.ib-sticky { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-sm) var(--cds-gap-md); padding: var(--cds-pad-sm) 0; background: var(--color-bg); border-bottom: 1px solid var(--color-border-line); }
+.ib-sticky .grp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-xs); }
+.ib-sticky .lbl { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.ib-sticky .prog { font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.ib-sticky .sel { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font-family: inherit; text-decoration: underline; text-decoration-color: var(--color-border-line); }
+.ib-sticky .end { margin-left: auto; display: inline-flex; gap: var(--cds-gap-xs); align-items: center; }
+.ib [id] { scroll-margin-top: 4.5rem; }
+.ib-fold { border: 0; background: transparent; color: var(--color-fg-muted); cursor: pointer; padding: 0; margin-right: 0.35em; font: inherit; line-height: 1; }
+.ib-fold::before { content: '▾'; display: inline-block; transition: transform var(--cds-dur-fast, 120ms); }
+.ib-collapsed > .ib-sec-head .ib-fold::before, .ib-collapsed > .ib-sec-head > .ib-fold::before { transform: rotate(-90deg); }
+.ib-collapsed > :not(.ib-sec-head) { display: none !important; }
+.ib-collapsed.ib-card { gap: 0; align-self: start; }
+@media (max-width: 40rem) { .ib-sticky .end { margin-left: 0; } }
+.ib-graph { overflow: auto; max-height: 36rem; }
+.ib-graph a text { text-decoration: underline; text-decoration-color: var(--color-border-line); }
+.ib-chip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.ib-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.ib-table th, .ib-table td { text-align: left; padding: 4px var(--cds-pad-sm) 4px 0; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.ib-table td.wrap { white-space: normal; min-width: 14rem; }
+.ib-table th { position: sticky; top: 0; background: var(--color-panel); font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); }
+.ib-table th button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.ib-table .num { text-align: right; padding-right: var(--cds-pad-md); }
+.ib-table tr.sel td { background: var(--color-bg); }
+.ib-search { font: inherit; font-size: var(--cds-font-size-caption); padding: 2px var(--cds-pad-sm); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-bg); color: var(--color-fg); width: min(100%, 18rem); }
+.ib-cycles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--cds-gap-md); }
+.ib-cycles h3 { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.ib-bigrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--cds-gap-sm); }
+[data-dash-source-state=empty] { color: transparent; }
+[data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+.ib-failed { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); min-height: inherit; }
+.ib-failed::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ib-pulse { from { opacity: .35; } to { opacity: 1; } }
+  .ib-running { animation: ib-pulse var(--cds-dur-slow) var(--cds-ease-out) infinite alternate; }
+}
+</style>
+
+<div class="ib">
+  <nav class="ib-sticky" id="ib-sticky" aria-label="Page controls">
+    <span class="prog" id="st-prog">—</span>
+    <button type="button" class="sel" id="st-sel" title="Go to the selected step">—</button>
+    <div class="grp" id="st-filters"></div>
+    <div class="end">
+      <select id="st-jump" class="ib-select" aria-label="Jump to a panel"><option value="">Jump to…</option></select>
+      <button type="button" class="ib-chip" id="st-fold">Collapse all</button>
+    </div>
+  </nav>
+  <header class="ib-head" id="top">
+    <span class="ib-badge" id="data-badge">Mockup · sample data</span>
+    <h1 data-source="campaign" data-field="name" class="dash-skeleton">—</h1>
+    <p class="ib-take" id="takeaway"><span class="dash-skeleton">—</span></p>
+  </header>
+
+  <section class="ib-grid" id="overview" aria-label="Overview">
+    <article class="ib-card" id="intro">
+      <h2>What this measures</h2>
+      <div class="ib-prose">
+        <p>IncBench replays the same scripted edits on two real builds, scala/scala and scala/scala3, and records how long each incremental compile takes, where that time goes, and what Zinc invalidated to get there.</p>
+        <p>Three questions share one run:</p>
+        <ul>
+          <li><b>Compiler.</b> Is the integration compiler faster than the commit it is built on?</li>
+          <li><b>Zinc.</b> Is Zinc's own overhead lower with our fixes on 1.12.x than on plain 1.12.x?</li>
+          <li><b>Algorithm.</b> Does Merkle invalidation recompile less than name hashing, and does the work it skips outweigh what it costs?</li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="ib-card" id="summary">
+      <h2>Campaign</h2>
+      <div class="ib-bigrow">
+        <span class="ib-big" data-source="progress" data-field="stepsDone">—</span>
+        <span class="ib-note">of <span data-source="progress" data-field="stepsTotal">—</span> steps done · <span data-source="progress" data-field="sharePct">—</span>%</span>
+      </div>
+      <div class="ib-bar" data-source="progress"><span></span></div>
+      <dl class="ib-stats">
+        <div class="ib-stat"><dt>Lockstep at</dt><dd>step <span data-source="progress" data-field="currentStep">—</span> of <span data-source="campaign" data-field="stepsPerCell">—</span></dd></div>
+        <div class="ib-stat"><dt>Cells</dt><dd data-source="campaign" data-field="cells">—</dd></div>
+        <div class="ib-stat"><dt>Elapsed</dt><dd data-source="progress" data-field="elapsed">—</dd></div>
+        <div class="ib-stat"><dt>Remaining (estimate)</dt><dd data-source="progress" data-field="remaining">—</dd></div>
+        <div class="ib-stat"><dt>Started</dt><dd data-source="campaign" data-field="started">—</dd></div>
+        <div class="ib-stat"><dt>Machine</dt><dd data-source="campaign" data-field="machine">—</dd></div>
+      </dl>
+    </article>
+
+    <article class="ib-card" id="methodology">
+      <h2>Methodology</h2>
+      <div class="ib-prose">
+        <p>The matrix crosses two builds, two compilers and three Zincs: <span data-source="campaign" data-field="cells">—</span> cells, each running the same <span data-source="campaign" data-field="stepsPerCell">—</span> steps.</p>
+        <ul>
+          <li><b>Lockstep.</b> Every cell finishes step <i>k</i> before any cell starts <i>k</i>+1, in a shuffled order each step, so partial results always compare like with like and drift in the machine spreads evenly over cells.</li>
+          <li><b>In-process Zinc.</b> Each cell is one warm JVM running IncBench from that cell's Zinc checkout, calling Zinc directly with no sbt in between. Every cell compiles the same frozen export of its build; only the compiler and Zinc differ. Before step 1 each JVM is warmed with the clean build and a few small compiles; then a step applies its edit and compiles <span data-source="campaign" data-field="reps">—</span> time(s). This shows direction and attribution, not precise timings.</li>
+          <li><b>Two waves.</b> scala/scala's six cells run first, then scala/scala3's, so no more than six warm JVMs are alive at once.</li>
+          <li><b>Timings.</b> scalac's profiler gives time per phase; Zinc's time is the rest of each compile, split into invalidation, analysis read/write and setup. The API phase includes Zinc's hashing of each class, which runs inside it.</li>
+          <li><b>Invalidation.</b> Every cycle Zinc runs is recorded: the sources and classes it recompiled and why.</li>
+          <li><b>Correctness.</b> Each incremental result is compared with a clean build by classfile digest (IncBench <code>--verify</code>), untimed.</li>
+        </ul>
+      </div>
+    </article>
+  </section>
+
+  <section class="ib-section" id="cells">
+    <h2>Cells</h2>
+    <p class="ib-note">Incremental steps finished so far, every step but the clean build. Pick a cell to see its steps below.</p>
+    <div class="ib-matrix" id="matrix" data-source="cellTotals cells"></div>
+  </section>
+
+  <section class="ib-card" id="timeline-card">
+    <div class="ib-controls">
+      <h2 style="flex:1 1 auto">Timeline</h2>
+      <div class="ib-seg" role="group" aria-label="Timeline scale">
+        <button type="button" id="tl-time" aria-pressed="true">Elapsed time</button>
+        <button type="button" id="tl-step" aria-pressed="false">By step</button>
+      </div>
+    </div>
+    <p class="ib-note">One lane per cell. Each bar is one step, coloured by where its time went; dashed lines mark the lockstep barriers. <em>By step</em> lines up each step's start across lanes and keeps one time scale, so bar lengths stay comparable across steps. Click a bar to inspect that step.</p>
+    <div class="ib-legend" id="phase-legend"></div>
+    <div class="ib-chart ib-timeline" id="timeline" data-source="steps phases cells"></div>
+  </section>
+
+  <section class="ib-section" id="rollups">
+    <h2>Rollups</h2>
+    <article class="ib-card" id="effects-card">
+      <h2>Effect of each change</h2>
+      <p class="ib-note">Each row compares two cells over the incremental steps both have finished. Speedup is baseline time over variant time.</p>
+      <div class="ib-scroll">
+        <table class="ib-table" id="effects" data-source="effects" data-row-key="id">
+          <thead><tr>
+            <th data-field="comparison">Change</th>
+            <th data-field="corpus">Build</th>
+            <th data-field="baseline">Baseline</th>
+            <th data-field="variant">Variant</th>
+            <th class="num" data-field="steps">Steps</th>
+            <th class="num" data-field="baselineSec">Baseline s</th>
+            <th class="num" data-field="variantSec">Variant s</th>
+            <th class="num" data-field="speedup">Speedup ×</th>
+            <th class="num" data-field="baselineZincSec">Zinc s, baseline</th>
+            <th class="num" data-field="variantZincSec">Zinc s, variant</th>
+            <th class="num" data-field="baselineSources">Sources, baseline</th>
+            <th class="num" data-field="variantSources">Sources, variant</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </article>
+    <div class="ib-grid">
+      <article class="ib-card" id="perstep-s2">
+        <h2>scala/scala: each step by Zinc</h2>
+        <p class="ib-note">Base compiler, median wall time per step, log scale.</p>
+        <div class="ib-chart ib-small" id="chart-s2" data-source="steps"></div>
+      </article>
+      <article class="ib-card" id="perstep-s3">
+        <h2>scala/scala3: each step by Zinc</h2>
+        <p class="ib-note">Base compiler, median wall time per step, log scale.</p>
+        <div class="ib-chart ib-small" id="chart-s3" data-source="steps"></div>
+      </article>
+    </div>
+    <div class="ib-legend" id="zinc-legend"></div>
+  </section>
+
+  <section class="ib-section" id="inspect">
+    <h2>Inspect a step</h2>
+    <div class="ib-controls">
+      <label class="ib-note" for="cell-select">Cell</label>
+      <select id="cell-select" class="ib-select" data-source="cells"></select>
+      <span class="ib-note">Step</span>
+      <div class="ib-chips" id="step-chips" data-source="edits"></div>
+    </div>
+    <article class="ib-card" id="breakdown-card">
+      <h2 id="breakdown-title">Where the time went</h2>
+      <p class="ib-note" id="breakdown-edit" data-source="edits">—</p>
+      <div class="ib-chart ib-breakdown" id="breakdown" data-source="phases steps"></div>
+    </article>
+    <article class="ib-card" id="cycles-card">
+      <h2>Invalidation cycles</h2>
+      <p class="ib-note">The selected cell beside the same step under the other invalidation algorithm.</p>
+      <div class="ib-cycles">
+        <div>
+          <h3 id="cyc-a-title">—</h3>
+          <table class="ib-table" id="cyc-a" data-source="cycles" data-row-key="cell,step,cycle">
+            <thead><tr><th class="num" data-field="cycle">Cycle</th><th class="num" data-field="sources">Sources</th><th class="num" data-field="classes">Classes</th><th data-field="reason">Why</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div>
+          <h3 id="cyc-b-title">—</h3>
+          <table class="ib-table" id="cyc-b" data-source="cycles" data-row-key="cell,step,cycle">
+            <thead><tr><th class="num" data-field="cycle">Cycle</th><th class="num" data-field="sources">Sources</th><th class="num" data-field="classes">Classes</th><th data-field="reason">Why</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="ib-card" id="all-steps">
+    <div class="ib-controls">
+      <h2 style="flex:1 1 auto">Every step</h2>
+      <input id="step-search" class="ib-search" type="search" placeholder="Filter by cell, edit or status" aria-label="Filter steps">
+    </div>
+    <div class="ib-scroll">
+      <table class="ib-table" id="steps-table" data-source="steps" data-row-key="cell,step">
+        <thead><tr>
+          <th data-field="cell"><button type="button" data-sort="cell">Cell</button></th>
+          <th class="num" data-field="step"><button type="button" data-sort="step">Step</button></th>
+          <th data-field="edit"><button type="button" data-sort="edit">Edit</button></th>
+          <th data-field="status"><button type="button" data-sort="status">Status</button></th>
+          <th class="num" data-field="wallMs"><button type="button" data-sort="wallMs">Wall ms</button></th>
+          <th class="num" data-field="compileMs"><button type="button" data-sort="compileMs">scalac ms</button></th>
+          <th class="num" data-field="zincMs"><button type="button" data-sort="zincMs">Zinc ms</button></th>
+          <th class="num" data-field="sources"><button type="button" data-sort="sources">Sources</button></th>
+          <th class="num" data-field="classes"><button type="button" data-sort="classes">Classes</button></th>
+          <th class="num" data-field="cycles"><button type="button" data-sort="cycles">Cycles</button></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ib-card" id="edits-card">
+    <h2>The edit script</h2>
+    <p class="ib-note">The same steps run in every cell of a build. A revert undoes the step before it.</p>
+    <div class="ib-scroll">
+      <table class="ib-table" id="edits-table" data-source="edits" data-row-key="corpus,step">
+        <thead><tr><th data-field="corpus">Build</th><th class="num" data-field="step">Step</th><th data-field="kind">Kind</th><th data-field="target">File</th><th data-field="edit">Edit</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ib-card" id="branches-card">
+    <h2>Branches</h2>
+    <p class="ib-note">The integration branches the cells' Zincs and compilers are built from, drawn like <code>git log --graph</code> from each branch's base (hollow) to its tip. A commit that several branches share is drawn once, and the dots to its right say which branches have it. Merges name the PR they bring in. Bold chips are the campaign's branches.</p>
+    <div class="ib-chips" id="branch-repo-chips" role="group" aria-label="Repository"></div>
+    <div class="ib-chips" id="branch-chips" role="group" aria-label="Branches"></div>
+    <div class="ib-graph-wrap" id="branch-wrap"><div class="ib-graph" id="branch-graph" data-source="branches"></div></div>
+  </section>
+</div>
+
+<script>
+dash.calc('progress', {
+  inputs: ['campaign', 'steps'],
+  title: 'Campaign progress',
+  description: 'Steps finished across all cells, and elapsed and remaining time as hours and minutes.',
+  fn: (campaign, steps) => {
+    const c = campaign[0];
+    const done = steps.filter((s) => s.status === 'done').length;
+    const hm = (s) => Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' m';
+    return [{ stepsDone: done, stepsTotal: c.stepsTotal, sharePct: Math.round((100 * done) / c.stepsTotal), currentStep: c.currentStep, elapsed: hm(c.elapsedSec), remaining: hm(c.etaSec) }];
+  },
+});
+
+dash.calc('cellTotals', {
+  inputs: ['steps'],
+  title: 'Totals per cell',
+  description: 'Per cell: the clean build, and the incremental steps finished so far summed.',
+  fn: (steps) => {
+    const cells = [...new Set(steps.map((s) => s.cell))];
+    return cells.map((cell) => {
+      const rows = steps.filter((s) => s.cell === cell);
+      const done = rows.filter((r) => r.status === 'done');
+      const inc = done.filter((r) => r.kind !== 'clean');
+      const clean = done.find((r) => r.kind === 'clean');
+      const sum = (f) => inc.reduce((a, r) => a + r[f], 0);
+      const running = rows.some((r) => r.status === 'running');
+      const left = rows.some((r) => r.status !== 'done');
+      return {
+        cell,
+        stepsDone: done.length,
+        cleanSec: clean ? Math.round(clean.wallMs / 100) / 10 : null,
+        incrementalSec: Math.round(sum('wallMs') / 100) / 10,
+        zincSec: Math.round(sum('zincMs') / 100) / 10,
+        sources: sum('sources'),
+        cycles: sum('cycles'),
+        state: running ? 'running' : left ? 'waiting' : 'finished',
+      };
+    });
+  },
+});
+
+dash.calc('effects', {
+  inputs: ['steps'],
+  title: 'Effect of each change',
+  description: 'Pairs of cells that differ in one thing, compared over the incremental steps both have finished.',
+  fn: (steps) => {
+    const pairs = [
+      ['compiler', 'Compiler', 'released-released', 'integration-released'],
+      ['zinc', 'Zinc performance', 'released-released', 'released-perf'],
+      ['algo', 'Invalidation algorithm', 'released-perf', 'released-merkle'],
+      ['all', 'All together', 'released-released', 'integration-merkle'],
+    ];
+    const done = steps.filter((s) => s.status === 'done' && s.kind !== 'clean');
+    const out = [];
+    for (const [corpus, pre] of [['scala/scala', 's2'], ['scala/scala3', 's3']]) {
+      for (const [key, name, b, v] of pairs) {
+        const base = pre + '-' + b;
+        const vari = pre + '-' + v;
+        const bySteps = new Map(done.filter((s) => s.cell === base).map((s) => [s.step, s]));
+        const vs = done.filter((s) => s.cell === vari && bySteps.has(s.step));
+        const bs = vs.map((s) => bySteps.get(s.step));
+        const sum = (rows, f) => rows.reduce((a, r) => a + r[f], 0);
+        const r1 = (ms) => Math.round(ms / 100) / 10;
+        out.push({
+          id: pre + '-' + key, corpus, comparison: name, baseline: base, variant: vari, steps: vs.length,
+          baselineSec: r1(sum(bs, 'wallMs')), variantSec: r1(sum(vs, 'wallMs')),
+          speedup: vs.length ? Math.round((100 * sum(bs, 'wallMs')) / sum(vs, 'wallMs')) / 100 : null,
+          baselineZincSec: r1(sum(bs, 'zincMs')), variantZincSec: r1(sum(vs, 'zincMs')),
+          baselineSources: sum(bs, 'sources'), variantSources: sum(vs, 'sources'),
+        });
+      }
+    }
+    return out;
+  },
+});
+</script>
+
+<script>
+(() => {
+  const PHASES = [
+    ['frontend', 'Parse and name'], ['typer', 'Typer'], ['checks', 'Pickle and checks'], ['api', 'API extraction'],
+    ['deps', 'Dependencies'], ['transforms', 'Transforms'], ['backend', 'Backend'],
+    ['zinc-setup', 'Zinc: setup'], ['zinc-analysis', 'Zinc: analysis I/O'], ['zinc-invalidate', 'Zinc: invalidation'],
+  ];
+  const phaseFill = (g) => {
+    const i = PHASES.findIndex((p) => p[0] === g);
+    return i < 7 ? dash.colors[(i % 7) + 1] : dash.colors[0];
+  };
+  const phaseOpacity = (g) => (g === 'zinc-setup' ? 0.45 : g === 'zinc-analysis' ? 0.72 : g.startsWith('zinc') ? 1 : 0.6);
+  const ZINC = [['released', 'Zinc 1.12.x'], ['perf', 'Zinc 1.12.x + fixes'], ['merkle', 'Zinc 1.12.x + fixes + Merkle']];
+  const zincFill = (z) => (z === 'released' ? 'var(--cds-chart-muted)' : z === 'perf' ? dash.colors[2] : dash.colors[0]);
+  const fmt = d3.format(',');
+  const mb = (b) => (b >= 10 * 2 ** 30 ? d3.format(',.0f')(b / 2 ** 30) + ' GB' : b >= 2 ** 30 ? d3.format(',.1f')(b / 2 ** 30) + ' GB' : d3.format(',.0f')(b / 2 ** 20) + ' MB');
+  const allocOf = (parts) => (parts.some((p) => p.allocBytes != null) ? d3.sum(parts, (p) => p.allocBytes || 0) : null);
+  const secs = (ms) => (ms >= 10000 ? d3.format(',.0f')(ms / 1000) : d3.format(',.1f')(ms / 1000)) + ' s';
+  let scaleMode = 'time';
+  let sort = { key: 'step', dir: 1 };
+  const firstRows = new Set();
+
+  const ok = (...ids) => ids.every((id) => dash.data(id).status === 'ok');
+  const failed = (...ids) => ids.some((id) => ['error', 'connect', 'declined', 'missing'].includes(dash.data(id).status));
+  const showFailed = (el) => { el.replaceChildren(); const d = document.createElement('div'); d.className = 'ib-failed'; d.textContent = 'Failed to load'; el.appendChild(d); };
+  const skeleton = (el, on) => el.classList.toggle('dash-skeleton', on);
+  const params = () => {
+    const ids = ok('cells') ? dash.data('cells').data.map((c) => c.cell) : [];
+    const want = dash.params().cell;
+    return { cell: ids.includes(want) || !ids.length ? want || 's2-released-released' : ids[ids.length - 1], step: Number(dash.params().step || 4) };
+  };
+
+  const legend = (el, items) => {
+    el.replaceChildren(...items.map(([label, fill, op]) => {
+      const s = document.createElement('span');
+      const i = document.createElement('i');
+      i.style.background = fill;
+      i.style.opacity = op ?? 1;
+      s.append(i, document.createTextNode(label));
+      return s;
+    }));
+  };
+  legend(document.getElementById('phase-legend'), PHASES.map(([g, l]) => [l, phaseFill(g), phaseOpacity(g)]));
+  legend(document.getElementById('zinc-legend'), ZINC.map(([z, l]) => [l, zincFill(z)]));
+
+  const tip = (host) => {
+    let t = host.querySelector('.ib-tip');
+    if (!t) { t = document.createElement('div'); t.className = 'ib-tip'; t.hidden = true; host.appendChild(t); }
+    return {
+      show(event, head, rows) {
+        t.replaceChildren();
+        const h = document.createElement('div'); h.className = 'h'; h.textContent = head; t.appendChild(h);
+        for (const [k, v] of rows) {
+          const r = document.createElement('div'); r.className = 'r';
+          const a = document.createElement('span'); a.textContent = k;
+          const b = document.createElement('span'); b.textContent = v;
+          r.append(a, b); t.appendChild(r);
+        }
+        t.hidden = false;
+        const box = host.getBoundingClientRect();
+        const x = event.clientX - box.left + 12;
+        const y = event.clientY - box.top + 12;
+        const w = t.offsetWidth;
+        t.style.left = Math.max(0, Math.min(x, box.width - w)) + 'px';
+        t.style.top = y + 'px';
+      },
+      hide() { t.hidden = true; },
+    };
+  };
+
+  const textWidth = (svg, text, cls) => {
+    const n = svg.append('text').style('font-size', 'var(--cds-font-size-caption)').text(text);
+    const w = n.node().getComputedTextLength();
+    n.remove();
+    return w;
+  };
+
+  const scalaOf = (c) => (c.corpus === 'scala/scala3' ? '3' : '2.13') + ' ' + c.compiler;
+  const CELL_COLS = [['Scala', scalaOf], ['Zinc', (c) => c.zinc], ['Hashing', (c) => c.algo]];
+  const cellLabel = (c) => `Scala ${scalaOf(c)} · Zinc ${c.zinc}` + (c.zinc.toLowerCase().includes(String(c.algo).toLowerCase()) ? '' : ` · ${c.algo}`);
+
+  const FILTERS = [
+    ['corpus', 'Build', [['scala/scala', 'scala/scala'], ['scala/scala3', 'scala/scala3']]],
+    ['compilerKey', 'Compiler', [['released', 'base'], ['integration', 'integration']]],
+    ['zincKey', 'Zinc', [['released', '1.12.x'], ['perf', '+ fixes'], ['merkle', '+ fixes + Merkle']]],
+  ];
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+  };
+  const filt = {};
+  {
+    const saved = store.get('ib-filters', {});
+    for (const [dim, , opts] of FILTERS) {
+      const keep = (saved[dim] || []).filter((v) => opts.some((o) => o[0] === v));
+      filt[dim] = new Set(keep.length ? keep : opts.map((o) => o[0]));
+    }
+  }
+  const filtered = () => FILTERS.some(([dim, , opts]) => filt[dim].size < opts.length);
+  const cellOk = (c) => !!c && FILTERS.every(([dim]) => filt[dim].has(c[dim]));
+  const corpusOk = (corpus) => filt.corpus.has(corpus);
+  const cellById = () => (ok('cells') ? new Map(dash.data('cells').data.map((c) => [c.cell, c])) : new Map());
+  const cellIdOk = (id, byId) => (byId.size ? cellOk(byId.get(id)) : true);
+
+  function drawSticky() {
+    const host = document.getElementById('st-filters');
+    host.replaceChildren(...FILTERS.map(([dim, label, opts]) => {
+      const g = document.createElement('span'); g.className = 'grp'; g.setAttribute('role', 'group'); g.setAttribute('aria-label', label);
+      const l = document.createElement('span'); l.className = 'lbl'; l.textContent = label; g.appendChild(l);
+      for (const [v, text] of opts) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ib-chip'; b.textContent = text;
+        b.setAttribute('aria-pressed', String(filt[dim].has(v)));
+        b.title = 'Click to show or hide; alt-click to show only this';
+        b.addEventListener('click', (e) => {
+          if (e.altKey) filt[dim] = new Set([v]);
+          else if (filt[dim].has(v)) { filt[dim].delete(v); if (!filt[dim].size) filt[dim] = new Set(opts.map((o) => o[0])); }
+          else filt[dim].add(v);
+          store.set('ib-filters', Object.fromEntries(FILTERS.map(([d]) => [d, [...filt[d]]])));
+          drawAll();
+        });
+        g.appendChild(b);
+      }
+      return g;
+    }));
+    if (filtered()) {
+      const r = document.createElement('button'); r.type = 'button'; r.className = 'ib-chip'; r.textContent = 'Reset';
+      r.addEventListener('click', () => { for (const [dim, , opts] of FILTERS) filt[dim] = new Set(opts.map((o) => o[0])); store.set('ib-filters', {}); drawAll(); });
+      host.appendChild(r);
+    }
+    const prog = document.getElementById('st-prog');
+    if (ok('progress', 'campaign')) {
+      const p = dash.data('progress').data[0];
+      const c = dash.data('campaign').data[0];
+      prog.textContent = `Step ${p.currentStep} of ${c.stepsPerCell} · ${p.sharePct}% · ${p.remaining} left`;
+    }
+    const selBtn = document.getElementById('st-sel');
+    const sel = params();
+    const c = cellById().get(sel.cell);
+    selBtn.textContent = c ? `Inspecting ${cellLabel(c)}, step ${sel.step}` : '';
+  }
+  document.getElementById('st-sel').addEventListener('click', () => { const el = document.getElementById('inspect'); setFold(el, false); el.scrollIntoView({ behavior: 'smooth' }); });
+
+  const panels = [...document.querySelectorAll('.ib-card[id], .ib-section[id]')]
+    .filter((el) => el.querySelector(':scope > h2, :scope > .ib-controls > h2'));
+  const folded = new Set(store.get('ib-collapsed', []));
+  function setFold(el, on, quiet) {
+    if (!el || !el.classList.contains('ib-foldable')) return;
+    el.classList.toggle('ib-collapsed', on);
+    el.querySelector(':scope > .ib-sec-head .ib-fold, :scope > .ib-sec-head > .ib-fold, :scope > .ib-controls .ib-fold')?.setAttribute('aria-expanded', String(!on));
+    if (on) folded.add(el.id); else folded.delete(el.id);
+    if (!quiet) { store.set('ib-collapsed', [...folded]); drawFoldAll(); if (!on) drawAll(); }
+  }
+  const drawFoldAll = () => {
+    document.getElementById('st-fold').textContent = panels.every((p) => p.classList.contains('ib-collapsed')) ? 'Expand all' : 'Collapse all';
+  };
+  const jump = document.getElementById('st-jump');
+  for (const el of panels) {
+    const h = el.querySelector(':scope > h2, :scope > .ib-controls > h2');
+    const head = h.parentElement === el ? h : h.parentElement;
+    const title = h.textContent.trim();
+    head.classList.add('ib-sec-head');
+    el.classList.add('ib-foldable');
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'ib-fold';
+    b.setAttribute('aria-label', 'Show or hide ' + title); b.setAttribute('aria-expanded', 'true');
+    b.addEventListener('click', () => setFold(el, !el.classList.contains('ib-collapsed')));
+    h.prepend(b);
+    jump.appendChild(new Option(title, el.id));
+    if (folded.has(el.id)) setFold(el, true, true);
+  }
+  drawFoldAll();
+  jump.addEventListener('change', () => {
+    const el = document.getElementById(jump.value);
+    jump.value = '';
+    if (!el) return;
+    for (let p = el; p; p = p.parentElement?.closest('.ib-foldable')) setFold(p, false);
+    el.scrollIntoView({ behavior: 'smooth' });
+  });
+  document.getElementById('st-fold').addEventListener('click', () => {
+    const collapse = !panels.every((p) => p.classList.contains('ib-collapsed'));
+    for (const p of panels) setFold(p, collapse, true);
+    store.set('ib-collapsed', [...folded]);
+    drawFoldAll();
+    if (!collapse) drawAll();
+  });
+
+  function drawHeader() {
+    const take = document.getElementById('takeaway');
+    if (!ok('effects', 'progress')) { take.replaceChildren(); const s = document.createElement('span'); s.className = 'dash-skeleton'; s.textContent = '—'; take.appendChild(s); return; }
+    const e = dash.data('effects').data;
+    const s2 = e.find((r) => r.id === 's2-algo');
+    const s3 = e.find((r) => r.id === 's3-algo');
+    const p = dash.data('progress').data[0];
+    take.replaceChildren();
+    const span = (src, field, where, text) => {
+      const n = document.createElement('b');
+      n.dataset.source = src; n.dataset.field = field; if (where) n.dataset.where = where;
+      n.textContent = text; return n;
+    };
+    const parts = [['scala/scala', s2], ['scala/scala3', s3]].filter(([, r]) => r && r.steps > 0);
+    take.append('Lockstep is at step ', span('progress', 'currentStep', null, String(p.currentStep)), '.');
+    parts.forEach(([corpus, r], i) => {
+      const id = r.id;
+      take.append(i === 0 ? ' On the incremental steps finished so far, Merkle invalidation recompiles ' : '; and ',
+        span('effects', 'variantSources', 'id=' + id, fmt(r.variantSources)), ` sources on ${corpus} where name hashing recompiles `,
+        span('effects', 'baselineSources', 'id=' + id, fmt(r.baselineSources)));
+    });
+    if (parts.length) take.append('.');
+  }
+
+  function drawSummary() {
+    if (ok('campaign')) document.getElementById('data-badge').textContent = dash.data('campaign').data[0].sample === false ? 'Live run · ' + dash.data('campaign').data[0].cells + ' cells' : 'Mockup · sample data';
+    const bar = document.querySelector('#summary .ib-bar > span');
+    if (!ok('progress')) { bar.style.width = '0'; return; }
+    const p = dash.data('progress').data[0];
+    for (const el of document.querySelectorAll('#overview [data-source="progress"][data-field]')) el.textContent = String(p[el.dataset.field]);
+    bar.style.width = p.sharePct + '%';
+    if (ok('campaign')) {
+      const c = dash.data('campaign').data[0];
+      for (const el of document.querySelectorAll('[data-source="campaign"][data-field]')) {
+        el.classList.remove('dash-skeleton');
+        el.textContent = String(c[el.dataset.field]);
+      }
+    }
+  }
+
+  function drawMatrix() {
+    const el = document.getElementById('matrix');
+    if (failed('steps', 'cells')) return showFailed(el);
+    if (!ok('cellTotals', 'cells')) { el.replaceChildren(); return; }
+    const cells = dash.data('cells').data;
+    const totals = new Map(dash.data('cellTotals').data.map((t) => [t.cell, t]));
+    const sel = params().cell;
+    el.replaceChildren();
+    for (const corpus of ['scala/scala', 'scala/scala3']) {
+      if (!cells.some((x) => x.corpus === corpus && cellOk(x))) continue;
+      const row = document.createElement('div'); row.className = 'ib-mrow';
+      const h = document.createElement('h3'); h.textContent = corpus; row.appendChild(h);
+      for (const c of cells.filter((x) => x.corpus === corpus && cellOk(x))) {
+        const t = totals.get(c.cell);
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ib-cell';
+        b.setAttribute('aria-pressed', String(c.cell === sel));
+        b.addEventListener('click', () => dash.setParams({ cell: c.cell }));
+        const k = document.createElement('span'); k.className = 'k'; k.textContent = cellLabel(c);
+        const st = document.createElement('span'); st.className = 'ib-state'; st.dataset.state = t.state;
+        st.dataset.source = 'cellTotals'; st.dataset.field = 'state'; st.dataset.where = 'cell=' + c.cell; st.textContent = t.state;
+        const v = document.createElement('span'); v.className = 'v';
+        const mk = (field, text) => { const s = document.createElement('span'); s.dataset.source = 'cellTotals'; s.dataset.field = field; s.dataset.where = 'cell=' + c.cell; s.textContent = text; return s; };
+        v.append(mk('incrementalSec', String(t.incrementalSec)), ' s incremental · ', mk('sources', fmt(t.sources)), ' sources');
+        const v2 = document.createElement('span'); v2.className = 'k';
+        v2.append('Zinc ', mk('zincSec', String(t.zincSec)), ' s · ', mk('cycles', String(t.cycles)), ' cycles · clean ', mk('cleanSec', t.cleanSec == null ? '—' : String(t.cleanSec)), ' s');
+        b.append(k, st, v, v2);
+        row.appendChild(b);
+      }
+      el.appendChild(row);
+    }
+  }
+
+  function phaseRows(cell, step, phases) {
+    return PHASES.map(([g]) => phases.find((p) => p.cell === cell && p.step === step && p.group === g)).filter(Boolean);
+  }
+
+  function drawTimeline() {
+    const host = document.getElementById('timeline');
+    if (failed('steps', 'phases', 'cells')) return showFailed(host);
+    if (!ok('steps', 'phases', 'cells', 'campaign')) { host.replaceChildren(); return; }
+    const steps = dash.data('steps').data;
+    const phases = dash.data('phases').data;
+    const cells = dash.data('cells').data;
+    const camp = dash.data('campaign').data[0];
+    const reps = camp.reps;
+    const sel = params();
+    const W = host.clientWidth;
+    host.replaceChildren();
+    const lane = 20;
+    const gap = 4;
+    const groupGap = 14;
+    const order = [];
+    for (const corpus of ['scala/scala', 'scala/scala3']) for (const c of cells.filter((x) => x.corpus === corpus && cellOk(x))) order.push(c);
+    if (!order.length) { const d = document.createElement('div'); d.className = 'ib-failed'; d.textContent = 'No cells match the filters'; host.appendChild(d); return; }
+    const firstS3 = order.findIndex((c) => c.corpus === 'scala/scala3');
+    const svg = d3.select(host).append('svg').attr('width', '100%');
+    const colW = CELL_COLS.map(([h, f]) => Math.max(textWidth(svg, h), ...order.map((c) => textWidth(svg, f(c)))) + 12);
+    const colX = colW.map((_, i) => d3.sum(colW.slice(0, i)));
+    const labelW = d3.sum(colW);
+    const top = 22;
+    const yOf = (i) => top + i * (lane + gap) + (firstS3 > 0 && i >= firstS3 ? groupGap : 0);
+    const H = yOf(order.length) + 22;
+    svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    const x0 = labelW;
+    const x1 = W - 8;
+    const nSteps = camp.stepsPerCell;
+    const done = steps.filter((s) => s.status === 'done');
+    let x, barX, barW;
+    if (scaleMode === 'time') {
+      const end = camp.elapsedSec + camp.etaSec;
+      x = d3.scaleLinear([0, end], [x0, x1]);
+      barX = (s) => x(s.start);
+      barW = (s) => Math.max(2, x(s.start + (s.wallMs * reps) / 1000) - x(s.start));
+      svg.append('rect').attr('x', x(camp.elapsedSec)).attr('y', top - 4).attr('width', Math.max(0, x1 - x(camp.elapsedSec))).attr('height', H - top - 18)
+        .style('fill', 'var(--cds-chart-grid)').style('opacity', 0.5);
+      svg.append('text').attr('x', x1).attr('y', H - 4).attr('text-anchor', 'end').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text('remaining, estimated');
+      const ax = svg.append('g').attr('transform', `translate(0,${H - 18})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((x1 - x0) / 110))).tickFormat((s) => (s >= 3600 ? d3.format('.1f')(s / 3600) + ' h' : Math.round(s / 60) + ' m')));
+      ax.attr('font-size', null).attr('font-family', null);
+      ax.selectAll('text').style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)');
+      ax.selectAll('line,path').style('stroke', 'var(--cds-chart-axis)');
+      for (let k = 2; k <= nSteps; k++) {
+        const starts = done.filter((s) => s.step === k).map((s) => s.start);
+        if (!starts.length) continue;
+        const bx = x(Math.min(...starts));
+        svg.append('line').attr('x1', bx).attr('x2', bx).attr('y1', top - 6).attr('y2', H - 18).style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
+      }
+    } else {
+      // Every step starts at the same x in every lane, on one time scale: a column is as wide as
+      // its slowest cell, and steps not yet run get the mean width of those that have.
+      const ks = d3.range(1, nSteps + 1);
+      const known = new Map(ks.map((k) => [k, d3.max(done.filter((s) => s.step === k), (s) => s.wallMs * reps)]));
+      const mean = d3.mean([...known.values()].filter((v) => v)) || 1;
+      const colMs = new Map(ks.map((k) => [k, known.get(k) || mean]));
+      const gapPx = 6;
+      const pxPerMs = Math.max(0, x1 - x0 - gapPx * (nSteps - 1)) / d3.sum(ks, (k) => colMs.get(k));
+      const colStart = new Map();
+      let cx = x0;
+      for (const k of ks) { colStart.set(k, cx); cx += colMs.get(k) * pxPerMs + gapPx; }
+      x = (k) => colStart.get(k);
+      barX = (s) => colStart.get(s.step);
+      barW = (s) => Math.max(2, s.wallMs * reps * pxPerMs);
+      for (const k of ks) {
+        const w = colMs.get(k) * pxPerMs;
+        if (!known.get(k)) svg.append('rect').attr('x', colStart.get(k)).attr('y', top - 4).attr('width', w).attr('height', H - top - 18).style('fill', 'var(--cds-chart-grid)').style('opacity', 0.5);
+        if (w >= 14) svg.append('text').attr('x', colStart.get(k) + w / 2).attr('y', H - 4).attr('text-anchor', 'middle').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text(k);
+        if (k > 1) svg.append('line').attr('x1', colStart.get(k) - gapPx / 2).attr('x2', colStart.get(k) - gapPx / 2).attr('y1', top - 6).attr('y2', H - 18).style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
+      }
+      // A scale bar, since the columns share one time scale but no common origin.
+      const nice = [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 1800, 3600].map((v) => v * 1000);
+      const barMs = nice.filter((v) => v * pxPerMs <= (x1 - x0) / 5).pop() || nice[0];
+      const sbW = barMs * pxPerMs;
+      const sb = svg.append('g').attr('transform', `translate(${x1 - sbW},${top - 14})`);
+      sb.append('line').attr('x1', 0).attr('x2', sbW).attr('y1', 0).attr('y2', 0).style('stroke', 'var(--color-fg-muted)');
+      sb.append('line').attr('x1', 0).attr('x2', 0).attr('y1', -3).attr('y2', 3).style('stroke', 'var(--color-fg-muted)');
+      sb.append('line').attr('x1', sbW).attr('x2', sbW).attr('y1', -3).attr('y2', 3).style('stroke', 'var(--color-fg-muted)');
+      sb.append('text').attr('x', -4).attr('y', 4).attr('text-anchor', 'end').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text(barMs >= 60000 ? barMs / 60000 + ' m' : barMs / 1000 + ' s');
+    }
+    CELL_COLS.forEach(([h], j) => svg.append('text').attr('x', colX[j]).attr('y', 12).style('font-size', 'var(--cds-font-size-caption)').style('font-weight', 600).style('fill', 'var(--color-fg-muted)').text(h));
+    const t = tip(host);
+    order.forEach((c, i) => {
+      const y = yOf(i);
+      CELL_COLS.forEach(([, f], j) => svg.append('text').attr('x', colX[j]).attr('y', y + lane / 2 + 4).style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg)').text(f(c)));
+      svg.append('line').attr('x1', x0).attr('x2', x1).attr('y1', y + lane / 2).attr('y2', y + lane / 2).style('stroke', 'var(--cds-chart-grid)');
+      for (const s of steps.filter((r) => r.cell === c.cell)) {
+        if (s.status === 'running') {
+          const rx = scaleMode === 'time' ? x(s.start) : barX(s);
+          svg.append('rect').attr('class', 'ib-running').attr('x', rx).attr('y', y + 3).attr('width', 6).attr('height', lane - 6).attr('rx', 2).style('fill', 'var(--color-warn)');
+          continue;
+        }
+        if (s.status !== 'done') continue;
+        const g = svg.append('g').style('cursor', 'pointer');
+        const parts = phaseRows(c.cell, s.step, phases);
+        const total = d3.sum(parts, (p) => p.ms) || 1;
+        let off = barX(s);
+        const w = barW(s);
+        for (const p of parts) {
+          const pw = (w * p.ms) / total;
+          g.append('rect').attr('x', off).attr('y', y + 2).attr('width', Math.max(0, pw)).attr('height', lane - 4).style('fill', phaseFill(p.group)).style('opacity', phaseOpacity(p.group));
+          off += pw;
+        }
+        if (c.cell === sel.cell && s.step === sel.step) {
+          g.append('rect').attr('x', barX(s) - 1.5).attr('y', y + 0.5).attr('width', w + 3).attr('height', lane - 1).attr('rx', 3).style('fill', 'none').style('stroke', 'var(--color-fg)').style('stroke-width', 1.5);
+        }
+        g.on('click', () => dash.setParams({ cell: c.cell, step: s.step }))
+          .on('mousemove', (event) => t.show(event, `${cellLabel(c)} · step ${s.step}`, [
+            ['Edit', s.edit], ['Wall (median)', secs(s.wallMs)], ['scalac', secs(s.compileMs)], ['Zinc', secs(s.zincMs)],
+            ['Sources', fmt(s.sources)], ['Cycles', String(s.cycles)],
+            ...(allocOf(parts) != null ? [['Allocated, scalac', mb(allocOf(parts))]] : []),
+            ...parts.filter((p) => p.allocBytes != null).map((p) => ['\u00a0\u00a0\u00a0' + PHASES.find((q) => q[0] === p.group)[1], `${mb(p.allocBytes)} · ${secs(p.ms)}`]),
+          ]))
+          .on('mouseleave', () => t.hide());
+      }
+    });
+  }
+
+  function drawPerStep(hostId, prefix) {
+    const host = document.getElementById(hostId);
+    host.closest('article').hidden = !corpusOk(prefix === 's2' ? 'scala/scala' : 'scala/scala3');
+    if (failed('steps')) return showFailed(host);
+    if (!ok('steps')) { host.replaceChildren(); return; }
+    const comp = filt.compilerKey.has('released') ? 'released' : 'integration';
+    host.parentElement.querySelector('.ib-note').textContent = `${comp === 'released' ? 'Base' : 'Integration'} compiler, median wall time per step, log scale.`;
+    const steps = dash.data('steps').data.filter((s) => s.status === 'done' && s.cell.startsWith(prefix + '-' + comp + '-') && filt.zincKey.has(s.cell.split('-')[2]));
+    const W = host.clientWidth;
+    const H = 200;
+    host.replaceChildren();
+    const svg = d3.select(host).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    const ks = d3.range(1, (ok('campaign') ? dash.data('campaign').data[0].stepsPerCell : 12) + 1);
+    const maxMs = d3.max(steps, (s) => s.wallMs) || 1000;
+    const y = d3.scaleLog([300, maxMs * 1.2], [H - 22, 8]).clamp(true);
+    const tickVals = [1000, 10000, 100000].filter((v) => v <= maxMs * 1.2);
+    const left = Math.max(...tickVals.map((v) => textWidth(svg, secs(v)))) + 8;
+    const band = d3.scaleBand(ks, [left, W - 4]).paddingInner(0.25);
+    const sub = d3.scaleBand(ZINC.map((z) => z[0]), [0, band.bandwidth()]).paddingInner(0.1);
+    for (const v of tickVals) {
+      svg.append('line').attr('x1', left).attr('x2', W - 4).attr('y1', y(v)).attr('y2', y(v)).style('stroke', 'var(--cds-chart-grid)');
+      svg.append('text').attr('x', left - 6).attr('y', y(v) + 4).attr('text-anchor', 'end').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text(secs(v));
+    }
+    for (const k of ks) svg.append('text').attr('x', band(k) + band.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text(k);
+    const t = tip(host);
+    for (const s of steps) {
+      const z = s.cell.split('-')[2];
+      svg.append('rect').attr('x', band(s.step) + sub(z)).attr('width', sub.bandwidth()).attr('y', y(Math.max(300, s.wallMs))).attr('height', Math.max(1, H - 22 - y(Math.max(300, s.wallMs)))).attr('rx', 2).style('fill', zincFill(z))
+        .on('mousemove', (event) => t.show(event, `Step ${s.step}: ${s.edit}`, [[ZINC.find((q) => q[0] === z)[1], secs(s.wallMs)], ['Sources', fmt(s.sources)]]))
+        .on('mouseleave', () => t.hide());
+    }
+  }
+
+  function drawEffects() {
+    const table = document.getElementById('effects');
+    const body = table.tBodies[0];
+    if (!ok('effects')) { body.replaceChildren(); return; }
+    const byId = cellById();
+    const rows = dash.data('effects').data.filter((r) => r.steps > 0 && cellIdOk(r.baseline, byId) && cellIdOk(r.variant, byId));
+    const name = (id) => (byId.has(id) ? cellLabel(byId.get(id)) : id);
+    body.replaceChildren(...rows.map((r) => {
+      const tr = document.createElement('tr'); tr.dataset.key = r.id;
+      const cells = [r.comparison, r.corpus, name(r.baseline), name(r.variant), String(r.steps), fmt(r.baselineSec), fmt(r.variantSec), r.speedup == null ? '—' : String(r.speedup), fmt(r.baselineZincSec), fmt(r.variantZincSec), fmt(r.baselineSources), fmt(r.variantSources)];
+      cells.forEach((v, i) => { const td = document.createElement('td'); td.textContent = v; if (i >= 4) td.className = 'num'; tr.appendChild(td); });
+      return tr;
+    }));
+  }
+
+  function drawControls() {
+    const sel = params();
+    const select = document.getElementById('cell-select');
+    if (ok('cells')) {
+      const cells = dash.data('cells').data;
+      const shown = cells.filter((c) => cellOk(c) || c.cell === sel.cell);
+      if ([...select.options].map((o) => o.value).join() !== shown.map((c) => c.cell).join()) select.replaceChildren(...shown.map((c) => new Option(cellLabel(c), c.cell)));
+      select.value = sel.cell;
+    }
+    const chips = document.getElementById('step-chips');
+    if (ok('steps', 'edits')) {
+      const steps = dash.data('steps').data.filter((s) => s.cell === sel.cell);
+      chips.replaceChildren(...steps.map((s) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ib-chip';
+        b.textContent = String(s.step); b.title = s.edit; b.dataset.status = s.status;
+        b.setAttribute('aria-pressed', String(s.step === sel.step));
+        b.addEventListener('click', () => dash.setParams({ step: s.step }));
+        return b;
+      }));
+    }
+  }
+  document.getElementById('cell-select').addEventListener('change', (e) => dash.setParams({ cell: e.target.value }));
+
+  function drawBreakdown() {
+    const host = document.getElementById('breakdown');
+    const editEl = document.getElementById('breakdown-edit');
+    if (failed('phases', 'steps')) return showFailed(host);
+    if (!ok('phases', 'steps', 'cells', 'edits')) { host.replaceChildren(); return; }
+    const sel = params();
+    const cells = dash.data('cells').data;
+    const corpus = cells.find((c) => c.cell === sel.cell).corpus;
+    const ed = dash.data('edits').data.find((e) => e.corpus === corpus && e.step === sel.step);
+    editEl.dataset.field = 'edit';
+    editEl.dataset.where = `corpus=${corpus}&step=${sel.step}`;
+    editEl.textContent = ed ? ed.edit : '—';
+    document.getElementById('breakdown-title').textContent = `Where the time went: ${corpus}, step ${sel.step}`;
+    const steps = dash.data('steps').data.filter((s) => s.corpus === corpus && s.step === sel.step);
+    const phases = dash.data('phases').data;
+    const doneRows = steps.filter((s) => s.status === 'done');
+    host.replaceChildren();
+    if (!doneRows.length) {
+      const p = document.createElement('p'); p.className = 'ib-note'; p.textContent = 'No cell has finished this step yet.'; host.appendChild(p); return;
+    }
+    const W = host.clientWidth;
+    const lane = 22;
+    const H = steps.length * (lane + 6) + 24;
+    const svg = d3.select(host).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+    const label = (s) => cellLabel(cells.find((c) => c.cell === s.cell));
+    const left = Math.max(...steps.map((s) => textWidth(svg, label(s)))) + 12;
+    const maxMs = d3.max(doneRows, (s) => s.wallMs);
+    const endW = textWidth(svg, secs(maxMs)) + 8;
+    const x = d3.scaleLinear([0, maxMs], [left, W - endW]);
+    const t = tip(host);
+    steps.sort((a, b) => a.cell.localeCompare(b.cell)).forEach((s, i) => {
+      const y = i * (lane + 6);
+      svg.append('text').attr('x', 0).attr('y', y + lane / 2 + 4).style('font-size', 'var(--cds-font-size-caption)')
+        .style('fill', s.cell === sel.cell ? 'var(--color-fg)' : 'var(--color-fg-muted)').style('font-weight', s.cell === sel.cell ? 600 : 400).text(label(s));
+      if (s.status !== 'done') {
+        svg.append('text').attr('x', left).attr('y', y + lane / 2 + 4).style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text(s.status);
+        return;
+      }
+      let off = left;
+      for (const p of phaseRows(s.cell, s.step, phases)) {
+        const w = x(p.ms) - x(0);
+        svg.append('rect').attr('x', off).attr('y', y).attr('width', Math.max(0, w)).attr('height', lane).style('fill', phaseFill(p.group)).style('opacity', phaseOpacity(p.group))
+          .on('mousemove', (event) => t.show(event, label(s), [[p.phase, secs(p.ms)], ['Share', d3.format('.0%')(p.ms / s.wallMs)], ...(p.allocBytes != null ? [['Allocated', mb(p.allocBytes)], ['Rate', d3.format(',.0f')(p.allocBytes / 2 ** 20 / Math.max(p.ms, 1) * 1000) + ' MB/s']] : [])]))
+          .on('mouseleave', () => t.hide());
+        off += w;
+      }
+      svg.append('text').attr('x', off + 6).attr('y', y + lane / 2 + 4).style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg)').text(secs(s.wallMs));
+    });
+  }
+
+  function cycleTable(id, titleId, cell, step, cellsData) {
+    const table = document.getElementById(id);
+    const c = cellsData.find((x) => x.cell === cell);
+    document.getElementById(titleId).textContent = c ? cellLabel(c) : '—';
+    const rows = dash.data('cycles').data.filter((r) => r.cell === cell && r.step === step);
+    const body = table.tBodies[0];
+    if (!rows.length) {
+      const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.className = 'ib-note';
+      td.textContent = 'No cycles recorded for this step yet.'; tr.appendChild(td); body.replaceChildren(tr); return;
+    }
+    body.replaceChildren(...rows.map((r) => {
+      const tr = document.createElement('tr'); tr.dataset.key = [r.cell, r.step, r.cycle].join(',');
+      [String(r.cycle), fmt(r.sources), fmt(r.classes), r.reason].forEach((v, i) => { const td = document.createElement('td'); td.textContent = v; td.className = i < 3 ? 'num' : 'wrap'; tr.appendChild(td); });
+      return tr;
+    }));
+  }
+
+  function drawCycles() {
+    if (!ok('cycles', 'cells')) { document.querySelectorAll('#cycles-card tbody').forEach((b) => b.replaceChildren()); return; }
+    const sel = params();
+    const cells = dash.data('cells').data;
+    const [corpusKey, comp, z] = sel.cell.split('-');
+    const sibling = `${corpusKey}-${comp}-${z === 'merkle' ? 'perf' : 'merkle'}`;
+    cycleTable('cyc-a', 'cyc-a-title', sel.cell, sel.step, cells);
+    cycleTable('cyc-b', 'cyc-b-title', sibling, sel.step, cells);
+  }
+
+  function drawStepsTable() {
+    const table = document.getElementById('steps-table');
+    const body = table.tBodies[0];
+    if (!ok('steps')) { body.replaceChildren(); return; }
+    const q = document.getElementById('step-search').value.trim().toLowerCase();
+    const sel = params();
+    const byId = cellById();
+    let rows = dash.data('steps').data.filter((s) => cellIdOk(s.cell, byId) && (!q || `${s.cell} ${s.edit} ${s.status} ${s.kind}`.toLowerCase().includes(q)));
+    rows = rows.slice().sort((a, b) => {
+      const va = a[sort.key], vb = b[sort.key];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb))) * sort.dir || a.cell.localeCompare(b.cell);
+    });
+    for (const th of table.tHead.rows[0].cells) {
+      const k = th.dataset.field;
+      th.setAttribute('aria-sort', k === sort.key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none');
+    }
+    const n = (v) => (v == null ? '—' : fmt(v));
+    body.replaceChildren(...rows.map((s) => {
+      const tr = document.createElement('tr'); tr.dataset.key = `${s.cell},${s.step}`;
+      if (s.cell === sel.cell && s.step === sel.step) tr.className = 'sel';
+      [s.cell, String(s.step), s.edit, s.status, n(s.wallMs), n(s.compileMs), n(s.zincMs), n(s.sources), n(s.classes), n(s.cycles)].forEach((v, i) => {
+        const td = document.createElement('td'); td.textContent = v; if (i === 1 || i >= 4) td.className = 'num'; if (i === 2) td.classList.add('wrap'); tr.appendChild(td);
+      });
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', () => dash.setParams({ cell: s.cell, step: s.step }));
+      return tr;
+    }));
+  }
+  document.getElementById('step-search').addEventListener('input', drawStepsTable);
+  document.querySelectorAll('#steps-table [data-sort]').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.sort;
+    sort = { key: k, dir: sort.key === k ? -sort.dir : 1 };
+    drawStepsTable();
+  }));
+
+  function drawEdits() {
+    const body = document.getElementById('edits-table').tBodies[0];
+    if (!ok('edits')) { body.replaceChildren(); return; }
+    body.replaceChildren(...dash.data('edits').data.filter((e) => corpusOk(e.corpus)).map((e) => {
+      const tr = document.createElement('tr'); tr.dataset.key = `${e.corpus},${e.step}`;
+      [e.corpus, String(e.step), e.kind, e.target, e.edit].forEach((v, i) => { const td = document.createElement('td'); td.textContent = v; if (i === 1) td.className = 'num'; if (i === 4) td.className = 'wrap'; tr.appendChild(td); });
+      return tr;
+    }));
+  }
+
+  let branchSel = null;
+  let branchRepo = 'zinc';
+  function drawBranches() {
+    const host = document.getElementById('branch-graph');
+    const repoChips = document.getElementById('branch-repo-chips');
+    const chips = document.getElementById('branch-chips');
+    if (failed('branches')) return showFailed(host);
+    if (!ok('branches')) { host.replaceChildren(); return; }
+    // The loader may hand list fields over as JSON text or comma-separated text rather than arrays.
+    const list = (v) => {
+      if (Array.isArray(v)) return v;
+      if (v == null || v === '') return [];
+      if (typeof v === 'string') {
+        if (v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { /* fall through */ } }
+        return v.split(',').map((x) => x.trim()).filter(Boolean);
+      }
+      return [];
+    };
+    const bool = (v) => v === true || v === 'true';
+    const iso = (v) => (v instanceof Date ? v.toISOString() : String(v ?? ''));
+    const rows = dash.data('branches').data.map((r) => (r.kind === 'commit'
+      ? { ...r, branches: list(r.branches), parents: list(r.parents), refs: list(r.refs), base: bool(r.base), date: iso(r.date) }
+      : { ...r, campaign: bool(r.campaign) }));
+    const branches = rows.filter((r) => r.kind === 'branch');
+    if (!branchSel) branchSel = new Set(branches.filter((b) => b.campaign).map((b) => b.branch));
+    const chip = (text, pressed, onClick, strong, color) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'ib-chip';
+      if (color) { const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = color; b.appendChild(sw); }
+      b.appendChild(document.createTextNode(text));
+      if (pressed != null) b.setAttribute('aria-pressed', String(pressed));
+      if (strong) b.style.fontWeight = 600;
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    const repos = [...new Set(branches.map((b) => b.repo))];
+    repoChips.replaceChildren(...repos.map((r) => chip(r, r === branchRepo, () => { branchRepo = r; drawBranches(); })));
+    const inRepo = branches.filter((b) => b.repo === branchRepo);
+    const colorOf = new Map(inRepo.map((b, i) => [b.branch, dash.colors[(i % 7) + 1]]));
+    const setAll = (pred) => { for (const b of inRepo) { if (pred(b)) branchSel.add(b.branch); else branchSel.delete(b.branch); } drawBranches(); };
+    chips.replaceChildren(
+      ...inRepo.map((b) => chip(b.branch.replace('integration/', '') + (b.label ? ` (${b.label})` : ''), branchSel.has(b.branch), () => {
+        if (branchSel.has(b.branch)) branchSel.delete(b.branch); else branchSel.add(b.branch);
+        drawBranches();
+      }, b.campaign, colorOf.get(b.branch))),
+      chip('All', null, () => setAll(() => true)),
+      chip('Campaign', null, () => setAll((b) => b.campaign)),
+    );
+    const sel = inRepo.filter((b) => branchSel.has(b.branch));
+    const selNames = sel.map((b) => b.branch);
+    const commits = rows.filter((r) => r.kind === 'commit' && r.repo === branchRepo && r.branches.some((b) => branchSel.has(b)));
+    host.replaceChildren();
+    if (!commits.length) {
+      const d = document.createElement('div'); d.className = 'ib-failed'; d.textContent = 'No branch selected'; host.appendChild(d); return;
+    }
+    const visible = new Set(commits.map((c) => c.sha));
+    const lanes = [];
+    const pos = new Map();
+    const edges = [];
+    let nLanes = 1;
+    commits.forEach((c, r) => {
+      let col = lanes.indexOf(c.sha);
+      if (col < 0) { col = lanes.indexOf(null); if (col < 0) col = lanes.length; }
+      for (let j = 0; j < lanes.length; j++) if (lanes[j] === c.sha) lanes[j] = null;
+      pos.set(c.sha, { r, col });
+      c.parents.filter((p) => visible.has(p)).forEach((p, k) => {
+        let lane = col;
+        if (k > 0) { lane = lanes.indexOf(p); if (lane < 0) { lane = lanes.indexOf(null); if (lane < 0) lane = lanes.length; } }
+        lanes[lane] = p;
+        edges.push({ from: c.sha, to: p, lane });
+      });
+      nLanes = Math.max(nLanes, lanes.length, col + 1);
+      while (lanes.length && lanes[lanes.length - 1] === null) lanes.pop();
+    });
+    const ROW = 20;
+    const COL = 12;
+    const top = 12;
+    const gx = (col) => 8 + col * COL;
+    const gy = (r) => top + r * ROW;
+    const laneColor = (l) => dash.colors[(l % 7) + 1];
+    const dotsX = gx(nLanes) + 6;
+    const textX = dotsX + selNames.length * 10 + 8;
+    const svg = d3.select(host).append('svg');
+    const subjectOf = (c) => (c.member ? c.subject.replace(/^Merge \S+: /, '') : c.subject);
+    const refW = (c) => d3.sum(c.refs, (r) => textWidth(svg, r) + 14);
+    const lineW = d3.max(commits, (c) => refW(c) + (c.member ? textWidth(svg, c.member) + 8 : 0) + textWidth(svg, subjectOf(c)) + 90) || 0;
+    const W = Math.max(host.clientWidth, textX + lineW);
+    const H = gy(commits.length - 1) + ROW;
+    svg.attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    for (const e of edges) {
+      const a = pos.get(e.from), b = pos.get(e.to);
+      const ya = gy(a.r), yb = gy(b.r);
+      let d = `M${gx(a.col)},${ya}`;
+      if (b.r === a.r + 1 || e.lane === b.col && e.lane === a.col) d += ` C${gx(a.col)},${ya + ROW / 2} ${gx(b.col)},${yb - ROW / 2} ${gx(b.col)},${yb}`;
+      else d += ` C${gx(a.col)},${ya + ROW / 2} ${gx(e.lane)},${ya + ROW / 2} ${gx(e.lane)},${ya + ROW} L${gx(e.lane)},${yb - ROW} C${gx(e.lane)},${yb - ROW / 2} ${gx(b.col)},${yb - ROW / 2} ${gx(b.col)},${yb}`;
+      svg.append('path').attr('d', d).style('fill', 'none').style('stroke', laneColor(e.lane)).style('stroke-width', 1.5);
+    }
+    const t = tip(document.getElementById('branch-wrap'));
+    const caption = (sel) => sel.style('font-size', 'var(--cds-font-size-caption)');
+    commits.forEach((c, r) => {
+      const p = pos.get(c.sha);
+      const y = gy(r);
+      const g = svg.append('g');
+      g.append('rect').attr('x', 0).attr('y', y - ROW / 2).attr('width', W).attr('height', ROW).style('fill', 'transparent');
+      g.append('circle').attr('cx', gx(p.col)).attr('cy', y).attr('r', c.base ? 4.5 : 3.5)
+        .style('fill', c.base ? 'var(--color-bg)' : laneColor(p.col)).style('stroke', c.base ? 'var(--color-fg)' : 'none').style('stroke-width', 1.5);
+      selNames.forEach((b, i) => {
+        if (c.branches.includes(b)) g.append('circle').attr('cx', dotsX + i * 10 + 4).attr('cy', y).attr('r', 3).style('fill', colorOf.get(b));
+      });
+      let x = textX;
+      for (const ref of c.refs) {
+        const w = textWidth(svg, ref) + 10;
+        const isTip = ref.startsWith('integration/');
+        g.append('rect').attr('x', x).attr('y', y - 8).attr('width', w).attr('height', 16).attr('rx', 3)
+          .style('fill', isTip ? colorOf.get(ref) || 'var(--color-fg)' : 'none').style('stroke', isTip ? 'none' : 'var(--color-fg-muted)');
+        caption(g.append('text').attr('x', x + 5).attr('y', y + 4)).style('fill', isTip ? 'var(--color-bg)' : 'var(--color-fg-muted)').text(ref);
+        x += w + 4;
+      }
+      if (c.member) {
+        const parent = c.url ? g.append('a').attr('href', c.url).attr('target', '_blank').attr('rel', 'noopener') : g;
+        caption(parent.append('text').attr('x', x).attr('y', y + 4)).style('fill', 'var(--color-fg)').style('font-weight', 600).text(c.member);
+        x += textWidth(svg, c.member) + 8;
+      }
+      caption(g.append('text').attr('x', x).attr('y', y + 4)).style('fill', c.member || c.base ? 'var(--color-fg)' : 'var(--color-fg-muted)').text(subjectOf(c));
+      g.on('mousemove', (event) => t.show(event, c.sha, [
+        ['Date', c.date.slice(0, 16).replace('T', ' ')],
+        ['In', c.branches.map((b) => b.replace('integration/', '')).join(', ')],
+        ...(c.base ? [['Base of', c.branches.length + ' branch' + (c.branches.length > 1 ? 'es' : '')]] : []),
+      ])).on('mouseleave', () => t.hide());
+    });
+  }
+
+  const setMode = (m) => {
+    scaleMode = m;
+    document.getElementById('tl-time').setAttribute('aria-pressed', String(m === 'time'));
+    document.getElementById('tl-step').setAttribute('aria-pressed', String(m === 'step'));
+    drawTimeline();
+  };
+  document.getElementById('tl-time').addEventListener('click', () => setMode('time'));
+  document.getElementById('tl-step').addEventListener('click', () => setMode('step'));
+
+  function drawAll() {
+    drawSticky();
+    const h1 = document.querySelector('.ib-head h1');
+    if (ok('campaign')) { h1.textContent = dash.data('campaign').data[0].name; skeleton(h1, false); }
+    drawHeader();
+    drawSummary();
+    drawMatrix();
+    drawTimeline();
+    drawEffects();
+    drawPerStep('chart-s2', 's2');
+    drawPerStep('chart-s3', 's3');
+    drawControls();
+    drawBreakdown();
+    drawCycles();
+    drawStepsTable();
+    drawEdits();
+    drawBranches();
+  }
+  dash.onData(drawAll);
+
+  const named = document.getElementById(location.hash.slice(1));
+  if (named) { named.scrollIntoView(); dash.setLink(named.id); }
+})();
+</script>

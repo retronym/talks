@@ -13,7 +13,9 @@ in the warm JVM.
 """
 
 import argparse
+import datetime
 import json
+import re
 from pathlib import Path
 
 BUILDS = {"s2": "scala/scala", "s3": "scala/scala3"}
@@ -52,6 +54,16 @@ def main():
         if l.strip() and not l.startswith("#"):
             name, file = l.split("\t")[:2]
             files.setdefault(name, file)
+    only = camp["options"].get("only")
+    reps = camp["options"]["reps"]
+    # The steps every cell runs, as IncBench orders them: the clean build, each edit and its revert
+    # per repetition, then the clean build in the warm JVM per repetition.
+    plan = [("clean", None)]
+    for name in files:
+        if not only or re.search(only, name):
+            for _ in range(reps):
+                plan += [(name, files[name]), (name + "-revert", files[name])]
+    plan += [("clean-build", None)] * reps
 
     cells, steps, phases, cycles = [], [], [], []
     names = [c["name"] for c in camp["cells"]]
@@ -113,12 +125,38 @@ def main():
                              ("zinc-setup", "Setup and the rest", setup)]:
             phases.append(dict(cell=r["cell"], step=step, group=g, phase=label, ms=round(ms)))
 
-    per_cell = max(s["step"] for s in steps)
+    per_cell = len(plan)
     done = len(steps)
-    last = max(s["start"] + s["wallMs"] / 1000 for s in steps)
+    have = {(s["cell"], s["step"]) for s in steps}
+    for corpus in {c["corpus"] for c in cells}:
+        for k, (name, target) in enumerate(plan, 1):
+            kind = "clean" if name in ("clean", "clean-build") else "revert" if name.endswith("-revert") else "edit"
+            desc = {"clean": "Clean build in a fresh JVM", "clean-build": "Clean build in the warm JVM"}.get(name, name)
+            edit_rows.setdefault((corpus, k), dict(corpus=corpus, step=k, kind=kind, target=target or "—", edit=desc))
+    for c in cells:
+        for k, (name, target) in enumerate(plan, 1):
+            if (c["cell"], k) not in have:
+                e = edit_rows[(c["corpus"], k)]
+                steps.append(dict(cell=c["cell"], corpus=c["corpus"], step=k, kind=e["kind"], target=e["target"],
+                                  edit=e["edit"], status="queued", order=None, sources=None, classes=None, cycles=None))
+    finished = [k for k in range(1, per_cell + 1) if all((c["cell"], k) in have for c in cells)]
+    current = next((k for k in range(1, per_cell + 1) if k not in finished), per_cell)
+    ends = [s["start"] + s["wallMs"] / 1000 for s in steps if s["status"] == "done"]
+    last = max(ends) if ends else 0
+    started = datetime.datetime.fromisoformat(camp["start"])
+    progress = {}
+    pf = a.run_dir / "progress.json"
+    if pf.exists():
+        progress = json.loads(pf.read_text())
+    running = progress.get("next") is not None or len(finished) < per_cell
+    elapsed = (datetime.datetime.now(started.tzinfo) - started).total_seconds() if running else last
+    rounds_done = max(len(finished) - 1, 0)
+    per_round = (elapsed - min((s["start"] for s in steps if s["status"] == "done" and s["step"] == 2), default=elapsed)) / rounds_done if rounds_done else 0
+    eta = per_round * (per_cell - len(finished)) if running else 0
+    steps.sort(key=lambda s: (s["cell"], s["step"]))
     campaign = [dict(name=a.name or Path(a.run_dir).name, started=camp["start"], reps=camp["options"]["reps"],
                      cells=a.cells_total or len(names), stepsPerCell=per_cell, stepsTotal=per_cell * (a.cells_total or len(names)),
-                     stepsDone=done, currentStep=per_cell, elapsedSec=round(last), etaSec=0,
+                     stepsDone=done, currentStep=current, elapsedSec=round(elapsed), etaSec=round(eta),
                      machine=camp.get("machine", "—"), sample=False,
                      commits={c["name"]: c["commit"][:10] for c in camp["cells"]})]
     a.out_dir.mkdir(parents=True, exist_ok=True)

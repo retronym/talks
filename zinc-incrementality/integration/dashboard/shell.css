@@ -1,0 +1,28 @@
+/* The design tokens page.html reads, which the hosted dashboard type otherwise provides. */
+:root {
+  color-scheme: light dark;
+  --font-anthropic-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-anthropic-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --cds-font-size-caption: 12px; --cds-font-size-body: 14px; --cds-font-size-heading: 16px; --cds-font-size-title: 28px;
+  --cds-font-weight-medium: 600;
+  --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 12px; --cds-gap-xl: 24px;
+  --cds-pad-xs: 4px; --cds-pad-sm: 6px; --cds-pad-md: 10px; --cds-pad-lg: 16px;
+  --cds-radius: 8px; --cds-dur-fast: 120ms; --cds-dur-slow: 700ms; --cds-ease-out: cubic-bezier(.2, .8, .2, 1);
+  --color-bg: #ffffff; --color-panel: #f7f7f5; --color-fg: #1f1f1d; --color-fg-muted: #6b6b66; --color-border-line: #e2e1dc;
+  --color-ok: #3d8b4f; --color-warn: #c98a1b; --color-bad: #c0453a;
+  --cds-text-secondary: #6b6b66; --cds-border: #d6d5cf; --cds-surface-popover: #ffffff; --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.12);
+  --cds-chart-grid: #ecebe6; --cds-chart-axis: #c9c8c1; --cds-chart-reference: #9a9992; --cds-chart-muted: #b5b4ad; --cds-chart-status-critical: #c0453a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1b1b1a; --color-panel: #232322; --color-fg: #ecebe6; --color-fg-muted: #9c9b95; --color-border-line: #353533;
+    --cds-text-secondary: #9c9b95; --cds-border: #3d3d3b; --cds-surface-popover: #262625; --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.5);
+    --cds-chart-grid: #2c2c2a; --cds-chart-axis: #4a4a47; --cds-chart-reference: #6f6e69; --cds-chart-muted: #5b5a56;
+  }
+}
+html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 14px; }
+body { padding: 0 16px 48px; max-width: 1400px; margin: 0 auto; }
+code { font-size: 0.92em; }
+a { color: inherit; }
+.dash-skeleton { color: transparent; background: var(--cds-chart-grid); border-radius: 4px; }
+.ib-select, .ib-search { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 2px 6px; }

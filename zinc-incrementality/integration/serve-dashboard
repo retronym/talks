@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Serve the IncBench campaign dashboard locally, live from a lockstep run.
+
+    serve-dashboard DATA_DIR [--port 8770] [--branches FILE]
+
+DATA_DIR holds the datasets `lockstep-dash` writes (campaign.json, cells.json, ...), usually
+`<lockstep OUT_DIR>/dash`, which `lockstep --on-step` refreshes after every round. The page polls
+for changes every few seconds. `branches.json` comes from DATA_DIR, or from --branches
+(`branch-map`'s output). Only binds to 127.0.0.1.
+"""
+
+import argparse
+import http.server
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent / "dashboard"
+NAMES = ["campaign", "cells", "steps", "phases", "cycles", "edits", "branches"]
+
+
+def page():
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IncBench Campaign</title>
+<style>{(HERE / "shell.css").read_text()}</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script>{(HERE / "shell.js").read_text()}</script>
+</head><body>
+<p style="font-size:12px;color:var(--color-fg-muted);margin:8px 0 0">Local dashboard · <span id="shell-updated">loading</span></p>
+{(HERE / "page.html").read_text()}
+</body></html>"""
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("data_dir", type=Path)
+    ap.add_argument("--port", type=int, default=8770)
+    ap.add_argument("--branches", type=Path)
+    a = ap.parse_args()
+
+    def source(name):
+        if name == "branches" and a.branches:
+            return a.branches
+        return a.data_dir / f"{name}.json"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def send(self, body, ctype, code=200):
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            path = self.path.split("?")[0].split("#")[0]
+            if path in ("/", "/index.html"):
+                return self.send(page().encode(), "text/html; charset=utf-8")
+            if path == "/data/version":
+                mtimes = [source(n).stat().st_mtime_ns for n in NAMES if source(n).exists()]
+                return self.send(str(max(mtimes, default=0)).encode(), "text/plain")
+            name = path.removeprefix("/data/").removesuffix(".json")
+            if path.startswith("/data/") and name in NAMES and source(name).exists():
+                return self.send(source(name).read_bytes(), "application/json")
+            self.send(b"not found", "text/plain", 404)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    print(f"http://127.0.0.1:{a.port}/  (data: {a.data_dir})", flush=True)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

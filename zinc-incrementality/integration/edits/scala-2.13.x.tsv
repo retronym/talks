@@ -1,0 +1,7 @@
+# The scala/scala campaign's edit script: name, file, find, replace (\n for a newline). Each edit is followed by its revert.
+subcomponent-body	compiler/src/main/scala/scala/tools/nsc/SubComponent.scala	  def phaseNewFlags: Long = 0\n	  def phaseNewFlags: Long = 0L\n
+subcomponent-add-member	compiler/src/main/scala/scala/tools/nsc/SubComponent.scala	abstract class SubComponent {	abstract class SubComponent {\n  def zincSbtCheck: Int = 1
+list-last-body	library/src/main/scala/scala/collection/immutable/List.scala	throw new NoSuchElementException("List.last")	throw new NoSuchElementException("List.last: empty")
+position-add-member	reflect/src/main/scala/scala/reflect/internal/util/Position.scala	  def pos: Position = this\n	  def pos: Position = this\n  def zincSbtCheck: Int = 1\n
+typer-private-member	compiler/src/main/scala/scala/tools/nsc/typechecker/Typers.scala	    private def unit = context.unit\n	    private def unit = context.unit\n    private def zincSbtCheck: Int = 1\n
+boxes-java-body	library/src/main/java/scala/runtime/BoxesRunTime.java	        if (x == y) return true;\n        return equals2(x, y);	        if (x == y) { return true; }\n        return equals2(x, y);
