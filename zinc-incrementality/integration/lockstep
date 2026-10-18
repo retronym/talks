@@ -169,12 +169,16 @@ def main():
     ap.add_argument("--inc-option", action="append",
                     default=["pipelining=false", "recompileAllFraction=0.5", "recompileOnMacroDef=false"])
     ap.add_argument("--jvm-opt", action="append")
+    ap.add_argument("--analysis-compression", type=int,
+                    help="the deflate level, 0 to 9, every cell's analysis store compresses at (sbt.analysis.compression)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--bridge-cache", type=Path, default=Path.home() / "code/.integration/bridges",
                     help="where bridges compiled by a locally built Scala are kept")
     ap.add_argument("--on-step", help="a shell command run after each round's barrier")
     a = ap.parse_args()
     jvm_opts = a.jvm_opt or ["-Xmx4g", "-Xss4m"]
+    if a.analysis_compression is not None:
+        jvm_opts = jvm_opts + [f"-Dsbt.analysis.compression={a.analysis_compression}"]
     out = a.out_dir.resolve()
     (out / "cells").mkdir(parents=True, exist_ok=True)
     cells = []
