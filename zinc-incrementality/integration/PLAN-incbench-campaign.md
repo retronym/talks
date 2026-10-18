@@ -70,6 +70,8 @@ Generated sources (scala/scala3's unpacked scalajs-ir) are captured by the expor
 
 A build that compiles Scala itself must keep its compiler's own jars off the compile classpath, or the bootstrap compiler's `scala-reflect` and bundled ASM shadow the classes being compiled; `export-build --no-scala-instance` sets `classpath.scalaInstance = false` for that.
 
+The export compiles Java and Scala sources in one mixed batch, as IncBench does for every build, even where the build's own `compileOrder` is `JavaThenScala` (scala/scala's `library`). scalac then sees Java methods' parameter names from source rather than from javac's classfiles, which lose them without `-parameters`, and that changes the names in erasure's bridges and in eta-expansions of Java methods. So scala/scala is exported, and its reference build built, with `-parameters` added to `javacOptions` (`--sbt-arg 'set ThisBuild / javacOptions += "-parameters"'`), and both orders give the same names.
+
 ### 4. The compiler is a set of jars, built from source on both sides
 
 Both builds compile themselves with an earlier compiler: STARR for scala/scala, the reference compiler for scala/scala3. In-process, that compiler is just the jars IncBench hands Zinc as its `ScalaInstance`, so a compiler cell swaps jars and leaves the frozen sources alone. Nothing has to be published under a version the build would accept.
@@ -83,7 +85,7 @@ For Scala 2 the bridge is compiled from the cell's Zinc checkout. For Scala 3 th
 
 ### 5. Lockstep, one compile at a time, one build at a time
 
-An orchestrator, a Python script in this directory beside `build-integration`, starts every cell's JVM once and sends it commands on stdin: `prepare` (load the build, clean build, warm up), `step k`, `shutdown`. Each command answers with one JSON line.
+An orchestrator, `lockstep` in this directory, starts every cell's JVM once, as plain `java` on the cell checkout's test classpath, running `IncBench --serve` on the cell's own copy of the frozen build. A cell loads the build, compiles it clean and warms up, then prints `{"ready":<step>}` and waits; `step` on stdin runs that step, and its result lines come back before the next `ready`. Cells start one at a time, so their clean builds don't compete either.
 
 For each step *k*:
 
@@ -135,11 +137,13 @@ scala/scala is the tracer bullet: every stage of the pipeline works end to end f
 
 - [x] Dashboard mockup with sample data.
 - [x] **M1 Harness PR on 1.12.x.** retronym/zinc#71 has IncBench, `PhaseTimings` and `--verify`. It is in `bench-1.12.x` (new), `develop-1.12.x` and `merkle-1.12.x`, byte-identical in all three; rz#48 has a fixup that deletes its copy.
-- [x] **M2 scala/scala export.** `export-build` froze `library`, `reflect` and `compiler` at `integration/2.13.x`'s base (scala/scala@e690fca106) into `~/code/.integration/builds/scala-2.13.x-e690fca106`. Through IncBench on `bench-1.12.x` it builds clean in 22 s warm, and 6,876 of its 6,877 classfiles are byte-identical to sbt's build of the same commit. The odd one out differs only in a parameter's name in debug info, in a Scala override of a method from a Java source. rz#71 gained the two fixes this needed: IncBench keeps a build's own options, and `classpath.scalaInstance = false`.
+- [x] **M2 scala/scala export.** `export-build` froze `library`, `reflect` and `compiler` at `integration/2.13.x`'s base (scala/scala@e690fca106) into `~/code/.integration/builds/scala-2.13.x-e690fca106`. Through IncBench on `bench-1.12.x` it builds clean in 22 s warm, and 6,876 of its 6,877 classfiles are byte-identical to sbt's build of the same commit. The odd one out differed only in a parameter's name, in erasure's bridge for a Scala override of a Java method: sbt's build compiles the library's Java first and reads its classfiles, which lack parameter names, while IncBench compiles both in one batch. With `-parameters` added to `javacOptions` on both sides (decision 3), all 6,877 match. rz#71 gained the two fixes this needed: IncBench keeps a build's own options, and `classpath.scalaInstance = false`.
 - [x] **M3 Measurements.** `IncBench --profile` (rz#71) adds to each step's JSON line scalac's time and allocation per phase, Zinc's own steps (`PhaseTimings`, plus `zincCall` around the whole call into Zinc and `analysisWrite` after it, which with wall time account for the step), and each module's incremental run with every cycle: sources and classes compiled, compile time, and the API changes with their names that invalidate the next cycle. Two findings from the first runs on scala/scala:
   - A body-only edit spends ~550 of ~750 ms writing the 6.7 MB analysis, on both Zinc lines.
   - On Merkle, the first addition of a member to `SubComponent` cascades over four cycles (1, 6, 16, 246 sources) where name hashing stops at three (1, 30, 32). From cycle 2 on, every recompiled class reports changes only in names it inherits from `Any`/`AnyRef`/`Object`: Merkle's hashes of inherited library members differ between the clean build's run and a later one. The revert stops at 1 → 6, as it did through sbt.
 - [ ] **M4 Lockstep.** The `serve` mode and the orchestrator, first with the two scala/scala cells that differ only in algorithm, then all six.
+  - [x] `IncBench --serve` and `--warmup` (rz#71), and `lockstep` in this directory. The two algorithm cells (`develop-1.12.x`, `merkle-1.12.x`) ran the M3 edits in lockstep in about six minutes, with every step verified `same` against a clean build. The Merkle cascade on adding a member to `SubComponent` (1, 6, 16, 246 sources vs. name hashing's 1, 30, 32) reproduces there.
+  - [ ] All six cells, which needs the compiler cells' jars (decision 4).
 - [ ] **M5 Live dashboard.** Real files replace the sample data, pushed after each lockstep step.
 - [ ] **M6 Wave 1: scala/scala,** all six cells, with a short write-up of what each comparison showed.
 - [ ] **M7 scala/scala3.** Its export, the compiler jars for both sides, and a check that Scala 3's profiler output reads like Scala 2's.

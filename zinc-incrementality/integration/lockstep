@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Run IncBench cells in lockstep, one compile at a time.
+
+    lockstep OUT_DIR --build BUILD --edits EDITS --cell NAME=ZINC_CHECKOUT... [options]
+
+Each cell is one Zinc checkout running `IncBench --serve` on its own copy of a frozen build (from
+`export-build`). Cells start one at a time: each loads the build, compiles it clean and warms up,
+then waits. For each step, the cells run it in a shuffled order, one at a time, so no two compiles
+compete for the machine; after the last of them, the barrier writes the results and runs
+`--on-step`. Every cell must be waiting for the same step, or the campaign stops.
+
+OUT_DIR gets:
+
+    campaign.json            the cells, their commits and the options
+    steps.jsonl              IncBench's JSON lines, each with its cell, round and order in the round
+    progress.json            the last finished round and the step that comes next
+    cells/<name>/build       the cell's copy of the build, and IncBench's siblings of it
+    cells/<name>/incbench.log  what IncBench wrote that isn't a result
+"""
+
+import argparse
+import datetime
+import json
+import os
+import random
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+MAIN = "sbt.internal.inc.bench.IncBench"
+
+
+def log(msg):
+    print(f"[lockstep] {msg}", file=sys.stderr, flush=True)
+
+
+def git(checkout, *args):
+    return subprocess.run(["git", *args], cwd=checkout, text=True, capture_output=True, check=True).stdout.strip()
+
+
+def test_classpath(checkout, out):
+    """Compiles the checkout's bridge and IncBench, and returns IncBench's classpath."""
+    r = subprocess.run(
+        ["sbt", "--batch", "--no-server", "--color=false",
+         "compilerBridge2_13/compile", "zincScripted/Test/compile", "export zincScripted/Test/fullClasspath"],
+        cwd=checkout, text=True, capture_output=True)
+    out.write_text(r.stdout + r.stderr)
+    if r.returncode != 0:
+        sys.exit(f"{checkout}: sbt failed, see {out}")
+    return [l for l in r.stdout.splitlines() if l.startswith("/")][-1]
+
+
+def copy_build(src, dst):
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("target"))
+
+
+class Cell:
+    def __init__(self, name, checkout, dir):
+        self.name, self.checkout, self.dir = name, checkout, dir
+        self.proc = None
+        self.ready = None
+
+    def start(self, classpath, jvm_opts, args):
+        self.log = open(self.dir / "incbench.log", "a")
+        self.proc = subprocess.Popen(
+            ["java", *jvm_opts, "-cp", classpath, MAIN, *args],
+            cwd=self.dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, text=True, bufsize=1)
+
+    def results(self):
+        """IncBench's results until it waits for the next step, which is then `ready`."""
+        out = []
+        for line in self.proc.stdout:
+            s = line.strip()
+            if s.startswith("[info] "):
+                s = s[len("[info] "):]
+            obj = None
+            if s.startswith("{"):
+                try:
+                    obj = json.loads(s)
+                except ValueError:
+                    pass
+            if obj is None:
+                self.log.write(line)
+            elif "ready" in obj:
+                self.ready = (obj["ready"], obj["rep"])
+                return out
+            else:
+                out.append(obj)
+        self.ready = None
+        self.proc.wait()
+        return out
+
+    def step(self):
+        self.proc.stdin.write("step\n")
+        self.proc.stdin.flush()
+        return self.results()
+
+    def shutdown(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.stdin.write("shutdown\n")
+            self.proc.stdin.flush()
+            self.proc.wait()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("out_dir", type=Path)
+    ap.add_argument("--build", type=Path, required=True)
+    ap.add_argument("--edits", type=Path, required=True)
+    ap.add_argument("--cell", action="append", required=True, help="NAME=ZINC_CHECKOUT")
+    ap.add_argument("--reps", type=int, default=1)
+    ap.add_argument("--warmup", type=int, default=2)
+    ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--profile", action="store_true")
+    ap.add_argument("--only")
+    ap.add_argument("--inc-option", action="append", default=["pipelining=false", "recompileAllFraction=0.5"])
+    ap.add_argument("--jvm-opt", action="append")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--on-step", help="a shell command run after each round's barrier")
+    a = ap.parse_args()
+    jvm_opts = a.jvm_opt or ["-Xmx4g", "-Xss4m"]
+    out = a.out_dir.resolve()
+    (out / "cells").mkdir(parents=True, exist_ok=True)
+    cells = []
+    for spec in a.cell:
+        name, checkout = spec.split("=", 1)
+        checkout = Path(checkout).expanduser().resolve()
+        d = out / "cells" / name
+        d.mkdir(parents=True, exist_ok=True)
+        cells.append(Cell(name, checkout, d))
+
+    start = time.time()
+    campaign = {
+        "start": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "build": str(a.build.resolve()), "edits": str(a.edits.resolve()),
+        "options": {k: v for k, v in vars(a).items() if k not in ("out_dir", "build", "edits", "cell", "on_step")},
+        "jvmOptions": jvm_opts,
+        "cells": [{"name": c.name, "checkout": str(c.checkout), "commit": git(c.checkout, "rev-parse", "HEAD"),
+                   "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD")} for c in cells],
+    }
+    (out / "campaign.json").write_text(json.dumps(campaign, indent=2) + "\n")
+    steps = open(out / "steps.jsonl", "w")
+
+    def record(cell, round, order, results):
+        for r in results:
+            steps.write(json.dumps({"cell": cell.name, "round": round, "order": order, **r}) + "\n")
+        steps.flush()
+
+    try:
+        for c in cells:
+            log(f"{c.name}: building {c.checkout}")
+            cp = test_classpath(c.checkout, c.dir / "sbt.log")
+            build = c.dir / "build"
+            copy_build(a.build.resolve(), build)
+            args = ["--build", str(build), "--edits", str(a.edits.resolve()), "--reps", str(a.reps),
+                    "--warmup", str(a.warmup), "--label", c.name, "--serve", "--out", str(c.dir / "incbench.jsonl")]
+            args += [x for kv in a.inc_option for x in ("--inc-option", kv)]
+            args += (["--verify"] if a.verify else []) + (["--profile"] if a.profile else [])
+            args += (["--only", a.only] if a.only else [])
+            log(f"{c.name}: clean build and warm-up")
+            c.start(cp, jvm_opts, args)
+            record(c, 0, 0, c.results())
+            log(f"{c.name}: ready for {c.ready}")
+        rng = random.Random(a.seed)
+        round = 0
+        while any(c.ready for c in cells):
+            readies = {c.ready for c in cells}
+            if len(readies) != 1:
+                sys.exit("cells are out of step: " + ", ".join(f"{c.name} at {c.ready}" for c in cells))
+            round += 1
+            (name, rep), = readies
+            order = cells[:]
+            rng.shuffle(order)
+            log(f"round {round}: {name} rep {rep}, order {[c.name for c in order]}")
+            for i, c in enumerate(order):
+                t = time.time()
+                record(c, round, i + 1, c.step())
+                log(f"  {c.name}: {time.time() - t:.1f}s")
+            nxt = next(iter({c.ready for c in cells}))
+            (out / "progress.json").write_text(json.dumps({
+                "round": round, "step": name, "rep": rep, "next": nxt and {"step": nxt[0], "rep": nxt[1]},
+                "elapsedSeconds": round_(time.time() - start)}) + "\n")
+            if a.on_step:
+                subprocess.run(a.on_step, shell=True, env={**os.environ, "LOCKSTEP_DIR": str(out), "LOCKSTEP_ROUND": str(round)})
+        log(f"done after {round} rounds in {time.time() - start:.0f}s")
+    finally:
+        for c in cells:
+            c.shutdown()
+
+
+def round_(x):
+    return round(x, 1)
+
+
+if __name__ == "__main__":
+    main()
