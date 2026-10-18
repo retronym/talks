@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Turn a lockstep run into the campaign dashboard's datasets.
+
+    lockstep-dash RUN_DIR OUT_DIR [--edits EDITS] [--name NAME] [--cells-total N]
+
+Reads RUN_DIR (from `lockstep`: campaign.json and steps.jsonl) and writes OUT_DIR/{campaign,cells,
+steps,phases,cycles,edits}.json, one JSON array each, in the shapes the dashboard reads.
+
+A cell's name is its dashboard id, `s2|s3`-`released|integration`-`released|perf|merkle`: build,
+compiler (base or integration) and Zinc (1.12.x, + fixes, + fixes + Merkle). Step 1 is the clean
+build that starts each cell; steps 2.. are lockstep's rounds in order, ending with the clean build
+in the warm JVM.
+"""
+
+import argparse
+import json
+from pathlib import Path
+
+BUILDS = {"s2": "scala/scala", "s3": "scala/scala3"}
+COMPILERS = {"released": "base", "integration": "integration"}
+ZINCS = {"released": ("1.12.x", "name hashing"), "perf": ("1.12.x + fixes", "name hashing"),
+         "merkle": ("1.12.x + fixes + Merkle", "Merkle")}
+# scalac phases by the dashboard's groups; every other phase is a transform.
+GROUPS = {
+    "frontend": {"<init phase>", "parser", "namer", "packageobjects"},
+    "typer": {"typer"},
+    "checks": {"superaccessors", "extmethods", "pickler", "refchecks", "posttyper", "inlinedPositions"},
+    "api": {"xsbt-api", "sbt-api"},
+    "deps": {"xsbt-dependency", "xsbt-analyzer", "sbt-deps"},
+    "backend": {"jvm", "genBCode"},
+}
+INVALIDATE = ["initialChanges", "invalidateInitial", "detectAPIChanges", "invalidate", "prune", "merge", "analysis"]
+
+
+def group(phase):
+    return next((g for g, ps in GROUPS.items() if phase in ps), "transforms")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("run_dir", type=Path)
+    ap.add_argument("out_dir", type=Path)
+    ap.add_argument("--edits", type=Path, help="the edits TSV, if not the one campaign.json names")
+    ap.add_argument("--name")
+    ap.add_argument("--cells-total", type=int, help="cells in the whole campaign, when this run is part of it")
+    a = ap.parse_args()
+    camp = json.loads((a.run_dir / "campaign.json").read_text())
+    lines = [json.loads(l) for l in (a.run_dir / "steps.jsonl").read_text().splitlines() if l.strip()]
+    edits_tsv = a.edits or Path(camp["edits"])
+    files = {}
+    for l in edits_tsv.read_text().splitlines():
+        if l.strip() and not l.startswith("#"):
+            name, file = l.split("\t")[:2]
+            files.setdefault(name, file)
+
+    cells, steps, phases, cycles = [], [], [], []
+    names = [c["name"] for c in camp["cells"]]
+    for n in names:
+        b, comp, z = n.split("-")
+        cells.append(dict(cell=n, corpus=BUILDS[b], compiler=COMPILERS[comp], zinc=ZINCS[z][0], algo=ZINCS[z][1],
+                          compilerKey=comp, zincKey=z))
+    corpus_of = {c["cell"]: c["corpus"] for c in cells}
+
+    timed = [r for r in lines if r["step"] not in ("warmup", "verify-base") and not r["step"].endswith("-reset")]
+    verdicts = {}
+    for r in lines:
+        if r["step"].endswith("-reset"):
+            verdicts[(r["cell"], r["round"])] = "reset after " + r.get("verify", "?")
+    edit_rows = {}
+    for r in timed:
+        step = r["round"] + 1
+        name = r["step"]
+        kind = "clean" if name in ("clean", "clean-build") else "revert" if name.endswith("-revert") else "edit"
+        desc = {"clean": "Clean build in a fresh JVM", "clean-build": "Clean build in the warm JVM"}.get(name, name)
+        target = files.get(name.removesuffix("-revert"), "—")
+        corpus = corpus_of[r["cell"]]
+        edit_rows[(corpus, step)] = dict(corpus=corpus, step=step, kind=kind, target=target, edit=desc)
+        ps = r.get("scalacPhases", [])
+        zinc = r.get("zinc", {})
+        wall = r["wallMillis"]
+        compile_ms = sum(p["millis"] for p in ps)
+        zinc_ms = max(0, wall - compile_ms)
+        analysis_io = zinc.get("analysisWrite", 0)
+        invalidate = sum(zinc.get(k, 0) for k in INVALIDATE)
+        setup = max(0, zinc_ms - analysis_io - invalidate)
+        cyc = [c for run in r.get("zincRuns", []) for c in run["cycles"]]
+        prev_changes = None
+        for i, (run, c) in enumerate(((run, c) for run in r.get("zincRuns", []) for c in run["cycles"]), 1):
+            if c["cycle"] == 1:
+                reason = "all sources" if kind == "clean" else f"{run['module']}: the edited and changed sources"
+            else:
+                ch = prev_changes or []
+                ex = ", ".join(f"{x['class'].rsplit('.', 1)[-1]} ({', '.join(x['names'][:4])}{'…' if x['namesTotal'] > 4 else ''})"
+                               for x in ch[:3])
+                reason = f"{run['module']}: {len(ch)} API change{'s' if len(ch) != 1 else ''} in cycle {c['cycle'] - 1}" + (f", e.g. {ex}" if ex else "")
+            cycles.append(dict(cell=r["cell"], step=step, cycle=i, sources=c["sources"], classes=c["recompiledClasses"],
+                               reason=reason, module=run["module"], compileMs=c["compileMillis"]))
+            prev_changes = c["changes"]
+        steps.append(dict(cell=r["cell"], corpus=corpus, step=step, kind=kind, target=target, edit=desc,
+                          status="done", order=r["order"], sources=sum(c["sources"] for c in cyc),
+                          classes=r.get("recompiled"), cycles=len(cyc), start=r.get("startSec", 0),
+                          wallMs=wall, compileMs=compile_ms, zincMs=zinc_ms, wallMinMs=wall, wallMaxMs=wall,
+                          verify=verdicts.get((r["cell"], r["round"]), r.get("verify"))))
+        by_group = {}
+        for p in ps:
+            g = by_group.setdefault(group(p["phase"]), {"ms": 0, "alloc": 0, "names": []})
+            g["ms"] += p["millis"]
+            g["alloc"] += p["allocatedBytes"]
+            g["names"].append(p["phase"])
+        for g, v in by_group.items():
+            phases.append(dict(cell=r["cell"], step=step, group=g, phase=" + ".join(v["names"]), ms=v["ms"], allocBytes=v["alloc"]))
+        for g, label, ms in [("zinc-invalidate", "Invalidation", invalidate), ("zinc-analysis", "Analysis write", analysis_io),
+                             ("zinc-setup", "Setup and the rest", setup)]:
+            phases.append(dict(cell=r["cell"], step=step, group=g, phase=label, ms=round(ms)))
+
+    per_cell = max(s["step"] for s in steps)
+    done = len(steps)
+    last = max(s["start"] + s["wallMs"] / 1000 for s in steps)
+    campaign = [dict(name=a.name or Path(a.run_dir).name, started=camp["start"], reps=camp["options"]["reps"],
+                     cells=a.cells_total or len(names), stepsPerCell=per_cell, stepsTotal=per_cell * (a.cells_total or len(names)),
+                     stepsDone=done, currentStep=per_cell, elapsedSec=round(last), etaSec=0,
+                     machine=camp.get("machine", "—"), sample=False,
+                     commits={c["name"]: c["commit"][:10] for c in camp["cells"]})]
+    a.out_dir.mkdir(parents=True, exist_ok=True)
+    out = dict(campaign=campaign, cells=cells, steps=steps, phases=phases, cycles=cycles,
+               edits=sorted(edit_rows.values(), key=lambda e: (e["corpus"], e["step"])))
+    for k, v in out.items():
+        (a.out_dir / f"{k}.json").write_text(json.dumps(v) + "\n")
+        print(f"{k}: {len(v)} rows")
+
+
+if __name__ == "__main__":
+    main()
