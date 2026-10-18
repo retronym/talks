@@ -239,6 +239,7 @@
     <article class="ib-card" id="breakdown-card">
       <h2 id="breakdown-title">Where the time went</h2>
       <p class="ib-note" id="breakdown-edit" data-source="edits">—</p>
+      <div class="ib-legend" id="breakdown-legend"></div>
       <div class="ib-chart ib-breakdown" id="breakdown" data-source="phases steps"></div>
     </article>
     <article class="ib-card" id="cycles-card">
@@ -440,7 +441,7 @@ dash.calc('effects', {
       return s;
     }));
   };
-  legend(document.getElementById('phase-legend'), PHASES.map(([g, l]) => [l, phaseFill(g), phaseOpacity(g)]));
+  for (const id of ['phase-legend', 'breakdown-legend']) legend(document.getElementById(id), PHASES.map(([g, l]) => [l, phaseFill(g), phaseOpacity(g)]));
   legend(document.getElementById('zinc-legend'), ZINC.map(([z, l]) => [l, zincFill(z)]));
 
   const tip = (host) => {
