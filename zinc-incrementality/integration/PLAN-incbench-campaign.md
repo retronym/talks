@@ -76,7 +76,7 @@ The export compiles Java and Scala sources in one mixed batch, as IncBench does 
 
 Both builds compile themselves with an earlier compiler: STARR for scala/scala, the reference compiler for scala/scala3. In-process, that compiler is just the jars IncBench hands Zinc as its `ScalaInstance`, so a compiler cell swaps jars and leaves the frozen sources alone. Nothing has to be published under a version the build would accept.
 
-Every compiler a cell runs is built from source the same way, optimized as a release is (`publish-scala2-starr`), never a published release: a release differs from the base in more than our changes, and in how it was built. IncBench loads a built Scala 2.13 through scripted's `2.13.local` bridge label (rz#71), and `lockstep --cell-scala` gives each cell its jars.
+Every compiler a cell runs is built from source the same way, optimized as a release is (`publish-scala2-starr`), never a published release: a release differs from the base in more than our changes, and in how it was built. IncBench loads a built Scala 2.13 through scripted's `2.13.local` bridge label (rz#71), and `lockstep --cell-scala` gives each cell its jars and a bridge compiled from that cell's Zinc sources by that compiler, with the options sbt uses for it, the optimizer's included. A bridge compiled against the release doesn't link against an integration compiler whose binary interface has moved.
 
 The baseline is not the last release. It is the commit the integration branch is built on, built the same way as the integration compiler. Against a release, the comparison would also carry every upstream change since that release; against its own base, it measures our open PRs and nothing else.
 
@@ -101,7 +101,7 @@ Only one cell compiles at any moment, so the others' JVMs are idle. Results are 
 
 ### 6. What each step records
 
-Every cell runs with sbt's defaults where scripted's differ: `pipelining=false` and `recompileAllFraction=0.5` (scripted defaults it to 1.0, which never falls back to a full compile).
+Every cell runs with sbt's defaults where scripted's differ: `pipelining=false` and `recompileAllFraction=0.5` (scripted defaults it to 1.0, which never falls back to a full compile). Every cell also runs with `recompileOnMacroDef=false`, Zinc's optimistic macro invalidation, so the baseline isn't charged for the cascade that the macro fast-track fix (rz#73) removes from the other Zincs.
 
 A step applies its edit and compiles, once. `prepare` warms the JVM with the clean build and a few no-op and body-edit compiles before step 1, so the first timed step isn't paying for JIT. One repetition is the starting point: the campaign is about direction and attribution, not precise timings. `reps` stays an option, and a step can be rerun on its own when a number looks wrong.
 

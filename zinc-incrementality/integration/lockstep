@@ -20,6 +20,7 @@ OUT_DIR gets:
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import random
@@ -49,25 +50,33 @@ def test_classpath(checkout, out):
     r = subprocess.run(
         ["sbt", "--batch", "--no-server", "--color=false",
          "compilerBridge2_13/compile", "zincScripted/Test/compile", "export zincScripted/Test/fullClasspath",
-         "export compilerBridge2_13/Compile/dependencyClasspath"],
+         "export compilerBridge2_13/Compile/dependencyClasspath",
+         'eval println("@@bridge-options@@")', "print compilerBridge2_13/Compile/scalacOptions",
+         'eval println("@@end@@")'],
         cwd=checkout, text=True, capture_output=True)
     out.write_text(r.stdout + r.stderr)
     if r.returncode != 0:
         sys.exit(f"{checkout}: sbt failed, see {out}")
-    test_cp, bridge_cp = [l for l in r.stdout.splitlines() if l.startswith("/")][-2:]
-    return test_cp, bridge_cp
+    lines = r.stdout.splitlines()
+    test_cp, bridge_cp = [l for l in lines if l.startswith("/")][-2:]
+    opts = lines[lines.index("@@bridge-options@@") + 1:lines.index("@@end@@")]
+    bridge_opts = [l.removeprefix("* ").strip() for l in opts if l.strip() and not l.startswith("[")]
+    return test_cp, (bridge_cp, bridge_opts)
 
 
 BRIDGE_SOURCES = ["scala", "scala-2", "scala-2.13", "scala_2.13", "scalajvm", "scalajvm-2.13"]
 
 
-def compile_bridge(checkout, version, jars, bridge_cp, cache):
+def compile_bridge(checkout, version, jars, bridge, cache):
     """
     The checkout's 2.13 compiler bridge compiled by a locally built Scala, whose binary interface
-    may differ from the release the checkout's own bridge is compiled against. Cached by the
-    checkout's commit and the Scala version.
+    may differ from the release the checkout's own bridge is compiled against, with the scalac
+    options sbt compiles it with (the optimizer's among them). Cached by the checkout's commit,
+    the Scala version and the options.
     """
-    out = cache / f"{git(checkout, 'rev-parse', '--short=10', 'HEAD')}-{version}"
+    bridge_cp, bridge_opts = bridge
+    key = hashlib.sha1(" ".join(bridge_opts).encode()).hexdigest()[:8]
+    out = cache / f"{git(checkout, 'rev-parse', '--short=10', 'HEAD')}-{version}-{key}"
     if (out / ".done").exists():
         return out
     if out.exists():
@@ -77,7 +86,7 @@ def compile_bridge(checkout, version, jars, bridge_cp, cache):
     sources = [str(f) for d in BRIDGE_SOURCES if (src / d).is_dir() for f in sorted((src / d).rglob("*.scala"))]
     # The bridge's dependencies without the release's own Scala jars, which the local build replaces.
     deps = [p for p in bridge_cp.split(":") if not re.search(r"/scala-(library|reflect|compiler)-[^/]*\.jar$", p)]
-    r = subprocess.run(["java", "-Xss4m", "-cp", jars, "scala.tools.nsc.Main", "-nowarn", "-d", str(out),
+    r = subprocess.run(["java", "-Xss4m", "-cp", jars, "scala.tools.nsc.Main", *bridge_opts, "-nowarn", "-d", str(out),
                         "-classpath", ":".join(deps + [jars]), *sources], text=True, capture_output=True)
     if r.returncode != 0:
         sys.exit(f"compiling {checkout}'s bridge with Scala {version} failed:\n{r.stdout[-3000:]}{r.stderr[-3000:]}")
@@ -155,7 +164,10 @@ def main():
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--profile", action="store_true")
     ap.add_argument("--only")
-    ap.add_argument("--inc-option", action="append", default=["pipelining=false", "recompileAllFraction=0.5"])
+    # sbt's defaults where scripted's differ, and Zinc's optimistic macro invalidation, which
+    # the macro fast-track fix (rz#73) otherwise gives only the Zincs that carry it.
+    ap.add_argument("--inc-option", action="append",
+                    default=["pipelining=false", "recompileAllFraction=0.5", "recompileOnMacroDef=false"])
     ap.add_argument("--jvm-opt", action="append")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--bridge-cache", type=Path, default=Path.home() / "code/.integration/bridges",
