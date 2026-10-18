@@ -1348,18 +1348,24 @@ private final class AnalysisCallback(
 
   private val libraryFiles = new TrieMap[String, Option[VirtualFileRef]]
 
-  /** The classpath entry defining a library class, if `name` (as rendered) is one. */
+  /**
+   * The classpath entry defining a library class, if `name` (as rendered) is one. A class of
+   * this subproject is ruled out by any of its candidate names, not just the one that matches its
+   * binary name: a nested class compiled in this run is known here by its source name only, and
+   * the output directory, already holding its classfile, would otherwise be taken for the library
+   * defining `a.b.C$D`, but only until the next run knows that binary name.
+   */
   private def libraryFile(name: String): Option[VirtualFileRef] =
     libraryFiles.getOrElseUpdate(
-      name,
-      LibraryAncestors.binaryNameCandidates(name).iterator
-        .filterNot(n => {
+      name, {
+        val candidates = LibraryAncestors.binaryNameCandidates(name)
+        val internal = candidates.exists(n => {
           classApis.contains(n) || objectApis.contains(n) ||
           internalBinaryToSourceClassName(n).isDefined || isSubprojectClass(n)
         })
-        .flatMap(lookup.lookupOnClasspath(_))
-        .toStream
-        .headOption
+        if (internal) None
+        else candidates.iterator.flatMap(lookup.lookupOnClasspath(_)).toStream.headOption
+      }
     )
 
   /** The stamps of the libraries defining a class's library ancestors. See [[LibraryAncestors]]. */
