@@ -76,6 +76,8 @@ The export compiles Java and Scala sources in one mixed batch, as IncBench does 
 
 Both builds compile themselves with an earlier compiler: STARR for scala/scala, the reference compiler for scala/scala3. In-process, that compiler is just the jars IncBench hands Zinc as its `ScalaInstance`, so a compiler cell swaps jars and leaves the frozen sources alone. Nothing has to be published under a version the build would accept.
 
+Every compiler a cell runs is built from source the same way, optimized as a release is (`publish-scala2-starr`), never a published release: a release differs from the base in more than our changes, and in how it was built. IncBench loads a built Scala 2.13 through scripted's `2.13.local` bridge label (rz#71), and `lockstep --cell-scala` gives each cell its jars.
+
 The baseline is not the last release. It is the commit the integration branch is built on, built the same way as the integration compiler. Against a release, the comparison would also carry every upstream change since that release; against its own base, it measures our open PRs and nothing else.
 
 - **scala/scala:** upstream `2.13.x` at `integration/2.13.x`'s base, and `integration/2.13.x`, each built as `publish-scala2-starr` builds STARR (optimized, as a release is). The frozen build is that same base commit.
@@ -143,7 +145,8 @@ scala/scala is the tracer bullet: every stage of the pipeline works end to end f
   - On Merkle, the first addition of a member to `SubComponent` cascades over four cycles (1, 6, 16, 246 sources) where name hashing stops at three (1, 30, 32). From cycle 2 on, every recompiled class reports changes only in names it inherits from `Any`/`AnyRef`/`Object`: Merkle's hashes of inherited library members differ between the clean build's run and a later one. The revert stops at 1 → 6, as it did through sbt.
 - [ ] **M4 Lockstep.** The `serve` mode and the orchestrator, first with the two scala/scala cells that differ only in algorithm, then all six.
   - [x] `IncBench --serve` and `--warmup` (rz#71), and `lockstep` in this directory. The two algorithm cells (`develop-1.12.x`, `merkle-1.12.x`) ran the M3 edits in lockstep in about six minutes, with every step verified `same` against a clean build. The Merkle cascade on adding a member to `SubComponent` (1, 6, 16, 246 sources vs. name hashing's 1, 30, 32) reproduces there.
-  - [ ] All six cells, which needs the compiler cells' jars (decision 4).
+  - [x] Three Zincs on scala/scala in lockstep, with a six-edit script (`edits/scala-2.13.x.tsv`) and a live local dashboard (`serve-dashboard`, fed by `lockstep-dash` after every round). It showed the Merkle fix working (adding a member to `SubComponent`: 7 sources in 1.5 s against 63 in 4.5 s), a cascade through macro-defining classes on a library body edit on every Zinc (972 sources; fixed by the macro fast-track rule, rz#73/rz#74), and a scalac batch dependence in `try ... catch expr` (scala#11319). It ran the 2.13.18 release, which broke the like-for-like rule, and is superseded.
+  - [ ] Compilers built from source: each Zinc on the base compiler, and the integration compiler on Merkle Zinc (four cells).
 - [ ] **M5 Live dashboard.** Real files replace the sample data, pushed after each lockstep step.
 - [ ] **M6 Wave 1: scala/scala,** all six cells, with a short write-up of what each comparison showed.
 - [ ] **M7 scala/scala3.** Its export, the compiler jars for both sides, and a check that Scala 3's profiler output reads like Scala 2's.
