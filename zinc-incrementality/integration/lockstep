@@ -23,6 +23,7 @@ import datetime
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -41,15 +42,48 @@ def git(checkout, *args):
 
 
 def test_classpath(checkout, out):
-    """Compiles the checkout's bridge and IncBench, and returns IncBench's classpath."""
+    """
+    Compiles the checkout's bridge and IncBench, and returns IncBench's classpath and the 2.13
+    bridge's dependency classpath.
+    """
     r = subprocess.run(
         ["sbt", "--batch", "--no-server", "--color=false",
-         "compilerBridge2_13/compile", "zincScripted/Test/compile", "export zincScripted/Test/fullClasspath"],
+         "compilerBridge2_13/compile", "zincScripted/Test/compile", "export zincScripted/Test/fullClasspath",
+         "export compilerBridge2_13/Compile/dependencyClasspath"],
         cwd=checkout, text=True, capture_output=True)
     out.write_text(r.stdout + r.stderr)
     if r.returncode != 0:
         sys.exit(f"{checkout}: sbt failed, see {out}")
-    return [l for l in r.stdout.splitlines() if l.startswith("/")][-1]
+    test_cp, bridge_cp = [l for l in r.stdout.splitlines() if l.startswith("/")][-2:]
+    return test_cp, bridge_cp
+
+
+BRIDGE_SOURCES = ["scala", "scala-2", "scala-2.13", "scala_2.13", "scalajvm", "scalajvm-2.13"]
+
+
+def compile_bridge(checkout, version, jars, bridge_cp, cache):
+    """
+    The checkout's 2.13 compiler bridge compiled by a locally built Scala, whose binary interface
+    may differ from the release the checkout's own bridge is compiled against. Cached by the
+    checkout's commit and the Scala version.
+    """
+    out = cache / f"{git(checkout, 'rev-parse', '--short=10', 'HEAD')}-{version}"
+    if (out / ".done").exists():
+        return out
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    src = checkout / "internal/compiler-bridge/src/main"
+    sources = [str(f) for d in BRIDGE_SOURCES if (src / d).is_dir() for f in sorted((src / d).rglob("*.scala"))]
+    # The bridge's dependencies without the release's own Scala jars, which the local build replaces.
+    deps = [p for p in bridge_cp.split(":") if not re.search(r"/scala-(library|reflect|compiler)-[^/]*\.jar$", p)]
+    r = subprocess.run(["java", "-Xss4m", "-cp", jars, "scala.tools.nsc.Main", "-nowarn", "-d", str(out),
+                        "-classpath", ":".join(deps + [jars]), *sources], text=True, capture_output=True)
+    if r.returncode != 0:
+        sys.exit(f"compiling {checkout}'s bridge with Scala {version} failed:\n{r.stdout[-3000:]}{r.stderr[-3000:]}")
+    shutil.copytree(src / "resources", out, dirs_exist_ok=True)
+    (out / ".done").write_text("")
+    return out
 
 
 def copy_build(src, dst):
@@ -124,6 +158,8 @@ def main():
     ap.add_argument("--inc-option", action="append", default=["pipelining=false", "recompileAllFraction=0.5"])
     ap.add_argument("--jvm-opt", action="append")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--bridge-cache", type=Path, default=Path.home() / "code/.integration/bridges",
+                    help="where bridges compiled by a locally built Scala are kept")
     ap.add_argument("--on-step", help="a shell command run after each round's barrier")
     a = ap.parse_args()
     jvm_opts = a.jvm_opt or ["-Xmx4g", "-Xss4m"]
@@ -165,13 +201,16 @@ def main():
     try:
         for c in cells:
             log(f"{c.name}: building {c.checkout}")
-            cp = test_classpath(c.checkout, c.dir / "sbt.log")
+            cp, bridge_cp = test_classpath(c.checkout, c.dir / "sbt.log")
             build = c.dir / "build"
             copy_build(a.build.resolve(), build)
             env = {}
             if c.name in scala:
                 version, jars = scala[c.name]
-                env = {"ZINC_SCRIPTED_SCALA213_VERSION": version, "ZINC_SCRIPTED_SCALA213_JARS": jars}
+                log(f"{c.name}: compiling the bridge with Scala {version}")
+                bridge = compile_bridge(c.checkout, version, jars, bridge_cp, a.bridge_cache)
+                env = {"ZINC_SCRIPTED_SCALA213_VERSION": version, "ZINC_SCRIPTED_SCALA213_JARS": jars,
+                       "ZINC_SCRIPTED_SCALA213_BRIDGE": str(bridge)}
                 bj = build / "build.json"
                 b = json.loads(bj.read_text())
                 for p in b["projects"]:
