@@ -34,6 +34,12 @@ remote = "upstream"
 pr = 11314
 title = "Don't share mutable type-operation state across reflection threads"
 
+[[members]]
+id = "scala#11319"
+remote = "upstream"
+pr = 11319
+title = "Use the typer's fresh names for `try ... catch expr` for deterministic compilation"
+
 # scala#11313 removes the Depth import from SynchronizedTypes; scala#11314 adds uses of it.
 [[members]]
 id = "fixup-11313-11314"
