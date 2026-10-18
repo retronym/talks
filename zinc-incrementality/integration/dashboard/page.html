@@ -174,8 +174,8 @@
     <div class="ib-controls">
       <h2 style="flex:1 1 auto">Timeline</h2>
       <div class="ib-seg" role="group" aria-label="Timeline scale">
-        <button type="button" id="tl-time" aria-pressed="true">Elapsed time</button>
-        <button type="button" id="tl-step" aria-pressed="false">By step</button>
+        <button type="button" id="tl-time" aria-pressed="false">Elapsed time</button>
+        <button type="button" id="tl-step" aria-pressed="true">By step</button>
       </div>
       <div class="ib-seg" role="group" aria-label="Timeline zoom" title="Ctrl or ⌘ + wheel, or pinch, to zoom at the pointer; shift + wheel or a sideways swipe to pan">
         <button type="button" id="tl-zoom-out" aria-label="Zoom out">−</button>
@@ -402,7 +402,7 @@ dash.calc('effects', {
   const mb = (b) => (b >= 10 * 2 ** 30 ? d3.format(',.0f')(b / 2 ** 30) + ' GB' : b >= 2 ** 30 ? d3.format(',.1f')(b / 2 ** 30) + ' GB' : d3.format(',.0f')(b / 2 ** 20) + ' MB');
   const allocOf = (parts) => (parts.some((p) => p.allocBytes != null) ? d3.sum(parts, (p) => p.allocBytes || 0) : null);
   const secs = (ms) => (ms >= 10000 ? d3.format(',.0f')(ms / 1000) : d3.format(',.1f')(ms / 1000)) + ' s';
-  let scaleMode = 'time';
+  let scaleMode = 'step';
   let tlZoom = 1;
   let tlOff = 0;
   let tlGeom = null;
