@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Freeze modules of an sbt build as a build IncBench can compile.
+
+    export-build SBT_PROJECT_DIR OUT_DIR MODULE... [--scala LABEL] [--sbt-arg ARG]...
+
+Asks sbt for each module's compile settings (`print`), then writes OUT_DIR as scripted's
+IncHandler reads a build:
+
+    OUT_DIR/build.json                     projects, their dependencies, the Scala label
+    OUT_DIR/<module>/src/main/scala/...    the module's Scala sources, by path under its source root
+    OUT_DIR/<module>/src/main/java/...     its Java sources
+    OUT_DIR/<module>/lib/*.jar             its external dependency jars
+    OUT_DIR/<module>/incOptions.properties scalac.options and javac.options
+    OUT_DIR/export.json                    where it came from: commit, settings, file counts
+
+Sources are copied, so the build stays frozen whatever happens to the checkout. Paths into the
+checkout in the options are rewritten to scripted's `[basedir]`, which IncHandler expands to the
+module's directory. Modules depend on each other as sbt's internal dependency classpath says, as
+long as the other module is exported too.
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+KEYS = [
+    "scalacOptions",
+    "javacOptions",
+    "sources",
+    "unmanagedSourceDirectories",
+    "managedSourceDirectories",
+    "externalDependencyClasspath",
+    "internalDependencyClasspath",
+    "classDirectory",
+    "thisProject",
+]
+MARK = "@@export-build@@"
+
+
+def sbt_print(project_dir, modules, sbt_args):
+    cmds = []
+    for m in modules:
+        for k in KEYS:
+            setting = f"{m}/Compile/{k}" if k != "thisProject" else f"{m}/{k}"
+            cmds += [f'eval println("{MARK} {m} {k}")', f"print {setting}"]
+    cmds.append(f'eval println("{MARK} end end")')
+    r = subprocess.run(["sbt", "--batch", "--no-server", "--color=false", *sbt_args, *cmds],
+                       cwd=project_dir, text=True, capture_output=True)
+    if r.returncode != 0:
+        sys.exit(f"sbt failed:\n{r.stdout[-4000:]}\n{r.stderr[-2000:]}")
+    values, key, buf = {}, None, []
+    for line in r.stdout.splitlines():
+        if line.startswith(MARK):
+            if key:
+                values[key] = buf
+            _, m, k = line.split()
+            key, buf = (m, k), []
+        elif key and not line.startswith("["):
+            buf.append(line[2:] if line.startswith("* ") else line)
+    return values
+
+
+def attributed_path(entry):
+    # print shows a classpath entry as Attributed(<path>)
+    return entry[len("Attributed("):-1] if entry.startswith("Attributed(") else entry
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("project_dir", type=Path)
+    ap.add_argument("out_dir", type=Path)
+    ap.add_argument("modules", nargs="+")
+    ap.add_argument("--scala", default="2.13.x", help="the scripted bridge label every module compiles with")
+    ap.add_argument("--sbt-arg", action="append", default=[])
+    ap.add_argument("--no-scala-instance", action="store_true",
+                    help="keep the compiler's own jars off the classpath, for a build that compiles Scala itself")
+    a = ap.parse_args()
+    src = a.project_dir.resolve()
+    out = a.out_dir.resolve()
+    values = sbt_print(src, a.modules, a.sbt_arg)
+    get = lambda m, k: [v for v in values.get((m, k), []) if v.strip()]
+
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    class_dirs = {m: get(m, "classDirectory")[0] for m in a.modules}
+    projects, summary = [], {}
+    for m in a.modules:
+        base = out / m
+        roots = sorted((Path(d) for d in get(m, "unmanagedSourceDirectories") + get(m, "managedSourceDirectories")),
+                       key=lambda p: -len(p.parts))
+        counts = {"scala": 0, "java": 0}
+        for s in map(Path, get(m, "sources")):
+            root = next((r for r in roots if s.is_relative_to(r)), None)
+            if root is None:
+                sys.exit(f"{m}: {s} is under none of its source directories")
+            lang = "java" if s.suffix == ".java" else "scala"
+            dest = base / "src" / "main" / lang / s.relative_to(root)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(s, dest)
+            counts[lang] += 1
+        lib = base / "lib"
+        lib.mkdir(parents=True)
+        jars = [Path(attributed_path(e)) for e in get(m, "externalDependencyClasspath")]
+        for j in jars:
+            if j.is_file():
+                shutil.copy2(j, lib / j.name)
+            else:
+                sys.exit(f"{m}: dependency {j} is not a jar")
+        deps = [d for d in a.modules if d != m and class_dirs[d] in map(attributed_path, get(m, "internalDependencyClasspath"))]
+
+        def rewrite(opt):
+            for r in roots:
+                if opt.startswith(str(r)):
+                    rel = "scala"
+                    return "[basedir]/src/main/" + rel + opt[len(str(r)):]
+            if str(src) in opt:
+                sys.exit(f"{m}: option {opt} names the checkout and isn't a source directory")
+            return opt
+
+        # IncHandler splits options on spaces. In a -Wconf filter, msg= is a regex, so a space
+        # there can be written as \s without changing what it matches.
+        scalac = [rewrite(o).replace(" ", "\\s") if o.startswith("-Wconf:") else rewrite(o) for o in get(m, "scalacOptions")]
+        javac = get(m, "javacOptions")
+        for o in scalac + javac:
+            if " " in o:
+                sys.exit(f"{m}: option {o!r} has a space, which incOptions.properties can't keep")
+        prop = lambda opts: " ".join(opts).replace("\\", "\\\\")
+        (base / "incOptions.properties").write_text(
+            f"scalac.options = {prop(scalac)}\n"
+            + (f"javac.options = {prop(javac)}\n" if javac else "")
+            + ("classpath.scalaInstance = false\n" if a.no_scala_instance else "")
+        )
+        projects.append({"name": m, "dependsOn": deps, "scalaVersion": a.scala})
+        summary[m] = {**counts, "jars": [j.name for j in jars], "dependsOn": deps, "scalacOptions": scalac, "javacOptions": javac}
+
+    (out / "build.json").write_text(json.dumps({"projects": projects}, indent=2) + "\n")
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, text=True, capture_output=True).stdout.strip()
+    (out / "export.json").write_text(json.dumps({"from": str(src), "commit": commit, "modules": summary}, indent=2) + "\n")
+    for m, s in summary.items():
+        print(f"{m}: {s['scala']} Scala, {s['java']} Java, {len(s['jars'])} jars, depends on {s['dependsOn'] or 'nothing'}")
+
+
+if __name__ == "__main__":
+    main()

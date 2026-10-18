@@ -59,14 +59,16 @@ A harness change then rebuilds all three, and the dashboard records the harness 
 
 ### 3. Export each build to `build.json` once, and freeze it
 
-The pinned commit of each build is exported once by a small sbt command: per module its sources (generated ones included), classpath, `scalacOptions`, `javacOptions` and output directory, in dependency order. The exported build is then fixed for the whole campaign. Every cell compiles the same files with the same options; only the compiler jars and the bridge differ.
+The pinned commit of each build is exported once by `export-build` in this directory, which reads sbt's own settings with `print`: per module its sources (generated ones included), classpath, `scalacOptions`, `javacOptions` and output directory, in dependency order. The exported build is then fixed for the whole campaign. Every cell compiles the same files with the same options; only the compiler jars and the bridge differ.
 
 Scope, so a clean build stays in minutes:
 
 - **scala/scala:** `library`, `reflect`, `compiler`. These modules hold the deep hierarchies the edits target. scaladoc, the REPL and partest add time, not information.
 - **scala/scala3:** `scala3-interfaces`, `scala3-library-nonbootstrapped`, `tasty-core-nonbootstrapped` and `scala3-compiler-nonbootstrapped`, as in the earlier compile cycles.
 
-Generated sources (scala/scala's version properties, scala/scala3's unpacked scalajs-ir) are captured by the export as plain files, so no generator runs during the campaign.
+Generated sources (scala/scala3's unpacked scalajs-ir) are captured by the export as plain files, so no generator runs during the campaign.
+
+A build that compiles Scala itself must keep its compiler's own jars off the compile classpath, or the bootstrap compiler's `scala-reflect` and bundled ASM shadow the classes being compiled; `export-build --no-scala-instance` sets `classpath.scalaInstance = false` for that.
 
 ### 4. The compiler is a set of jars, built from source on both sides
 
@@ -94,6 +96,8 @@ Only one cell compiles at any moment, so the others' JVMs are idle. Results are 
 **Two waves.** Twelve warm JVMs don't fit comfortably in 48 GB, so the campaign runs as two waves of six cells: scala/scala first, then scala/scala3. Lockstep holds within a wave. The dashboard shows the second build's cells as queued until its wave starts.
 
 ### 6. What each step records
+
+Every cell runs with sbt's defaults where scripted's differ: `pipelining=false` and `recompileAllFraction=0.5` (scripted defaults it to 1.0, which never falls back to a full compile).
 
 A step applies its edit and compiles, once. `prepare` warms the JVM with the clean build and a few no-op and body-edit compiles before step 1, so the first timed step isn't paying for JIT. One repetition is the starting point: the campaign is about direction and attribution, not precise timings. `reps` stays an option, and a step can be rerun on its own when a number looks wrong.
 
@@ -131,7 +135,7 @@ scala/scala is the tracer bullet: every stage of the pipeline works end to end f
 
 - [x] Dashboard mockup with sample data.
 - [x] **M1 Harness PR on 1.12.x.** retronym/zinc#71 has IncBench, `PhaseTimings` and `--verify`. It is in `bench-1.12.x` (new), `develop-1.12.x` and `merkle-1.12.x`, byte-identical in all three; rz#48 has a fixup that deletes its copy.
-- [ ] **M2 scala/scala export.** The sbt export command, the frozen `build.json` for `library`, `reflect` and `compiler` at `integration/2.13.x`'s base, and a clean build through IncBench in one cell whose classfiles match sbt's.
+- [x] **M2 scala/scala export.** `export-build` froze `library`, `reflect` and `compiler` at `integration/2.13.x`'s base (scala/scala@e690fca106) into `~/code/.integration/builds/scala-2.13.x-e690fca106`. Through IncBench on `bench-1.12.x` it builds clean in 22 s warm, and 6,876 of its 6,877 classfiles are byte-identical to sbt's build of the same commit. The odd one out differs only in a parameter's name in debug info, in a Scala override of a method from a Java source. rz#71 gained the two fixes this needed: IncBench keeps a build's own options, and `classpath.scalaInstance = false`.
 - [ ] **M3 Measurements.** Per-phase scalac timings, the Zinc split and cycles with reasons, as JSON lines from one cell.
 - [ ] **M4 Lockstep.** The `serve` mode and the orchestrator, first with the two scala/scala cells that differ only in algorithm, then all six.
 - [ ] **M5 Live dashboard.** Real files replace the sample data, pushed after each lockstep step.

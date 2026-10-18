@@ -385,6 +385,16 @@ case class ProjectStructure(
     Option(loadIncProperties(baseDirectory).getProperty("javac.options")).toArray
       .flatMap(_.trim.split(" +"))
 
+  /**
+   * Whether the compiler's own jars go on the compile classpath, as they do unless
+   * `incOptions.properties` sets `classpath.scalaInstance = false`. A build that compiles the
+   * Scala library and compiler itself, such as scala/scala, needs them off, or the compiler's
+   * classes shadow the ones it is compiling.
+   */
+  val scalaInstanceOnClasspath: Boolean =
+    Option(loadIncProperties(baseDirectory).getProperty("classpath.scalaInstance"))
+      .forall(_.trim != "false")
+
   val (incOptions, scalacOptions) = {
     val properties = loadIncProperties(baseDirectory)
     val (incOptions0, sco) = loadIncOptions(properties)
@@ -805,7 +815,8 @@ case class ProjectStructure(
       extra = extra
     )
 
-    val paths = (i.si.allJars.toList.map(_.toPath) ++ (unmanagedJars :+ output) ++ internalCp)
+    val scalaJars = if (scalaInstanceOnClasspath) i.si.allJars.toList.map(_.toPath) else Nil
+    val paths = scalaJars ++ (unmanagedJars :+ output) ++ internalCp
     val cp = paths.map(converter.toVirtualFile)
     val in = incrementalCompiler.inputs(
       cp.toArray,
