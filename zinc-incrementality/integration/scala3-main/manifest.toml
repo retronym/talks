@@ -28,6 +28,12 @@ remote = "origin"
 pr = 11
 title = "Record a wildcard import of a package as a used name for Zinc"
 
+[[members]]
+id = "rz-scala3#36"
+remote = "origin"
+pr = 36
+title = "Hash xsbti.api values by content in ExtractAPI's marker hashes"
+
 [[excluded]]
 id = "rz-scala3#6"
 reason = "duplicate of scala3#27275"
