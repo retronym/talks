@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""The integration branches' commit graphs, as JSON rows for the campaign dashboard's branch map.
+
+    branch-map OUT.json
+
+For each integration branch, its tip on origin and the base its MANIFEST.lock records. Rows are
+the commits from any base to any tip, newest first in topological order per repository, plus the
+bases themselves. Each commit lists the branches that contain it, so a commit shared by several
+branches (a member PR in more than one) is one row.
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+REPOS = [
+    ("zinc", HOME / "code/sbt/zinc",
+     ["bench-1.12.x", "develop-1.12.x", "merkle-1.12.x", "develop", "merkle"]),
+    ("scala", HOME / "code/.integration/integration-2.13.x", ["2.13.x", "perf"]),
+    ("scala3", HOME / "code/.integration/integration-scala3-main", ["scala3-main", "scala3-merkle"]),
+]
+CAMPAIGN = {"bench-1.12.x", "develop-1.12.x", "merkle-1.12.x", "2.13.x", "scala3-main"}
+# What each campaign Zinc adds to sbt/zinc 1.12.x, as the dashboard labels it.
+LABELS = {"bench-1.12.x": "1.12.x", "develop-1.12.x": "1.12.x + fixes", "merkle-1.12.x": "1.12.x + fixes + Merkle"}
+PR_REPOS = {"rz": "retronym/zinc", "sz": "sbt/zinc", "scala": "scala/scala", "rz-scala": "retronym/scala",
+            "scala3": "scala/scala3", "rz-scala3": "retronym/scala3"}
+
+
+def git(repo, *args):
+    return subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True, check=True).stdout
+
+
+def pr_url(member):
+    m = re.fullmatch(r"([a-z0-9-]+)#(\d+)", member)
+    return m and m.group(1) in PR_REPOS and f"https://github.com/{PR_REPOS[m.group(1)]}/pull/{m.group(2)}"
+
+
+def main():
+    rows = []
+    for repo, path, branches in REPOS:
+        git(path, "fetch", "-q", "origin")
+        info, contains, inner, full_bases = [], {}, set(), set()
+        for b in branches:
+            tip = git(path, "rev-parse", f"origin/integration/{b}").strip()
+            lock = git(path, "show", f"{tip}:MANIFEST.lock")
+            _, base_ref, base = next(l.split("\t") for l in lock.splitlines() if l.startswith("base\t"))
+            included = lock.split("# excluded")[0]
+            members = [l.split("\t")[0] for l in included.splitlines()
+                       if l and not l.startswith("#") and not l.startswith("base\t") and "\t" in l]
+            built = re.search(r"built (\S+)", lock)
+            info.append(dict(kind="branch", repo=repo, branch=f"integration/{b}", tip=tip[:10], base=base[:10],
+                             baseRef=base_ref, built=built and built.group(1), campaign=b in CAMPAIGN,
+                             label=LABELS.get(b), members=len(members)))
+            for sha in git(path, "rev-list", tip, f"^{base}").split():
+                contains.setdefault(sha, []).append(f"integration/{b}")
+                inner.add(sha)
+            contains.setdefault(base, []).append(f"integration/{b}")
+            full_bases.add(base)
+        bases = {i["base"] for i in info}
+        tips = [f"origin/integration/{b}" for b in branches]
+        # A base that is another branch's commit (integration/merkle on integration/develop) is
+        # already in the graph; only the others bound it.
+        order = git(path, "rev-list", "--topo-order", *tips, "--not",
+                    *[f"{b}^@" for b in full_bases - inner]).split()
+        order = [s for s in order if s in contains]
+        refs = {}
+        for i in info:
+            refs.setdefault(i["tip"], []).append(i["branch"])
+            refs.setdefault(i["base"], []).append(i["baseRef"])
+        rows += info
+        fmt = "%H%x00%P%x00%s%x00%cI"
+        meta = {}
+        for line in git(path, "show", "-s", f"--format={fmt}", *order).split("\n"):
+            if line:
+                h, p, s, d = line.split("\x00")
+                meta[h] = (p.split(), s, d)
+        for sha in order:
+            parents, subject, date = meta[sha]
+            m = re.match(r"Merge (\S+): ", subject)
+            member = m and m.group(1)
+            rows.append(dict(kind="commit", repo=repo, sha=sha[:10], parents=[p[:10] for p in parents if p in contains],
+                             subject=subject[:120], date=date, branches=sorted(set(contains[sha])),
+                             refs=sorted(set(refs.get(sha[:10], []))), member=member,
+                             url=pr_url(member) if member else None, base=sha in full_bases - inner))
+    Path(sys.argv[1]).write_text(json.dumps(rows) + "\n")
+    commits = [r for r in rows if r["kind"] == "commit"]
+    print(f"{len(commits)} commits, {len(rows) - len(commits)} branches")
+
+
+if __name__ == "__main__":
+    main()
