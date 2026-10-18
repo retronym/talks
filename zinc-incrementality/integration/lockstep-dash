@@ -13,6 +13,7 @@ in the warm JVM.
 """
 
 import argparse
+import ast
 import datetime
 import json
 import re
@@ -38,6 +39,35 @@ def group(phase):
     return next((g for g, ps in GROUPS.items() if phase in ps), "transforms")
 
 
+def activity(log):
+    """What lockstep is doing now, from its log: a sentence, and the cell and step compiling, if any."""
+    if not log or not log.exists():
+        return None, None, None
+    lines = [l.removeprefix("[lockstep] ") for l in log.read_text().splitlines() if l.startswith("[lockstep]")]
+    text, cell, step, order, finished, rnd = None, None, None, [], set(), 0
+    for l in lines:
+        m = re.match(r"round (\d+): (\S+) rep (\d+), order (\[.*\])$", l)
+        if m:
+            rnd, order, finished = int(m.group(1)), ast.literal_eval(m.group(4)), set()
+            text = f"step {rnd + 1}, {m.group(2)}"
+            continue
+        m = re.match(r"  (\S+): [0-9.]+s$", l)
+        if m:
+            finished.add(m.group(1))
+            continue
+        m = re.match(r"(\S+): (building|clean build and warm-up)", l)
+        if m:
+            cell, step, order = m.group(1), 1, []
+            text = f"preparing {m.group(1)}: {'compiling the cell' if m.group(2) == 'building' else 'clean build and warm-up'}"
+            continue
+        if l.startswith("done"):
+            return "finished", None, None
+    if order:
+        cell = next((c for c in order if c not in finished), None)
+        step = rnd + 1
+    return text, cell, step
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir", type=Path)
@@ -45,6 +75,7 @@ def main():
     ap.add_argument("--edits", type=Path, help="the edits TSV, if not the one campaign.json names")
     ap.add_argument("--name")
     ap.add_argument("--cells-total", type=int, help="cells in the whole campaign, when this run is part of it")
+    ap.add_argument("--log", type=Path, help="lockstep's log, whose last line says what it is doing now")
     a = ap.parse_args()
     camp = json.loads((a.run_dir / "campaign.json").read_text())
     lines = [json.loads(l) for l in (a.run_dir / "steps.jsonl").read_text().splitlines() if l.strip()]
@@ -139,6 +170,10 @@ def main():
                 e = edit_rows[(c["corpus"], k)]
                 steps.append(dict(cell=c["cell"], corpus=c["corpus"], step=k, kind=e["kind"], target=e["target"],
                                   edit=e["edit"], status="queued", order=None, sources=None, classes=None, cycles=None))
+    act, act_cell, act_step = activity(a.log) if a.log else (None, None, None)
+    for s in steps:
+        if s["status"] == "queued" and s["cell"] == act_cell and s["step"] == act_step:
+            s["status"] = "running"
     finished = [k for k in range(1, per_cell + 1) if all((c["cell"], k) in have for c in cells)]
     current = next((k for k in range(1, per_cell + 1) if k not in finished), per_cell)
     ends = [s["start"] + s["wallMs"] / 1000 for s in steps if s["status"] == "done"]
@@ -157,7 +192,7 @@ def main():
     campaign = [dict(name=a.name or Path(a.run_dir).name, started=camp["start"], reps=camp["options"]["reps"],
                      cells=a.cells_total or len(names), stepsPerCell=per_cell, stepsTotal=per_cell * (a.cells_total or len(names)),
                      stepsDone=done, currentStep=current, elapsedSec=round(elapsed), etaSec=round(eta),
-                     machine=camp.get("machine", "—"), sample=False,
+                     machine=camp.get("machine", "—"), sample=False, activity=act if running else "finished", activeCell=act_cell if running else None,
                      commits={c["name"]: c["commit"][:10] for c in camp["cells"]})]
     a.out_dir.mkdir(parents=True, exist_ok=True)
     out = dict(campaign=campaign, cells=cells, steps=steps, phases=phases, cycles=cycles,

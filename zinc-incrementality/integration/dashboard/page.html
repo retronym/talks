@@ -54,6 +54,15 @@
 .ib-tip .r { display: flex; justify-content: space-between; gap: var(--cds-gap-md); font-variant-numeric: tabular-nums; }
 .ib-scroll { overflow: auto; max-height: 26rem; }
 .ib-graph-wrap { position: relative; }
+.ib-live { display: inline-flex; align-items: center; gap: 6px; font-size: var(--cds-font-size-caption); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 1px 8px 1px 6px; max-width: 40rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ib-live::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-fg-muted); }
+.ib-live[data-state="running"] { border-color: var(--color-ok); }
+.ib-live[data-state="running"]::before { background: var(--color-ok); box-shadow: 0 0 0 0 var(--color-ok); }
+.ib-live[data-state="finished"]::before { background: var(--color-fg); }
+@media (prefers-reduced-motion: no-preference) {
+  .ib-live[data-state="running"]::before { animation: ib-live-pulse 1.4s ease-out infinite; }
+  @keyframes ib-live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-ok) 60%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+}
 .ib-sticky { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-sm) var(--cds-gap-md); padding: var(--cds-pad-sm) 0; background: var(--color-bg); border-bottom: 1px solid var(--color-border-line); }
 .ib-sticky .grp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-xs); }
 .ib-sticky .lbl { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
@@ -93,6 +102,7 @@
 
 <div class="ib">
   <nav class="ib-sticky" id="ib-sticky" aria-label="Page controls">
+    <span class="ib-live" id="st-live" data-state="idle" hidden>—</span>
     <span class="prog" id="st-prog">—</span>
     <button type="button" class="sel" id="st-sel" title="Go to the selected step">—</button>
     <div class="grp" id="st-filters"></div>
@@ -102,7 +112,7 @@
     </div>
   </nav>
   <header class="ib-head" id="top">
-    <span class="ib-badge" id="data-badge">Mockup · sample data</span>
+    <span class="ib-live" id="data-badge" data-state="idle">Mockup · sample data</span>
     <h1 data-source="campaign" data-field="name" class="dash-skeleton">—</h1>
     <p class="ib-take" id="takeaway"><span class="dash-skeleton">—</span></p>
   </header>
@@ -502,7 +512,7 @@ dash.calc('effects', {
     if (ok('progress', 'campaign')) {
       const p = dash.data('progress').data[0];
       const c = dash.data('campaign').data[0];
-      prog.textContent = `Step ${p.currentStep} of ${c.stepsPerCell} · ${p.sharePct}% · ${p.remaining} left`;
+      prog.textContent = `Step ${p.currentStep} of ${c.stepsPerCell} · ${p.sharePct}%` + (c.etaSec > 0 ? ` · ${p.remaining} left` : '');
     }
     const selBtn = document.getElementById('st-sel');
     const sel = params();
@@ -579,7 +589,16 @@ dash.calc('effects', {
   }
 
   function drawSummary() {
-    if (ok('campaign')) document.getElementById('data-badge').textContent = dash.data('campaign').data[0].sample === false ? 'Live run · ' + dash.data('campaign').data[0].cells + ' cells' : 'Mockup · sample data';
+    if (ok('campaign')) {
+      const c = dash.data('campaign').data[0];
+      const state = c.sample !== false ? 'idle' : c.activity && c.activity !== 'finished' ? 'running' : 'finished';
+      const text = c.sample !== false ? 'Mockup · sample data'
+        : state === 'running' ? `Running · ${c.activity}` : `Finished · ${c.cells} cells`;
+      for (const id of ['data-badge', 'st-live']) {
+        const el = document.getElementById(id);
+        el.hidden = false; el.dataset.state = state; el.textContent = text; el.title = text;
+      }
+    }
     const bar = document.querySelector('#summary .ib-bar > span');
     if (!ok('progress')) { bar.style.width = '0'; return; }
     const p = dash.data('progress').data[0];
@@ -670,7 +689,7 @@ dash.calc('effects', {
       svg.append('rect').attr('x', x(camp.elapsedSec)).attr('y', top - 4).attr('width', Math.max(0, x1 - x(camp.elapsedSec))).attr('height', H - top - 18)
         .style('fill', 'var(--cds-chart-grid)').style('opacity', 0.5);
       svg.append('text').attr('x', x1).attr('y', H - 4).attr('text-anchor', 'end').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text('remaining, estimated');
-      const ax = svg.append('g').attr('transform', `translate(0,${H - 18})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((x1 - x0) / 110))).tickFormat((s) => (s >= 3600 ? d3.format('.1f')(s / 3600) + ' h' : Math.round(s / 60) + ' m')));
+      const ax = svg.append('g').attr('transform', `translate(0,${H - 18})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((x1 - x0) / 110))).tickFormat((s) => (end >= 7200 ? d3.format('.1f')(s / 3600) + ' h' : end >= 600 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : Math.round(s) + ' s')));
       ax.attr('font-size', null).attr('font-family', null);
       ax.selectAll('text').style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)');
       ax.selectAll('line,path').style('stroke', 'var(--cds-chart-axis)');
@@ -719,7 +738,7 @@ dash.calc('effects', {
       svg.append('line').attr('x1', x0).attr('x2', x1).attr('y1', y + lane / 2).attr('y2', y + lane / 2).style('stroke', 'var(--cds-chart-grid)');
       for (const s of steps.filter((r) => r.cell === c.cell)) {
         if (s.status === 'running') {
-          const rx = scaleMode === 'time' ? x(s.start) : barX(s);
+          const rx = scaleMode === 'time' ? x(s.start ?? camp.elapsedSec) : barX(s);
           svg.append('rect').attr('class', 'ib-running').attr('x', rx).attr('y', y + 3).attr('width', 6).attr('height', lane - 6).attr('rx', 2).style('fill', 'var(--color-warn)');
           continue;
         }
