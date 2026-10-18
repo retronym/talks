@@ -52,6 +52,7 @@ import java.lang.reflect.Modifier.{ isPublic, isStatic }
 import java.util.{ Optional, Properties }
 
 import sbt.internal.inc.classpath.{ ClassLoaderCache, ClasspathUtil, ClasspathFilter }
+import sbt.internal.inc.consistent.ConsistentFileAnalysisStore
 import sbt.internal.scripted.{ StatementHandler, TestFailed }
 import sbt.internal.util.ManagedLogger
 import sjsonnew.support.scalajson.unsafe.{ Converter, Parser => JsonParser }
@@ -371,7 +372,18 @@ case class ProjectStructure(
 
   val stamper = Stamps.timeWrapBinaryStamps(converter)
   val cacheFile = baseDirectory / "target" / "inc_compile.zip"
-  val fileStore = FileAnalysisStore.binary(cacheFile.toFile)
+
+  /**
+   * The analysis store: Zinc's protobuf format, as sbt uses by default, or with
+   * `analysis.format = consistent` in `incOptions.properties` the consistent format, which sbt
+   * uses with `-Dsbt.analysis2024=true` and which compresses on several threads.
+   */
+  val fileStore =
+    Option(loadIncProperties(baseDirectory).getProperty("analysis.format")).map(_.trim) match {
+      case None | Some("binary") => FileAnalysisStore.binary(cacheFile.toFile)
+      case Some("consistent")    => ConsistentFileAnalysisStore.binary(cacheFile.toFile)
+      case Some(other)           => sys.error(s"Unknown analysis.format $other")
+    }
   val cachedStore = AnalysisStore.cached(fileStore)
   val earlyCacheFile = baseDirectory / "target" / "early" / "inc_compile.zip"
   val earlyAnalysisStore = FileAnalysisStore.binary(earlyCacheFile.toFile)
@@ -923,7 +935,8 @@ case class ProjectStructure(
     val compiled = System.nanoTime()
 >>>>>>>
     val analysis = result.analysis match { case a: Analysis => a }
-    cachedStore.set(AnalysisContents.create(analysis, result.setup))
+    // As sbt does, store the analysis only when the compile changed it.
+    if (result.hasModified) cachedStore.set(AnalysisContents.create(analysis, result.setup))
     val stored = System.nanoTime()
     // The whole call into Zinc, setup and stamping included, and storing its analysis after.
     timingLines.add(
