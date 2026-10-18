@@ -177,8 +177,13 @@
         <button type="button" id="tl-time" aria-pressed="true">Elapsed time</button>
         <button type="button" id="tl-step" aria-pressed="false">By step</button>
       </div>
+      <div class="ib-seg" role="group" aria-label="Timeline zoom" title="Ctrl or ⌘ + wheel, or pinch, to zoom at the pointer; shift + wheel or a sideways swipe to pan">
+        <button type="button" id="tl-zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" id="tl-zoom-fit" aria-label="Fit the whole run">×1</button>
+        <button type="button" id="tl-zoom-in" aria-label="Zoom in">+</button>
+      </div>
     </div>
-    <p class="ib-note">One lane per cell. Each bar is one step, coloured by where its time went; dashed lines mark the lockstep barriers. <em>By step</em> lines up each step's start across lanes and keeps one time scale, so bar lengths stay comparable across steps. Click a bar to inspect that step.</p>
+    <p class="ib-note">One lane per cell. Each bar is one step, coloured by where its time went; dashed lines mark the lockstep barriers. <em>By step</em> lines up each step's start across lanes and keeps one time scale, so bar lengths stay comparable across steps. Click a bar to inspect that step. Ctrl or ⌘ + wheel (or pinch) zooms at the pointer; shift + wheel pans.</p>
     <div class="ib-legend" id="phase-legend"></div>
     <div class="ib-chart ib-timeline" id="timeline" data-source="steps phases cells"></div>
   </section>
@@ -398,6 +403,20 @@ dash.calc('effects', {
   const allocOf = (parts) => (parts.some((p) => p.allocBytes != null) ? d3.sum(parts, (p) => p.allocBytes || 0) : null);
   const secs = (ms) => (ms >= 10000 ? d3.format(',.0f')(ms / 1000) : d3.format(',.1f')(ms / 1000)) + ' s';
   let scaleMode = 'time';
+  let tlZoom = 1;
+  let tlOff = 0;
+  let tlGeom = null;
+  /** Zooms the timeline by `factor` keeping the plot point at pixel `at` in place. */
+  const zoomTimeline = (factor, at) => {
+    if (!tlGeom) return;
+    const { x0, x1, ox, span } = tlGeom;
+    const px = at ?? (x0 + x1) / 2;
+    const frac = (px - ox) / span;
+    tlZoom = Math.max(1, Math.min(400, tlZoom * factor));
+    const span2 = (x1 - x0) * tlZoom;
+    tlOff = x0 - (px - frac * span2);
+    drawTimeline();
+  };
   let sort = { key: 'step', dir: 1 };
   const firstRows = new Set();
 
@@ -668,7 +687,7 @@ dash.calc('effects', {
     for (const corpus of ['scala/scala', 'scala/scala3']) for (const c of cells.filter((x) => x.corpus === corpus && cellOk(x))) order.push(c);
     if (!order.length) { const d = document.createElement('div'); d.className = 'ib-failed'; d.textContent = 'No cells match the filters'; host.appendChild(d); return; }
     const firstS3 = order.findIndex((c) => c.corpus === 'scala/scala3');
-    const svg = d3.select(host).append('svg').attr('width', '100%');
+    const svg = d3.select(host).append('svg').attr('width', '100%').style('overflow', 'hidden');
     const colW = CELL_COLS.map(([h, f]) => Math.max(textWidth(svg, h), ...order.map((c) => textWidth(svg, f(c)))) + 12);
     const colX = colW.map((_, i) => d3.sum(colW.slice(0, i)));
     const labelW = d3.sum(colW);
@@ -678,18 +697,26 @@ dash.calc('effects', {
     svg.attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
     const x0 = labelW;
     const x1 = W - 8;
+    // Zoom stretches the plot to span pixels and shifts it left by tlOff; the labels stay put.
+    const span = (x1 - x0) * tlZoom;
+    tlOff = Math.max(0, Math.min(tlOff, span - (x1 - x0)));
+    const ox = x0 - tlOff;
+    tlGeom = { x0, x1, ox, span };
     const nSteps = camp.stepsPerCell;
     const done = steps.filter((s) => s.status === 'done');
     let x, barX, barW;
     if (scaleMode === 'time') {
       const end = camp.elapsedSec + camp.etaSec;
-      x = d3.scaleLinear([0, end], [x0, x1]);
+      x = d3.scaleLinear([0, end], [ox, ox + span]);
+      const visible = [Math.max(0, x.invert(x0)), Math.min(end, x.invert(x1))];
+      const visSpan = visible[1] - visible[0];
+      const visTicks = d3.scaleLinear(visible, [x0, x1]).ticks(Math.max(2, Math.floor((x1 - x0) / 110)));
       barX = (s) => x(s.start);
       barW = (s) => Math.max(2, x(s.start + (s.wallMs * reps) / 1000) - x(s.start));
       svg.append('rect').attr('x', x(camp.elapsedSec)).attr('y', top - 4).attr('width', Math.max(0, x1 - x(camp.elapsedSec))).attr('height', H - top - 18)
         .style('fill', 'var(--cds-chart-grid)').style('opacity', 0.5);
       svg.append('text').attr('x', x1).attr('y', H - 4).attr('text-anchor', 'end').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text('remaining, estimated');
-      const ax = svg.append('g').attr('transform', `translate(0,${H - 18})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((x1 - x0) / 110))).tickFormat((s) => (end >= 7200 ? d3.format('.1f')(s / 3600) + ' h' : end >= 600 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : Math.round(s) + ' s')));
+      const ax = svg.append('g').attr('transform', `translate(0,${H - 18})`).call(d3.axisBottom(x).tickValues(visTicks).tickFormat((s) => (visSpan >= 7200 ? d3.format('.1f')(s / 3600) + ' h' : visSpan >= 600 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : visSpan >= 20 ? Math.round(s) + ' s' : d3.format('.1f')(s) + ' s')));
       ax.attr('font-size', null).attr('font-family', null);
       ax.selectAll('text').style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)');
       ax.selectAll('line,path').style('stroke', 'var(--cds-chart-axis)');
@@ -707,9 +734,9 @@ dash.calc('effects', {
       const mean = d3.mean([...known.values()].filter((v) => v)) || 1;
       const colMs = new Map(ks.map((k) => [k, known.get(k) || mean]));
       const gapPx = 6;
-      const pxPerMs = Math.max(0, x1 - x0 - gapPx * (nSteps - 1)) / d3.sum(ks, (k) => colMs.get(k));
+      const pxPerMs = Math.max(0, span - gapPx * (nSteps - 1)) / d3.sum(ks, (k) => colMs.get(k));
       const colStart = new Map();
-      let cx = x0;
+      let cx = ox;
       for (const k of ks) { colStart.set(k, cx); cx += colMs.get(k) * pxPerMs + gapPx; }
       x = (k) => colStart.get(k);
       barX = (s) => colStart.get(s.step);
@@ -730,11 +757,9 @@ dash.calc('effects', {
       sb.append('line').attr('x1', sbW).attr('x2', sbW).attr('y1', -3).attr('y2', 3).style('stroke', 'var(--color-fg-muted)');
       sb.append('text').attr('x', -4).attr('y', 4).attr('text-anchor', 'end').style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg-muted)').text(barMs >= 60000 ? barMs / 60000 + ' m' : barMs / 1000 + ' s');
     }
-    CELL_COLS.forEach(([h], j) => svg.append('text').attr('x', colX[j]).attr('y', 12).style('font-size', 'var(--cds-font-size-caption)').style('font-weight', 600).style('fill', 'var(--color-fg-muted)').text(h));
     const t = tip(host);
     order.forEach((c, i) => {
       const y = yOf(i);
-      CELL_COLS.forEach(([, f], j) => svg.append('text').attr('x', colX[j]).attr('y', y + lane / 2 + 4).style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg)').text(f(c)));
       svg.append('line').attr('x1', x0).attr('x2', x1).attr('y1', y + lane / 2).attr('y2', y + lane / 2).style('stroke', 'var(--cds-chart-grid)');
       for (const s of steps.filter((r) => r.cell === c.cell)) {
         if (s.status === 'running') {
@@ -766,6 +791,11 @@ dash.calc('effects', {
           .on('mouseleave', () => t.hide());
       }
     });
+    // The labels go on last, over anything the zoomed plot drew to their left.
+    svg.append('rect').attr('x', 0).attr('y', 0).attr('width', x0 - 2).attr('height', H).style('fill', 'var(--color-panel)');
+    CELL_COLS.forEach(([h], j) => svg.append('text').attr('x', colX[j]).attr('y', 12).style('font-size', 'var(--cds-font-size-caption)').style('font-weight', 600).style('fill', 'var(--color-fg-muted)').text(h));
+    order.forEach((c, i) => CELL_COLS.forEach(([, f], j) => svg.append('text').attr('x', colX[j]).attr('y', yOf(i) + lane / 2 + 4).style('font-size', 'var(--cds-font-size-caption)').style('fill', 'var(--color-fg)').text(f(c))));
+    document.getElementById('tl-zoom-fit').textContent = '×' + (tlZoom < 10 ? d3.format('.1~f')(tlZoom) : Math.round(tlZoom));
   }
 
   function drawPerStep(hostId, prefix) {
@@ -1102,6 +1132,22 @@ dash.calc('effects', {
     drawTimeline();
   };
   document.getElementById('tl-time').addEventListener('click', () => setMode('time'));
+  document.getElementById('tl-zoom-in').addEventListener('click', () => zoomTimeline(1.6));
+  document.getElementById('tl-zoom-out').addEventListener('click', () => zoomTimeline(1 / 1.6));
+  document.getElementById('tl-zoom-fit').addEventListener('click', () => { tlZoom = 1; tlOff = 0; drawTimeline(); });
+  document.getElementById('timeline').addEventListener('wheel', (e) => {
+    if (!tlGeom) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - box.left;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      if (px >= tlGeom.x0) zoomTimeline(Math.exp(-e.deltaY * 0.004), px);
+    } else if (tlZoom > 1 && (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY))) {
+      e.preventDefault();
+      tlOff += e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+      drawTimeline();
+    }
+  }, { passive: false });
   document.getElementById('tl-step').addEventListener('click', () => setMode('step'));
 
   function drawAll() {
