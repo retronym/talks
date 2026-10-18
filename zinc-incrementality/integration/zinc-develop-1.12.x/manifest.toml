@@ -38,6 +38,14 @@ remote = "origin"
 pr = 71
 title = "[1.x] IncBench: incremental-compile benchmarks with --verify, and Zinc phase timings"
 
+# The analysis stores' deflate level (sbt.analysis.compression), which the IncBench harness sets
+# the same in every Zinc the campaign compares.
+[[members]]
+id = "rz#75"
+remote = "origin"
+pr = 75
+title = "[1.x] sbt.analysis.compression sets the analysis stores' deflate level"
+
 [[excluded]]
 id = "rz#48"
 reason = "Merkle; see integration/merkle-1.12.x"

@@ -152,6 +152,12 @@ title = "Add pending test: forwarders to an inherited method over a new value cl
 
 # harness
 [[members]]
+id = "rz#76"
+remote = "origin"
+pr = 76
+title = "sbt.analysis.compression sets the analysis stores' deflate level"
+
+[[members]]
 id = "rz#36"
 remote = "origin"
 pr = 36
