@@ -64,11 +64,12 @@ class Cell:
         self.proc = None
         self.ready = None
 
-    def start(self, classpath, jvm_opts, args):
+    def start(self, classpath, jvm_opts, args, env):
         self.log = open(self.dir / "incbench.log", "a")
         self.proc = subprocess.Popen(
             ["java", *jvm_opts, "-cp", classpath, MAIN, *args],
-            cwd=self.dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, text=True, bufsize=1)
+            cwd=self.dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, text=True, bufsize=1,
+            env={**os.environ, **env})
 
     def results(self):
         """IncBench's results until it waits for the next step, which is then `ready`."""
@@ -112,6 +113,9 @@ def main():
     ap.add_argument("--build", type=Path, required=True)
     ap.add_argument("--edits", type=Path, required=True)
     ap.add_argument("--cell", action="append", required=True, help="NAME=ZINC_CHECKOUT")
+    ap.add_argument("--cell-scala", action="append", default=[],
+                    help="NAME=VERSION:JARS, a locally built Scala 2.13 for that cell: its version and its library, "
+                         "reflect and compiler jars separated by ':' (scripted's 2.13.local bridge label)")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--warmup", type=int, default=2)
     ap.add_argument("--verify", action="store_true")
@@ -132,6 +136,11 @@ def main():
         d = out / "cells" / name
         d.mkdir(parents=True, exist_ok=True)
         cells.append(Cell(name, checkout, d))
+    scala = {}
+    for spec in a.cell_scala:
+        name, rest = spec.split("=", 1)
+        version, jars = rest.split(":", 1)
+        scala[name] = (version, jars)
 
     start = time.time()
     campaign = {
@@ -141,7 +150,8 @@ def main():
         "jvmOptions": jvm_opts,
         "machine": machine(),
         "cells": [{"name": c.name, "checkout": str(c.checkout), "commit": git(c.checkout, "rev-parse", "HEAD"),
-                   "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD")} for c in cells],
+                   "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "scala": scala[c.name][0] if c.name in scala else None} for c in cells],
     }
     (out / "campaign.json").write_text(json.dumps(campaign, indent=2) + "\n")
     steps = open(out / "steps.jsonl", "w")
@@ -158,6 +168,15 @@ def main():
             cp = test_classpath(c.checkout, c.dir / "sbt.log")
             build = c.dir / "build"
             copy_build(a.build.resolve(), build)
+            env = {}
+            if c.name in scala:
+                version, jars = scala[c.name]
+                env = {"ZINC_SCRIPTED_SCALA213_VERSION": version, "ZINC_SCRIPTED_SCALA213_JARS": jars}
+                bj = build / "build.json"
+                b = json.loads(bj.read_text())
+                for p in b["projects"]:
+                    p["scalaVersion"] = "2.13.local"
+                bj.write_text(json.dumps(b, indent=2) + "\n")
             args = ["--build", str(build), "--edits", str(a.edits.resolve()), "--reps", str(a.reps),
                     "--warmup", str(a.warmup), "--label", c.name, "--serve", "--out", str(c.dir / "incbench.jsonl")]
             args += [x for kv in a.inc_option for x in ("--inc-option", kv)]
@@ -165,7 +184,7 @@ def main():
             args += (["--only", a.only] if a.only else [])
             log(f"{c.name}: clean build and warm-up")
             t = time.time()
-            c.start(cp, jvm_opts, args)
+            c.start(cp, jvm_opts, args, env)
             record(c, 0, 0, c.results(), t)
             log(f"{c.name}: ready for {c.ready}")
         rng = random.Random(a.seed)

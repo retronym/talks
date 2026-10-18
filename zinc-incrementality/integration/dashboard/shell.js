@@ -34,13 +34,31 @@
     colors: ['#8a8984', '#c4673f', '#2f8f6b', '#b8862b', '#a94f75', '#2c6e2e', '#6e63b5', '#b5524b'],
   };
   let version = null;
+  let run = null;
+  async function pickRun() {
+    const runs = await (await fetch('data/runs', { cache: 'no-store' })).json();
+    const sel = document.getElementById('shell-run');
+    const want = new URLSearchParams(location.search).get('run') ?? load('dash-run', null);
+    const ready = runs.filter((r) => r.ready);
+    run = ready.some((r) => String(r.id) === String(want)) ? Number(want) : (ready[ready.length - 1] ?? runs[0]).id;
+    sel.replaceChildren(...runs.map((r) => Object.assign(new Option(r.ready ? r.name : r.name + ' (queued)', r.id), { disabled: !r.ready })));
+    sel.value = run;
+    sel.hidden = runs.length < 2;
+    sel.onchange = () => {
+      run = Number(sel.value); version = null;
+      try { localStorage.setItem('dash-run', JSON.stringify(run)); } catch (e) { /* none */ }
+      for (const n of NAMES) delete data[n];
+      refresh();
+    };
+  }
   async function refresh() {
     try {
-      const v = await (await fetch('data/version', { cache: 'no-store' })).text();
+      if (run == null) await pickRun();
+      const v = await (await fetch(`data/${run}/version`, { cache: 'no-store' })).text();
       if (v === version) return;
       version = v;
       await Promise.all(NAMES.map(async (n) => {
-        const r = await fetch(`data/${n}.json`, { cache: 'no-store' });
+        const r = await fetch(`data/${run}/${n}.json`, { cache: 'no-store' });
         data[n] = r.ok ? { status: 'ok', data: await r.json() } : { status: 'missing', data: [] };
       }));
       document.getElementById('shell-updated').textContent = 'data ' + new Date().toLocaleTimeString();

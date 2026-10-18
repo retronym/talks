@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Serve the IncBench campaign dashboard locally, live from a lockstep run.
 
-    serve-dashboard DATA_DIR [--port 8770] [--branches FILE]
+    serve-dashboard DATA_DIR... [--port 8770] [--branches FILE]
 
 DATA_DIR holds the datasets `lockstep-dash` writes (campaign.json, cells.json, ...), usually
-`<lockstep OUT_DIR>/dash`, which `lockstep --on-step` refreshes after every round. The page polls
-for changes every few seconds. `branches.json` comes from DATA_DIR, or from --branches
+`<lockstep OUT_DIR>/dash`, which `lockstep --on-step` refreshes after every round. With several,
+the page has a picker for the run to show. The page polls for changes every few seconds. `branches.json` comes from DATA_DIR, or from --branches
 (`branch-map`'s output). Only binds to 127.0.0.1.
 """
 
 import argparse
 import http.server
+import json
+import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent / "dashboard"
@@ -25,22 +27,34 @@ def page():
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script>{(HERE / "shell.js").read_text()}</script>
 </head><body>
-<p style="font-size:12px;color:var(--color-fg-muted);margin:8px 0 0">Local dashboard · <span id="shell-updated">loading</span></p>
+<p style="font-size:12px;color:var(--color-fg-muted);margin:8px 0 0">Local dashboard · <select id="shell-run" class="ib-select" aria-label="Run"></select> · <span id="shell-updated">loading</span></p>
 {(HERE / "page.html").read_text()}
 </body></html>"""
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("data_dir", type=Path)
+    ap.add_argument("data_dirs", type=Path, nargs="+")
     ap.add_argument("--port", type=int, default=8770)
     ap.add_argument("--branches", type=Path)
     a = ap.parse_args()
 
-    def source(name):
-        if name == "branches" and a.branches:
-            return a.branches
-        return a.data_dir / f"{name}.json"
+    def source(run, name):
+        d = a.data_dirs[run]
+        if name == "branches" and (a.branches or not (d / "branches.json").exists()):
+            return a.branches or next((x / "branches.json" for x in a.data_dirs if (x / "branches.json").exists()), d / "branches.json")
+        return d / f"{name}.json"
+
+    def runs():
+        out = []
+        for i, d in enumerate(a.data_dirs):
+            name = d.parent.name if d.name == "dash" else d.name
+            try:
+                name = json.loads((d / "campaign.json").read_text())[0]["name"]
+            except (OSError, ValueError, LookupError):
+                pass
+            out.append({"id": i, "name": name, "ready": (d / "campaign.json").exists()})
+        return out
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def send(self, body, ctype, code=200):
@@ -54,19 +68,23 @@ def main():
             path = self.path.split("?")[0].split("#")[0]
             if path in ("/", "/index.html"):
                 return self.send(page().encode(), "text/html; charset=utf-8")
-            if path == "/data/version":
-                mtimes = [source(n).stat().st_mtime_ns for n in NAMES if source(n).exists()]
-                return self.send(str(max(mtimes, default=0)).encode(), "text/plain")
-            name = path.removeprefix("/data/").removesuffix(".json")
-            if path.startswith("/data/") and name in NAMES and source(name).exists():
-                return self.send(source(name).read_bytes(), "application/json")
+            if path == "/data/runs":
+                return self.send(json.dumps(runs()).encode(), "application/json")
+            m = re.fullmatch(r"/data/(\d+)/(\w+)(\.json)?", path)
+            if m and int(m.group(1)) < len(a.data_dirs):
+                run, name = int(m.group(1)), m.group(2)
+                if name == "version":
+                    mtimes = [source(run, n).stat().st_mtime_ns for n in NAMES if source(run, n).exists()]
+                    return self.send(str(max(mtimes, default=0)).encode(), "text/plain")
+                if name in NAMES and source(run, name).exists():
+                    return self.send(source(run, name).read_bytes(), "application/json")
             self.send(b"not found", "text/plain", 404)
 
         def log_message(self, *args):
             pass
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
-    print(f"http://127.0.0.1:{a.port}/  (data: {a.data_dir})", flush=True)
+    print(f"http://127.0.0.1:{a.port}/  (runs: {', '.join(map(str, a.data_dirs))})", flush=True)
     server.serve_forever()
 
 

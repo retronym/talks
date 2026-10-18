@@ -475,7 +475,7 @@ dash.calc('effects', {
     return w;
   };
 
-  const scalaOf = (c) => (c.corpus === 'scala/scala3' ? '3' : '2.13') + ' ' + c.compiler;
+  const scalaOf = (c) => (/^\d/.test(c.compiler) ? c.compiler : (c.corpus === 'scala/scala3' ? '3' : '2.13') + ' ' + c.compiler);
   const CELL_COLS = [['Scala', scalaOf], ['Zinc', (c) => c.zinc], ['Hashing', (c) => c.algo]];
   const cellLabel = (c) => `Scala ${scalaOf(c)} · Zinc ${c.zinc}` + (c.zinc.toLowerCase().includes(String(c.algo).toLowerCase()) ? '' : ` · ${c.algo}`);
 

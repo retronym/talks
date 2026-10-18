@@ -75,6 +75,8 @@ def main():
     ap.add_argument("--edits", type=Path, help="the edits TSV, if not the one campaign.json names")
     ap.add_argument("--name")
     ap.add_argument("--cells-total", type=int, help="cells in the whole campaign, when this run is part of it")
+    ap.add_argument("--release", default="2.13.18",
+                    help="the Scala release a cell without a locally built compiler runs (scripted's 2.13.x label)")
     ap.add_argument("--log", type=Path, help="lockstep's log, whose last line says what it is doing now")
     a = ap.parse_args()
     camp = json.loads((a.run_dir / "campaign.json").read_text())
@@ -98,10 +100,13 @@ def main():
 
     cells, steps, phases, cycles = [], [], [], []
     names = [c["name"] for c in camp["cells"]]
+    local = {c["name"]: c.get("scala") for c in camp["cells"]}
     for n in names:
         b, comp, z = n.split("-")
-        cells.append(dict(cell=n, corpus=BUILDS[b], compiler=COMPILERS[comp], zinc=ZINCS[z][0], algo=ZINCS[z][1],
-                          compilerKey=comp, zincKey=z))
+        # A cell on a locally built compiler is base or integration; otherwise it runs the release.
+        label = COMPILERS[comp] if local.get(n) else a.release
+        cells.append(dict(cell=n, corpus=BUILDS[b], compiler=label, compilerVersion=local.get(n) or a.release,
+                          zinc=ZINCS[z][0], algo=ZINCS[z][1], compilerKey=comp, zincKey=z))
     corpus_of = {c["cell"]: c["corpus"] for c in cells}
 
     timed = [r for r in lines if r["step"] not in ("warmup", "verify-base") and not r["step"].endswith("-reset")]
