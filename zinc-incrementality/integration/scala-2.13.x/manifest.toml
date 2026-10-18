@@ -23,6 +23,24 @@ pr = 11295
 title = "Avoid per-tree allocations when checking unused types"
 
 [[members]]
+id = "scala#11313"
+remote = "upstream"
+pr = 11313
+title = "Give each top-level lub/glb its own memo tables"
+
+[[members]]
+id = "scala#11314"
+remote = "upstream"
+pr = 11314
+title = "Don't share mutable type-operation state across reflection threads"
+
+# scala#11313 removes the Depth import from SynchronizedTypes; scala#11314 adds uses of it.
+[[members]]
+id = "fixup-11313-11314"
+patch = "fixups/11313-11314-depth-import.patch"
+title = "Integration: restore the Depth import that scala#11314 uses and scala#11313 removes"
+
+[[members]]
 id = "rz-scala#136"
 remote = "origin"
 pr = 136
@@ -40,6 +58,49 @@ remote = "origin"
 pr = 138
 title = "Make Analyzer an abstract class"
 
+[[members]]
+id = "rz-scala#147"
+remote = "origin"
+pr = 147
+title = "Forget stale sealed children when a later Run redefines the parent"
+
+[[members]]
+id = "rz-scala#142"
+remote = "origin"
+pr = 142
+title = "patmat: faster analysis of large matches, with unchanged output"
+
+[[members]]
+id = "rz-scala#156"
+remote = "origin"
+pr = 156
+title = "Avoid allocation in Symbol.filter when all alternatives match"
+
+[[members]]
+id = "rz-scala#158"
+remote = "origin"
+pr = 158
+title = "Compute NotAMemberError's hints only when the error is reported"
+
+[[members]]
+id = "rz-scala#159"
+remote = "origin"
+pr = 159
+title = "Avoid String allocation in Name.encode"
+
+# bridge
+[[members]]
+id = "rz-scala#141"
+remote = "origin"
+pr = 141
+title = "Print annotation arguments once in the API phase"
+
+[[members]]
+id = "rz-scala#140"
+remote = "origin"
+pr = 140
+title = "[SPIKE] Bridge API extraction through a visitor, with tree and hash backends"
+
 [[excluded]]
 id = "rz-scala#40..#133"
 reason = "old performance and WIP experiments"
@@ -52,3 +113,31 @@ reason = "same branch as scala#11287"
 id = "rz-scala#135"
 reason = "blocked on a zinc release: needs compiler-interface 1.12.2 (AnalysisCallback4), not yet published"
 
+
+[[excluded]]
+id = "scala#11307"
+reason = "the same branch as rz-scala#142"
+
+[[excluded]]
+id = "scala#11306"
+reason = "an alternative to rz-scala#138 (Analyzer as an abstract class)"
+
+[[excluded]]
+id = "rz-scala#150"
+reason = "an alternative to rz-scala#138 (Analyzer as a class)"
+
+[[excluded]]
+id = "scala#11312"
+reason = "CI red"
+
+[[excluded]]
+id = "scala#11315"
+reason = "CI pending; add when green"
+
+[[excluded]]
+id = "rz-scala#139"
+reason = "CI wiring only"
+
+[[excluded]]
+id = "rz-scala#144..#157"
+reason = "plans, surveys, benchmarks for the record, experiments, and red or stacked drafts (#144-#146, #148, #149, #151, #153-#155, #157)"
