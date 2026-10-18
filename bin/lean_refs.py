@@ -35,7 +35,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = 'retronym/jvm-lang-models'
 URL = f'https://github.com/{REPO}'
-TALKS = ['zinc-incrementality', 'zinc-lean', 'zinc-testing']
+TALKS = ['zinc-incrementality', 'zinc-lean', 'zinc-merkle', 'zinc-testing']
 PIN = re.compile(r'\*\*Lean model:\*\*.*? at `([0-9a-f]{40})`')
 
 # Documents of the Zinc model as the talks named them before the move, to their current paths.
