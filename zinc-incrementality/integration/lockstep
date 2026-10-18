@@ -189,7 +189,7 @@ def main():
                    "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD"),
                    "scala": scala[c.name][0] if c.name in scala else None} for c in cells],
     }
-    (out / "campaign.json").write_text(json.dumps(campaign, indent=2) + "\n")
+    (out / "campaign.json").write_text(json.dumps(campaign, indent=2, default=str) + "\n")
     steps = open(out / "steps.jsonl", "w")
 
     def record(cell, round, order, results, started):
