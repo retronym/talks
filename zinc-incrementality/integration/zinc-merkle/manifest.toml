@@ -72,3 +72,8 @@ title = "Merkle: match Scala 3's names for classes nested in objects"
 id = "merkle-own-output-not-library"
 patch = "fixups/merkle-own-output-not-library.patch"
 title = "Merkle: don't take this subproject's output for a library"
+
+[[members]]
+id = "merkle3-nested-ancestor-stable-test"
+patch = "fixups/merkle3-nested-ancestor-stable-test.patch"
+title = "Test: a Scala 3 class nested in an object keeps its API across a clean build"
