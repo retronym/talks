@@ -135,6 +135,11 @@ def main():
         # IncHandler splits options on spaces. In a -Wconf filter, msg= is a regex, so a space
         # there can be written as \s without changing what it matches.
         scalac = [rewrite(o).replace(" ", "\\s") if o.startswith("-Wconf:") else rewrite(o) for o in get(m, "scalacOptions")]
+        # Scala 3 writes each source's path into its TASTy, relative to -sourceroot, which sbt passes
+        # but doesn't show in scalacOptions. Without it the path is relative to the working directory,
+        # so two copies of the build compile to different TASTy and classfiles.
+        if a.scala.startswith("3") and "-sourceroot" not in scalac:
+            scalac += ["-sourceroot", "[basedir]"]
         javac = get(m, "javacOptions")
         for o in scalac + javac:
             if " " in o:
