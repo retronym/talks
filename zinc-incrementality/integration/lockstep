@@ -174,10 +174,12 @@ def main():
     # scalac's profiler costs little, and without it the dashboard has no phases or allocation.
     ap.add_argument("--profile", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--only")
-    # sbt's defaults where scripted's differ, and Zinc's optimistic macro invalidation, which
-    # the macro fast-track fix (rz#73) otherwise gives only the Zincs that carry it.
+    # sbt's defaults where scripted's differ. recompileOnMacroDef is sbt's default true, stated so the
+    # generated incOptions.properties shows it: false makes builds that define macros or use @inline
+    # unsound. Only scala/scala runs with false (--cell-option NAME=recompileOnMacroDef=false), where
+    # the point is the macro fast-track fix (rz#73), which only the Zincs that carry it get credit for.
     ap.add_argument("--inc-option", action="append",
-                    default=["pipelining=false", "recompileAllFraction=0.5", "recompileOnMacroDef=false"])
+                    default=["pipelining=false", "recompileAllFraction=0.5", "recompileOnMacroDef=true"])
     ap.add_argument("--jvm-opt", action="append")
     ap.add_argument("--analysis-compression", type=int,
                     help="the deflate level, 0 to 9, every cell's analysis store compresses at (sbt.analysis.compression)")

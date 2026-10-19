@@ -103,7 +103,7 @@ Only one cell compiles at any moment, so the others' JVMs are idle. Results are 
 
 ### 6. What each step records
 
-Every cell runs with sbt's defaults where scripted's differ: `pipelining=false` and `recompileAllFraction=0.5` (scripted defaults it to 1.0, which never falls back to a full compile). Every cell also runs with `recompileOnMacroDef=false`, Zinc's optimistic macro invalidation, so the baseline isn't charged for the cascade that the macro fast-track fix (rz#73) removes from the other Zincs.
+Every cell runs with sbt's defaults where scripted's differ: `pipelining=false` and `recompileAllFraction=0.5` (scripted defaults it to 1.0, which never falls back to a full compile). Every cell runs with `recompileOnMacroDef=true`, sbt's default, which is the only sound setting for builds that define macros or use `@inline`. The scala/scala campaign alone runs with `recompileOnMacroDef=false` (`--cell-option NAME=recompileOnMacroDef=false` on each cell), Zinc's optimistic macro invalidation, so the baseline isn't charged for the cascade that the macro fast-track fix (rz#73) removes from the other Zincs; that comparison is the point there.
 
 A step applies its edit and compiles, once. `prepare` warms the JVM with the clean build and a few no-op and body-edit compiles before step 1, so the first timed step isn't paying for JIT. One repetition is the starting point: the campaign is about direction and attribution, not precise timings. `reps` stays an option, and a step can be rerun on its own when a number looks wrong.
 
