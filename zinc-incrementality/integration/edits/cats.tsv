@@ -1,0 +1,10 @@
+# The typelevel/cats campaign (kernelJVM, coreJVM, freeJVM): name, file, find, replace (\n for a newline). Each edit is followed by its revert.
+functor-void-body	coreJVM/src/main/scala/cats/Functor.scala	  def void[A](fa: F[A]): F[Unit] = as(fa, ())\n	  def void[A](fa: F[A]): F[Unit] = map(fa)(_ => ())\n
+functor-add-member	coreJVM/src/main/scala/cats/Functor.scala	trait Functor[F[_]] extends Invariant[F] { self =>	trait Functor[F[_]] extends Invariant[F] { self =>\n  def zincCheck: Int = 1
+nel-private-member	coreJVM/src/main/scala/cats/data/NonEmptyList.scala	  def toList: List[A] = head :: tail\n	  def toList: List[A] = head :: tail\n  private def zincCheck: Int = 1\n
+eval-add-case	coreJVM/src/main/scala/cats/Eval.scala	final case class Now[+A](value: A) extends Eval.Leaf[A] {	final case class ZincCheck[+A](value: A) extends Eval.Leaf[A] {\n  def memoize: Eval[A] = this\n}\n\nfinal case class Now[+A](value: A) extends Eval.Leaf[A] {
+show-add-implicit	coreJVM/src/main/scala/cats/Show.scala	  implicit def catsShowForUnit: Show[Unit] = cats.instances.unit.catsStdShowForUnit	  implicit def catsShowForZincCheck: Show[java.util.UUID] = Show.fromToString\n  implicit def catsShowForUnit: Show[Unit] = cats.instances.unit.catsStdShowForUnit
+show-implicit-type	coreJVM/src/main/scala/cats/Show.scala	  implicit val catsContravariantForShow: Contravariant[Show] = new Contravariant[Show] {	  implicit val catsContravariantForShow: Contravariant[Show] with Serializable = new Contravariant[Show] with Serializable {
+package-object-add-alias	coreJVM/src/main/scala/cats/package.scala	  type Id[A] = A\n	  type Id[A] = A\n  type ZincCheck = Int\n
+eq-add-member	kernelJVM/src/main/scala/cats/kernel/Eq.scala	trait Eq[@sp A] extends Any with Serializable { self =>	trait Eq[@sp A] extends Any with Serializable { self =>\n  def zincCheck: Int = 1
+semigroup-combinen-body	kernelJVM/src/main/scala/cats/kernel/Semigroup.scala	  def combineN(a: A, n: Int): A =	  def combineN(a: A, n: Int): A = if (n == Int.MinValue) throw new IllegalArgumentException("zinc") else

@@ -1,0 +1,11 @@
+# The milessabin/shapeless campaign (coreJVM, examplesJVM): name, file, find, replace (\n for a newline). Each edit is followed by its revert.
+hcons-tostring-body	coreJVM/src/main/scala/shapeless/hlists.scala	    case _ => s"$head :: $tail"	    case _ => s"$head :: $tail".toString
+hlist-add-member	coreJVM/src/main/scala/shapeless/hlists.scala	sealed trait HList extends Product with Serializable\n	sealed trait HList extends Product with Serializable {\n  def zincCheck: Int = 1\n}\n
+hlist-add-case	coreJVM/src/main/scala/shapeless/hlists.scala	case object HNil extends HNil\n	case object HNil extends HNil\n\nfinal case class ZincCheck() extends HList\n
+hlistops-private-member	coreJVM/src/main/scala/shapeless/syntax/hlists.scala	final class HListOps[L <: HList](l : L) extends Serializable {	final class HListOps[L <: HList](l : L) extends Serializable {\n  private def zincCheck: Int = 1
+length-add-implicit	coreJVM/src/main/scala/shapeless/ops/hlists.scala	    implicit def hnilLength[L <: HNil]: Aux[L, _0] = new Length[L] {	    implicit def zincCheckLength: Aux[HNil, _0] = hnilLength[HNil]\n    implicit def hnilLength[L <: HNil]: Aux[L, _0] = new Length[L] {
+package-object-body	coreJVM/src/main/scala/shapeless/package.scala	  def unexpected : Nothing = sys.error("Unexpected invocation")	  def unexpected : Nothing = sys.error("Unexpected invocation!")
+package-object-add-alias	coreJVM/src/main/scala/shapeless/package.scala	  type Id[+T] = T\n	  type Id[+T] = T\n  type ZincCheck = Int\n
+poly-add-member	coreJVM/src/main/scala/shapeless/poly.scala	trait Poly extends PolyApply with Serializable {	trait Poly extends PolyApply with Serializable {\n  def zincCheck: Int = 1
+generic-macro-impl-body	coreJVM/src/main/scala/shapeless/generic.scala	      abort("No Generic instance available for HList or Coproduct")	      abort("No Generic instance available for HList or Coproduct!")
+generic-macro-expansion	coreJVM/src/main/scala/shapeless/generic.scala	    q"$generic.instance[$tpe, $repr]({ case $to }, { case $from })"	    q"_root_.scala.Predef.locally($generic.instance[$tpe, $repr]({ case $to }, { case $from }))"
