@@ -40,6 +40,7 @@ Find the remaining incrementality bugs, and the performance anomalies, in today'
 
 ## Runs
 
+- Conformance, Java spaces (`lake exe jconformance names|sealed`, `pipelining=false`): `names` 300 cases, 42 diverged under `merkle` and 44 under `names`, none Merkle-only; `sealed` 36 cases, the same 12 diverged under both. These are the Java name-resolution gaps of the pending-test PRs (rz#42, #43, #50), not Merkle.
 - Conformance under Scala 3 (`integration/scala3-merkle` 1a6ebda04c), `flat` space, 500 cases: 251 bases do not compile (the space is written for Scala 2), 216 cases ran; 24 diverged under `hashing=merkle`, 22 under `hashing=names`, 21 shared. The 3 Merkle-only are finding 7. Of the other divergences, every differing classfile belongs to a class the incremental build recompiled (34 sides under `names`, 31 under `merkle`): Scala 3 output that depends on the batch (the scala/scala3#26551 family), not Zinc. The 4 sides under `merkle` with a class it did not recompile are all finding 7.
 - Conformance, `flat` space, 2,000 cases (covering order, `split` and `single`, `hashing=merkle`, develop line with findings 3-4): 0 diverged. `names` space (31,392 bases), 500 cases: 9 diverged, the same 9 under `hashing=names`; all are finding 6.
 - Conformance, `flat` space (Lean model `jvm-lang-models` `lake exe conformance`, 4,264 bases, 115,128 edits), covering order, 200 cases, layouts `split` and `single`, `hashing=merkle`, develop line with findings 3-4: 0 diverged.
