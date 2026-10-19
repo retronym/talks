@@ -20,6 +20,10 @@ import re
 from pathlib import Path
 
 BUILDS = {"s2": "scala/scala", "s3": "scala/scala3"}
+LINES = {"s2": "2.13", "s3": "3"}
+# Other projects' exports, by the checkout they came from; their s2 and s3 cells are the two Scala lines.
+CORPORA = {"pekko": "apache/pekko", "cats": "typelevel/cats", "shapeless": "milessabin/shapeless",
+           "scala-steward": "scala-steward-org/scala-steward"}
 COMPILERS = {"released": "base", "integration": "integration"}
 ZINCS = {"released": ("1.12.x", "name hashing"), "perf": ("1.12.x + fixes", "name hashing"),
          "merkle": ("1.12.x + fixes + Merkle", "Merkle"),
@@ -40,6 +44,16 @@ GROUPS = {
     "backend": {"jvm", "genBCode", "genSJSIR"},
 }
 INVALIDATE = ["initialChanges", "invalidateInitial", "detectAPIChanges", "invalidate", "prune", "merge", "analysis"]
+
+
+def corpus_name(build, line_key):
+    """The project a cell's build was exported from, or scala/scala or scala/scala3 by its Scala line."""
+    export = Path(build) / "export.json" if build else None
+    if export and export.exists():
+        repo = Path(json.loads(export.read_text())["from"]).name
+        if repo in CORPORA:
+            return CORPORA[repo]
+    return BUILDS[line_key]
 
 
 def mini_phases(phase):
@@ -98,6 +112,8 @@ def main():
     ap.add_argument("--cells-total", type=int, help="cells in the whole campaign, when this run is part of it")
     ap.add_argument("--release", default="2.13.18",
                     help="the Scala release a cell without a locally built compiler runs (scripted's 2.13.x label)")
+    ap.add_argument("--release3", default="3.3.7",
+                    help="the Scala 3 release an s3 cell without a locally built compiler runs (scripted's 3.x label)")
     ap.add_argument("--log", type=Path, help="lockstep's log, whose last line says what it is doing now")
     a = ap.parse_args()
     camp = json.loads((a.run_dir / "campaign.json").read_text())
@@ -122,11 +138,13 @@ def main():
     cells, steps, phases, cycles = [], [], [], []
     names = [c["name"] for c in camp["cells"]]
     local = {c["name"]: c.get("scala") for c in camp["cells"]}
+    build_of = {c["name"]: c.get("build") or camp.get("build") for c in camp["cells"]}
     for n in names:
         b, comp, z = n.split("-")
         # A cell on a locally built compiler is base or integration; otherwise it runs the release.
-        label = COMPILERS[comp] if local.get(n) else a.release
-        cells.append(dict(cell=n, corpus=BUILDS[b], compiler=label, compilerVersion=local.get(n) or a.release,
+        release = a.release3 if b == "s3" else a.release
+        label = COMPILERS[comp] if local.get(n) else release
+        cells.append(dict(cell=n, corpus=corpus_name(build_of[n], b), line=LINES[b], compiler=label, compilerVersion=local.get(n) or release,
                           zinc=ZINCS[z][0], algo=ZINCS[z][1], compilerKey=comp, zincKey=z))
     corpus_of = {c["cell"]: c["corpus"] for c in cells}
 

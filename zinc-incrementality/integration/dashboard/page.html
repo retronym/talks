@@ -348,8 +348,8 @@ dash.calc('effects', {
     const commits = (campaign[0] && campaign[0].commits) || {};
     // A cell's position on each axis. The Merkle build's Zinc is "+ fixes" too; its hashing is the algorithm axis.
     const zincLevel = { released: 0, perf: 1, merkle: 1, merklenames: 1 };
-    const axes = (c) => ({ compiler: c.compilerKey === 'released' ? 0 : 1, zinc: zincLevel[c.zincKey] ?? 1, algo: c.algo === 'Merkle' ? 1 : 0 });
-    const NAMES = { compiler: 'Compiler', zinc: 'Zinc performance', algo: 'Invalidation algorithm', mode: 'Merkle build, default hashing', all: 'All together' };
+    const axes = (c) => ({ compiler: c.compilerKey === 'released' ? 0 : 1, zinc: zincLevel[c.zincKey] ?? 1, algo: c.algo === 'Merkle' ? 1 : 0, line: c.line === '3' ? 1 : 0 });
+    const NAMES = { compiler: 'Compiler', zinc: 'Zinc performance', algo: 'Invalidation algorithm', line: 'Scala 2.13 against Scala 3', mode: 'Merkle build, default hashing', all: 'All together' };
     const done = steps.filter((s) => s.status === 'done' && s.kind !== 'clean');
     const sum = (rows, f) => rows.reduce((a, r) => a + r[f], 0);
     const r1 = (ms) => Math.round(ms / 100) / 10;
@@ -369,7 +369,7 @@ dash.calc('effects', {
     };
     for (const corpus of [...new Set(cells.map((c) => c.corpus))]) {
       const cs = cells.filter((c) => c.corpus === corpus).map((c) => ({ ...c, ax: axes(c) }));
-      for (const key of ['compiler', 'zinc', 'algo']) {
+      for (const key of ['compiler', 'zinc', 'algo', 'line']) {
         let pairs = [];
         for (const b of cs) for (const v of cs) {
           const diff = Object.keys(b.ax).filter((k) => b.ax[k] !== v.ax[k]);
@@ -382,11 +382,13 @@ dash.calc('effects', {
       }
       // The same axes on two Zinc builds: the Merkle build with hashing left at name hashing, against + fixes.
       for (const b of cs) for (const v of cs) {
-        if (b.zincKey === 'perf' && v.zincKey === 'merklenames' && b.compilerKey === v.compilerKey) row('mode', corpus, b, v);
+        if (b.zincKey === 'perf' && v.zincKey === 'merklenames' && b.compilerKey === v.compilerKey && b.ax.line === v.ax.line) row('mode', corpus, b, v);
       }
-      const lo = cs.find((c) => !c.ax.compiler && !c.ax.zinc && !c.ax.algo);
-      const hi = cs.find((c) => c.ax.compiler && c.ax.zinc && c.ax.algo);
-      if (lo && hi) row('all', corpus, lo, hi);
+      for (const line of [0, 1]) {
+        const lo = cs.find((c) => c.ax.line === line && !c.ax.compiler && !c.ax.zinc && !c.ax.algo);
+        const hi = cs.find((c) => c.ax.line === line && c.ax.compiler && c.ax.zinc && c.ax.algo);
+        if (lo && hi) row('all', corpus, lo, hi);
+      }
     }
     return out;
   },
@@ -484,7 +486,7 @@ dash.calc('effects', {
     return w;
   };
 
-  const scalaOf = (c) => (/^\d/.test(c.compiler) ? c.compiler : (c.corpus === 'scala/scala3' ? '3' : '2.13') + ' ' + c.compiler);
+  const scalaOf = (c) => (/^\d/.test(c.compiler) ? c.compiler : (c.line || (c.corpus === 'scala/scala3' ? '3' : '2.13')) + ' ' + c.compiler);
   const CELL_COLS = [['Scala', scalaOf], ['Zinc', (c) => c.zinc], ['Hashing', (c) => c.algo]];
   const cellLabel = (c) => `Scala ${scalaOf(c)} · Zinc ${c.zinc}` + (c.zinc.toLowerCase().includes(String(c.algo).toLowerCase()) ? '' : ` · ${c.algo}`);
 
@@ -506,8 +508,10 @@ dash.calc('effects', {
     }
   }
   const filtered = () => FILTERS.some(([dim, , opts]) => filt[dim].size < opts.length);
-  const cellOk = (c) => !!c && FILTERS.every(([dim]) => filt[dim].has(c[dim]));
-  const corpusOk = (corpus) => filt.corpus.has(corpus);
+  // A value the filters don't list, such as another project's build, is always shown.
+  const passes = (dim, v) => filt[dim].has(v) || !FILTERS.find((f) => f[0] === dim)[2].some((o) => o[0] === v);
+  const cellOk = (c) => !!c && FILTERS.every(([dim]) => passes(dim, c[dim]));
+  const corpusOk = (corpus) => passes('corpus', corpus);
   const cellById = () => (ok('cells') ? new Map(dash.data('cells').data.map((c) => [c.cell, c])) : new Map());
   const cellIdOk = (id, byId) => (byId.size ? cellOk(byId.get(id)) : true);
 

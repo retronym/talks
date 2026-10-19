@@ -159,6 +159,9 @@ def main():
     ap.add_argument("--cell-option", action="append", default=[],
                     help="NAME=KEY=VALUE, an incOptions entry for that cell only, after the common --inc-options "
                          "(e.g. hashing=merkle for a Merkle cell)")
+    ap.add_argument("--cell-build", action="append", default=[],
+                    help="NAME=BUILD, a frozen build for that cell instead of --build: the same edits on another "
+                         "export, such as the Scala 3 build of a cross-built project")
     ap.add_argument("--cell-scala", action="append", default=[],
                     help="NAME=VERSION:JARS, a locally built Scala 2.13 for that cell: its version and its library, "
                          "reflect and compiler jars separated by ':' (scripted's 2.13.local bridge label)")
@@ -192,6 +195,10 @@ def main():
         d = out / "cells" / name
         d.mkdir(parents=True, exist_ok=True)
         cells.append(Cell(name, checkout, d))
+    builds = {c.name: a.build.resolve() for c in cells}
+    for spec in a.cell_build:
+        name, b = spec.split("=", 1)
+        builds[name] = Path(b).expanduser().resolve()
     scala = {}
     for spec in a.cell_scala:
         name, rest = spec.split("=", 1)
@@ -202,12 +209,12 @@ def main():
     campaign = {
         "start": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "build": str(a.build.resolve()), "edits": str(a.edits.resolve()),
-        "options": {k: v for k, v in vars(a).items() if k not in ("out_dir", "build", "edits", "cell", "on_step")},
+        "options": {k: v for k, v in vars(a).items() if k not in ("out_dir", "build", "edits", "cell", "cell_build", "on_step")},
         "jvmOptions": jvm_opts,
         "machine": machine(),
         "cells": [{"name": c.name, "checkout": str(c.checkout), "commit": git(c.checkout, "rev-parse", "HEAD"),
                    "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD"),
-                   "scala": scala[c.name][0] if c.name in scala else None,
+                   "scala": scala[c.name][0] if c.name in scala else None, "build": str(builds[c.name]),
                    "options": [s.split("=", 1)[1] for s in a.cell_option if s.split("=", 1)[0] == c.name]}
                   for c in cells],
     }
@@ -225,7 +232,7 @@ def main():
             log(f"{c.name}: building {c.checkout}")
             cp, bridge_cp = test_classpath(c.checkout, c.dir / "sbt.log")
             build = c.dir / "build"
-            copy_build(a.build.resolve(), build)
+            copy_build(builds[c.name], build)
             env = {}
             if c.name in scala:
                 version, jars = scala[c.name]
