@@ -11,6 +11,12 @@ branch = "claude/merkle-sbt-bridge-hashing-main"
 title = "rz-scala3#5 rebased onto main (on scala3#27271, without 1ef38dfa8c which it supersedes): Scala 3 bridge-side API hashing (AnalysisCallback5): H1 and H2"
 
 [[members]]
+id = "rz-scala3#42"
+remote = "origin"
+pr = 42
+title = "Extract for Merkle hashing only when Zinc asks for it (the Scala 3 side of rz#83's opt-in hashing mode)"
+
+[[members]]
 id = "rz-scala3#10"
 remote = "origin"
 branch = "claude/merkle-joint-separate-flags-main"
