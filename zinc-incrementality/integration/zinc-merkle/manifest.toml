@@ -84,3 +84,9 @@ title = "Test: a Scala 3 class nested in an object keeps its API across a clean 
 id = "merkle-upstream-instance-composition"
 patch = "fixups/merkle-upstream-instance-composition.patch"
 title = "Merkle: compose with upstream ancestors reached through an object"
+
+# New (2026-10-20): the mirror rule missed static forwarders for ancestors nested in or reached through an object.
+[[members]]
+id = "merkle-mirror-nested"
+patch = "fixups/merkle-mirror-nested.patch"
+title = "Merkle: static forwarders for ancestors nested in or reached through an object"

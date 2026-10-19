@@ -1,0 +1,122 @@
+From 5d420d2c4f4312aeca3da4e6403bba383b10ac4a Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:26:58 +1000
+Subject: [PATCH] Pending test: a Scala 3 constructor's purity, read from a
+ stale TASTy
+
+A class's constructor is STABLE in its TASTy when no base class has
+initializers; Namer computes it, the pickler writes it and the unpickler
+reads it back unchanged. Adding an initializer to an ancestor changes
+nothing in Zinc's API, so a descendant that does not recompile keeps the
+flag, and a client compiled afterwards elides its construction when it
+is passed to an unused inline parameter: the ancestor's initializer
+never runs. Pending until the Scala 3 bridge folds constructor purity
+into <init>'s name hash.
+---
+ .../scala3-ctor-purity/build.json                  |  5 +++++
+ .../scala3-ctor-purity/changes/A.scala             |  3 +++
+ .../scala3-ctor-purity/changes/X.scala             |  7 +++++++
+ .../scala3-ctor-purity/p/A.scala                   |  1 +
+ .../scala3-ctor-purity/p/B.scala                   |  1 +
+ .../scala3-ctor-purity/p/Counter.scala             |  3 +++
+ .../scala3-ctor-purity/p/X.scala                   |  4 ++++
+ .../source-dependencies/scala3-ctor-purity/pending | 14 ++++++++++++++
+ 8 files changed, 38 insertions(+)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/X.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/Counter.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/X.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/pending
+
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/build.json b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/build.json
+new file mode 100644
+index 000000000..9c964c91b
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/build.json
+@@ -0,0 +1,5 @@
++{
++  "projects": [
++    { "name": "p", "scalaVersion": "3.x" }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/A.scala b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/A.scala
+new file mode 100644
+index 000000000..9b96b578f
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/A.scala
+@@ -0,0 +1,3 @@
++class A {
++  Counter.n += 1
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/X.scala b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/X.scala
+new file mode 100644
+index 000000000..18693f5c5
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/changes/X.scala
+@@ -0,0 +1,7 @@
++object X {
++  inline def ignore(x: Any): Unit = ()
++  def main(args: Array[String]): Unit = {
++    ignore(new B)
++    assert(Counter.n == 1, s"B's constructor was elided, Counter.n == ${Counter.n}")
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/A.scala b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/A.scala
+new file mode 100644
+index 000000000..83d15dc73
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/A.scala
+@@ -0,0 +1 @@
++class A
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/B.scala b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/B.scala
+new file mode 100644
+index 000000000..a18aec3db
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/B.scala
+@@ -0,0 +1 @@
++class B extends A
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/Counter.scala b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/Counter.scala
+new file mode 100644
+index 000000000..ac4002881
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/Counter.scala
+@@ -0,0 +1,3 @@
++object Counter {
++  var n = 0
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/X.scala b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/X.scala
+new file mode 100644
+index 000000000..49ad72e47
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/p/X.scala
+@@ -0,0 +1,4 @@
++object X {
++  inline def ignore(x: Any): Unit = ()
++  def main(args: Array[String]): Unit = ()
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/pending b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/pending
+new file mode 100644
+index 000000000..bc64a0421
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/scala3-ctor-purity/pending
+@@ -0,0 +1,14 @@
++# Pending until the Scala 3 bridge folds constructor purity into <init>'s name hash (PLAN-merkle-bughunt.md finding 7,
++# ANALYSIS-finding7-ctor-purity.md): Namer marks a constructor STABLE when no base class has initializers, the
++# pickler writes the flag and the unpickler reads it back unchanged, and adding an initializer to A changes nothing
++# in its API.
++> p/compile
++
++# A gains an initializer; B, whose constructor was STABLE, is not recompiled
++$ copy-file changes/A.scala p/A.scala
++> p/compile
++
++# A client compiled now must still run A's initializer when it constructs a B
++$ copy-file changes/X.scala p/X.scala
++> p/compile
++> p/run
+-- 
+2.56.0
+

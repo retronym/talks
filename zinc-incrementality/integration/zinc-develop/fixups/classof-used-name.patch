@@ -1,0 +1,157 @@
+From 9da61378bc4784ec5f4837eec781ad654c8ee9c6 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 07:54:33 +1000
+Subject: [PATCH] Register the names of a classOf literal's type as used names
+
+The typer folds `classOf[Foo]` into a `Literal` whose constant holds the
+type, so `ExtractUsedNames` saw no tree naming `Foo`. `Dependency` already
+records the class of such a literal, but with no used name the name-hash
+filter skips the client when `Foo` changes in that class, and the
+added-class rules (rz#34, rz#47) never reach it when a new class makes
+`Foo` resolve elsewhere or become ambiguous.
+
+`ExtractUsedNames` now traverses the type of a `classOf` constant as it
+does an inferred type.
+
+`classof-used-name` (N1 in rz#42) now passes. The new
+`classof-added-java-class-ambiguous` is the Java-space conformance shape:
+a Java class added behind a wildcard import makes `Foo` ambiguous.
+---
+ .../internal/inc/ExtractUsedNamesSpecification.scala   | 10 ++++++++++
+ .../src/main/scala/xsbt/ExtractUsedNames.scala         |  1 +
+ .../classof-added-java-class-ambiguous/Client.scala    |  8 ++++++++
+ .../changes/Foo.java                                   |  3 +++
+ .../incOptions.properties                              |  1 +
+ .../src/main/java/a/W.java                             |  5 +++++
+ .../src/main/java/a/q/Other.java                       |  3 +++
+ .../classof-added-java-class-ambiguous/test            |  9 +++++++++
+ .../classof-used-name/{pending => test}                |  6 +++---
+ 9 files changed, 43 insertions(+), 3 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/Client.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/changes/Foo.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/W.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/q/Other.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/test
+ rename zinc/src/sbt-test/source-dependencies/classof-used-name/{pending => test} (52%)
+
+diff --git a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
+index ec83fbc14..21bf5a349 100644
+--- a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
++++ b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
+@@ -84,6 +84,16 @@ class ExtractUsedNamesSpecification
+     assert(usedNames("b.X") === expectedNames)
+   }
+ 
++  it should "extract the names of the type of a classOf literal" in {
++    val srcA = "package a { object W { class Foo[T] }; class Bar }"
++    val srcB = """|package b
++                  |import a.W._
++                  |class B { val c: Any = classOf[Foo[a.Bar]] }""".stripMargin
++    val usedNames = extractUsedNamesFromSrc(srcA, srcB)
++    assert(usedNames("b.B").contains("Foo"))
++    assert(usedNames("b.B").contains("Bar"))
++  }
++
+   // test for https://github.com/gkossakowski/sbt/issues/5
+   it should "extract symbolic names" in {
+     val srcA = """|class A {
+diff --git a/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala b/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
+index 7ff97c355..a15e14228 100644
+--- a/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
++++ b/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
+@@ -308,6 +308,7 @@ class ExtractUsedNames[GlobalType <: CallbackGlobal](val global: GlobalType)
+ 
+         addTypeNames(t.tpe)
+       case l: Literal =>
++        if (l.value.tag == ClazzTag) addTypeNames(l.value.typeValue)
+         processOriginalTreeAttachment(l)(traverse)
+       case _ =>
+     }
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/Client.scala b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/Client.scala
+new file mode 100644
+index 000000000..c8656df67
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/Client.scala
+@@ -0,0 +1,8 @@
++package a.b
++
++import a.W._
++import a.q._
++
++object Client {
++  val c: Any = classOf[Foo]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/changes/Foo.java b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/changes/Foo.java
+new file mode 100644
+index 000000000..6155428b5
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/changes/Foo.java
+@@ -0,0 +1,3 @@
++package a.q;
++
++public class Foo {}
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/incOptions.properties b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/incOptions.properties
+new file mode 100644
+index 000000000..754ac248e
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/incOptions.properties
+@@ -0,0 +1 @@
++pipelining = false
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/W.java b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/W.java
+new file mode 100644
+index 000000000..2ed3b6aea
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/W.java
+@@ -0,0 +1,5 @@
++package a;
++
++public class W {
++  public static class Foo {}
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/q/Other.java b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/q/Other.java
+new file mode 100644
+index 000000000..d7fbcee6c
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/src/main/java/a/q/Other.java
+@@ -0,0 +1,3 @@
++package a.q;
++
++public class Other {}
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/test b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/test
+new file mode 100644
+index 000000000..7ef87ba7d
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-added-java-class-ambiguous/test
+@@ -0,0 +1,9 @@
++# Client resolves `Foo` to the Java member class `a.W.Foo` through `import a.W._`, and names it
++# only in a classOf literal.
++> compile
++
++# A Java class `a.q.Foo` makes `Foo` ambiguous with `import a.q._`: a clean build fails. Zinc sees
++# the class as added and invalidates the classes that use the name `Foo`, which Client does only
++# if the bridge records the type of its classOf literal.
++$ copy-file changes/Foo.java src/main/java/a/q/Foo.java
++-> compile
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-used-name/pending b/zinc/src/sbt-test/source-dependencies/classof-used-name/test
+similarity index 52%
+rename from zinc/src/sbt-test/source-dependencies/classof-used-name/pending
+rename to zinc/src/sbt-test/source-dependencies/classof-used-name/test
+index 35fb68673..07842a821 100644
+--- a/zinc/src/sbt-test/source-dependencies/classof-used-name/pending
++++ b/zinc/src/sbt-test/source-dependencies/classof-used-name/test
+@@ -1,8 +1,8 @@
+ # Client names W.Foo only through a classOf literal.
+ > compile
+ 
+-# W loses Foo: a clean build fails. The bridge records the dependency on W.Foo, and the name
+-# Foo of W changes, but ExtractUsedNames registers no name for the type of a classOf literal, so
+-# the name filter skips Client.
++# W loses Foo: a clean build fails. The bridge records the dependency on W.Foo, and the name Foo of
++# W changes; the name filter keeps Client only if ExtractUsedNames registers the names of the type
++# of a classOf literal.
+ $ copy-file changes/W.scala W.scala
+ -> compile
+-- 
+2.56.0
+

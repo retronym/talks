@@ -206,6 +206,24 @@ id = "rz#71-dcc"
 patch = "fixups/incbench-defines-class-cache.patch"
 title = "IncHandler caches what each jar defines, as sbt does (rz#71's 4cba55a47)"
 
+# Java conformance triage (2026-10-20, JAVA-CONFORMANCE-TRIAGE.md): N1, a classOf literal records no used name.
+[[members]]
+id = "classof-used-name"
+patch = "fixups/classof-used-name.patch"
+title = "Register the names of a classOf literal's type as used names"
+
+# S1 (the substance of rz#21, which stays excluded) and S2: Java sealed permits in the API; depend on the sealed classes below a match's scrutinee.
+[[members]]
+id = "java-sealed-permits"
+patch = "fixups/java-sealed-permits.patch"
+title = "Record the permitted subclasses of Java sealed classes; depend on the sealed classes below a scrutinee"
+
+# PLAN-merkle-bughunt.md finding 7: a Scala 3 constructor's STABLE flag read from stale TASTy (pending until the bridge fix).
+[[members]]
+id = "scala3-ctor-purity-pending"
+patch = "fixups/scala3-ctor-purity-pending.patch"
+title = "Pending test: a Scala 3 constructor's purity, read from a stale TASTy"
+
 [[excluded]]
 id = "rz#1"
 reason = "2019-era performance work (flat classpath caching); conflicts with UsedName/protobuf"

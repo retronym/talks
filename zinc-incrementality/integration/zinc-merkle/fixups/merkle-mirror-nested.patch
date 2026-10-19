@@ -1,0 +1,359 @@
+From fdafc0a4a2a6c113ab96e34150281699ba170807 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:22:27 +1000
+Subject: [PATCH] Merkle: static forwarders for ancestors nested in or reached
+ through an object
+
+The `mirror` rule recompiles a top-level object whose ancestor changed,
+for the static forwarders its mirror (or companion) class has for every
+member it inherits. It looked the changed class up among the object's
+stored parents by name, and the two names differ for an upstream class
+nested in an object: the change names it by its binary name, `p.Q$A`,
+the stored linearization by its source name, `p.Q.A` (`p.Q$.A` under
+Scala 3). A parent reached through another object, `object O extends
+Inst.A` with A a member class of `class Outer`, is stored as `p.Inst.A`,
+which no class is called. In either case the object did not recompile,
+and a Java client calling the forwarder failed with NoSuchMethodError
+once the member's signature changed.
+
+Compare names in canonical form, and when the object has no companion
+class, so that every inheritance edge of its name is the object's, also
+take its ancestors from HierarchyView, which follows the external
+inheritance relation.
+
+merkle-x-mirror-nested and merkle-x-mirror-instance are merkle-x-mirror
+with the ancestor nested in an object and reached through one; both fail
+without this change. merkle-mirror-companion-added adds a member to the
+ancestor of an object with a companion class, which holds the
+forwarders; it passes either way.
+---
+ .../scala/sbt/internal/inc/DescendantRules.scala | 16 ++++++++++++----
+ .../sbt/internal/inc/LibraryAncestorsSpec.scala  |  3 ++-
+ .../inc/MerkleHashesInheritanceSpec.scala        | 15 ++++++++-------
+ .../merkle-mirror-companion-added/A.scala        |  1 +
+ .../merkle-mirror-companion-added/J.java         |  6 ++++++
+ .../merkle-mirror-companion-added/O.scala        |  2 ++
+ .../changes/A.scala                              |  1 +
+ .../incOptions.properties                        |  2 ++
+ .../merkle-mirror-companion-added/test           |  5 +++++
+ .../merkle-x-mirror-instance/app/J.java          |  7 +++++++
+ .../merkle-x-mirror-instance/app/O.scala         |  2 ++
+ .../app/incOptions.properties                    |  2 ++
+ .../merkle-x-mirror-instance/build.json          |  6 ++++++
+ .../merkle-x-mirror-instance/lib/A.scala         |  3 +++
+ .../merkle-x-mirror-instance/lib/changes/A.scala |  3 +++
+ .../lib/incOptions.properties                    |  2 ++
+ .../merkle-x-mirror-instance/test                |  5 +++++
+ .../merkle-x-mirror-nested/app/J.java            |  7 +++++++
+ .../merkle-x-mirror-nested/app/O.scala           |  2 ++
+ .../app/incOptions.properties                    |  2 ++
+ .../merkle-x-mirror-nested/build.json            |  6 ++++++
+ .../merkle-x-mirror-nested/lib/A.scala           |  2 ++
+ .../merkle-x-mirror-nested/lib/changes/A.scala   |  2 ++
+ .../lib/incOptions.properties                    |  2 ++
+ .../merkle-x-mirror-nested/test                  |  5 +++++
+ 25 files changed, 97 insertions(+), 12 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/J.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/O.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/J.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/O.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/J.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/O.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/test
+
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
+index 9d3ba4136..f1e2b2c09 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
+@@ -143,14 +143,22 @@ private[inc] final class HierarchyView(
+   /**
+    * Whether the object side of `className` has `ancestor` in its linearization. A case class's
+    * companion object does not, so it gets no forwarders for the class's inherited members.
++   * Names are compared in [[LibraryAncestors.canonical]] form: an upstream `ancestor` is named by
++   * its binary name, the linearization by source names. A parent reached through another object
++   * (`object O extends Inst.B`) is stored under a name no class has; without a companion class
++   * every inheritance edge of `className` is the object's, so [[ancestors]] finds it.
+    */
+   def objectInherits(className: String, ancestor: String): Boolean =
++    val target = LibraryAncestors.canonical(LibraryAncestors.sourceName(ancestor))
+     api(className).exists { c =>
+       val obj = c.api().objectApi()
+-      !isEmpty(obj) &&
+-      obj.structure.parents.iterator
+-        .flatMap(MerkleHashes.typeName)
+-        .contains(ancestor)
++      !isEmpty(obj) && (
++        obj.structure.parents.iterator
++          .flatMap(MerkleHashes.typeName)
++          .exists(n => LibraryAncestors.canonical(n) == target) ||
++          isEmpty(c.api().classApi()) &&
++          ancestors(className).exists(n => LibraryAncestors.canonical(n) == target)
++      )
+     }
+ 
+   /** An absent side is stored as `APIUtil.emptyClassLike`, which claims to be top-level. */
+diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/LibraryAncestorsSpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/LibraryAncestorsSpec.scala
+index d70ef4e1a..6d714164d 100644
+--- a/internal/zinc-core/src/test/scala/sbt/internal/inc/LibraryAncestorsSpec.scala
++++ b/internal/zinc-core/src/test/scala/sbt/internal/inc/LibraryAncestorsSpec.scala
+@@ -16,7 +16,8 @@ class LibraryAncestorsSpec extends UnitSpec:
+     LibraryAncestors.binaryNameCandidates("a.O.C") shouldBe List("a.O.C", "a.O$C", "a$O$C")
+ 
+   it should "keep a Scala 3 nested name as stored, then its binary names" in:
+-    LibraryAncestors.binaryNameCandidates("a.O$.C") shouldBe List("a.O$.C", "a.O.C", "a.O$C", "a$O$C")
++    LibraryAncestors.binaryNameCandidates("a.O$.C") shouldBe
++      List("a.O$.C", "a.O.C", "a.O$C", "a$O$C")
+ 
+   "canonical" should "name the members of objects as Scala 2 does" in:
+     LibraryAncestors.canonical("a.O$.P$.C") shouldBe "a.O.P.C"
+diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala
+index 6df58a211..ec6d34003 100644
+--- a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala
++++ b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala
+@@ -43,13 +43,14 @@ class MerkleHashesInheritanceSpec extends UnitSpec:
+   private def hashes(c: AnalyzedClass) =
+     (c.apiHash, c.nameHashes.map(h => (h.name, h.scope, h.hash)).toSet)
+ 
+-  "composed" should "take upstream ancestors reached through an object from the external inheritance relation" in:
+-    val c = MerkleHashes.composed(analysis("p.Outer$B"), "p.C", lookup(b("b"))).get
+-    MerkleHashes.linearization(c) shouldBe
+-      Vector("p.Inst.B", "p.Inst.A", "p.Outer.B", "p.Outer.A")
+-    c.nameHashes.map(_.name).toSet should contain allOf ("b", "a")
+-    hashes(MerkleHashes.composed(analysis("p.Outer$B"), "p.C", lookup(b("b2"))).get) should not be
+-      hashes(c)
++  "composed" should
++    "take upstream ancestors reached through an object from the external inheritance relation" in:
++      val c = MerkleHashes.composed(analysis("p.Outer$B"), "p.C", lookup(b("b"))).get
++      MerkleHashes.linearization(c) shouldBe
++        Vector("p.Inst.B", "p.Inst.A", "p.Outer.B", "p.Outer.A")
++      c.nameHashes.map(_.name).toSet should contain allOf ("b", "a")
++      hashes(MerkleHashes.composed(analysis("p.Outer$B"), "p.C", lookup(b("b2"))).get) should not be
++        hashes(c)
+ 
+   it should "compose the same whichever order the relation lists the ancestors in" in:
+     hashes(
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/A.scala
+new file mode 100644
+index 000000000..15a616747
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/A.scala
+@@ -0,0 +1 @@
++class A { def m: Int = 0 }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/J.java b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/J.java
+new file mode 100644
+index 000000000..96984aed7
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/J.java
+@@ -0,0 +1,6 @@
++public class J {
++  public static void main(String[] args) throws Exception {
++    Object v = O.class.getMethod(args[0]).invoke(null);
++    if (!v.toString().equals(args[1])) throw new AssertionError(v);
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/O.scala b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/O.scala
+new file mode 100644
+index 000000000..ee01d7b28
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/O.scala
+@@ -0,0 +1,2 @@
++class O { def c: Int = 2 }
++object O extends A
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/changes/A.scala
+new file mode 100644
+index 000000000..046734c31
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/changes/A.scala
+@@ -0,0 +1 @@
++class A { def m: Int = 0; def k: Int = 1 }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/test b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/test
+new file mode 100644
+index 000000000..9edb53546
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-mirror-companion-added/test
+@@ -0,0 +1,5 @@
++> run m 0
++
++$ copy-file changes/A.scala A.scala
++# O has a companion class, which holds the static forwarders; A gains k, so O gets one for it
++> run k 1
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/J.java b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/J.java
+new file mode 100644
+index 000000000..d8c058b2f
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/J.java
+@@ -0,0 +1,7 @@
++package p;
++public class J {
++  public static void main(String[] args) {
++    Object v = O.m();
++    if (!v.toString().equals(args[0])) throw new AssertionError(v);
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/O.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/O.scala
+new file mode 100644
+index 000000000..e68a06c63
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/O.scala
+@@ -0,0 +1,2 @@
++package p
++object O extends Inst.A
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/A.scala
+new file mode 100644
+index 000000000..79a6f04f7
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/A.scala
+@@ -0,0 +1,3 @@
++package p
++class Outer { class A { def m: Int = 0 } }
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/changes/A.scala
+new file mode 100644
+index 000000000..ef9db0f18
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/changes/A.scala
+@@ -0,0 +1,3 @@
++package p
++class Outer { class A { def m: String = "s" } }
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/test b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/test
+new file mode 100644
+index 000000000..4d872acb0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-instance/test
+@@ -0,0 +1,5 @@
++> app/run 0
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# As merkle-x-mirror, with A a member class of Outer inherited through object Inst: O's mirror class has a static forwarder for the inherited m
++> app/run s
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/J.java b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/J.java
+new file mode 100644
+index 000000000..d8c058b2f
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/J.java
+@@ -0,0 +1,7 @@
++package p;
++public class J {
++  public static void main(String[] args) {
++    Object v = O.m();
++    if (!v.toString().equals(args[0])) throw new AssertionError(v);
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/O.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/O.scala
+new file mode 100644
+index 000000000..33c2563bb
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/O.scala
+@@ -0,0 +1,2 @@
++package p
++object O extends Q.A
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/A.scala
+new file mode 100644
+index 000000000..6a1a739c4
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/A.scala
+@@ -0,0 +1,2 @@
++package p
++object Q { class A { def m: Int = 0 } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/changes/A.scala
+new file mode 100644
+index 000000000..ca33a494b
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/changes/A.scala
+@@ -0,0 +1,2 @@
++package p
++object Q { class A { def m: String = "s" } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/test b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/test
+new file mode 100644
+index 000000000..8716f3c48
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-mirror-nested/test
+@@ -0,0 +1,5 @@
++> app/run 0
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# As merkle-x-mirror, with the upstream ancestor nested in an object: O's mirror class has a static forwarder for the inherited m
++> app/run s
+-- 
+2.56.0
+
