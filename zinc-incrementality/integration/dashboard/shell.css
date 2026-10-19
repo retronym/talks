@@ -26,3 +26,4 @@ code { font-size: 0.92em; }
 a { color: inherit; }
 .dash-skeleton { color: transparent; background: var(--cds-chart-grid); border-radius: 4px; }
 .ib-select, .ib-search { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 2px 6px; }
+[hidden] { display: none !important; }

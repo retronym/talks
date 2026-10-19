@@ -120,15 +120,7 @@
   <section class="ib-grid" id="overview" aria-label="Overview">
     <article class="ib-card" id="intro">
       <h2>What this measures</h2>
-      <div class="ib-prose">
-        <p>IncBench replays the same scripted edits on two real builds, scala/scala and scala/scala3, and records how long each incremental compile takes, where that time goes, and what Zinc invalidated to get there.</p>
-        <p>Three questions share one run:</p>
-        <ul>
-          <li><b>Compiler.</b> Is the integration compiler faster than the commit it is built on?</li>
-          <li><b>Zinc.</b> Is Zinc's own overhead lower with our fixes on 1.12.x than on plain 1.12.x?</li>
-          <li><b>Algorithm.</b> Does Merkle invalidation recompile less than name hashing, and does the work it skips outweigh what it costs?</li>
-        </ul>
-      </div>
+      <div class="ib-prose" id="intro-text" data-source="cells"><p class="dash-skeleton">—</p></div>
     </article>
 
     <article class="ib-card" id="summary">
@@ -151,11 +143,10 @@
     <article class="ib-card" id="methodology">
       <h2>Methodology</h2>
       <div class="ib-prose">
-        <p>The matrix crosses two builds, two compilers and three Zincs: <span data-source="campaign" data-field="cells">—</span> cells, each running the same <span data-source="campaign" data-field="stepsPerCell">—</span> steps.</p>
+        <p><span data-source="campaign" data-field="cells">—</span> cells, each running the same <span data-source="campaign" data-field="stepsPerCell">—</span> steps.</p>
         <ul>
           <li><b>Lockstep.</b> Every cell finishes step <i>k</i> before any cell starts <i>k</i>+1, in a shuffled order each step, so partial results always compare like with like and drift in the machine spreads evenly over cells.</li>
           <li><b>In-process Zinc.</b> Each cell is one warm JVM running IncBench from that cell's Zinc checkout, calling Zinc directly with no sbt in between. Every cell compiles the same frozen export of its build; only the compiler and Zinc differ. Before step 1 each JVM is warmed with the clean build and a few small compiles; then a step applies its edit and compiles <span data-source="campaign" data-field="reps">—</span> time(s). This shows direction and attribution, not precise timings.</li>
-          <li><b>Two waves.</b> scala/scala's six cells run first, then scala/scala3's, so no more than six warm JVMs are alive at once.</li>
           <li><b>Timings.</b> scalac's profiler gives time per phase; Zinc's time is the rest of each compile, split into invalidation, analysis read/write and setup. The API phase includes Zinc's hashing of each class, which runs inside it.</li>
           <li><b>Invalidation.</b> Every cycle Zinc runs is recorded: the sources and classes it recompiled and why.</li>
           <li><b>Correctness.</b> Each incremental result is compared with a clean build by classfile digest (IncBench <code>--verify</code>), untimed.</li>
@@ -350,35 +341,52 @@ dash.calc('cellTotals', {
 });
 
 dash.calc('effects', {
-  inputs: ['steps'],
+  inputs: ['steps', 'cells', 'campaign'],
   title: 'Effect of each change',
   description: 'Pairs of cells that differ in one thing, compared over the incremental steps both have finished.',
-  fn: (steps) => {
-    const pairs = [
-      ['compiler', 'Compiler', 'released-released', 'integration-released'],
-      ['zinc', 'Zinc performance', 'released-released', 'released-perf'],
-      ['algo', 'Invalidation algorithm', 'released-perf', 'released-merkle'],
-      ['all', 'All together', 'released-released', 'integration-merkle'],
-    ];
+  fn: (steps, cells, campaign) => {
+    const commits = (campaign[0] && campaign[0].commits) || {};
+    // A cell's position on each axis. The Merkle build's Zinc is "+ fixes" too; its hashing is the algorithm axis.
+    const zincLevel = { released: 0, perf: 1, merkle: 1, merklenames: 1 };
+    const axes = (c) => ({ compiler: c.compilerKey === 'released' ? 0 : 1, zinc: zincLevel[c.zincKey] ?? 1, algo: c.algo === 'Merkle' ? 1 : 0 });
+    const NAMES = { compiler: 'Compiler', zinc: 'Zinc performance', algo: 'Invalidation algorithm', mode: 'Merkle build, default hashing', all: 'All together' };
     const done = steps.filter((s) => s.status === 'done' && s.kind !== 'clean');
+    const sum = (rows, f) => rows.reduce((a, r) => a + r[f], 0);
+    const r1 = (ms) => Math.round(ms / 100) / 10;
     const out = [];
-    for (const [corpus, pre] of [['scala/scala', 's2'], ['scala/scala3', 's3']]) {
-      for (const [key, name, b, v] of pairs) {
-        const base = pre + '-' + b;
-        const vari = pre + '-' + v;
-        const bySteps = new Map(done.filter((s) => s.cell === base).map((s) => [s.step, s]));
-        const vs = done.filter((s) => s.cell === vari && bySteps.has(s.step));
-        const bs = vs.map((s) => bySteps.get(s.step));
-        const sum = (rows, f) => rows.reduce((a, r) => a + r[f], 0);
-        const r1 = (ms) => Math.round(ms / 100) / 10;
-        out.push({
-          id: pre + '-' + key, corpus, comparison: name, baseline: base, variant: vari, steps: vs.length,
-          baselineSec: r1(sum(bs, 'wallMs')), variantSec: r1(sum(vs, 'wallMs')),
-          speedup: vs.length ? Math.round((100 * sum(bs, 'wallMs')) / sum(vs, 'wallMs')) / 100 : null,
-          baselineZincSec: r1(sum(bs, 'zincMs')), variantZincSec: r1(sum(vs, 'zincMs')),
-          baselineSources: sum(bs, 'sources'), variantSources: sum(vs, 'sources'),
-        });
+    const row = (key, corpus, base, vari) => {
+      const bySteps = new Map(done.filter((s) => s.cell === base.cell).map((s) => [s.step, s]));
+      const vs = done.filter((s) => s.cell === vari.cell && bySteps.has(s.step));
+      const bs = vs.map((s) => bySteps.get(s.step));
+      const id = base.cell.split('-')[0] + '-' + key;
+      out.push({
+        id: out.some((r) => r.id === id) ? id + '-' + out.length : id, corpus, comparison: NAMES[key], baseline: base.cell, variant: vari.cell, steps: vs.length,
+        baselineSec: r1(sum(bs, 'wallMs')), variantSec: r1(sum(vs, 'wallMs')),
+        speedup: vs.length ? Math.round((100 * sum(bs, 'wallMs')) / sum(vs, 'wallMs')) / 100 : null,
+        baselineZincSec: r1(sum(bs, 'zincMs')), variantZincSec: r1(sum(vs, 'zincMs')),
+        baselineSources: sum(bs, 'sources'), variantSources: sum(vs, 'sources'),
+      });
+    };
+    for (const corpus of [...new Set(cells.map((c) => c.corpus))]) {
+      const cs = cells.filter((c) => c.corpus === corpus).map((c) => ({ ...c, ax: axes(c) }));
+      for (const key of ['compiler', 'zinc', 'algo']) {
+        let pairs = [];
+        for (const b of cs) for (const v of cs) {
+          const diff = Object.keys(b.ax).filter((k) => b.ax[k] !== v.ax[k]);
+          if (diff.length === 1 && diff[0] === key && b.ax[key] < v.ax[key]) pairs.push([b, v]);
+        }
+        // Two cells on one Zinc build differ in the algorithm alone; prefer them when the campaign has them.
+        const same = pairs.filter(([b, v]) => commits[b.cell] && commits[b.cell] === commits[v.cell]);
+        if (key === 'algo' && same.length) pairs = same;
+        for (const [b, v] of pairs) row(key, corpus, b, v);
       }
+      // The same axes on two Zinc builds: the Merkle build with hashing left at name hashing, against + fixes.
+      for (const b of cs) for (const v of cs) {
+        if (b.zincKey === 'perf' && v.zincKey === 'merklenames' && b.compilerKey === v.compilerKey) row('mode', corpus, b, v);
+      }
+      const lo = cs.find((c) => !c.ax.compiler && !c.ax.zinc && !c.ax.algo);
+      const hi = cs.find((c) => c.ax.compiler && c.ax.zinc && c.ax.algo);
+      if (lo && hi) row('all', corpus, lo, hi);
     }
     return out;
   },
@@ -608,6 +616,31 @@ dash.calc('effects', {
     if (parts.length) take.append('.');
   }
 
+  /** What this campaign compares, from its cells: each axis that varies poses one question. */
+  function drawIntro() {
+    const host = document.getElementById('intro-text');
+    if (!ok('cells', 'edits')) return;
+    const cells = dash.data('cells').data;
+    const uniq = (f) => [...new Set(cells.map(f))];
+    const builds = uniq((c) => c.corpus);
+    const edits = new Set(dash.data('edits').data.filter((e) => e.kind === 'edit').map((e) => e.edit)).size;
+    const p = (html) => { const e = document.createElement('p'); e.innerHTML = html; return e; };
+    const qs = [];
+    if (uniq((c) => c.compilerKey).length > 1) qs.push('<b>Compiler.</b> Is the integration compiler faster than the commit it is built on?');
+    const zincs = uniq((c) => c.zinc);
+    if (cells.some((c) => c.zincKey === 'released') && cells.some((c) => c.zincKey !== 'released')) qs.push('<b>Zinc.</b> Is Zinc\'s own overhead lower with our fixes on 1.12.x than on plain 1.12.x?');
+    const algos = uniq((c) => c.algo);
+    if (algos.length > 1) qs.push('<b>Algorithm.</b> Does Merkle invalidation recompile less than name hashing, and does the work it skips outweigh what it costs?');
+    const twoModes = zincs.some((z) => new Set(cells.filter((c) => c.zinc === z).map((c) => c.algo)).size > 1);
+    if (twoModes) qs.push('<b>Opt-in mode.</b> With hashing left at its default, does the Merkle build recompile exactly what name hashing does?');
+    const fixed = [];
+    if (uniq((c) => c.compilerVersion).length === 1) fixed.push(`Scala ${cells[0].compilerVersion}`);
+    if (zincs.length === 1) fixed.push(`Zinc ${zincs[0]}`);
+    host.replaceChildren(
+      p(`IncBench replays ${edits} scripted edits, each followed by its revert, on ${builds.join(' and ')}, and records how long each incremental compile takes, where that time goes, and what Zinc invalidated to get there.` + (fixed.length ? ` Every cell uses ${fixed.join(' and ')}.` : '')),
+      ...(qs.length ? [p(qs.length > 1 ? 'The cells answer:' : 'The cells answer one question:'), Object.assign(document.createElement('ul'), { innerHTML: qs.map((q) => `<li>${q}</li>`).join('') })] : []));
+  }
+
   function drawSummary() {
     if (ok('campaign')) {
       const c = dash.data('campaign').data[0];
@@ -801,10 +834,12 @@ dash.calc('effects', {
 
   function drawPerStep(hostId, prefix) {
     const host = document.getElementById(hostId);
-    host.closest('article').hidden = !corpusOk(prefix === 's2' ? 'scala/scala' : 'scala/scala3');
+    const corpus = prefix === 's2' ? 'scala/scala' : 'scala/scala3';
+    const present = ok('cells') ? dash.data('cells').data.filter((c) => c.corpus === corpus) : [];
+    host.closest('article').hidden = !corpusOk(corpus) || (ok('cells') && !present.length);
     if (failed('steps')) return showFailed(host);
     if (!ok('steps')) { host.replaceChildren(); return; }
-    const comp = filt.compilerKey.has('released') ? 'released' : 'integration';
+    const comp = filt.compilerKey.has('released') && present.some((c) => c.compilerKey === 'released') ? 'released' : 'integration';
     host.parentElement.querySelector('.ib-note').textContent = `${comp === 'released' ? 'Base' : 'Integration'} compiler, median wall time per step, log scale.`;
     const steps = dash.data('steps').data.filter((s) => s.status === 'done' && s.cell.startsWith(prefix + '-' + comp + '-') && filt.zincKey.has(s.cell.split('-')[2]));
     const W = host.clientWidth;
@@ -1156,6 +1191,7 @@ dash.calc('effects', {
     const h1 = document.querySelector('.ib-head h1');
     if (ok('campaign')) { h1.textContent = dash.data('campaign').data[0].name; skeleton(h1, false); }
     drawHeader();
+    drawIntro();
     drawSummary();
     drawMatrix();
     drawTimeline();
