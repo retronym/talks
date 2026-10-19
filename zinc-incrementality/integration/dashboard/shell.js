@@ -38,15 +38,16 @@
   async function pickRun() {
     const runs = await (await fetch('data/runs', { cache: 'no-store' })).json();
     const sel = document.getElementById('shell-run');
-    const want = new URLSearchParams(location.search).get('run') ?? load('dash-run', null);
+    // A run is remembered by name: ids are positions on the server's command line and shift when it restarts.
+    const want = new URLSearchParams(location.search).get('run') ?? load('dash-run-name', null);
     const ready = runs.filter((r) => r.ready);
-    run = ready.some((r) => String(r.id) === String(want)) ? Number(want) : (ready[ready.length - 1] ?? runs[0]).id;
+    run = (ready.find((r) => r.name === want || String(r.id) === String(want)) ?? ready[0] ?? runs[0]).id;
     sel.replaceChildren(...runs.map((r) => Object.assign(new Option(r.ready ? r.name : r.name + ' (queued)', r.id), { disabled: !r.ready })));
     sel.value = run;
     sel.hidden = runs.length < 2;
     sel.onchange = () => {
       run = Number(sel.value); version = null;
-      try { localStorage.setItem('dash-run', JSON.stringify(run)); } catch (e) { /* none */ }
+      try { localStorage.setItem('dash-run-name', JSON.stringify(runs.find((r) => r.id === run).name)); } catch (e) { /* none */ }
       for (const n of NAMES) delete data[n];
       refresh();
     };
