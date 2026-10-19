@@ -1,0 +1,358 @@
+From fed760376ec1572386ac94c0743be0dfdf0d10ba Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:06:41 +1000
+Subject: [PATCH] Merkle: compose with upstream ancestors reached through an
+ object
+
+A parent reached through an object, `class C extends Inst.B` with
+`object Inst extends Outer` and B a member class of Outer, is stored as
+`p.Inst.B`, which no class is called. The descendant rules in C's own
+subproject find B through the external inheritance relation, but the
+hashes composed for another subproject took C's ancestors only from its
+stored linearization, so they left out B and the A above it. With C
+abstract in a middle subproject and `class D extends C` downstream,
+removing B's implementation of A's `m` changed no hash D's subproject
+could see, and D, which no longer implements m, did not recompile.
+
+Composition now also takes the upstream parents of the class and of its
+ancestors in its own subproject from the external inheritance relation,
+and the ancestors their stored linearizations list, after the stored
+ones; names the stored linearization already has are not added again,
+so classes without such a parent compose as before. The composed class
+lists the added ancestors among its parents, so that the descendant
+rules downstream, which read it from that subproject's analysis, find
+the deferred member too.
+
+Under pipelining a downstream subproject reads the early analysis,
+which kept only the APIs and the product names; under Merkle hashing it
+now keeps the external inheritance relation as well.
+---
+ .../scala/sbt/internal/inc/Incremental.scala  | 19 ++++-
+ .../scala/sbt/internal/inc/MerkleHashes.scala | 62 ++++++++++++--
+ .../inc/MerkleHashesInheritanceSpec.scala     | 80 +++++++++++++++++++
+ .../app/D.scala                               |  2 +
+ .../app/incOptions.properties                 |  2 +
+ .../build.json                                |  7 ++
+ .../lib/A.scala                               |  6 ++
+ .../lib/changes/A.scala                       |  6 ++
+ .../lib/incOptions.properties                 |  2 +
+ .../mid/C.scala                               |  2 +
+ .../mid/incOptions.properties                 |  2 +
+ .../test                                      |  5 ++
+ 12 files changed, 189 insertions(+), 6 deletions(-)
+ create mode 100644 internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/D.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/C.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/test
+
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/Incremental.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/Incremental.scala
+index 9dd818b9c..37050643f 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/Incremental.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/Incremental.scala
+@@ -1676,7 +1676,10 @@ private final class AnalysisCallback(
+     val trimmedAnalysis = merged.copy(
+       Stamps.empty,
+       APIs(merged.apis.internal, Map.empty),
+-      Relations.empty.copy(productClassName = merged.relations.productClassName),
++      Relations.empty.copy(
++        productClassName = merged.relations.productClassName,
++        externalDependencies = earlyExternalDependencies(merged.relations),
++      ),
+       SourceInfos.empty,
+       Compilations.empty,
+     )
+@@ -1686,6 +1689,20 @@ private final class AnalysisCallback(
+     val available = lookup.shouldDoEarlyOutput(merged)
+     Incremental.writeEarlyOut(progress, earlyOutput, available, knownProducts(merged), log)
+ 
++  /**
++   * Under Merkle hashing a downstream subproject composes a class's hashes with those of its
++   * upstream ancestors, which it finds through the external inheritance relation (see
++   * [[MerkleHashes]]), so the early analysis keeps that relation.
++   */
++  private def earlyExternalDependencies(relations: Relations): ExternalDependencies =
++    if !merkle then ExternalDependencies.empty
++    else
++      ExternalDependencies(
++        relations.externalDependencies.dependencies.filter(
++          _._1 == DependencyContext.DependencyByInheritance
++        )
++      )
++
+   private def mergeUpdates() =
+     pickleJarPair.foreach {
+       case (originalJar, updatesJar) =>
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
+index 67db99f66..fbed343a6 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
+@@ -15,15 +15,32 @@ package inc
+ 
+ import xsbt.api.Discovery
+ import xsbti.UseScope
+-import xsbti.api.{ AnalyzedClass, DefinitionType, NameHash, Parameterized, Projection, Type }
++import xsbti.api.{
++  AnalyzedClass,
++  DefinitionType,
++  Id,
++  NameHash,
++  Parameterized,
++  Path,
++  PathComponent,
++  Projection,
++  SafeLazyProxy,
++  Singleton,
++  This,
++  Type
++}
+ 
+ import scala.util.hashing.MurmurHash3
+ 
+ /**
+  * A class's stored API omits the members it inherits from classes of its own subproject. Within
+  * that subproject the invalidator walks the hierarchy instead; another subproject only sees the
+- * stored API (the analysis it looks up carries no relations), so it is given hashes composed from
+- * the class's and its ancestors' own hashes, taking the ancestors from the stored linearization.
++ * stored API (the analysis it looks up carries no relations but the external inheritance one), so
++ * it is given hashes composed from the class's and its ancestors' own hashes, taking the ancestors
++ * from the stored linearization. A parent reached through an object, `extends Inst.B` with
++ * `object Inst extends Outer`, is stored as `Inst.B`, which no class is called; the external
++ * inheritance relation of the class and its ancestors here has its class, `Outer$B`, which is
++ * added after the stored ancestors along with those its own stored linearization lists.
+  * Ancestors in other subprojects come from their own analyses: a class does not recompile when
+  * an upstream ancestor changes, so the members it materialised from it may be stale.
+  * An ancestor contributes its extraHash rather than its apiHash: that covers its class side only,
+@@ -79,13 +96,48 @@ private[inc] object MerkleHashes:
+       elsewhere: String => Option[AnalyzedClass]
+   ): Composed =
+     val className = own.name
+-    val names = linearization(own).filter(_ != className)
++    val stored = linearization(own).filter(_ != className)
++    val parents = analysis.relations.inheritance.external
++    val upstream = (className +: stored.filter(analysis.apis.internal.contains))
++      .flatMap(parents.forward)
++      .map(LibraryAncestors.sourceName)
++      .distinct
++      .sorted
++    val known = (className +: stored).map(LibraryAncestors.canonical).toSet
++    val reached = upstream
++      .flatMap(u => u +: elsewhere(u).toVector.flatMap(linearization))
++      .filterNot(a => known(LibraryAncestors.canonical(a)))
++      .distinctBy(LibraryAncestors.canonical)
++    val names = stored ++ reached
+     val externalNames = names.filterNot(analysis.apis.internal.contains).toArray
+     val externals = externalNames.map(elsewhere(_).orNull)
+     val ancestors = names.flatMap { a =>
+       analysis.apis.internal.get(a).orElse(Option(externals(externalNames.indexOf(a))))
+     }
+-    new Composed(externalNames, externals, composed(own, ancestors))
++    new Composed(externalNames, externals, withParents(composed(own, ancestors), reached))
++  end compose
++
++  /**
++   * A composed class lists the ancestors it was composed with that its stored linearization
++   * misses, so that the descendant rules of a subproject further downstream find them too.
++   */
++  private def withParents(c: AnalyzedClass, names: Vector[String]): AnalyzedClass =
++    if names.isEmpty then c
++    else
++      val companions = c.api()
++      val classApi = companions.classApi()
++      val structure = classApi.structure
++      val parents = structure.parents ++ names.map(parentType)
++      val added = classApi.withStructure(
++        SafeLazyProxy.strict(structure.withParents(SafeLazyProxy.strict(parents)))
++      )
++      c.withApi(SafeLazyProxy.strict(companions.withClassApi(added)))
++
++  /** A type that [[typeName]] renders as `name`. */
++  private def parentType(name: String): Type =
++    val parts = name.split('.')
++    val path = parts.init.map(p => Id.of(p): PathComponent) :+ This.of()
++    Projection.of(Singleton.of(Path.of(path)), parts.last)
+ 
+   private def composed(own: AnalyzedClass, ancestors: Vector[AnalyzedClass]): AnalyzedClass =
+     val forwarded =
+diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala
+new file mode 100644
+index 000000000..6df58a211
+--- /dev/null
++++ b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesInheritanceSpec.scala
+@@ -0,0 +1,80 @@
++/*
++ * Zinc - The incremental compiler for Scala.
++ * Copyright Scala Center, Lightbend, and Mark Harrah
++ *
++ * Licensed under Apache License 2.0
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * See the NOTICE file distributed with this work for
++ * additional information regarding copyright ownership.
++ */
++
++package sbt.internal.inc
++
++import xsbti.VirtualFileRef
++import xsbti.api.*
++import MerkleHashesStability.{ analyzed, parent }
++
++class MerkleHashesInheritanceSpec extends UnitSpec:
++  private def analysis(external: String*) = Analysis.empty.copy(
++    apis = APIs(
++      Map(
++        "p.C" -> analyzed(
++          "p.C",
++          DefinitionType.ClassDef,
++          Array(parent("p.Inst.B"), parent("p.Inst.A")),
++          "c"
++        )
++      ),
++      Map.empty
++    ),
++    relations = Relations.empty.addExternalDeps(
++      VirtualFileRef.of("C.scala"),
++      external.map(ExternalDependency.of("p.C", _, null, DependencyContext.DependencyByInheritance))
++    )
++  )
++  private def b(member: String) =
++    analyzed("p.Outer.B", DefinitionType.ClassDef, Array(parent("p.Outer.A")), member)
++  private val outerA = analyzed("p.Outer.A", DefinitionType.ClassDef, Array.empty, "a")
++  private def lookup(b: AnalyzedClass): String => Option[AnalyzedClass] =
++    case "p.Outer.B" => Some(b)
++    case "p.Outer.A" => Some(outerA)
++    case _           => None
++  private def hashes(c: AnalyzedClass) =
++    (c.apiHash, c.nameHashes.map(h => (h.name, h.scope, h.hash)).toSet)
++
++  "composed" should "take upstream ancestors reached through an object from the external inheritance relation" in:
++    val c = MerkleHashes.composed(analysis("p.Outer$B"), "p.C", lookup(b("b"))).get
++    MerkleHashes.linearization(c) shouldBe
++      Vector("p.Inst.B", "p.Inst.A", "p.Outer.B", "p.Outer.A")
++    c.nameHashes.map(_.name).toSet should contain allOf ("b", "a")
++    hashes(MerkleHashes.composed(analysis("p.Outer$B"), "p.C", lookup(b("b2"))).get) should not be
++      hashes(c)
++
++  it should "compose the same whichever order the relation lists the ancestors in" in:
++    hashes(
++      MerkleHashes.composed(analysis("p.Outer$B", "p.Outer$A"), "p.C", lookup(b("b"))).get
++    ) shouldBe
++      hashes(MerkleHashes.composed(analysis("p.Outer$A", "p.Outer$B"), "p.C", lookup(b("b"))).get)
++
++  it should "leave a class whose stored linearization names its ancestors as it was" in:
++    val plain = Analysis.empty.copy(apis =
++      APIs(
++        Map(
++          "p.C" -> analyzed("p.C", DefinitionType.ClassDef, Array(parent("p.Outer.B")), "c")
++        ),
++        Map.empty
++      )
++    )
++    val related = plain.copy(relations =
++      Relations.empty.addExternalDeps(
++        VirtualFileRef.of("C.scala"),
++        Seq(
++          ExternalDependency.of("p.C", "p.Outer$B", null, DependencyContext.DependencyByInheritance)
++        )
++      )
++    )
++    val l = lookup(analyzed("p.Outer.B", DefinitionType.ClassDef, Array.empty, "b"))
++    hashes(MerkleHashes.composed(related, "p.C", l).get) shouldBe
++      hashes(MerkleHashes.composed(plain, "p.C", l).get)
++end MerkleHashesInheritanceSpec
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/D.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/D.scala
+new file mode 100644
+index 000000000..aaaed97f0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/D.scala
+@@ -0,0 +1,2 @@
++package p
++class D extends C
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/build.json
+new file mode 100644
+index 000000000..bab9b3221
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/build.json
+@@ -0,0 +1,7 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "mid", "dependsOn": ["lib"] },
++    { "name": "app", "dependsOn": ["mid", "lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/A.scala
+new file mode 100644
+index 000000000..8f991f48f
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/A.scala
+@@ -0,0 +1,6 @@
++package p
++class Outer {
++  abstract class A { def m: Int }
++  abstract class B extends A { def m: Int = 1 }
++}
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/changes/A.scala
+new file mode 100644
+index 000000000..40aa52109
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/changes/A.scala
+@@ -0,0 +1,6 @@
++package p
++class Outer {
++  abstract class A { def m: Int }
++  abstract class B extends A
++}
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/C.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/C.scala
+new file mode 100644
+index 000000000..bd6c37e32
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/C.scala
+@@ -0,0 +1,2 @@
++package p
++abstract class C extends Inst.B
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/mid/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/test b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/test
+new file mode 100644
+index 000000000..b6b88cf9a
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance-downstream/test
+@@ -0,0 +1,5 @@
++> app/compile
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# As merkle-x-abstract-ancestor-instance, with C in a middle subproject: D no longer implements A.m
++-> app/compile
+-- 
+2.56.0
+

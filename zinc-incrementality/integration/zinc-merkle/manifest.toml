@@ -77,3 +77,10 @@ title = "Merkle: don't take this subproject's output for a library"
 id = "merkle3-nested-ancestor-stable-test"
 patch = "fixups/merkle3-nested-ancestor-stable-test.patch"
 title = "Test: a Scala 3 class nested in an object keeps its API across a clean build"
+
+# New (2026-10-20): finding 4's open case; hashes composed for a third subproject missed upstream
+# ancestors reached through an object.
+[[members]]
+id = "merkle-upstream-instance-composition"
+patch = "fixups/merkle-upstream-instance-composition.patch"
+title = "Merkle: compose with upstream ancestors reached through an object"
