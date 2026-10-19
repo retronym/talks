@@ -125,7 +125,9 @@ def main():
         edit_rows[(corpus, step)] = dict(corpus=corpus, step=step, kind=kind, target=target, edit=desc)
         ps = r.get("scalacPhases", [])
         zinc = r.get("zinc", {})
-        wall = r["wallMillis"]
+        # A step that failed to compile has no timing; it shows as failed, with its errors.
+        failed = "wallMillis" not in r
+        wall = r.get("wallMillis", 0)
         compile_ms = sum(p["millis"] for p in ps)
         zinc_ms = max(0, wall - compile_ms)
         analysis_io = zinc.get("analysisWrite", 0)
@@ -145,7 +147,7 @@ def main():
                                reason=reason, module=run["module"], compileMs=c["compileMillis"]))
             prev_changes = c["changes"]
         steps.append(dict(cell=r["cell"], corpus=corpus, step=step, kind=kind, target=target, edit=desc,
-                          status="done", order=r["order"], sources=sum(c["sources"] for c in cyc),
+                          status="failed" if failed else "done", order=r["order"], sources=sum(c["sources"] for c in cyc),
                           classes=r.get("recompiled"), cycles=len(cyc), start=r.get("startSec", 0),
                           wallMs=wall, compileMs=compile_ms, zincMs=zinc_ms, wallMinMs=wall, wallMaxMs=wall,
                           verify=verdicts.get((r["cell"], r["round"]), r.get("verify"))))
