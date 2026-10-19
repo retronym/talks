@@ -125,6 +125,14 @@ remote = "origin"
 pr = 140
 title = "[SPIKE] Bridge API extraction through a visitor, with tree and hash backends"
 
+# Found by Zinc's conformance harness (PLAN-merkle-bughunt.md finding 6): a top-level object shadowed by a package
+# object member got no pickle. The fix's companion warning (5c4c45b120) is left out: it would change builds with
+# fatal warnings in the campaigns.
+[[members]]
+id = "pkgobj-shadow-pickle"
+patch = "fixups/pkgobj-shadow-pickle.patch"
+title = "Pickle top-level definitions shadowed by a package object member"
+
 [[excluded]]
 id = "rz-scala#40..#133"
 reason = "old performance and WIP experiments"

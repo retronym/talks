@@ -1,0 +1,165 @@
+From 057bddd7ec3b580f95bc7483ffff80d7ad9a0a81 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:00:56 +1000
+Subject: [PATCH] Pickle top-level definitions shadowed by a package object
+ member
+
+The packageobjects phase enters the members of a package object,
+declared or inherited, into the scope of the package class. Since
+323e895672 (2009) `openPackageModule` first unlinks any existing entry
+of the same name, so a top-level `object Foo` disappears from the
+package scope when the package object has a member `Foo`.
+
+The pickler and the backend find companions in that scope:
+
+  - `PicklePhase` pickles a top-level class together with
+    `companionSymbol`, which no longer finds the module, so the pickle of
+    `class Foo` omits `object Foo`.
+  - `genMirrorClass` asks for the pickle of
+    `moduleClass.companionSymbol`, which is `NoSymbol`, so the mirror
+    class gets only the `Scala` marker attribute that says the pickle is
+    elsewhere. The pickle stored for the module is never written.
+
+While the package object has the member, `Foo` resolves to it in this
+run and in later ones alike, so nobody notices. Once the member is
+removed and only the package object is recompiled, as an incremental
+compiler does, the object can't be found on the classpath even though a
+clean build compiles:
+
+```
+// A.scala
+package a; trait PT { object Foo }; package object b extends a.PT
+// B.scala
+package a.b; object Foo
+
+$ scalac -d out A.scala B.scala
+$ javap -v out/a/b/Foo.class | grep -c ScalaSignature
+0
+// A.scala, edited
+package a; trait PT; package object b extends a.PT
+$ scalac -cp out -d out A.scala
+$ scalac -cp out -d out Client.scala   // package a.b; object Client { Foo }
+error: not found: value Foo
+```
+
+This commit stops depending on the package scope for these two lookups.
+The pickler takes the companion from the compilation unit's top-level
+definitions (top-level companions must be defined in the same file), and
+the mirror class uses `moduleClass.sourceModule`. The unit-based lookup
+also makes the `_.owner == sym.owner` filter that excluded package
+object members from #6285 unnecessary.
+
+Other scope-based companion lookups remain: for instance, a class whose
+companion module is shadowed in this way still gets no static
+forwarders. That only affects Java callers of a definition that Scala
+code can't reach, so I've left it alone.
+
+The test compiles the definitions, recompiles the package object without
+the members, then compiles a client against the output. It covers a
+declared and an inherited member, a `def` member, and a companion class.
+Before this change the last step reports `not found: value` for each of
+them.
+---
+ .../tools/nsc/backend/jvm/BCodeHelpers.scala  |  3 +-
+ .../tools/nsc/symtab/classfile/Pickler.scala  | 16 +++++++-
+ ...ckage-object-shadows-toplevel-pickle.scala | 40 +++++++++++++++++++
+ 3 files changed, 57 insertions(+), 2 deletions(-)
+ create mode 100644 test/files/run/package-object-shadows-toplevel-pickle.scala
+
+diff --git a/src/compiler/scala/tools/nsc/backend/jvm/BCodeHelpers.scala b/src/compiler/scala/tools/nsc/backend/jvm/BCodeHelpers.scala
+index eecbe0dc51..2cae3f8c20 100644
+--- a/src/compiler/scala/tools/nsc/backend/jvm/BCodeHelpers.scala
++++ b/src/compiler/scala/tools/nsc/backend/jvm/BCodeHelpers.scala
+@@ -933,7 +933,8 @@ abstract class BCodeHelpers extends BCodeIdiomatic {
+       if (emitSource)
+         mirrorClass.visitSource("" + cunit.source, null /* SourceDebugExtension */)
+ 
+-      val ssa = getAnnotPickle(bType.internalName, moduleClass.companionSymbol)
++      // Not `companionSymbol`, which looks in the package's scope; see `PicklePhase.apply`.
++      val ssa = getAnnotPickle(bType.internalName, moduleClass.sourceModule)
+       mirrorClass.visitAttribute(if (ssa.isDefined) pickleMarkerLocal else pickleMarkerForeign)
+       emitAnnotations(mirrorClass, moduleClass.annotations ++ ssa)
+ 
+diff --git a/src/compiler/scala/tools/nsc/symtab/classfile/Pickler.scala b/src/compiler/scala/tools/nsc/symtab/classfile/Pickler.scala
+index 79556be4ba..ab969f44ac 100644
+--- a/src/compiler/scala/tools/nsc/symtab/classfile/Pickler.scala
++++ b/src/compiler/scala/tools/nsc/symtab/classfile/Pickler.scala
+@@ -70,6 +70,20 @@ abstract class Pickler extends SubComponent {
+ 
+     @nowarn("cat=lint-nonlocal-return")
+     def apply(unit: CompilationUnit): Unit = {
++      // Find companions among the unit's top-level definitions rather than with `companionSymbol`, which looks
++      // in the package's scope. `openPackageModule` unlinks a top-level definition from that scope if the package
++      // object defines or inherits a member of the same name, and the pickle of its companion would omit it.
++      val topLevelDefs: List[Symbol] = {
++        def collect(tree: Tree): List[Symbol] = tree match {
++          case PackageDef(_, stats)                      => stats.flatMap(collect)
++          case ClassDef(_, _, _, _) | ModuleDef(_, _, _) => tree.symbol :: Nil
++          case _                                         => Nil
++        }
++        collect(unit.body)
++      }
++      def companionOf(sym: Symbol): Symbol =
++        topLevelDefs.find(other => other.owner == sym.owner && other.isModule != sym.isModule && other.name.toTermName == sym.name.toTermName).getOrElse(NoSymbol)
++
+       def pickle(tree: Tree): Unit = {
+         tree match {
+           case PackageDef(_, stats) =>
+@@ -79,7 +93,7 @@ abstract class Pickler extends SubComponent {
+             def shouldPickle(sym: Symbol) = currentRun.compiles(sym) && !currentRun.symData.contains(sym)
+             if (shouldPickle(sym)) {
+               def pickle(noPrivates: Boolean, writeToSymData: Boolean, writeToSigFile: Boolean): Unit = {
+-                val companion = sym.companionSymbol.filter(_.owner == sym.owner).filter(shouldPickle) // exclude companionship between package- and package object-owned symbols.
++                val companion = companionOf(sym).filter(shouldPickle)
+                 val pickle = Pickler.this.pickle(sym, companion, noPrivates)
+                 if (writeToSymData) {
+                   currentRun.symData(sym) = pickle
+diff --git a/test/files/run/package-object-shadows-toplevel-pickle.scala b/test/files/run/package-object-shadows-toplevel-pickle.scala
+new file mode 100644
+index 0000000000..e4ae56e36f
+--- /dev/null
++++ b/test/files/run/package-object-shadows-toplevel-pickle.scala
+@@ -0,0 +1,40 @@
++import scala.tools.partest._
++import java.io.File
++
++// A top-level definition whose name the package object also defines (or inherits) is shadowed by
++// the package object's member, but its classfiles must still carry its pickle: once that member is
++// removed, a separate compilation must see the top-level definition.
++object Test extends StoreReporterDirectTest {
++  class V1 {
++    def PT  = "package a; trait PT { object Foo; object Bar; def Baz = 0 }"
++    def pkg = "package a; package object b extends a.PT { object Qux }"
++    def Foo = "package a.b; object Foo { def x = 1 }"
++    def Bar = "package a.b; class Bar; object Bar { def y = 2 }"
++    def Baz = "package a.b; object Baz { def z = 3 }"
++    def Qux = "package a.b; object Qux { def w = 4 }"
++  }
++  class V2 extends V1 {
++    override def PT  = "package a; trait PT"
++    override def pkg = "package a; package object b extends a.PT"
++  }
++  def client = "package a.b; object Client { Foo.x; new Bar; Bar.y; Baz.z; Qux.w }"
++
++  override def extraSettings = s"-cp ${sys.props("partest.lib")}${File.pathSeparator}$testOutput"
++
++  def show(): Unit = {
++    val v1 = new V1
++    val v2 = new V2
++    compiles(v1.PT, v1.pkg, v1.Foo, v1.Bar, v1.Baz, v1.Qux)
++    compiles(v2.PT, v2.pkg)
++    compiles(client)
++  }
++
++  def compiles(codes: String*) = {
++    val global = newCompiler()
++    withRun(global)(_ compileSources newSources(codes: _*))
++    val reporterOutput = storeReporter.infos.map(x => x.pos.showError(x.msg)).mkString("\n")
++    assert(!global.reporter.hasErrors, reporterOutput)
++  }
++
++  def code = ""
++}
+-- 
+2.56.0
+
