@@ -25,20 +25,39 @@ ZINCS = {"released": ("1.12.x", "name hashing"), "perf": ("1.12.x + fixes", "nam
          "merkle": ("1.12.x + fixes + Merkle", "Merkle"),
          # the Merkle build with hashing left at its default
          "merklenames": ("1.12.x + fixes + Merkle", "name hashing")}
-# scalac phases by the dashboard's groups; every other phase is a transform.
+# Scala 2 and Scala 3 phases by the dashboard's groups; every other phase is a transform. Scala 3
+# expands inline methods and macros in phases after typer, which scalac does in typer, so those
+# count as typer. A Scala 3 MegaPhase{a, b, ...} goes in the group all its phases share.
 GROUPS = {
     "frontend": {"<init phase>", "parser", "namer", "packageobjects"},
-    "typer": {"typer"},
-    "checks": {"superaccessors", "extmethods", "pickler", "refchecks", "posttyper", "inlinedPositions"},
+    "typer": {"typer", "inlining", "postInlining", "staging", "splicing", "pickleQuotes"},
+    "checks": {"superaccessors", "extmethods", "pickler", "refchecks", "posttyper", "inlinedPositions",
+               "Winfer-union", "checkUnusedPostTyper", "checkShadowing", "checkUnusedPostInlining",
+               "checkUnusedPostPatMat", "checkInlineTraits", "initChecker", "preRecheck", "recheck",
+               "setupCC", "cc"},
     "api": {"xsbt-api", "sbt-api"},
     "deps": {"xsbt-dependency", "xsbt-analyzer", "sbt-deps"},
-    "backend": {"jvm", "genBCode"},
+    "backend": {"jvm", "genBCode", "genSJSIR"},
 }
 INVALIDATE = ["initialChanges", "invalidateInitial", "detectAPIChanges", "invalidate", "prune", "merge", "analysis"]
 
 
+def mini_phases(phase):
+    """The phases a Scala 3 MegaPhase runs together, or just `phase`."""
+    if phase.startswith("MegaPhase{") and phase.endswith("}"):
+        return phase[len("MegaPhase{"):-1].split(", ")
+    return [phase]
+
+
 def group(phase):
-    return next((g for g, ps in GROUPS.items() if phase in ps), "transforms")
+    gs = {next((g for g, ps in GROUPS.items() if p in ps), "transforms") for p in mini_phases(phase)}
+    return gs.pop() if len(gs) == 1 else "transforms"
+
+
+def phase_label(phase):
+    """A MegaPhase by its first and last phases, as Scala 3 shows it."""
+    ps = mini_phases(phase)
+    return ps[0] if len(ps) == 1 else f"{{{ps[0]}…{ps[-1]}}}"
 
 
 def activity(log):
@@ -158,7 +177,7 @@ def main():
             g = by_group.setdefault(group(p["phase"]), {"ms": 0, "alloc": 0, "names": []})
             g["ms"] += p["millis"]
             g["alloc"] += p["allocatedBytes"]
-            g["names"].append(p["phase"])
+            g["names"].append(phase_label(p["phase"]))
         for g, v in by_group.items():
             phases.append(dict(cell=r["cell"], step=step, group=g, phase=" + ".join(v["names"]), ms=v["ms"], allocBytes=v["alloc"]))
         for g, label, ms in [("zinc-invalidate", "Invalidation", invalidate), ("zinc-analysis", "Analysis write", analysis_io),
