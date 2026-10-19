@@ -1,0 +1,161 @@
+From 61ecac37058c6fa6bee2e8cc8812e05883b19e68 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:38:00 +1000
+Subject: [PATCH] Don't pickle positions of type annotations from another
+ source file
+
+Since ac76938c1e, the position pickler also traverses the annotation
+trees of `AnnotatedType`s it pickled, so that positions of trees which
+only appear inside types are not lost. However, an annotated type can be
+copied verbatim from another compilation unit, and its annotation tree
+still carries that unit's spans and source:
+
+  - `Namer.inferredResultType` returns the `inherited` result type
+    as-is for an overriding member without a declared type. For a
+    default getter this is `T @uncheckedVariance`, whose annotation was
+    created in the parent at the parent's `sym.span`.
+  - The same goes for user type annotations in an inherited result
+    type (`def f: Int @foo(1)` in the parent, `def f = 1` in the child)
+    and in the inferred type of a selection (`val y = PO.g`).
+
+When the parent is compiled in the same run, the child's TASTy then
+gets a `SOURCE` entry pointing at the parent's file plus offsets into
+it. A comment-only edit to the parent, which changes nothing in its API
+and need not recompile the child, leaves the child's TASTy different
+from that of a clean build. In pekko, `RepointableActorRef` and
+`PromiseActorRef` differ from a clean build only in two Positions
+entries each, pointing into `ActorRef.scala`; this was found while
+checking the purity of TASTy outputs under incremental compilation.
+
+Minimised, with `P.scala`
+
+    abstract class P { def tell(m: Any)(implicit s: P = null): Unit }
+
+and `Q.scala`
+
+    class Q extends P { def tell(m: Any)(implicit s: P = null): Unit = () }
+
+compiled together, then again after adding a comment line above `P`:
+
+    -    73: 67 .. 67
+    -    79: 67 .. 67
+    +    73: 80 .. 80
+    +    79: 80 .. 80
+    ...
+         0: 22 [Q.scala]
+        73: 23 [P.scala]
+
+Compiling `Q.scala` against `P`'s TASTy instead doesn't have the
+problem: there, these annotation trees come back without positions, and
+`Q.tasty` has no `P.scala` entry at all.
+
+This commit skips type annotation trees whose source is not the unit
+being pickled. That brings joint compilation in line with separate
+compilation, and keeps what ac76938c1e was after for annotations
+written in the current file. AFAICT positions of annotation trees in
+types only matter for diagnostics, where an offset into some other file
+is of little use, and we already drop them in the separate compilation
+case.
+
+I considered the targeted alternatives in `Namer`: creating the
+`@uncheckedVariance` annotation without a span, or re-spanning the
+annotations of an `inherited` type to the current definition. Both
+only cover the default getter (or inherited result types), not user
+annotations reaching the child through inferred types.
+
+The test compiles `P` and `Q` jointly twice, with and without a comment
+at the top of `P.scala`, and checks that `Q.tasty` is byte-identical. It
+fails before this change.
+
+LLM usage: written with Claude Code.
+---
+ .../dotc/core/tasty/PositionPickler.scala     |  7 ++-
+ .../tasty/ForeignPositionsPicklingTest.scala  | 58 +++++++++++++++++++
+ 2 files changed, 64 insertions(+), 1 deletion(-)
+ create mode 100644 compiler/test/dotty/tools/dotc/core/tasty/ForeignPositionsPicklingTest.scala
+
+diff --git a/compiler/src/dotty/tools/dotc/core/tasty/PositionPickler.scala b/compiler/src/dotty/tools/dotc/core/tasty/PositionPickler.scala
+index 72d12f0b33..8bfac9aeed 100644
+--- a/compiler/src/dotty/tools/dotc/core/tasty/PositionPickler.scala
++++ b/compiler/src/dotty/tools/dotc/core/tasty/PositionPickler.scala
+@@ -145,7 +145,12 @@ object PositionPickler:
+     for (root <- roots)
+       traverse(root, NoSource)
+ 
+-    for annotTree <- typeAnnots do
++    // An annotated type can be copied here from another source file, e.g. an inherited
++    // result type or the inferred type of a selection. Its annotation tree then still
++    // carries that file's positions. Pickling them would make this TASTy depend on the
++    // layout of the other file, and would differ from the result of compiling against
++    // that file's TASTy, where such trees come back without positions.
++    for annotTree <- typeAnnots if annotTree.source == source do
+       traverse(annotTree, NoSource)
+   end picklePositions
+ end PositionPickler
+diff --git a/compiler/test/dotty/tools/dotc/core/tasty/ForeignPositionsPicklingTest.scala b/compiler/test/dotty/tools/dotc/core/tasty/ForeignPositionsPicklingTest.scala
+new file mode 100644
+index 0000000000..8e3a547906
+--- /dev/null
++++ b/compiler/test/dotty/tools/dotc/core/tasty/ForeignPositionsPicklingTest.scala
+@@ -0,0 +1,58 @@
++package dotty.tools.dotc.core.tasty
++
++import java.nio.file.{Files, Path}
++
++import org.junit.Test
++import org.junit.Assert.{assertArrayEquals, assertFalse}
++
++import dotty.tools.dotc.Main
++import dotty.tools.dotc.interfaces.Diagnostic.ERROR
++import dotty.tools.dotc.reporting.TestReporter
++
++import dotty.tools.vulpix.TestConfiguration
++
++/** The TASTy of a class must not depend on the layout of another source file,
++ *  even if it contains annotated types that were copied from that file.
++ */
++class ForeignPositionsPicklingTest {
++
++  private val parent =
++    """package p
++      |class foo(x: Int) extends scala.annotation.StaticAnnotation
++      |abstract class P {
++      |  def f: Int @foo(1)
++      |  def tell(m: Any)(implicit s: P = null): Unit
++      |}
++      |object PO { def g: Int @foo(2) = 1 }
++      |""".stripMargin
++
++  // `f` and the default getter of `tell` inherit their result types from `P`,
++  // `y` gets its type from `PO.g`.
++  private val child =
++    """package p
++      |class Q extends P {
++      |  def f = 1
++      |  def tell(m: Any)(implicit s: P = null): Unit = ()
++      |  val y = PO.g
++      |}
++      |""".stripMargin
++
++  private def compileQ(parentPrefix: String): Array[Byte] =
++    val dir = Files.createTempDirectory("foreign-positions")
++    val src = Files.createDirectory(dir.resolve("src"))
++    val out = Files.createDirectory(dir.resolve("out"))
++    Files.writeString(src.resolve("P.scala"), parentPrefix + parent)
++    Files.writeString(src.resolve("Q.scala"), child)
++    val options = TestConfiguration.defaultOptions
++      .and("-d", out.toString)
++      .and("-sourceroot", src.toString)
++      .and(src.resolve("P.scala").toString, src.resolve("Q.scala").toString)
++    val reporter = TestReporter.reporter(System.out, logLevel = ERROR)
++    assertFalse("Compilation failed.", Main.process(options.all, reporter).hasErrors)
++    Files.readAllBytes(out.resolve("p/Q.tasty"))
++
++  @Test def parentLayoutDoesNotAffectChildTasty(): Unit =
++    val before = compileQ("")
++    val after = compileQ("// a comment\n\n")
++    assertArrayEquals(before, after)
++}
+-- 
+2.56.0
+

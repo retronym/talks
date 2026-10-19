@@ -34,6 +34,18 @@ remote = "origin"
 pr = 36
 title = "Hash xsbti.api values by content in ExtractAPI's marker hashes"
 
+# From the Merkle bug hunt (PLAN-merkle-bughunt.md finding 14): constructor purity in the Zinc API, and no positions
+# of type annotations copied from another source in TASTy. Each one commit on scala/scala3 main, not yet a PR.
+[[members]]
+id = "ctor-purity-api"
+patch = "fixups/ctor-purity-api.patch"
+title = "Make constructor purity part of the Zinc API"
+
+[[members]]
+id = "annot-positions-other-source"
+patch = "fixups/annot-positions-other-source.patch"
+title = "Don't pickle positions of type annotations from another source file"
+
 [[excluded]]
 id = "rz-scala3#6"
 reason = "duplicate of scala3#27275"
