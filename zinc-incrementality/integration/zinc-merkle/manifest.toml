@@ -52,3 +52,10 @@ title = "Merkle: reuse composed classes of an unchanged upstream analysis (rz#48
 id = "merkle-nested-library-ancestors"
 patch = "fixups/merkle-nested-library-ancestors.patch"
 title = "Merkle: name library ancestors that are nested or take type arguments"
+
+# New (2026-10-20 bug hunt): the descendant rules looked upstream ancestors nested in objects up by
+# source name among binary-keyed APIs, and missed parents reached through an object.
+[[members]]
+id = "merkle-upstream-nested-ancestors"
+patch = "fixups/merkle-upstream-nested-ancestors.patch"
+title = "Merkle: find upstream ancestors nested in objects or reached through one"

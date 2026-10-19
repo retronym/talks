@@ -1,0 +1,394 @@
+From 2dfbcbd51360ec632ad1884aa4d83c3897b5acaa Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 01:27:22 +1000
+Subject: [PATCH] Merkle: find upstream ancestors nested in objects or reached
+ through one
+
+The descendant rules for an upstream change read a descendant's
+ancestors from its stored linearization, by source name, and look their
+APIs up among the upstream classes, which are keyed by binary name. For
+a class nested in an object the two differ, `p.O.A` against `p.O$A`, so
+the lookup failed and the `abstract` rule never saw the member deferred
+there. With `object O { abstract class A { def m: Int } }` and
+`object Q { abstract class B extends O.A { def m = 1 } }` upstream,
+removing B.m left `class C extends Q.B` downstream uncompiled, though it
+no longer implements m. A parent reached through an object,
+`class C extends Inst.B` with `object Inst extends Outer` and B a member
+class of Outer, is stored as `p.Inst.B`, which no class is called, so
+none of C's ancestors were found at all.
+
+HierarchyView now looks an ancestor up by its binary name candidates as
+well, and takes a descendant's upstream parents from the external
+inheritance relation, which names their classes, along with their own
+stored linearizations. Ancestors are all by source name, and `conflicts`
+drops the changed class from the other paths under either name: with the
+lookup fixed, an upstream nested class, named by its binary name in the
+change, would otherwise count as on another path to itself, and
+`conflicts` would fire for every descendant.
+
+Composition had the same lookup: Lookup.ownAnalyzedClass, which finds
+an ancestor's API in another analysis, asked for the class file of the
+source name. It now tries the binary name candidates.
+
+merkle-x-abstract-ancestor-nested and merkle-x-abstract-ancestor-instance
+are merkle-x-abstract-ancestor with the ancestors nested in objects, and
+members of a class inherited through an object; both fail without this
+change. merkle-x-abstract-nested, merkle-x-abstract with the ancestor in
+an object, passes either way.
+---
+ .../sbt/internal/inc/DescendantRules.scala    | 30 +++++++++++++++----
+ .../sbt/internal/inc/LibraryAncestors.scala   |  2 +-
+ .../main/scala/sbt/internal/inc/Lookup.scala  | 19 +++++++-----
+ .../app/C.scala                               |  2 ++
+ .../app/incOptions.properties                 |  2 ++
+ .../build.json                                |  6 ++++
+ .../lib/A.scala                               |  6 ++++
+ .../lib/changes/A.scala                       |  6 ++++
+ .../lib/incOptions.properties                 |  2 ++
+ .../merkle-x-abstract-ancestor-instance/test  |  5 ++++
+ .../app/C.scala                               |  2 ++
+ .../app/incOptions.properties                 |  2 ++
+ .../build.json                                |  6 ++++
+ .../lib/A.scala                               |  2 ++
+ .../lib/B.scala                               |  2 ++
+ .../lib/changes/B.scala                       |  2 ++
+ .../lib/incOptions.properties                 |  2 ++
+ .../merkle-x-abstract-ancestor-nested/test    |  5 ++++
+ .../merkle-x-abstract-nested/app/B.scala      |  2 ++
+ .../app/incOptions.properties                 |  2 ++
+ .../merkle-x-abstract-nested/build.json       |  6 ++++
+ .../merkle-x-abstract-nested/lib/A.scala      |  2 ++
+ .../lib/changes/A.scala                       |  2 ++
+ .../lib/incOptions.properties                 |  2 ++
+ .../merkle-x-abstract-nested/test             |  5 ++++
+ 25 files changed, 110 insertions(+), 14 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/C.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/C.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/changes/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/test
+
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
+index acc1f2819..6e71aafe0 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
+@@ -62,18 +62,36 @@ private[inc] object AncestorChange:
+  */
+ private[inc] final class HierarchyView(
+     relations: Relations,
+-    val api: String => Option[AnalyzedClass]
++    lookup: String => Option[AnalyzedClass]
+ ):
+   private val parents = relations.inheritance.internal
+ 
++  /**
++   * A class's API, by its name or, for an upstream class, by its binary name: a stored
++   * linearization names a class nested in an object `a.O.C`, upstream APIs are keyed `a.O$C`.
++   */
++  val api: String => Option[AnalyzedClass] = name =>
++    lookup(name).orElse(
++      LibraryAncestors.binaryNameCandidates(name).iterator.drop(1).flatMap(lookup).nextOption()
++    )
++
+   /**
+    * Ancestors through this subproject's inheritance relation, plus those in the stored
+-   * linearization, which also names ancestors in upstream subprojects.
++   * linearization, which also names ancestors in upstream subprojects, all by source name. A
++   * parent reached through an object, `extends Inst.B` with `object Inst extends Outer`, is
++   * stored as `Inst.B`, which no class is called; the external inheritance relation has its
++   * class, `Outer$B`, whose own stored linearization names the ancestors above it.
+    */
+   def ancestors(className: String): Set[String] =
+-    IncrementalCommon.transitiveDeps(parents.forward(className), sbt.util.Logger.Null, false)(
+-      parents.forward
+-    ) ++ api(className).toList.flatMap(MerkleHashes.linearization) - className
++    val internal =
++      IncrementalCommon.transitiveDeps(parents.forward(className), sbt.util.Logger.Null, false)(
++        parents.forward
++      ) + className
++    val upstream =
++      internal.flatMap(relations.inheritance.external.forward).map(LibraryAncestors.sourceName)
++    internal ++ upstream ++ (internal ++ upstream).iterator
++      .flatMap(api)
++      .flatMap(MerkleHashes.linearization) - className
+ 
+   def usedNames(className: String): Set[String] =
+     relations.names.toMultiMap.get(className).fold(Set.empty[String])(_.map(_.name).toSet)
+@@ -207,7 +225,7 @@ private[inc] object DescendantRules:
+    */
+   val conflicts: DescendantRule = rule("conflicts") { (view, d, change) =>
+     val p = change.className
+-    val otherPath = view.ancestors(d) - p -- view.ancestors(p)
++    val otherPath = view.ancestors(d) - p - LibraryAncestors.sourceName(p) -- view.ancestors(p)
+     val internal = otherPath.flatMap(view.declaredNames)
+     val external = view.externallyInheritedNames(d) --
+       view.inheritedNames(change.before) -- view.inheritedNames(change.after)
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
+index 3899266ea..8f8df7850 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
+@@ -129,7 +129,7 @@ private[inc] object LibraryAncestors:
+   private def ancestorNames(c: AnalyzedClass): Iterator[String] = ancestorNames(sides(c)).iterator
+ 
+   /** A binary class name as [[MerkleHashes.typeName]] renders a reference to the class. */
+-  private def sourceName(binaryName: String): String =
++  private[inc] def sourceName(binaryName: String): String =
+     binaryName.stripSuffix("$").replace('$', '.')
+ 
+   /** The names a class has only by inheritance: not declared, and not its own. */
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/Lookup.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/Lookup.scala
+index 0ca0be816..92edbf4e3 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/Lookup.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/Lookup.scala
+@@ -66,14 +66,19 @@ trait Lookup extends ExternalLookup:
+   /** The mode of this compile, which the analyses it looks up must share. See [[Hashing]]. */
+   def hashing: Hashing = Hashing.Names
+ 
+-  /** A class's own stored API, from whichever analysis on the classpath defines it. */
++  /**
++   * A class's own stored API, from whichever analysis on the classpath defines it. A stored
++   * linearization names a class nested in an object `a.O.C`; its classfile is `a/O$C.class`.
++   */
+   private def ownAnalyzedClass(className: String): Option[AnalyzedClass] =
+-    for
+-      analysis0 <- lookupAnalysis(className)
+-      analysis = analysis0 match
+-        case a: Analysis => a
+-      own <- analysis.apis.internal.get(className)
+-    yield own
++    LibraryAncestors.binaryNameCandidates(className).iterator.flatMap { binaryClassName =>
++      for
++        analysis0 <- lookupAnalysis(binaryClassName)
++        analysis = analysis0 match
++          case a: Analysis => a
++        own <- analysis.apis.internal.get(className)
++      yield own
++    }.nextOption()
+ end Lookup
+ 
+ /**
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/C.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/C.scala
+new file mode 100644
+index 000000000..c50b6c18f
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/C.scala
+@@ -0,0 +1,2 @@
++package p
++class C extends Inst.B
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/A.scala
+new file mode 100644
+index 000000000..8f991f48f
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/A.scala
+@@ -0,0 +1,6 @@
++package p
++class Outer {
++  abstract class A { def m: Int }
++  abstract class B extends A { def m: Int = 1 }
++}
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/changes/A.scala
+new file mode 100644
+index 000000000..40aa52109
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/changes/A.scala
+@@ -0,0 +1,6 @@
++package p
++class Outer {
++  abstract class A { def m: Int }
++  abstract class B extends A
++}
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/test b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/test
+new file mode 100644
+index 000000000..a98fcae13
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-instance/test
+@@ -0,0 +1,5 @@
++> app/compile
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# As merkle-x-abstract-ancestor, with A and B members of class Outer, inherited through object Inst: C no longer implements A.m
++-> app/compile
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/C.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/C.scala
+new file mode 100644
+index 000000000..31c3c79b5
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/C.scala
+@@ -0,0 +1,2 @@
++package p
++class C extends Q.B
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/A.scala
+new file mode 100644
+index 000000000..438702383
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { abstract class A { def m: Int } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/B.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/B.scala
+new file mode 100644
+index 000000000..dc0e9529e
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/B.scala
+@@ -0,0 +1,2 @@
++package p
++object Q { abstract class B extends O.A { def m: Int = 1 } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/changes/B.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/changes/B.scala
+new file mode 100644
+index 000000000..8258c674b
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/changes/B.scala
+@@ -0,0 +1,2 @@
++package p
++object Q { abstract class B extends O.A }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/test b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/test
+new file mode 100644
+index 000000000..75e127bdb
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-ancestor-nested/test
+@@ -0,0 +1,5 @@
++> app/compile
++
++$ copy-file lib/changes/B.scala lib/B.scala
++# As merkle-x-abstract-ancestor, with A and B nested in objects: C no longer implements O.A.m
++-> app/compile
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/B.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/B.scala
+new file mode 100644
+index 000000000..37cc1aa78
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/B.scala
+@@ -0,0 +1,2 @@
++package p
++class B extends O.A
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/A.scala
+new file mode 100644
+index 000000000..82e6270ca
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { abstract class A { def m: Int = 0 } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/changes/A.scala
+new file mode 100644
+index 000000000..438702383
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/changes/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { abstract class A { def m: Int } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/test b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/test
+new file mode 100644
+index 000000000..a3f54a012
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-abstract-nested/test
+@@ -0,0 +1,5 @@
++> app/compile
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# As merkle-x-abstract, with A nested in an object: B is concrete and no longer implements m
++-> app/compile
+-- 
+2.56.0
+
