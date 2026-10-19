@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Write a campaign dashboard as one self-contained page, to publish and share.
+
+    snapshot-dashboard OUT.html DATA_DIR... [--branches BRANCHES.json] [--title TITLE]
+
+Each DATA_DIR is a run's `dash` directory (from lockstep-dash). The page is dashboard/page.html
+with the runs' datasets embedded, and a static runtime in place of serve-dashboard's, which polls
+the local server; with more than one run, a menu switches between them. It has no <html>, <head>
+or <body>, as the Artifact tool adds them.
+"""
+
+import argparse
+import html
+import json
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent / "dashboard"
+NAMES = ["campaign", "cells", "steps", "phases", "cycles", "edits", "branches"]
+
+RUNTIME = """
+(() => {
+  const RUNS = JSON.parse(document.getElementById('dash-runs').textContent);
+  const calcs = {};
+  const callbacks = [];
+  let cache = {};
+  let run = 0;
+  let params = {};
+  const fire = () => {
+    cache = {};
+    for (const f of callbacks) { try { f(); } catch (e) { console.error(e); } }
+  };
+  window.dash = {
+    calc(id, spec) { calcs[id] = spec; },
+    onData(cb) { callbacks.push(cb); },
+    data(id) {
+      const d = RUNS[run].data;
+      if (id in d) return { status: 'ok', data: d[id] };
+      const c = calcs[id];
+      if (!c) return { status: 'missing', data: [] };
+      if (!cache[id]) {
+        const ins = c.inputs.map((i) => this.data(i));
+        const bad = ins.find((x) => x.status !== 'ok');
+        if (bad) return { status: bad.status, data: [] };
+        try { cache[id] = { status: 'ok', data: c.fn(...ins.map((x) => x.data)) }; }
+        catch (e) { console.error(e); cache[id] = { status: 'error', data: [] }; }
+      }
+      return cache[id];
+    },
+    params() { return params; },
+    setParams(p) { params = { ...params, ...p }; fire(); },
+    setLink(id) { history.replaceState(null, '', '#' + id); },
+    colors: ['#8a8984', '#c4673f', '#2f8f6b', '#b8862b', '#a94f75', '#2c6e2e', '#6e63b5', '#b5524b'],
+  };
+  addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('shell-run');
+    sel.replaceChildren(...RUNS.map((r, i) => new Option(r.name, i)));
+    sel.hidden = RUNS.length < 2;
+    sel.onchange = () => { run = Number(sel.value); params = {}; fire(); };
+    fire();
+  });
+  let t;
+  addEventListener('resize', () => { clearTimeout(t); t = setTimeout(fire, 150); });
+})();
+"""
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("out", type=Path)
+    ap.add_argument("data_dirs", type=Path, nargs="+")
+    ap.add_argument("--branches", type=Path, help="branch-map output, for runs whose dash directory has none")
+    ap.add_argument("--title", default="IncBench Campaign")
+    a = ap.parse_args()
+    runs = []
+    for d in a.data_dirs:
+        data = {}
+        for n in NAMES:
+            f = d / f"{n}.json"
+            if n == "branches" and not f.exists() and a.branches:
+                f = a.branches
+            if f.exists():
+                data[n] = json.loads(f.read_text())
+        runs.append({"name": data["campaign"][0]["name"], "data": data})
+    stamp = ", ".join(sorted({r["data"]["campaign"][0]["started"][:10] for r in runs}))
+    # </script> inside the JSON would end the element early.
+    blob = json.dumps(runs, separators=(",", ":")).replace("</", "<\\/")
+    a.out.write_text(f"""<title>{html.escape(a.title)}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>{(HERE / "shell.css").read_text()}</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script type="application/json" id="dash-runs">{blob}</script>
+<script>{RUNTIME}</script>
+<p style="font-size:12px;color:var(--color-fg-muted);margin:8px 0 0">Snapshot of {stamp} · <select id="shell-run" class="ib-select" aria-label="Run"></select></p>
+{(HERE / "page.html").read_text()}
+""")
+    print(f"{a.out}: {len(runs)} run(s), {a.out.stat().st_size // 1024} KB")
+
+
+if __name__ == "__main__":
+    main()

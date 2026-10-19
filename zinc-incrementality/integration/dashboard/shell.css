@@ -1,6 +1,6 @@
 /* The design tokens page.html reads, which the hosted dashboard type otherwise provides. */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --font-anthropic-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-anthropic-serif: ui-serif, Georgia, "Times New Roman", serif;
   --cds-font-size-caption: 12px; --cds-font-size-body: 14px; --cds-font-size-heading: 16px; --cds-font-size-title: 28px;
@@ -14,14 +14,21 @@
   --cds-chart-grid: #ecebe6; --cds-chart-axis: #c9c8c1; --cds-chart-reference: #9a9992; --cds-chart-muted: #b5b4ad; --cds-chart-status-critical: #c0453a;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --color-bg: #1b1b1a; --color-panel: #232322; --color-fg: #ecebe6; --color-fg-muted: #9c9b95; --color-border-line: #353533;
     --cds-text-secondary: #9c9b95; --cds-border: #3d3d3b; --cds-surface-popover: #262625; --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.5);
     --cds-chart-grid: #2c2c2a; --cds-chart-axis: #4a4a47; --cds-chart-reference: #6f6e69; --cds-chart-muted: #5b5a56;
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+    --color-bg: #1b1b1a; --color-panel: #232322; --color-fg: #ecebe6; --color-fg-muted: #9c9b95; --color-border-line: #353533;
+    --cds-text-secondary: #9c9b95; --cds-border: #3d3d3b; --cds-surface-popover: #262625; --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.5);
+    --cds-chart-grid: #2c2c2a; --cds-chart-axis: #4a4a47; --cds-chart-reference: #6f6e69; --cds-chart-muted: #5b5a56;
+}
 html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 14px; }
-body { padding: 0 16px 48px; max-width: 1400px; margin: 0 auto; }
+body { padding-block: 0 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1400px; margin: 0 auto; }
 code { font-size: 0.92em; }
 a { color: inherit; }
 .dash-skeleton { color: transparent; background: var(--cds-chart-grid); border-radius: 4px; }
