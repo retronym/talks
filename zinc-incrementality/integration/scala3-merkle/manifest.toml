@@ -22,3 +22,10 @@ remote = "origin"
 branch = "claude/merkle-joint-separate-flags-main"
 title = "rz-scala3#10 rebased onto the above: Read NoInits from TASTy as Namer computes it from source"
 
+
+# integration/scala3-main's ctor-purity-api adds a <pure-init> marker in apiAnnotations; rz-scala3#5's direct hashing
+# mirrors apiAnnotations in annotationsH and needs it too.
+[[members]]
+id = "pure-init-direct-hash"
+patch = "fixups/pure-init-direct-hash.patch"
+title = "Hash the pure-init marker in the bridge's direct hashes"

@@ -1,0 +1,34 @@
+From d24100083de77d0a0f463773843890d5e64968e0 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:55:04 +1000
+Subject: [PATCH] Hash the pure-init marker in the bridge's direct hashes
+
+The constructor-purity change adds a <pure-init> marker to the API of
+the primary constructor of a class without initialization code, in
+apiAnnotations. The bridge-side hashing (H2) mirrors apiAnnotations in
+annotationsH, member by member, and did not know the marker, so under
+Zinc's HASHES mode a class gaining or losing its initializers kept the
+name hash of its constructor, and clients and descendants did not
+recompile: the soundness bug the marker fixes stayed open under Merkle
+hashing.
+---
+ compiler/src/dotty/tools/dotc/sbt/ExtractAPI.scala | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/compiler/src/dotty/tools/dotc/sbt/ExtractAPI.scala b/compiler/src/dotty/tools/dotc/sbt/ExtractAPI.scala
+index d302e4f364..52312004bf 100644
+--- a/compiler/src/dotty/tools/dotc/sbt/ExtractAPI.scala
++++ b/compiler/src/dotty/tools/dotc/sbt/ExtractAPI.scala
+@@ -1252,6 +1252,9 @@ private class ExtractAPICollector(nonLocalClassSymbols: mutable.HashSet[Symbol],
+ 
+   private def annotationsH(sym: Symbol): List[(Int, List[(String, Int)])] =
+     inlineBodyHash(sym, inlineOrigin = NoSymbol).map(h => markerH(h.toString)).toList ++
++      (if sym.isConstructor && sym == sym.owner.primaryConstructor && hasPureInit(sym.owner) then
++        List(markerH("<pure-init>"))
++      else Nil) ++
+       recordedAnnotations(sym).map(annotationH)
+ 
+   /** Mirrors `apiDefinition` with no inline origin. */
+-- 
+2.56.0
+

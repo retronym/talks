@@ -90,3 +90,9 @@ title = "Merkle: compose with upstream ancestors reached through an object"
 id = "merkle-mirror-nested"
 patch = "fixups/merkle-mirror-nested.patch"
 title = "Merkle: static forwarders for ancestors nested in or reached through an object"
+
+# New (2026-10-20): Scala 3 names a constructor `p;C;init;`; the header rule only knew `<init>`.
+[[members]]
+id = "merkle-header-scala3-ctor"
+patch = "fixups/merkle-header-scala3-ctor.patch"
+title = "Merkle: the header rule knows Scala 3's constructor names"
