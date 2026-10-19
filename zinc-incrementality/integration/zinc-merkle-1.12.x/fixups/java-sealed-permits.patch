@@ -1,0 +1,609 @@
+From 36155b534d0dc80913211135579705fa8fcdf4be Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 6 Oct 2026 15:04:56 +1000
+Subject: [PATCH 1/2] Record the permitted subclasses of Java sealed classes in
+ the API
+
+Without pipelining, Zinc takes the API of Java classes from `ClassToAPI`,
+whose `childrenOfSealedClass` only handled enums. Adding a class to the
+`permits` of a Java sealed interface left its API unchanged, so a Scala match
+on it that was no longer exhaustive was not recompiled.
+
+Read `Class.getPermittedSubclasses` (reflectively, as it needs JDK 17) and,
+when there are any, record them as the children and mark the class sealed,
+as for Scala sealed classes.
+
+java-sealed-permits-exhaustivity, from rz#14, comes along as a passing
+test; it runs on "2.13.y", since this is not bridge code.
+
+(Port of rz#21 to 1.12.x, in Scala 2 syntax. rz#21 sits on the 1.x bridge stack, but this
+commit touches only ClassToAPI.)
+---
+ .../scala/sbt/internal/inc/ClassToAPI.scala   | 27 ++++++++++++++-----
+ .../inc/ClassToAPISpecification.scala         | 23 ++++++++++++++++
+ .../build.json                                |  5 ++++
+ .../changes/Shape.java                        |  1 +
+ .../changes/Triangle.java                     |  1 +
+ .../p/Circle.java                             |  1 +
+ .../p/D.scala                                 |  6 +++++
+ .../p/Shape.java                              |  1 +
+ .../p/Square.java                             |  1 +
+ .../p/incOptions.properties                   |  2 ++
+ .../java-sealed-permits-exhaustivity/test     |  6 +++++
+ 11 files changed, 68 insertions(+), 6 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Shape.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Triangle.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Circle.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/D.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Shape.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Square.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/test
+
+diff --git a/internal/zinc-apiinfo/src/main/scala/sbt/internal/inc/ClassToAPI.scala b/internal/zinc-apiinfo/src/main/scala/sbt/internal/inc/ClassToAPI.scala
+index d3506f73d..68875352a 100644
+--- a/internal/zinc-apiinfo/src/main/scala/sbt/internal/inc/ClassToAPI.scala
++++ b/internal/zinc-apiinfo/src/main/scala/sbt/internal/inc/ClassToAPI.scala
+@@ -127,10 +127,10 @@ object ClassToAPI {
+   def toDefinitions0(c: Class[?], cmap: ClassMap): Seq[api.ClassLikeDef] = {
+     import api.DefinitionType.{ ClassDef, Module, Trait }
+     val enclPkg = packageName(c)
+-    val mods = modifiers(c.getModifiers)
++    val children = childrenOfSealedClass(c)
++    val mods = modifiers(c.getModifiers, isSealed = !c.isEnum && children.nonEmpty)
+     val acc = access(c.getModifiers, enclPkg)
+     val annots = annotations(c.getAnnotations)
+-    val children = childrenOfSealedClass(c)
+     val topLevel = c.getEnclosingClass == null
+     val name = classCanonicalName(c)
+     val tpe = if (Modifier.isInterface(c.getModifiers)) Trait else ClassDef
+@@ -497,9 +497,10 @@ object ClassToAPI {
+       case c: Constructor[?] => c.getName
+     }
+ 
+-  def modifiers(i: Int): api.Modifiers = {
++  def modifiers(i: Int): api.Modifiers = modifiers(i, isSealed = false)
++  def modifiers(i: Int, isSealed: Boolean): api.Modifiers = {
+     import Modifier.{ isAbstract, isFinal }
+-    new api.Modifiers(isAbstract(i), false, isFinal(i), false, false, false, false, false)
++    new api.Modifiers(isAbstract(i), false, isFinal(i), isSealed, false, false, false, false)
+   }
+   def access(i: Int, pkg: Option[String]): api.Access = {
+     import Modifier.{ isPublic, isPrivate, isProtected }
+@@ -522,13 +523,27 @@ object ClassToAPI {
+    * We need this logic to trigger recompilation due to changes to pattern exhaustivity checking results.
+    */
+   private def childrenOfSealedClass(c: Class[?]): Seq[api.Type] =
+-    if (!c.isEnum) emptyTypeArray.toIndexedSeq
+-    else {
++    if (c.isEnum) {
+       // Calling getCanonicalName() on classes from enum constants yields same string as enumClazz.getCanonicalName
+       // Moreover old behaviour create new instance of enum - what may fail (e.g. in static block )
+       Seq(reference(c))
++    } else permittedSubclasses(c).map(reference)
++
++  /** The `permits` of a sealed class or interface (JDK 17+), looked up reflectively. */
++  private def permittedSubclasses(c: Class[?]): Seq[Class[?]] =
++    getPermittedSubclasses match {
++      case Some(m) =>
++        m.invoke(c) match {
++          case cs: Array[Class[?]] => cs.toIndexedSeq.sortBy(_.getName)
++          case _                   => Nil
++        }
++      case None => Nil
+     }
+ 
++  private lazy val getPermittedSubclasses: Option[java.lang.reflect.Method] =
++    try Some(classOf[Class[?]].getMethod("getPermittedSubclasses"))
++    catch { case _: NoSuchMethodException => None }
++
+   // full information not available from reflection
+   def javaAnnotation(s: String): api.AnnotationArgument =
+     api.AnnotationArgument.of("toString", s)
+diff --git a/internal/zinc-apiinfo/src/test/scala/sbt/internal/inc/ClassToAPISpecification.scala b/internal/zinc-apiinfo/src/test/scala/sbt/internal/inc/ClassToAPISpecification.scala
+index 73f91f779..4908dc65e 100644
+--- a/internal/zinc-apiinfo/src/test/scala/sbt/internal/inc/ClassToAPISpecification.scala
++++ b/internal/zinc-apiinfo/src/test/scala/sbt/internal/inc/ClassToAPISpecification.scala
+@@ -52,6 +52,22 @@ class ClassToAPISpecification extends UnitSpec {
+     assert(apis.keySet === Set("A", "A.B"))
+   }
+ 
++  it should "extract the permitted subclasses of a sealed interface" in {
++    val shape = "public sealed interface Shape permits Circle, Square {}"
++    val circle = "public final class Circle implements Shape {}"
++    val square = "public final class Square implements Shape {}"
++    val apis =
++      extractApisFromSrcs("Shape.java" -> shape, "Circle.java" -> circle, "Square.java" -> square)
++        .map(c => c.name -> c)
++        .toMap
++    val shapeApi = apis("Shape").classApi
++    assert(shapeApi.modifiers.isSealed)
++    val children = shapeApi.childrenOfSealedClass.toList.map(_.toString)
++    assert(children.length === 2)
++    assert(children.exists(_.contains("Circle")) && children.exists(_.contains("Square")))
++    assert(!apis("Circle").classApi.modifiers.isSealed)
++  }
++
+   /**
+    * Compiles given source code using Java compiler and returns API representation
+    * extracted by ClassToAPI class.
+@@ -63,6 +79,13 @@ class ClassToAPISpecification extends UnitSpec {
+     apis.groupBy(_.name).map((companions _).tupled).toSet
+   }
+ 
++  private def extractApisFromSrcs(srcs: (String, String)*): Set[Companions] = {
++    val (tempSrcFiles, analysisCallback) =
++      JavaCompilerForUnitTesting.compileJavaSrcs(srcs: _*)(readAPI)
++    val apis = tempSrcFiles.flatMap(analysisCallback.apis(_)).toSet
++    apis.groupBy(_.name).map((companions _).tupled).toSet
++  }
++
+   private def companions(className: String, classes: Set[ClassLike]): Companions = {
+     assert(classes.size <= 2, s"Too many classes named $className: $classes")
+     def isClass(c: ClassLike) =
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/build.json b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/build.json
+new file mode 100644
+index 000000000..956c95cf3
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/build.json
+@@ -0,0 +1,5 @@
++{
++  "projects": [
++    { "name": "p", "scalaVersion": "2.13.y" }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Shape.java b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Shape.java
+new file mode 100644
+index 000000000..0a87ca8b5
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Shape.java
+@@ -0,0 +1 @@
++public sealed interface Shape permits Circle, Square, Triangle {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Triangle.java b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Triangle.java
+new file mode 100644
+index 000000000..b6ffc97ba
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/changes/Triangle.java
+@@ -0,0 +1 @@
++public final class Triangle implements Shape {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Circle.java b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Circle.java
+new file mode 100644
+index 000000000..934e176dd
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Circle.java
+@@ -0,0 +1 @@
++public final class Circle implements Shape {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/D.scala b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/D.scala
+new file mode 100644
+index 000000000..26d190522
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/D.scala
+@@ -0,0 +1,6 @@
++object D {
++  def name(s: Shape): String = s match {
++    case _: Circle => "circle"
++    case _: Square => "square"
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Shape.java b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Shape.java
+new file mode 100644
+index 000000000..9ff8813e9
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Shape.java
+@@ -0,0 +1 @@
++public sealed interface Shape permits Circle, Square {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Square.java b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Square.java
+new file mode 100644
+index 000000000..2042fc6b0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/Square.java
+@@ -0,0 +1 @@
++public final class Square implements Shape {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/incOptions.properties b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/incOptions.properties
+new file mode 100644
+index 000000000..9a6e6b116
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/p/incOptions.properties
+@@ -0,0 +1,2 @@
++scalac.options = -Xfatal-warnings
++pipelining = false
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/test b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/test
+new file mode 100644
+index 000000000..655262b8a
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-permits-exhaustivity/test
+@@ -0,0 +1,6 @@
++> p/compile
++
++# The match in D is no longer exhaustive, which is a warning, fatal here
++$ copy-file changes/Triangle.java p/Triangle.java
++$ copy-file changes/Shape.java p/Shape.java
++-> p/compile
+-- 
+2.56.0
+
+
+From fe28959ff1abc83c3abbadb4f6f2e4b3b6606ef7 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:03:17 +1000
+Subject: [PATCH 2/2] Depend on the sealed classes below a match's scrutinee
+
+A Java sealed interface can permit a sealed interface from another source:
+`S permits A, T` and `T extends S permits B`. When `C` joins `T`, a Scala
+match on `S` with cases for `A` and `B` is no longer exhaustive, but `S.java`
+is unchanged, so the API of `S` is not even recomputed, and the client
+depends on `S`, `A` and `B`, not on `T`, whose children did change. Even
+when they share a source, the children of `S` (`A` and `T`) stay the same.
+
+A Scala sealed hierarchy lives in one source and `ExtractAPI` records all
+of `sealedDescendants` as the children of the root, so Scala never needed
+this.
+
+For a pattern match, the bridge now also records a member reference to each
+sealed class below the sealed classes of the scrutinee's type, and uses
+their names in both the default and the pattern-match scopes, so a change
+to their children reaches the client however `useOptimizedSealed` is set.
+As for the scrutinee itself, the scrutinee type is read from the `Match`,
+or, where the bridge phases run after patmat (Scala 2.12), from the
+synthetic case `ValDef` that patmat leaves in its place.
+
+`java-sealed-nested-permits` (S2 in rz#42, which 1.12.x lacks; added here) and
+`java-sealed-nested-permits-same-source`, the single-source variant the
+conformance harness found, pass.
+---
+ .../inc/DependencySpecification.scala         | 22 +++++++++++++++++++
+ .../inc/ExtractUsedNamesSpecification.scala   | 20 +++++++++++++++++
+ .../src/main/scala/xsbt/Dependency.scala      |  8 +++++++
+ .../main/scala/xsbt/ExtractUsedNames.scala    |  8 +++++++
+ .../src/main/scala/xsbt/GlobalHelpers.scala   | 17 ++++++++++++++
+ .../build.json                                |  1 +
+ .../changes/S.java                            | 11 ++++++++++
+ .../p/Client.scala                            |  8 +++++++
+ .../p/incOptions.properties                   |  2 ++
+ .../p/src/main/java/a/S.java                  |  9 ++++++++
+ .../test                                      |  8 +++++++
+ .../java-sealed-nested-permits/build.json     |  1 +
+ .../java-sealed-nested-permits/changes/C.java |  3 +++
+ .../java-sealed-nested-permits/changes/T.java |  3 +++
+ .../java-sealed-nested-permits/p/Client.scala |  8 +++++++
+ .../p/incOptions.properties                   |  2 ++
+ .../p/src/main/java/a/A.java                  |  3 +++
+ .../p/src/main/java/a/B.java                  |  3 +++
+ .../p/src/main/java/a/S.java                  |  3 +++
+ .../p/src/main/java/a/T.java                  |  3 +++
+ .../java-sealed-nested-permits/test           |  9 ++++++++
+ 21 files changed, 152 insertions(+)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/changes/S.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/Client.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/src/main/java/a/S.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/C.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/T.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/Client.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/A.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/B.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/S.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/T.java
+ create mode 100644 zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/test
+
+diff --git a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/DependencySpecification.scala b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/DependencySpecification.scala
+index 5edac6eb5..0e3a5b3af 100644
+--- a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/DependencySpecification.scala
++++ b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/DependencySpecification.scala
+@@ -133,6 +133,28 @@ class DependencySpecification
+     assert(inheritance("B") === Set.empty)
+   }
+ 
++  it should "extract dependencies on the sealed classes below a match's scrutinee" in {
++    val srcA =
++      """sealed trait S
++        |sealed trait T extends S
++        |final class A extends S
++        |final class B extends T""".stripMargin
++    val srcB =
++      """object Client {
++        |  def f(s: S): Int = s match {
++        |    case _: A => 0
++        |    case _: B => 1
++        |  }
++        |}""".stripMargin
++    val srcC = "object Other { def f(s: S): S = s }"
++
++    val classDependencies = extractDependenciesFromSrcs(srcA, srcB, srcC)
++
++    val memberRef = classDependencies.memberRef
++    assert(memberRef("Client") === Set("S", "A", "B", "T"))
++    assert(memberRef("Other") === Set("S"))
++  }
++
+   it should "extract class dependency from 'classOf' literal" in {
+     val srcA =
+       """object A {
+diff --git a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
+index 58d7227bd..47a903eb6 100644
+--- a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
++++ b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
+@@ -85,6 +85,26 @@ class ExtractUsedNamesSpecification
+     assert(usedNames("b.X") === expectedNames)
+   }
+ 
++  it should "extract the sealed classes below a match's scrutinee as pattern-match targets" in {
++    val srcA =
++      """sealed trait S
++        |sealed trait T extends S
++        |final class A extends S
++        |final class B extends T""".stripMargin
++    val srcB =
++      """object Client {
++        |  def f(s: S): Int = s match {
++        |    case _: A => 0
++        |    case _: B => 1
++        |  }
++        |}""".stripMargin
++    val (_, callback) = compileSrcs(List(List(srcA, srcB)))
++    val usages = callback.usedNamesAndScopes("Client")
++    val patMat = usages.filter(_.scopes.contains(UseScope.PatMatTarget)).map(_.name)
++    assert(patMat === Set("S", "T"))
++    assert(usages.exists(u => u.name == "T" && u.scopes.contains(UseScope.Default)))
++  }
++
+   it should "extract the names of the type of a classOf literal" in {
+     val srcA = "package a { object W { class Foo[T] }; class Bar }"
+     val srcB = """|package b
+diff --git a/internal/compiler-bridge/src/main/scala/xsbt/Dependency.scala b/internal/compiler-bridge/src/main/scala/xsbt/Dependency.scala
+index 1d1715fc4..259c8272e 100644
+--- a/internal/compiler-bridge/src/main/scala/xsbt/Dependency.scala
++++ b/internal/compiler-bridge/src/main/scala/xsbt/Dependency.scala
+@@ -543,6 +543,14 @@ final class Dependency(val global: CallbackGlobal) extends LocateClassFile with
+         localToNonLocalClass.resolveNonLocal(sym)
+         super.traverse(tree)
+ 
++      case m: Match =>
++        sealedSubclassesBelow(m.selector.tpe).foreach(addDependency)
++        super.traverse(m)
++
++      case vd @ ValDef(mods, _, tpt, _) if mods.isCase && mods.isSynthetic =>
++        sealedSubclassesBelow(tpt.tpe).foreach(addDependency)
++        super.traverse(vd)
++
+       case f: Function =>
+         processSAMAttachment(f)(symbol => {
+           addDependency(symbol)
+diff --git a/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala b/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
+index 837a5d764..b1bee22fb 100644
+--- a/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
++++ b/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
+@@ -228,6 +228,12 @@ class ExtractUsedNames[GlobalType <: CallbackGlobal](val global: GlobalType)
+       }
+     }
+ 
++    private def addSealedSubclassesBelow(tpe: Type): Unit =
++      sealedSubclassesBelow(tpe).foreach { sym =>
++        addSymbol(getNamesOfEnclosingScope, sym)
++        PatMatDependencyTraverser.addDependency(sym)
++      }
++
+     private object PatMatDependencyTraverser extends TypeDependencyTraverser {
+       override def addDependency(symbol: global.Symbol): Unit = {
+         if (!ignoredSymbol(symbol) && symbol.isSealed) {
+@@ -274,9 +280,11 @@ class ExtractUsedNames[GlobalType <: CallbackGlobal](val global: GlobalType)
+       case matchNode: Match =>
+         updateCurrentOwner()
+         PatMatDependencyTraverser.traverse(matchNode.selector.tpe)
++        addSealedSubclassesBelow(matchNode.selector.tpe)
+       case ValDef(mods, _, tpt, _) if mods.isCase && mods.isSynthetic =>
+         updateCurrentOwner()
+         PatMatDependencyTraverser.traverse(tpt.tpe)
++        addSealedSubclassesBelow(tpt.tpe)
+       case PackageDef(pid, stats) =>
+         val outer = pid.symbol
+         if (stats.exists(_.isInstanceOf[PackageDef]) && isNamedPackage(outer)) {
+diff --git a/internal/compiler-bridge/src/main/scala/xsbt/GlobalHelpers.scala b/internal/compiler-bridge/src/main/scala/xsbt/GlobalHelpers.scala
+index b0cb60688..4759498cb 100644
+--- a/internal/compiler-bridge/src/main/scala/xsbt/GlobalHelpers.scala
++++ b/internal/compiler-bridge/src/main/scala/xsbt/GlobalHelpers.scala
+@@ -32,6 +32,23 @@ trait GlobalHelpers { self: Compat =>
+     symbol == EmptyPackageClass
+   }
+ 
++  /**
++   * The sealed classes strictly below the sealed classes of `tpe`. Their children decide whether a
++   * match on `tpe` is exhaustive as much as the children of `tpe`'s own sealed classes do. A Scala
++   * sealed hierarchy lives in one source, which recompiles as a whole, but a Java sealed class can
++   * permit a sealed class in another source.
++   */
++  def sealedSubclassesBelow(tpe: Type): Set[Symbol] = {
++    val result = Set.newBuilder[Symbol]
++    if (!ignoredType(tpe)) tpe.foreach { t =>
++      val sym = t.widen.typeSymbol
++      if (sym.isSealed) sym.sealedDescendants.foreach { d =>
++        if ((d ne sym) && d.isSealed) result += d
++      }
++    }
++    result.result()
++  }
++
+   /** Return true if name is empty, false otherwise. */
+   def isEmptyName(name: Name): Boolean = {
+     name match {
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/build.json b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/build.json
+new file mode 100644
+index 000000000..c441ebbf2
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/build.json
+@@ -0,0 +1 @@
++{ "projects": [ { "name": "p", "scalaVersion": "2.13.x" } ] }
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/changes/S.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/changes/S.java
+new file mode 100644
+index 000000000..e5f03dc22
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/changes/S.java
+@@ -0,0 +1,11 @@
++package a;
++
++public sealed interface S {}
++
++sealed interface T extends S {}
++
++final class A implements S {}
++
++final class B implements T {}
++
++final class C implements T {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/Client.scala b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/Client.scala
+new file mode 100644
+index 000000000..f24f3675d
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/Client.scala
+@@ -0,0 +1,8 @@
++package a
++
++object Client {
++  def f(s: S): Int = s match {
++    case _: A => 1
++    case _: B => 2
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/incOptions.properties b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/incOptions.properties
+new file mode 100644
+index 000000000..ab6f51257
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/incOptions.properties
+@@ -0,0 +1,2 @@
++scalac.options = -Werror
++pipelining = false
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/src/main/java/a/S.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/src/main/java/a/S.java
+new file mode 100644
+index 000000000..7ae2df6f1
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/p/src/main/java/a/S.java
+@@ -0,0 +1,9 @@
++package a;
++
++public sealed interface S {}
++
++sealed interface T extends S {}
++
++final class A implements S {}
++
++final class B implements T {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/test b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/test
+new file mode 100644
+index 000000000..abc0f5ce8
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits-same-source/test
+@@ -0,0 +1,8 @@
++# Client matches on the Java sealed interface S, whose leaves are A and, under the sealed T, B. All
++# are in S.java, so their permits are implicit.
++> p/compile
++
++# C joins T: the match is no longer exhaustive, which -Werror makes an error. The children of S
++# (A and T) are unchanged; those of T change, and Client depends on T, a sealed class below S.
++$ copy-file changes/S.java p/src/main/java/a/S.java
++-> p/compile
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/build.json b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/build.json
+new file mode 100644
+index 000000000..c441ebbf2
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/build.json
+@@ -0,0 +1 @@
++{ "projects": [ { "name": "p", "scalaVersion": "2.13.x" } ] }
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/C.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/C.java
+new file mode 100644
+index 000000000..4560772a6
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/C.java
+@@ -0,0 +1,3 @@
++package a;
++
++public final class C implements T {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/T.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/T.java
+new file mode 100644
+index 000000000..92031b766
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/changes/T.java
+@@ -0,0 +1,3 @@
++package a;
++
++public sealed interface T extends S permits B, C {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/Client.scala b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/Client.scala
+new file mode 100644
+index 000000000..f24f3675d
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/Client.scala
+@@ -0,0 +1,8 @@
++package a
++
++object Client {
++  def f(s: S): Int = s match {
++    case _: A => 1
++    case _: B => 2
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/incOptions.properties b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/incOptions.properties
+new file mode 100644
+index 000000000..ab6f51257
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/incOptions.properties
+@@ -0,0 +1,2 @@
++scalac.options = -Werror
++pipelining = false
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/A.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/A.java
+new file mode 100644
+index 000000000..80102311c
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/A.java
+@@ -0,0 +1,3 @@
++package a;
++
++public final class A implements S {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/B.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/B.java
+new file mode 100644
+index 000000000..50ece4b8a
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/B.java
+@@ -0,0 +1,3 @@
++package a;
++
++public final class B implements T {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/S.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/S.java
+new file mode 100644
+index 000000000..4b7e23660
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/S.java
+@@ -0,0 +1,3 @@
++package a;
++
++public sealed interface S permits A, T {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/T.java b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/T.java
+new file mode 100644
+index 000000000..ecbeff402
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/p/src/main/java/a/T.java
+@@ -0,0 +1,3 @@
++package a;
++
++public sealed interface T extends S permits B {}
+diff --git a/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/test b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/test
+new file mode 100644
+index 000000000..e16944ed5
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/java-sealed-nested-permits/test
+@@ -0,0 +1,9 @@
++# Client matches on the Java sealed interface S, whose leaves are A and, under the sealed T, B.
++> p/compile
++
++# C joins the permits of T: the match is no longer exhaustive, which -Werror makes an error. S.java
++# is not edited, so S is not recompiled; the API of T changes (once its permitted subclasses are
++# recorded), and Client depends on T, a sealed class below the scrutinee S.
++$ copy-file changes/C.java p/src/main/java/a/C.java
++$ copy-file changes/T.java p/src/main/java/a/T.java
++-> p/compile
+-- 
+2.56.0
+

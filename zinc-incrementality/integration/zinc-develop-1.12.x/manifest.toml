@@ -52,6 +52,18 @@ remote = "origin"
 pr = 75
 title = "[1.x] sbt.analysis.compression sets the analysis stores' deflate level"
 
+# Java conformance triage (2026-10-20, JAVA-CONFORMANCE-TRIAGE.md): N1, a classOf literal records no used name.
+[[members]]
+id = "classof-used-name"
+patch = "fixups/classof-used-name.patch"
+title = "Register the names of a classOf literal's type as used names"
+
+# S1 (the substance of rz#21, which stays excluded) and S2: Java sealed permits in the API; depend on the sealed classes below a match's scrutinee.
+[[members]]
+id = "java-sealed-permits"
+patch = "fixups/java-sealed-permits.patch"
+title = "Record the permitted subclasses of Java sealed classes; depend on the sealed classes below a scrutinee"
+
 [[excluded]]
 id = "rz#48"
 reason = "Merkle; see integration/merkle-1.12.x"

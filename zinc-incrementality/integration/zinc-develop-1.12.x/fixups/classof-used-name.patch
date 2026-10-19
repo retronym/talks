@@ -1,0 +1,136 @@
+From f9115968dea1f0b14f387868e5365e8b6eb26c9b Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:00:23 +1000
+Subject: [PATCH] Register the names of a classOf literal's type as used names
+
+The typer folds `classOf[Foo]` into a `Literal` whose constant holds the
+type, so `ExtractUsedNames` saw no tree naming `Foo`. `Dependency` already
+records the class of such a literal, but with no used name the name-hash
+filter skips the client when `Foo` changes in that class.
+
+`ExtractUsedNames` now traverses the type of a `classOf` constant as it
+does an inferred type.
+
+New test `classof-used-name`: an object loses the member class that a
+client names only in a classOf literal.
+
+(Backport of the develop commit. Its Java test,
+`classof-added-java-class-ambiguous`, is left out: it relies on the
+added-class invalidation of rz#34, which 1.12.x does not have.)
+---
+ .../inc/ExtractUsedNamesSpecification.scala     | 10 ++++++++++
+ .../src/main/scala/xsbt/ExtractUsedNames.scala  | 17 ++++++++++-------
+ .../classof-used-name/Client.scala              |  7 +++++++
+ .../classof-used-name/W.scala                   |  5 +++++
+ .../classof-used-name/changes/W.scala           |  3 +++
+ .../source-dependencies/classof-used-name/test  |  8 ++++++++
+ 6 files changed, 43 insertions(+), 7 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-used-name/Client.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-used-name/W.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-used-name/changes/W.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/classof-used-name/test
+
+diff --git a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
+index f88f885e1..8f89f7ddb 100644
+--- a/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
++++ b/internal/compiler-bridge-test/src/test/scala/sbt/internal/inc/ExtractUsedNamesSpecification.scala
+@@ -47,6 +47,16 @@ class ExtractUsedNamesSpecification
+     assert(usedNames("b.X") === expectedNames)
+   }
+ 
++  it should "extract the names of the type of a classOf literal" in {
++    val srcA = "package a { object W { class Foo[T] }; class Bar }"
++    val srcB = """|package b
++                  |import a.W._
++                  |class B { val c: Any = classOf[Foo[a.Bar]] }""".stripMargin
++    val usedNames = extractUsedNamesFromSrc(srcA, srcB)
++    assert(usedNames("b.B").contains("Foo"))
++    assert(usedNames("b.B").contains("Bar"))
++  }
++
+   // test for https://github.com/gkossakowski/sbt/issues/5
+   it should "extract symbolic names" in {
+     val srcA = """|class A {
+diff --git a/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala b/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
+index 3fc3a406a..87f5b24b4 100644
+--- a/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
++++ b/internal/compiler-bridge/src/main/scala/xsbt/ExtractUsedNames.scala
+@@ -286,18 +286,21 @@ class ExtractUsedNames[GlobalType <: CallbackGlobal](val global: GlobalType)
+           addSymbol(getNamesOfEnclosingScope, t.symbol)
+         }
+ 
+-        val tpe = t.tpe
+-        if (!ignoredType(tpe)) {
+-          // Initialize _currentOwner if it's not
+-          val cache = getNamesOfEnclosingScope
+-          TypeDependencyTraverser.setCacheAndOwner(cache, _currentOwner)
+-          TypeDependencyTraverser.traverse(tpe)
+-        }
++        addTypeNames(t.tpe)
+       case l: Literal =>
++        if (l.value.tag == ClazzTag) addTypeNames(l.value.typeValue)
+         processOriginalTreeAttachment(l)(traverse)
+       case _ =>
+     }
+ 
++    private def addTypeNames(tpe: Type): Unit =
++      if (!ignoredType(tpe)) {
++        // Initialize _currentOwner if it's not
++        val cache = getNamesOfEnclosingScope
++        TypeDependencyTraverser.setCacheAndOwner(cache, _currentOwner)
++        TypeDependencyTraverser.traverse(tpe)
++      }
++
+     private var _currentOwner: Symbol = _
+     private var _currentNonLocalClass: Symbol = _
+     private var _currentNamesCache: JavaSet[Name] = _
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-used-name/Client.scala b/zinc/src/sbt-test/source-dependencies/classof-used-name/Client.scala
+new file mode 100644
+index 000000000..9519918e8
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-used-name/Client.scala
+@@ -0,0 +1,7 @@
++package a.b
++
++import a.W._
++
++object Client {
++  val c: Any = classOf[Foo]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-used-name/W.scala b/zinc/src/sbt-test/source-dependencies/classof-used-name/W.scala
+new file mode 100644
+index 000000000..bcb993c95
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-used-name/W.scala
+@@ -0,0 +1,5 @@
++package a
++
++object W {
++  class Foo
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-used-name/changes/W.scala b/zinc/src/sbt-test/source-dependencies/classof-used-name/changes/W.scala
+new file mode 100644
+index 000000000..6f3ea40fb
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-used-name/changes/W.scala
+@@ -0,0 +1,3 @@
++package a
++
++object W
+diff --git a/zinc/src/sbt-test/source-dependencies/classof-used-name/test b/zinc/src/sbt-test/source-dependencies/classof-used-name/test
+new file mode 100644
+index 000000000..07842a821
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/classof-used-name/test
+@@ -0,0 +1,8 @@
++# Client names W.Foo only through a classOf literal.
++> compile
++
++# W loses Foo: a clean build fails. The bridge records the dependency on W.Foo, and the name Foo of
++# W changes; the name filter keeps Client only if ExtractUsedNames registers the names of the type
++# of a classOf literal.
++$ copy-file changes/W.scala W.scala
++-> compile
+-- 
+2.56.0
+
