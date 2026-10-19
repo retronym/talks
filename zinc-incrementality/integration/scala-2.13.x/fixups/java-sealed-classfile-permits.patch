@@ -1,0 +1,307 @@
+From 2c7942a5d2c4ef14c575052b87ff8c41138deb59 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 08:22:57 +1000
+Subject: [PATCH] Honor PermittedSubclasses of a sealed Java classfile
+
+A Java source extending a sealed Java type loaded from a classfile was
+rejected with "illegal inheritance from sealed trait S", even when the
+classfile's PermittedSubclasses lists it. Namers accepts a child of a
+sealed Java parent if its PermittedSubclassSymbols attachment lists it,
+and otherwise only from the same source file. Only Java sources got the
+attachment; ClassfileParser kept the list in its type completer. The
+same applies to a Scala class named in a Java classfile's `permits`.
+
+This bites incremental builds: Zinc recompiles an edited T.java against
+S.class, so a change to T.java alone fails while a clean build of both
+sources succeeds.
+
+ClassfileParser now records the attachment too.
+
+Once T is accepted, its classfile subclass B was still not a child of T:
+completing B from its classfile registers nothing with a parent compiled
+from source. Pattern matching on S reported `case _: B` unreachable, and
+`knownDirectSubclasses` on T was empty. Resolving T's `permits` clause now
+registers each permitted class as a child, which serves both.
+---
+ .../tools/nsc/symtab/classfile/ClassfileParser.scala  | 11 +++++------
+ src/compiler/scala/tools/nsc/typechecker/Namers.scala |  6 +++++-
+ test/files/neg/java-sealed-classfile.check            |  7 +++++++
+ test/files/neg/java-sealed-classfile/Client_2.scala   |  7 +++++++
+ test/files/neg/java-sealed-classfile/S_1.java         |  8 ++++++++
+ test/files/neg/java-sealed-classfile/T_1.java         |  4 ++++
+ test/files/neg/java-sealed-classfile/T_2.java         |  5 +++++
+ test/files/pos/java-sealed-classfile-scala/X_1.java   |  4 ++++
+ test/files/pos/java-sealed-classfile-scala/Y_1.scala  |  3 +++
+ test/files/pos/java-sealed-classfile-scala/Y_2.scala  | 10 ++++++++++
+ test/files/pos/java-sealed-classfile/Client_2.scala   |  7 +++++++
+ test/files/pos/java-sealed-classfile/S_1.java         |  8 ++++++++
+ test/files/pos/java-sealed-classfile/T_1.java         |  4 ++++
+ test/files/pos/java-sealed-classfile/T_2.java         |  5 +++++
+ test/files/run/t13175-macro.check                     |  3 ++-
+ test/files/run/t13175-macro/Poly_1.java               |  3 +++
+ test/files/run/t13175-macro/Poly_2.java               |  4 ++++
+ test/files/run/t13175-macro/Shape_2.java              |  2 +-
+ test/files/run/t13175-macro/Square_1.java             |  3 +++
+ test/files/run/t13175-macro/Test_2.scala              |  2 +-
+ 20 files changed, 96 insertions(+), 10 deletions(-)
+ create mode 100644 test/files/neg/java-sealed-classfile.check
+ create mode 100644 test/files/neg/java-sealed-classfile/Client_2.scala
+ create mode 100644 test/files/neg/java-sealed-classfile/S_1.java
+ create mode 100644 test/files/neg/java-sealed-classfile/T_1.java
+ create mode 100644 test/files/neg/java-sealed-classfile/T_2.java
+ create mode 100644 test/files/pos/java-sealed-classfile-scala/X_1.java
+ create mode 100644 test/files/pos/java-sealed-classfile-scala/Y_1.scala
+ create mode 100644 test/files/pos/java-sealed-classfile-scala/Y_2.scala
+ create mode 100644 test/files/pos/java-sealed-classfile/Client_2.scala
+ create mode 100644 test/files/pos/java-sealed-classfile/S_1.java
+ create mode 100644 test/files/pos/java-sealed-classfile/T_1.java
+ create mode 100644 test/files/pos/java-sealed-classfile/T_2.java
+ create mode 100644 test/files/run/t13175-macro/Poly_1.java
+ create mode 100644 test/files/run/t13175-macro/Poly_2.java
+ create mode 100644 test/files/run/t13175-macro/Square_1.java
+
+diff --git a/src/compiler/scala/tools/nsc/symtab/classfile/ClassfileParser.scala b/src/compiler/scala/tools/nsc/symtab/classfile/ClassfileParser.scala
+index a60749e7f5..ec160f32e7 100644
+--- a/src/compiler/scala/tools/nsc/symtab/classfile/ClassfileParser.scala
++++ b/src/compiler/scala/tools/nsc/symtab/classfile/ClassfileParser.scala
+@@ -920,12 +920,11 @@ abstract class ClassfileParser(reader: ReusableInstance[ReusableDataReader]) {
+         case tpnme.PermittedSubclassesATTR =>
+           sym.setFlag(SEALED)
+           val numberOfClasses = u2()
+-          numberOfClasses times {
+-            val k = pool.getClassSymbol(u2())
+-            completer match {
+-              case ctc: ClassTypeCompleter => ctc.permittedSubclasses ::= k   // sym.addChild(k)
+-              case _ =>
+-            }
++          val permits = List.fill(numberOfClasses)(pool.getClassSymbol(u2()))
++          sym.updateAttachment(new PermittedSubclassSymbols(permits.map(Ident(_)), _.symbol))
++          completer match {
++            case ctc: ClassTypeCompleter => ctc.permittedSubclasses = permits.reverse
++            case _ =>
+           }
+ 
+         case _ =>
+diff --git a/src/compiler/scala/tools/nsc/typechecker/Namers.scala b/src/compiler/scala/tools/nsc/typechecker/Namers.scala
+index 50f1381cbb..d737adbcdd 100644
+--- a/src/compiler/scala/tools/nsc/typechecker/Namers.scala
++++ b/src/compiler/scala/tools/nsc/typechecker/Namers.scala
+@@ -1281,7 +1281,11 @@ trait Namers extends MethodSynthesis {
+ 
+       val pluginsTp = pluginsTypeSig(res, typer, cdef, WildcardType)
+       cdef.getAndRemoveAttachment[PermittedSubclasses].foreach { permitted =>
+-        clazz.updateAttachment(new PermittedSubclassSymbols(permitted.permits, t => enteringTyper(typer.typed(t, Mode.NOmode).symbol)))
++        clazz.updateAttachment(new PermittedSubclassSymbols(permitted.permits, { t =>
++          val sub = enteringTyper(typer.typed(t, Mode.NOmode).symbol)
++          if (sub.isClass) clazz.addChild(sub)
++          sub
++        }))
+       }
+ 
+       // Already assign the type to the class symbol (monoTypeCompleter will do it again).
+diff --git a/test/files/neg/java-sealed-classfile.check b/test/files/neg/java-sealed-classfile.check
+new file mode 100644
+index 0000000000..3455e13de5
+--- /dev/null
++++ b/test/files/neg/java-sealed-classfile.check
+@@ -0,0 +1,7 @@
++Client_2.scala:6: warning: match may not be exhaustive.
++It would fail on the following input: B()
++  def f(s: S): Int = s match { case _: A => 0 }
++                     ^
++error: No warnings can be incurred under -Werror.
++1 warning
++1 error
+diff --git a/test/files/neg/java-sealed-classfile/Client_2.scala b/test/files/neg/java-sealed-classfile/Client_2.scala
+new file mode 100644
+index 0000000000..c8cf24ff2b
+--- /dev/null
++++ b/test/files/neg/java-sealed-classfile/Client_2.scala
+@@ -0,0 +1,7 @@
++//> using jvm 17+
++//> using options -Werror
++package p
++
++object Client {
++  def f(s: S): Int = s match { case _: A => 0 }
++}
+diff --git a/test/files/neg/java-sealed-classfile/S_1.java b/test/files/neg/java-sealed-classfile/S_1.java
+new file mode 100644
+index 0000000000..c9303e9fe8
+--- /dev/null
++++ b/test/files/neg/java-sealed-classfile/S_1.java
+@@ -0,0 +1,8 @@
++// javaVersion: 17+
++package p;
++
++sealed interface S permits A, T {}
++
++final class A implements S {}
++
++final class B implements T {}
+diff --git a/test/files/neg/java-sealed-classfile/T_1.java b/test/files/neg/java-sealed-classfile/T_1.java
+new file mode 100644
+index 0000000000..91f55ab1d6
+--- /dev/null
++++ b/test/files/neg/java-sealed-classfile/T_1.java
+@@ -0,0 +1,4 @@
++// javaVersion: 17+
++package p;
++
++sealed interface T extends S permits B {}
+diff --git a/test/files/neg/java-sealed-classfile/T_2.java b/test/files/neg/java-sealed-classfile/T_2.java
+new file mode 100644
+index 0000000000..043635f8dd
+--- /dev/null
++++ b/test/files/neg/java-sealed-classfile/T_2.java
+@@ -0,0 +1,5 @@
++// javaVersion: 17+
++package p;
++
++// `S` is loaded from its classfile, whose `PermittedSubclasses` lists `T`
++sealed interface T extends S permits B {}
+diff --git a/test/files/pos/java-sealed-classfile-scala/X_1.java b/test/files/pos/java-sealed-classfile-scala/X_1.java
+new file mode 100644
+index 0000000000..6a827f87c8
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile-scala/X_1.java
+@@ -0,0 +1,4 @@
++// javaVersion: 17+
++package p;
++
++sealed interface X permits Y {}
+diff --git a/test/files/pos/java-sealed-classfile-scala/Y_1.scala b/test/files/pos/java-sealed-classfile-scala/Y_1.scala
+new file mode 100644
+index 0000000000..49cfdb14ea
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile-scala/Y_1.scala
+@@ -0,0 +1,3 @@
++package p
++
++final class Y extends X
+diff --git a/test/files/pos/java-sealed-classfile-scala/Y_2.scala b/test/files/pos/java-sealed-classfile-scala/Y_2.scala
+new file mode 100644
+index 0000000000..6cd0aa3463
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile-scala/Y_2.scala
+@@ -0,0 +1,10 @@
++//> using jvm 17+
++//> using options -Werror
++package p
++
++// `X` is loaded from its classfile, whose `PermittedSubclasses` lists `Y`
++final class Y extends X
++
++object Client {
++  def g(x: X): Int = x match { case _: Y => 0 }
++}
+diff --git a/test/files/pos/java-sealed-classfile/Client_2.scala b/test/files/pos/java-sealed-classfile/Client_2.scala
+new file mode 100644
+index 0000000000..3a0111493d
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile/Client_2.scala
+@@ -0,0 +1,7 @@
++//> using jvm 17+
++//> using options -Werror
++package p
++
++object Client {
++  def f(s: S): Int = s match { case _: A => 0; case _: B => 1 }
++}
+diff --git a/test/files/pos/java-sealed-classfile/S_1.java b/test/files/pos/java-sealed-classfile/S_1.java
+new file mode 100644
+index 0000000000..c9303e9fe8
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile/S_1.java
+@@ -0,0 +1,8 @@
++// javaVersion: 17+
++package p;
++
++sealed interface S permits A, T {}
++
++final class A implements S {}
++
++final class B implements T {}
+diff --git a/test/files/pos/java-sealed-classfile/T_1.java b/test/files/pos/java-sealed-classfile/T_1.java
+new file mode 100644
+index 0000000000..91f55ab1d6
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile/T_1.java
+@@ -0,0 +1,4 @@
++// javaVersion: 17+
++package p;
++
++sealed interface T extends S permits B {}
+diff --git a/test/files/pos/java-sealed-classfile/T_2.java b/test/files/pos/java-sealed-classfile/T_2.java
+new file mode 100644
+index 0000000000..043635f8dd
+--- /dev/null
++++ b/test/files/pos/java-sealed-classfile/T_2.java
+@@ -0,0 +1,5 @@
++// javaVersion: 17+
++package p;
++
++// `S` is loaded from its classfile, whose `PermittedSubclasses` lists `T`
++sealed interface T extends S permits B {}
+diff --git a/test/files/run/t13175-macro.check b/test/files/run/t13175-macro.check
+index 65544ae174..9b8f514f76 100644
+--- a/test/files/run/t13175-macro.check
++++ b/test/files/run/t13175-macro.check
+@@ -1 +1,2 @@
+-List(p.Circle, p.Holder.Inner, p.S)
++List(p.Circle, p.Holder.Inner, p.Poly, p.S)
++List(p.Square)
+diff --git a/test/files/run/t13175-macro/Poly_1.java b/test/files/run/t13175-macro/Poly_1.java
+new file mode 100644
+index 0000000000..a0136dc2b9
+--- /dev/null
++++ b/test/files/run/t13175-macro/Poly_1.java
+@@ -0,0 +1,3 @@
++package p;
++
++sealed interface Poly permits Square {}
+diff --git a/test/files/run/t13175-macro/Poly_2.java b/test/files/run/t13175-macro/Poly_2.java
+new file mode 100644
+index 0000000000..18fea8bfe8
+--- /dev/null
++++ b/test/files/run/t13175-macro/Poly_2.java
+@@ -0,0 +1,4 @@
++package p;
++
++// `Square` is loaded from its classfile, nothing else registers it as a child of `Poly`
++sealed interface Poly extends Shape permits Square {}
+diff --git a/test/files/run/t13175-macro/Shape_2.java b/test/files/run/t13175-macro/Shape_2.java
+index 6b095197d7..794a8a940e 100644
+--- a/test/files/run/t13175-macro/Shape_2.java
++++ b/test/files/run/t13175-macro/Shape_2.java
+@@ -1,4 +1,4 @@
+ package p;
+ 
+ // permitted subclasses in other compilation units and a nested class of another class
+-sealed interface Shape permits Circle, Holder.Inner, S {}
++sealed interface Shape permits Circle, Holder.Inner, S, Poly {}
+diff --git a/test/files/run/t13175-macro/Square_1.java b/test/files/run/t13175-macro/Square_1.java
+new file mode 100644
+index 0000000000..d4a3ddcee1
+--- /dev/null
++++ b/test/files/run/t13175-macro/Square_1.java
+@@ -0,0 +1,3 @@
++package p;
++
++final class Square implements Poly {}
+diff --git a/test/files/run/t13175-macro/Test_2.scala b/test/files/run/t13175-macro/Test_2.scala
+index 6abb8f40a6..93d73c1f4a 100644
+--- a/test/files/run/t13175-macro/Test_2.scala
++++ b/test/files/run/t13175-macro/Test_2.scala
+@@ -2,7 +2,7 @@ package p {
+   final class S extends Shape
+ 
+   // Java sources are compiled in the same run, `knownDirectSubclasses` needs to complete the classes named in `permits`
+-  object T { def run(): Unit = println(Macros.subs[Shape]) }
++  object T { def run(): Unit = { println(Macros.subs[Shape]); println(Macros.subs[Poly]) } }
+ }
+ 
+ object Test {
+-- 
+2.56.0
+

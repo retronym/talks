@@ -133,6 +133,19 @@ id = "pkgobj-shadow-pickle"
 patch = "fixups/pkgobj-shadow-pickle.patch"
 title = "Pickle top-level definitions shadowed by a package object member"
 
+# Java sealed classes: scala#11298 (lrytz) completes `permits` on demand; on top, a Java source may extend a sealed
+# Java classfile that permits it (S3 of the Zinc Java conformance triage, PLAN-merkle-bughunt.md finding 13).
+[[members]]
+id = "scala#11298"
+remote = "upstream"
+pr = 11298
+title = "Fix cyclic references when completing sealed Java classes"
+
+[[members]]
+id = "java-sealed-classfile-permits"
+patch = "fixups/java-sealed-classfile-permits.patch"
+title = "Honor PermittedSubclasses of a sealed Java classfile"
+
 [[excluded]]
 id = "rz-scala#40..#133"
 reason = "old performance and WIP experiments"
