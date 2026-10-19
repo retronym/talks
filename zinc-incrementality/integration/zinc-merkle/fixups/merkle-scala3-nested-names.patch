@@ -1,0 +1,285 @@
+From 8f5c1c4c1f668a213e01d263e569afe0f06f8749 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 01:47:56 +1000
+Subject: [PATCH] Merkle: match Scala 3's names for classes nested in objects
+
+Scala 3 keeps an object's class in the name of a class nested in it,
+`p.O$.A` where Scala 2 has `p.O.A`, and renders a reference to it the
+same way: the stored linearization is made of `ref.baseType(bc)`, whose
+prefix is the object class's `this`. So under Scala 3 neither a library
+ancestor nor an upstream one nested in an object was found, whatever
+the previous two changes did: `p.O$.A` matched no class read from a jar
+(`p/O$A.class`, named `p.O.A`), and its binary name candidates never
+reached `p.O$A`.
+
+LibraryAncestors.canonical names such classes as Scala 2 does. The
+binary name candidates start from it, a library ancestor is matched
+against the jar's classes by it, and `conflicts` compares the changed
+class's own path with the other paths by it. A lookup by the name as
+stored still comes first, since Scala 3 keys this subproject's APIs by
+it.
+
+The merkle-libjar-override-nested and merkle-x-abstract-ancestor-nested
+tests fail under Scala 3 without this change
+(ZINC_SCRIPTED_DEFAULT_LABEL=3.x, against integration/scala3-merkle).
+merkle-x-trait-nested and merkle-x-trait-instance add a member trait
+nested in an object, and one inherited through an object, mixed in
+downstream, under both Scala 2 and Scala 3.
+---
+ .../scala/sbt/internal/inc/DescendantRules.scala   |  7 +++++--
+ .../scala/sbt/internal/inc/LibraryAncestors.scala  | 14 +++++++++++---
+ .../merkle-x-trait-instance/app/B.scala            |  2 ++
+ .../merkle-x-trait-instance/app/X.scala            |  7 +++++++
+ .../app/incOptions.properties                      |  2 ++
+ .../merkle-x-trait-instance/build.json             |  6 ++++++
+ .../merkle-x-trait-instance/lib/A.scala            |  3 +++
+ .../merkle-x-trait-instance/lib/changes/A.scala    |  3 +++
+ .../lib/incOptions.properties                      |  2 ++
+ .../merkle-x-trait-instance/test                   |  5 +++++
+ .../merkle-x-trait-nested/app/B.scala              |  2 ++
+ .../merkle-x-trait-nested/app/X.scala              |  7 +++++++
+ .../app/incOptions.properties                      |  2 ++
+ .../merkle-x-trait-nested/build.json               |  6 ++++++
+ .../merkle-x-trait-nested/lib/A.scala              |  2 ++
+ .../merkle-x-trait-nested/lib/changes/A.scala      |  2 ++
+ .../lib/incOptions.properties                      |  2 ++
+ .../source-dependencies/merkle-x-trait-nested/test |  5 +++++
+ 18 files changed, 74 insertions(+), 5 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/X.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/X.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/test
+
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
+index 6e71aafe0..9d3ba4136 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/DescendantRules.scala
+@@ -72,7 +72,7 @@ private[inc] final class HierarchyView(
+    */
+   val api: String => Option[AnalyzedClass] = name =>
+     lookup(name).orElse(
+-      LibraryAncestors.binaryNameCandidates(name).iterator.drop(1).flatMap(lookup).nextOption()
++      LibraryAncestors.binaryNameCandidates(name).iterator.flatMap(lookup).nextOption()
+     )
+ 
+   /**
+@@ -225,7 +225,10 @@ private[inc] object DescendantRules:
+    */
+   val conflicts: DescendantRule = rule("conflicts") { (view, d, change) =>
+     val p = change.className
+-    val otherPath = view.ancestors(d) - p - LibraryAncestors.sourceName(p) -- view.ancestors(p)
++    val onPath = (view.ancestors(p) + p + LibraryAncestors.sourceName(p)).map(
++      LibraryAncestors.canonical
++    )
++    val otherPath = view.ancestors(d).filterNot(a => onPath(LibraryAncestors.canonical(a)))
+     val internal = otherPath.flatMap(view.declaredNames)
+     val external = view.externallyInheritedNames(d) --
+       view.inheritedNames(change.before) -- view.inheritedNames(change.after)
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
+index 8f8df7850..e4b42620a 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
+@@ -87,7 +87,8 @@ private[inc] object LibraryAncestors:
+     if changedClasses.isEmpty then Set.empty
+     else
+       apis.internal.iterator.collect {
+-        case (className, c) if ancestorNames(c).exists(changedClasses) => className
++        case (className, c) if ancestorNames(c).exists(n => changedClasses(canonical(n))) =>
++          className
+       }.toSet
+ 
+   /**
+@@ -115,15 +116,22 @@ private[inc] object LibraryAncestors:
+   def ancestorNames(sides: List[ClassLike]): List[String] =
+     sides.flatMap(_.structure.parents.iterator.flatMap(MerkleHashes.typeName)).distinct
+ 
++  /**
++   * A class name with the members of objects named as Scala 2 names them: Scala 3 keeps the
++   * object's class in the name of a class nested in it, and in a reference to it (`a.O$.C`).
++   */
++  def canonical(name: String): String = name.replace("$.", ".")
++
+   /** Binary names a class rendered as `name` may have: `a.b.C.D` is `a.b.C$D` if C is a class. */
+   def binaryNameCandidates(name: String): List[String] =
++    val c = canonical(name)
+     Iterator
+-      .iterate(name)(n =>
++      .iterate(c)(n =>
+         n.lastIndexOf('.') match
+           case -1 => n
+           case i  => n.substring(0, i) + "$" + n.substring(i + 1)
+       )
+-      .take(name.count(_ == '.') + 1)
++      .take(c.count(_ == '.') + 1)
+       .toList
+ 
+   private def ancestorNames(c: AnalyzedClass): Iterator[String] = ancestorNames(sides(c)).iterator
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/B.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/B.scala
+new file mode 100644
+index 000000000..0e6d4eabf
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/B.scala
+@@ -0,0 +1,2 @@
++package p
++class B extends Inst.T
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/X.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/X.scala
+new file mode 100644
+index 000000000..f59eab59c
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/X.scala
+@@ -0,0 +1,7 @@
++package p
++object X {
++  def main(args: Array[String]): Unit = {
++    val v: Any = (new B).m
++    assert(v.toString == args(0), v)
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/A.scala
+new file mode 100644
+index 000000000..599f754b4
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/A.scala
+@@ -0,0 +1,3 @@
++package p
++class Outer { trait T { def m: Int = 0 } }
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/changes/A.scala
+new file mode 100644
+index 000000000..59f8b60f2
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/changes/A.scala
+@@ -0,0 +1,3 @@
++package p
++class Outer { trait T { def m: String = "s" } }
++object Inst extends Outer
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/test b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/test
+new file mode 100644
+index 000000000..8d465c66c
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-instance/test
+@@ -0,0 +1,5 @@
++> app/run 0
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# B mixes in Inst.T, a member trait of class Outer, and holds the forwarder for m
++> app/run s
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/B.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/B.scala
+new file mode 100644
+index 000000000..d1e04d383
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/B.scala
+@@ -0,0 +1,2 @@
++package p
++class B extends O.T
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/X.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/X.scala
+new file mode 100644
+index 000000000..f59eab59c
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/X.scala
+@@ -0,0 +1,7 @@
++package p
++object X {
++  def main(args: Array[String]): Unit = {
++    val v: Any = (new B).m
++    assert(v.toString == args(0), v)
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/A.scala
+new file mode 100644
+index 000000000..7681ae98e
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { trait T { def m: Int = 0 } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/changes/A.scala
+new file mode 100644
+index 000000000..32a47fca1
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/changes/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { trait T { def m: String = "s" } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/test b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/test
+new file mode 100644
+index 000000000..4c9495b31
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-nested/test
+@@ -0,0 +1,5 @@
++> app/run 0
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# B mixes in O.T, nested in an object, and holds the forwarder for m
++> app/run s
+-- 
+2.56.0
+

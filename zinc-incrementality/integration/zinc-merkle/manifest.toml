@@ -59,3 +59,9 @@ title = "Merkle: name library ancestors that are nested or take type arguments"
 id = "merkle-upstream-nested-ancestors"
 patch = "fixups/merkle-upstream-nested-ancestors.patch"
 title = "Merkle: find upstream ancestors nested in objects or reached through one"
+
+# New (2026-10-20 bug hunt): Scala 3 names classes nested in objects `p.O$.A`.
+[[members]]
+id = "merkle-scala3-nested-names"
+patch = "fixups/merkle-scala3-nested-names.patch"
+title = "Merkle: match Scala 3's names for classes nested in objects"
