@@ -53,6 +53,12 @@ patch = "fixups/11313-11314-depth-import.patch"
 title = "Integration: restore the Depth import that scala#11314 uses and scala#11313 removes"
 
 [[members]]
+id = "scala#11315"
+remote = "upstream"
+pr = 11315
+title = "Prune the members of lubBase considered for refinement in lub"
+
+[[members]]
 id = "rz-scala#136"
 remote = "origin"
 pr = 136
@@ -147,10 +153,6 @@ reason = "an alternative to scala#11306 (Analyzer as a class)"
 [[excluded]]
 id = "scala#11312"
 reason = "CI red"
-
-[[excluded]]
-id = "scala#11315"
-reason = "CI pending; add when green"
 
 [[excluded]]
 id = "rz-scala#139"
