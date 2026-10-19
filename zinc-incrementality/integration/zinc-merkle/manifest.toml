@@ -17,3 +17,9 @@ id = "rz#30"
 remote = "origin"
 pr = 30
 title = "Merkle PoC across modules: Spark catalyst → core, traitDirect fix, IncBench --verify"
+
+# rz#83 (in rz#24) makes Merkle hashing opt-in; rz#30's Merkle tests predate it.
+[[members]]
+id = "fixup-83-30"
+patch = "fixups/83-30-hashing-mode.patch"
+title = "Integration: rz#30's Merkle tests opt into hashing=merkle; implicit-scope-grandparent-companion un-pended"

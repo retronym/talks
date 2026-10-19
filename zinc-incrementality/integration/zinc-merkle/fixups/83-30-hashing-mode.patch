@@ -1,0 +1,65 @@
+From b4cde2aa2780c4d5329ab9360e70d0b71981d678 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Mon, 19 Oct 2026 16:20:27 +1000
+Subject: [PATCH] Integration: Merkle tests from rz#30 opt into hashing=merkle;
+ implicit-scope-grandparent-companion passes under name hashing
+
+rz#83 makes Merkle hashing opt-in. The merkle-x-trait-* tests come from rz#30, after rz#83's
+sweep, so they set it here. sz#1846 (in develop) fixes implicit-scope-grandparent-companion
+under name hashing, so it is no longer pending.
+---
+ .../implicit-scope-grandparent-companion/pending       | 10 ----------
+ .../app/incOptions.properties                          |  1 +
+ .../lib/incOptions.properties                          |  1 +
+ .../merkle-x-trait-move/app/incOptions.properties      |  1 +
+ .../merkle-x-trait-move/lib/incOptions.properties      |  1 +
+ 5 files changed, 4 insertions(+), 10 deletions(-)
+ delete mode 100644 zinc/src/sbt-test/source-dependencies/implicit-scope-grandparent-companion/pending
+
+diff --git a/zinc/src/sbt-test/source-dependencies/implicit-scope-grandparent-companion/pending b/zinc/src/sbt-test/source-dependencies/implicit-scope-grandparent-companion/pending
+deleted file mode 100644
+index 6b2564209..000000000
+--- a/zinc/src/sbt-test/source-dependencies/implicit-scope-grandparent-companion/pending
++++ /dev/null
+@@ -1,10 +0,0 @@
+-# Pending under name hashing: C's API does not cover its ancestors' companions, so X, which names
+-# neither B nor its companion, is not recompiled. Merkle hashing folds each ancestor's implicits
+-# into the hashes it composes for another subproject (merkle-implicit-scope-grandparent-companion).
+-> app/run A
+-
+-# B gains a companion with an implicit Show for its subclasses. B is a base class of C, so its
+-# companion is in the implicit scope of Show of C, and B's implicit wins over A's (B derives from
+-# A): X must now pick it, though it names neither B nor its companion.
+-$ copy-file lib/changes/B.scala lib/B.scala
+-> app/run B
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/app/incOptions.properties
+index 2673f7863..f0d13f3c0 100644
+--- a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/app/incOptions.properties
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/app/incOptions.properties
+@@ -1 +1,2 @@
++hashing = merkle
+ apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/lib/incOptions.properties
+index 2673f7863..f0d13f3c0 100644
+--- a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/lib/incOptions.properties
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-class-ancestor/lib/incOptions.properties
+@@ -1 +1,2 @@
++hashing = merkle
+ apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/app/incOptions.properties
+index 2673f7863..f0d13f3c0 100644
+--- a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/app/incOptions.properties
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/app/incOptions.properties
+@@ -1 +1,2 @@
++hashing = merkle
+ apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/lib/incOptions.properties
+index 2673f7863..f0d13f3c0 100644
+--- a/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/lib/incOptions.properties
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-trait-move/lib/incOptions.properties
+@@ -1 +1,2 @@
++hashing = merkle
+ apiDebug = false
+-- 
+2.56.0
+
