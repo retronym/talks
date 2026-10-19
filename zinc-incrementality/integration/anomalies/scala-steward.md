@@ -1,7 +1,7 @@
 # IncBench anomalies: scala-steward-org/scala-steward
 
 - **Build:** scala-steward at `main` (shallow clone, 2026-10-19), Scala 2.13.18 with `-Xsource:3-cross`, module `core` (188 sources, 79 dependency jars: cats-effect, http4s, circe with semiauto derivation, fs2, ...). An application-style tagless-final codebase.
-- **Run:** `lockstep --verify --profile`, the three cells as in `cats.md`, lockstep's defaults. Clean build ~2.9 s warm. Edit script: `edits/scala-steward.tsv`. Results: `~/code/.integration/campaigns/2026-10-19-scala-steward`.
+- **Run:** `lockstep --verify --profile`, the three cells as in `cats.md`, with `recompileOnMacroDef=true` (sbt's default; confirmed in every cell's generated `incOptions.properties`). Clean build ~2.9 s warm. Edit script: `edits/scala-steward.tsv`. Results: `~/code/.integration/campaigns/2026-10-20-scala-steward-macrodef-true`. Rerun of the first campaign's steps (which ran with `false`): every step, verdict and recompile count is identical, so the setting changes nothing on this build (no macro definitions in the module). Timings were taken on a loaded machine and are provisional.
 
 ## Steps
 
@@ -28,4 +28,4 @@ No correctness anomalies, and nothing beyond what each edit warrants. Two things
 ## Performance
 
 - Zinc's own time is a large share on small steps: `data-package-object-body` spends 10 ms in scalac and 60-90 ms in Zinc (31 ms of it writing the analysis).
-- Merkle's `analysis` phase is 30-200 ms where the others spend 5-20 ms (e.g. 206 vs. 19 ms on `groupid-add-implicit`, 292 vs. 72 ms on the clean build), which makes Merkle the slowest cell on every step here. Composition cost again (rz#48 9e99fb249, not yet in the integration branch); on a build this small it outweighs anything Merkle saves.
+- Merkle's `analysis` phase is much higher than the others' on every step of the first campaign (e.g. 206 vs. 19 ms on `groupid-add-implicit`). That is not attributable to Merkle: the pinned cells carry a harness bug (IncHandler used an uncached `Locate.definesClass`, fixed in rz#71 4cba55a47) that adds about 100 ms per step to every Merkle cell. The rerun's timings are provisional (loaded machine) and are not compared.
