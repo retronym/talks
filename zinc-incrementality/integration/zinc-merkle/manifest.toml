@@ -45,3 +45,10 @@ title = "Integration: rz#63's merkle-discovery-overridden test opts into hashing
 id = "merkle-composed-cache"
 patch = "fixups/merkle-composed-cache.patch"
 title = "Merkle: reuse composed classes of an unchanged upstream analysis (rz#48's 9e99fb249)"
+
+# New (2026-10-20 bug hunt): a library ancestor nested in an object or taking type arguments
+# was not recognised, and its descendants undercompiled when the jar changed.
+[[members]]
+id = "merkle-nested-library-ancestors"
+patch = "fixups/merkle-nested-library-ancestors.patch"
+title = "Merkle: name library ancestors that are nested or take type arguments"

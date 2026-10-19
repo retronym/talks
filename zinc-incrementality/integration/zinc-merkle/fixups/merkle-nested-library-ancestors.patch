@@ -1,0 +1,426 @@
+From bf0a34777329ba109556588631d6a244c8f51cd2 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 01:15:55 +1000
+Subject: [PATCH] Merkle: name library ancestors that are nested or take type
+ arguments
+
+LibraryAncestors names a class's library ancestors to match them against
+the classes of a changed jar, and to find the jars whose stamps go into
+its hashes. It named them with Discovery.simpleName, which gives no name
+for a parent with type arguments, `extends L[Int]`, nor for a class
+nested in an object, `extends O.L`: the bridge renders that as a
+projection on the object's type, Projection(Projection(..., O), L). So
+neither counted as a library ancestor. When the jar changed, D extends
+L recompiled (it refers to the jar) but no descendant did, and a
+descendant whose override no longer conformed compiled against the old
+signature: `E extends D { def m = 1 }` with L.m now a String. Name
+hashing materialises m in D's API and recompiles E.
+
+Name ancestors with MerkleHashes.typeName, which drops type arguments,
+and which now follows a projection on a projection. MerkleHashes'
+linearization, from which composition takes a class's ancestors, names
+them the same way, so an ancestor nested in an object of another
+subproject is composed too.
+
+merkle-libjar-override-nested and merkle-libjar-override-parameterized
+are merkle-libjar-override with the library ancestor nested in an object
+and taking a type argument; both fail without this change.
+merkle-x-member-type-nested is merkle-x-member-type with the upstream
+ancestor nested in an object, which passes either way: the client
+depends on the ancestor directly.
+---
+ .../scala/sbt/internal/inc/LibraryAncestors.scala  |  9 ++++-----
+ .../main/scala/sbt/internal/inc/MerkleHashes.scala | 13 ++++++++++---
+ .../merkle-libjar-override-nested/build.json       | 10 ++++++++++
+ .../merkle-libjar-override-nested/changes/L.scala  |  7 +++++++
+ .../merkle-libjar-override-nested/dep/L.scala      |  7 +++++++
+ .../dep/incOptions.properties                      |  1 +
+ .../merkle-libjar-override-nested/test             | 14 ++++++++++++++
+ .../merkle-libjar-override-nested/use/D.scala      |  1 +
+ .../merkle-libjar-override-nested/use/E.scala      |  3 +++
+ .../use/incOptions.properties                      |  1 +
+ .../build.json                                     | 10 ++++++++++
+ .../changes/L.scala                                |  5 +++++
+ .../dep/L.scala                                    |  5 +++++
+ .../dep/incOptions.properties                      |  1 +
+ .../merkle-libjar-override-parameterized/test      | 14 ++++++++++++++
+ .../use/D.scala                                    |  1 +
+ .../use/E.scala                                    |  3 +++
+ .../use/incOptions.properties                      |  1 +
+ .../merkle-x-member-type-nested/app/B.scala        |  2 ++
+ .../merkle-x-member-type-nested/app/C.scala        |  2 ++
+ .../merkle-x-member-type-nested/app/X.scala        |  7 +++++++
+ .../app/incOptions.properties                      |  2 ++
+ .../merkle-x-member-type-nested/build.json         |  6 ++++++
+ .../merkle-x-member-type-nested/lib/A.scala        |  2 ++
+ .../lib/changes/A.scala                            |  2 ++
+ .../lib/incOptions.properties                      |  2 ++
+ .../merkle-x-member-type-nested/test               |  6 ++++++
+ 27 files changed, 129 insertions(+), 8 deletions(-)
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/changes/L.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/L.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/D.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/E.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/changes/L.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/L.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/test
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/D.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/E.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/B.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/C.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/X.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/build.json
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/changes/A.scala
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/incOptions.properties
+ create mode 100644 zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/test
+
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
+index 7eb76580e..3899266ea 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/LibraryAncestors.scala
+@@ -16,7 +16,6 @@ import java.util.zip.ZipFile
+ 
+ import scala.jdk.CollectionConverters.*
+ 
+-import xsbt.api.Discovery
+ import xsbti.{ FileConverter, VirtualFileRef }
+ import xsbti.api.{ AnalyzedClass, ClassLike, NameHash }
+ import xsbti.compile.IncOptions
+@@ -57,7 +56,7 @@ private[inc] object LibraryAncestors:
+   def invalidates(options: IncOptions): Boolean = value(options) == "names"
+ 
+   /**
+-   * The classes of the changed libraries, named as `Discovery.simpleName` renders a reference to
++   * The classes of the changed libraries, named as [[MerkleHashes.typeName]] renders a reference to
+    * them. A jar's are read from the jar: the relations keep one representative class per jar.
+    */
+   def classesOf(
+@@ -112,9 +111,9 @@ private[inc] object LibraryAncestors:
+     }
+     ((apiHash, fingerprint).hashCode, folded)
+ 
+-  /** The names of a class's library ancestors, as `Discovery.simpleName` renders them. */
++  /** The names of a class's ancestors, as [[MerkleHashes.typeName]] renders them. */
+   def ancestorNames(sides: List[ClassLike]): List[String] =
+-    sides.flatMap(_.structure.parents.iterator.flatMap(Discovery.simpleName)).distinct
++    sides.flatMap(_.structure.parents.iterator.flatMap(MerkleHashes.typeName)).distinct
+ 
+   /** Binary names a class rendered as `name` may have: `a.b.C.D` is `a.b.C$D` if C is a class. */
+   def binaryNameCandidates(name: String): List[String] =
+@@ -129,7 +128,7 @@ private[inc] object LibraryAncestors:
+ 
+   private def ancestorNames(c: AnalyzedClass): Iterator[String] = ancestorNames(sides(c)).iterator
+ 
+-  /** A binary class name as `Discovery.simpleName` renders a reference to the class. */
++  /** A binary class name as [[MerkleHashes.typeName]] renders a reference to the class. */
+   private def sourceName(binaryName: String): String =
+     binaryName.stripSuffix("$").replace('$', '.')
+ 
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
+index b08722bbe..67db99f66 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
+@@ -15,7 +15,7 @@ package inc
+ 
+ import xsbt.api.Discovery
+ import xsbti.UseScope
+-import xsbti.api.{ AnalyzedClass, DefinitionType, NameHash, Parameterized, Type }
++import xsbti.api.{ AnalyzedClass, DefinitionType, NameHash, Parameterized, Projection, Type }
+ 
+ import scala.util.hashing.MurmurHash3
+ 
+@@ -183,8 +183,15 @@ private[inc] object MerkleHashes:
+       if classParents.nonEmpty then classParents else c.api().objectApi().structure.parents
+     parents.iterator.flatMap(typeName).distinct.toVector
+ 
+-  /** The class a parent type names, dropping type arguments. */
++  /**
++   * The class a parent type names, dropping type arguments. A class nested in an object is a
++   * projection on the object's, `Discovery.simpleName` names only top-level classes.
++   */
+   def typeName(t: Type): Option[String] = t match
+     case p: Parameterized => typeName(p.baseType)
+-    case t                => Discovery.simpleName(t)
++    case p: Projection    =>
++      p.prefix match
++        case q: Projection => typeName(q).map(_ + "." + p.id)
++        case _             => Discovery.simpleName(p)
++    case t => Discovery.simpleName(t)
+ end MerkleHashes
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/build.json b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/build.json
+new file mode 100644
+index 000000000..29865ec44
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/build.json
+@@ -0,0 +1,10 @@
++{
++  "projects": [
++    {
++      "name": "use"
++    },
++    {
++      "name": "dep"
++    }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/changes/L.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/changes/L.scala
+new file mode 100644
+index 000000000..1114c4dc7
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/changes/L.scala
+@@ -0,0 +1,7 @@
++package dep
++
++object O {
++  abstract class L {
++    def m: String
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/L.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/L.scala
+new file mode 100644
+index 000000000..0f7daaba9
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/L.scala
+@@ -0,0 +1,7 @@
++package dep
++
++object O {
++  abstract class L {
++    def m: Int
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/incOptions.properties
+new file mode 100644
+index 000000000..8a0451de6
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/dep/incOptions.properties
+@@ -0,0 +1 @@
++hashing = merkle
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/test b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/test
+new file mode 100644
+index 000000000..6d1269d6a
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/test
+@@ -0,0 +1,14 @@
++> dep/package
++$ copy-file dep/target/dep.jar use/lib/dep.jar
++
++# done this way because last modified times often have ~1s resolution
++> use/compile
++$ sleep 2000
++
++$ copy-file changes/L.scala dep/L.scala
++> dep/package
++$ copy-file dep/target/dep.jar use/lib/dep.jar
++
++# As merkle-libjar-override, with the library ancestor nested in an object: E does not refer to the jar,
++# and E's override no longer conforms once O.L.m is a String
++-> use/compile
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/D.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/D.scala
+new file mode 100644
+index 000000000..36eb7de08
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/D.scala
+@@ -0,0 +1 @@
++abstract class D extends dep.O.L
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/E.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/E.scala
+new file mode 100644
+index 000000000..90a99178a
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/E.scala
+@@ -0,0 +1,3 @@
++class E extends D {
++  def m = 1
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/incOptions.properties
+new file mode 100644
+index 000000000..8a0451de6
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-nested/use/incOptions.properties
+@@ -0,0 +1 @@
++hashing = merkle
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/build.json b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/build.json
+new file mode 100644
+index 000000000..29865ec44
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/build.json
+@@ -0,0 +1,10 @@
++{
++  "projects": [
++    {
++      "name": "use"
++    },
++    {
++      "name": "dep"
++    }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/changes/L.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/changes/L.scala
+new file mode 100644
+index 000000000..cbb4ea836
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/changes/L.scala
+@@ -0,0 +1,5 @@
++package dep
++
++abstract class L[A] {
++  def m: String
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/L.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/L.scala
+new file mode 100644
+index 000000000..759b41839
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/L.scala
+@@ -0,0 +1,5 @@
++package dep
++
++abstract class L[A] {
++  def m: Int
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/incOptions.properties
+new file mode 100644
+index 000000000..8a0451de6
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/dep/incOptions.properties
+@@ -0,0 +1 @@
++hashing = merkle
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/test b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/test
+new file mode 100644
+index 000000000..40af9e8d2
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/test
+@@ -0,0 +1,14 @@
++> dep/package
++$ copy-file dep/target/dep.jar use/lib/dep.jar
++
++# done this way because last modified times often have ~1s resolution
++> use/compile
++$ sleep 2000
++
++$ copy-file changes/L.scala dep/L.scala
++> dep/package
++$ copy-file dep/target/dep.jar use/lib/dep.jar
++
++# As merkle-libjar-override, with a library ancestor that takes a type argument: E does not refer to
++# the jar, and E's override no longer conforms once L.m is a String
++-> use/compile
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/D.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/D.scala
+new file mode 100644
+index 000000000..b0fdf5e4c
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/D.scala
+@@ -0,0 +1 @@
++abstract class D extends dep.L[Int]
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/E.scala b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/E.scala
+new file mode 100644
+index 000000000..90a99178a
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/E.scala
+@@ -0,0 +1,3 @@
++class E extends D {
++  def m = 1
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/incOptions.properties
+new file mode 100644
+index 000000000..8a0451de6
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-libjar-override-parameterized/use/incOptions.properties
+@@ -0,0 +1 @@
++hashing = merkle
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/B.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/B.scala
+new file mode 100644
+index 000000000..37cc1aa78
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/B.scala
+@@ -0,0 +1,2 @@
++package p
++class B extends O.A
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/C.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/C.scala
+new file mode 100644
+index 000000000..e1ab50679
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/C.scala
+@@ -0,0 +1,2 @@
++package p
++class C extends B
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/X.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/X.scala
+new file mode 100644
+index 000000000..86728bcb7
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/X.scala
+@@ -0,0 +1,7 @@
++package p
++object X {
++  def main(args: Array[String]): Unit = {
++    val v: Any = (new C).m
++    assert(v.toString == args(0), v)
++  }
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/app/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/build.json b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/build.json
+new file mode 100644
+index 000000000..12a3f2a45
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/build.json
+@@ -0,0 +1,6 @@
++{
++  "projects": [
++    { "name": "lib" },
++    { "name": "app", "dependsOn": ["lib"] }
++  ]
++}
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/A.scala
+new file mode 100644
+index 000000000..82e6270ca
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { abstract class A { def m: Int = 0 } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/changes/A.scala b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/changes/A.scala
+new file mode 100644
+index 000000000..fe26045a6
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/changes/A.scala
+@@ -0,0 +1,2 @@
++package p
++object O { abstract class A { def m: String = "s" } }
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/incOptions.properties b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/incOptions.properties
+new file mode 100644
+index 000000000..f0d13f3c0
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/lib/incOptions.properties
+@@ -0,0 +1,2 @@
++hashing = merkle
++apiDebug = false
+diff --git a/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/test b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/test
+new file mode 100644
+index 000000000..efec3c5aa
+--- /dev/null
++++ b/zinc/src/sbt-test/source-dependencies/merkle-x-member-type-nested/test
+@@ -0,0 +1,6 @@
++> app/run 0
++
++$ copy-file lib/changes/A.scala lib/A.scala
++# As merkle-x-member-type, with the upstream ancestor nested in an object
++> app/run s
++> app/checkRecompilations 1 p.X
+-- 
+2.56.0
+

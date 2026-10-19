@@ -1,4 +1,4 @@
-From 9edd4d729a8bd511c32383dac9e1611b87dd1b14 Mon Sep 17 00:00:00 2001
+From 9b8275ead09c55133e1c4331502a478d9f8eeef6 Mon Sep 17 00:00:00 2001
 From: Jason Zaugg <jzaugg@gmail.com>
 Date: Tue, 20 Oct 2026 00:55:35 +1000
 Subject: [PATCH] Merkle: reuse composed classes of an unchanged upstream
@@ -19,9 +19,9 @@ composing again.
 ---
  .../scala/sbt/internal/inc/Analysis.scala     |  5 ++
  .../scala/sbt/internal/inc/MerkleHashes.scala | 81 ++++++++++++++-----
- .../internal/inc/MerkleHashesCacheSpec.scala  | 47 +++++++++++
+ .../internal/inc/MerkleHashesCacheSpec.scala  | 48 +++++++++++
  .../inc/MerkleHashesStabilitySpec.scala       |  4 +-
- 4 files changed, 115 insertions(+), 22 deletions(-)
+ 4 files changed, 116 insertions(+), 22 deletions(-)
  create mode 100644 internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala
 
 diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/Analysis.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/Analysis.scala
@@ -136,10 +136,10 @@ index 9e1d74c22..b08722bbe 100644
  
 diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala
 new file mode 100644
-index 000000000..12b315da0
+index 000000000..cb362a5c1
 --- /dev/null
 +++ b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,48 @@
 +/*
 + * Zinc - The incremental compiler for Scala.
 + * Copyright Scala Center, Lightbend, and Mark Harrah
@@ -187,6 +187,7 @@ index 000000000..12b315da0
 +    hashes(second) shouldBe hashes(MerkleHashes.composed(analysis, "p.A", lookup(c2)).get)
 +    hashes(MerkleHashes.composed(a, "p.A", _ => None).get) shouldBe
 +      hashes(MerkleHashes.composed(analysis, "p.A", _ => None).get)
++end MerkleHashesCacheSpec
 diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala
 index 8cc1612d1..357530838 100644
 --- a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala
