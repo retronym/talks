@@ -1,0 +1,32 @@
+branch = "integration/2.13.x-determinism"
+repo = "~/code/scala/scala"
+push = "origin"
+
+# The baseline for measuring the 2.13.x performance PRs: upstream 2.13.x plus only the fixes that make
+# scalac's output independent of the batch and of symbol ids, so a campaign's --verify compares like
+# with like on both sides and the performance PRs in integration/2.13.x are measured on their own.
+base = { remote = "upstream", branch = "2.13.x" }
+
+[[members]]
+id = "scala#11290"
+remote = "upstream"
+pr = 11290
+title = "Give Java fields initialized with constant expressions a constant type"
+
+[[members]]
+id = "scala#11291"
+remote = "upstream"
+pr = 11291
+title = "Order base types of the same depth by name rather than by symbol id"
+
+[[members]]
+id = "scala#11319"
+remote = "upstream"
+pr = 11319
+title = "Use the typer's fresh names for `try ... catch expr` for deterministic compilation"
+
+[[members]]
+id = "rz-scala#165"
+remote = "origin"
+pr = 165
+title = "Emit quasiquote fresh-name vals in a deterministic order"

@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Run a lockstep campaign with every cell on a Scala compiler built from an integration branch.
+
+    run-campaign OUT_DIR --build BUILD --edits EDITS --cell NAME=ZINC:SCALA... [-- LOCKSTEP_ARG...]
+
+Each cell names a Zinc integration branch and a Scala integration branch, by the suffix after
+`integration/` (e.g. `merkle-1.12.x:2.13.x`). The Zinc checkouts and Scala checkouts are the
+build-integration clones in ~/code/.integration (`integration-<branch>`). Each Scala branch is built
+once, optimized as a release is, with `publish-scala2-starr` into its own Ivy home
+(~/code/.integration/starr/<branch>), which skips the build when the branch hasn't moved. Then
+`lockstep` runs the cells with `--cell-scala`, so each cell's bridge is compiled by its compiler, and
+the campaign's dashboard data (OUT_DIR/dash) is refreshed every few seconds while it runs.
+
+Campaigns compare compilers built from source, never a published release: `2.13.x-determinism`
+(upstream 2.13.x plus the output-determinism fixes) is the baseline, `2.13.x` the integration branch
+with the performance PRs. Arguments after `--` go to lockstep (e.g. `--verify --profile`).
+"""
+
+import argparse
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+INTEGRATION = Path.home() / "code/.integration"
+
+
+def log(msg):
+    print(f"[lockstep] {msg}", flush=True)
+
+
+def build_compiler(branch):
+    """Builds integration/<branch> of scala/scala and returns its version and jars."""
+    checkout = INTEGRATION / f"integration-{branch}"
+    if not checkout.is_dir():
+        sys.exit(f"no checkout {checkout}: run build-integration for integration/{branch} first")
+    subprocess.run(["git", "-C", str(checkout), "fetch", "-q", "origin"], check=True)
+    subprocess.run(["git", "-C", str(checkout), "checkout", "-q", f"integration/{branch}"], check=True)
+    subprocess.run(["git", "-C", str(checkout), "reset", "-q", "--hard", f"origin/integration/{branch}"], check=True)
+    ivy = INTEGRATION / "starr" / branch
+    log(f"building the {branch} compiler")
+    r = subprocess.run([str(HERE / "publish-scala2-starr"), str(checkout), str(ivy)], text=True, capture_output=True)
+    if r.returncode != 0:
+        sys.exit(f"publish-scala2-starr failed for {branch}:\n{r.stderr[-3000:]}")
+    version = r.stdout.strip().splitlines()[-1]
+    jars = ":".join(str(ivy / "local/org.scala-lang" / m / version / "jars" / f"{m}.jar")
+                    for m in ("scala-library", "scala-reflect", "scala-compiler"))
+    log(f"{branch} is {version}")
+    return version, jars
+
+
+def main():
+    argv = sys.argv[1:]
+    rest = argv[argv.index("--") + 1:] if "--" in argv else []
+    argv = argv[:argv.index("--")] if "--" in argv else argv
+    ap = argparse.ArgumentParser()
+    ap.add_argument("out_dir", type=Path)
+    ap.add_argument("--build", type=Path, required=True)
+    ap.add_argument("--edits", type=Path, required=True)
+    ap.add_argument("--cell", action="append", required=True, help="NAME=ZINC_BRANCH:SCALA_BRANCH")
+    ap.add_argument("--name", help="the campaign's name on the dashboard")
+    a = ap.parse_args(argv)
+    out = a.out_dir.resolve()
+    cells = []
+    for spec in a.cell:
+        name, branches = spec.split("=", 1)
+        zinc, scala = branches.split(":", 1)
+        cells.append((name, zinc, scala))
+    compilers = {scala: build_compiler(scala) for scala in dict.fromkeys(s for _, _, s in cells)}
+    args = [str(HERE / "lockstep"), str(out), "--build", str(a.build), "--edits", str(a.edits)]
+    for name, zinc, scala in cells:
+        version, jars = compilers[scala]
+        args += ["--cell", f"{name}={INTEGRATION / f'integration-{zinc}'}", "--cell-scala", f"{name}={version}:{jars}"]
+    args += rest
+    out.mkdir(parents=True, exist_ok=True)
+    logf = Path(str(out) + ".log")
+    name = a.name or out.name
+    dash = [str(HERE / "lockstep-dash"), str(out), str(out / "dash"), "--name", name, "--log", str(logf)]
+    with open(logf, "a") as lf:
+        proc = subprocess.Popen(args, stdout=lf, stderr=lf)
+        while proc.poll() is None:
+            if (out / "campaign.json").exists():
+                subprocess.run(dash, capture_output=True)
+            time.sleep(5)
+    subprocess.run(dash, capture_output=True)
+    log(f"done, rc={proc.returncode}; log {logf}")
+    sys.exit(proc.returncode)
+
+
+if __name__ == "__main__":
+    main()
