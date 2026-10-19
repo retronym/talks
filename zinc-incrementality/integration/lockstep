@@ -165,6 +165,9 @@ def main():
     ap.add_argument("--cell-scala", action="append", default=[],
                     help="NAME=VERSION:JARS, a locally built Scala 2.13 for that cell: its version and its library, "
                          "reflect and compiler jars separated by ':' (scripted's 2.13.local bridge label)")
+    ap.add_argument("--cell-scala3", action="append", default=[],
+                    help="NAME=VERSION:BRIDGE:JARS, a Scala 3 release or local build for that cell: its version, its "
+                         "scala3-sbt-bridge jar and its compiler and library jars separated by ':' (scripted's 3.local label)")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--warmup", type=int, default=2)
     ap.add_argument("--verify", action="store_true")
@@ -195,6 +198,11 @@ def main():
         d = out / "cells" / name
         d.mkdir(parents=True, exist_ok=True)
         cells.append(Cell(name, checkout, d))
+    scala3 = {}
+    for spec in a.cell_scala3:
+        name, rest = spec.split("=", 1)
+        version, bridge, jars = rest.split(":", 2)
+        scala3[name] = (version, bridge, jars)
     builds = {c.name: a.build.resolve() for c in cells}
     for spec in a.cell_build:
         name, b = spec.split("=", 1)
@@ -209,12 +217,13 @@ def main():
     campaign = {
         "start": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "build": str(a.build.resolve()), "edits": str(a.edits.resolve()),
-        "options": {k: v for k, v in vars(a).items() if k not in ("out_dir", "build", "edits", "cell", "cell_build", "on_step")},
+        "options": {k: v for k, v in vars(a).items() if k not in ("out_dir", "build", "edits", "cell", "cell_build", "cell_scala3", "on_step")},
         "jvmOptions": jvm_opts,
         "machine": machine(),
         "cells": [{"name": c.name, "checkout": str(c.checkout), "commit": git(c.checkout, "rev-parse", "HEAD"),
                    "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD"),
                    "scala": scala[c.name][0] if c.name in scala else None, "build": str(builds[c.name]),
+                   "scala3": scala3[c.name][0] if c.name in scala3 else None,
                    "options": [s.split("=", 1)[1] for s in a.cell_option if s.split("=", 1)[0] == c.name]}
                   for c in cells],
     }
@@ -234,6 +243,15 @@ def main():
             build = c.dir / "build"
             copy_build(builds[c.name], build)
             env = {}
+            if c.name in scala3:
+                version, bridge, jars = scala3[c.name]
+                env = {"ZINC_SCRIPTED_SCALA3_VERSION": version, "ZINC_SCRIPTED_SCALA3_JARS": jars,
+                       "ZINC_SCRIPTED_SCALA3_BRIDGE": bridge}
+                bj = build / "build.json"
+                b = json.loads(bj.read_text())
+                for p in b["projects"]:
+                    p["scalaVersion"] = "3.local"
+                bj.write_text(json.dumps(b, indent=2) + "\n")
             if c.name in scala:
                 version, jars = scala[c.name]
                 log(f"{c.name}: compiling the bridge with Scala {version}")

@@ -139,10 +139,11 @@ def main():
     names = [c["name"] for c in camp["cells"]]
     local = {c["name"]: c.get("scala") for c in camp["cells"]}
     build_of = {c["name"]: c.get("build") or camp.get("build") for c in camp["cells"]}
+    scala3 = {c["name"]: c.get("scala3") for c in camp["cells"]}
     for n in names:
         b, comp, z = n.split("-")
         # A cell on a locally built compiler is base or integration; otherwise it runs the release.
-        release = a.release3 if b == "s3" else a.release
+        release = (scala3.get(n) or a.release3) if b == "s3" else a.release
         label = COMPILERS[comp] if local.get(n) else release
         cells.append(dict(cell=n, corpus=corpus_name(build_of[n], b), line=LINES[b], compiler=label, compilerVersion=local.get(n) or release,
                           zinc=ZINCS[z][0], algo=ZINCS[z][1], compilerKey=comp, zincKey=z))
