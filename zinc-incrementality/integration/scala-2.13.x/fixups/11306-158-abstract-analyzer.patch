@@ -1,0 +1,26 @@
+From b2d8691e33013c9a44e33bd8d9e0dc7d0eb57b76 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Mon, 19 Oct 2026 11:55:58 +1000
+Subject: [PATCH] Integration: instantiate AbstractAnalyzer in
+ NotAMemberErrorTest, as scala#11306 requires
+
+---
+ .../junit/scala/tools/nsc/typechecker/NotAMemberErrorTest.scala | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/junit/scala/tools/nsc/typechecker/NotAMemberErrorTest.scala b/test/junit/scala/tools/nsc/typechecker/NotAMemberErrorTest.scala
+index 384b8527bd..a619f1b1f7 100644
+--- a/test/junit/scala/tools/nsc/typechecker/NotAMemberErrorTest.scala
++++ b/test/junit/scala/tools/nsc/typechecker/NotAMemberErrorTest.scala
+@@ -13,7 +13,7 @@ class NotAMemberErrorTest {
+   class CountingGlobal(settings: Settings, reporter: StoreReporter) extends Global(settings, reporter) {
+     var hintsComputed = 0
+     @nowarn("cat=deprecation") // early initializer, as in Global.analyzer
+-    override lazy val analyzer = new { val global: CountingGlobal.this.type = CountingGlobal.this } with Analyzer {
++    override lazy val analyzer = new { val global: CountingGlobal.this.type = CountingGlobal.this } with AbstractAnalyzer {
+       override def linePrecedes(t1: global.Tree, t2: global.Tree): Boolean = {
+         hintsComputed += 1
+         super.linePrecedes(t1, t2)
+-- 
+2.56.0
+

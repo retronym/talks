@@ -83,6 +83,12 @@ remote = "origin"
 pr = 74
 title = "[2.x] Don't count `macro ???` definitions as macros"
 
+[[members]]
+id = "rz#77"
+remote = "origin"
+pr = 77
+title = "Name an alias's type parameters the same from source and unpickled"
+
 # pending tests
 [[members]]
 id = "rz#33"

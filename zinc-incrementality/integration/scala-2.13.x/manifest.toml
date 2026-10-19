@@ -40,6 +40,12 @@ remote = "upstream"
 pr = 11319
 title = "Use the typer's fresh names for `try ... catch expr` for deterministic compilation"
 
+[[members]]
+id = "rz-scala#165"
+remote = "origin"
+pr = 165
+title = "Emit quasiquote fresh-name vals in a deterministic order"
+
 # scala#11313 removes the Depth import from SynchronizedTypes; scala#11314 adds uses of it.
 [[members]]
 id = "fixup-11313-11314"
@@ -87,6 +93,12 @@ id = "rz-scala#158"
 remote = "origin"
 pr = 158
 title = "Compute NotAMemberError's hints only when the error is reported"
+
+# scala#11306 self-types the analyzer's parts with AbstractAnalyzer; rz-scala#158's test instantiates a plain Analyzer.
+[[members]]
+id = "fixup-11306-158"
+patch = "fixups/11306-158-abstract-analyzer.patch"
+title = "Integration: instantiate AbstractAnalyzer in NotAMemberErrorTest, as scala#11306 requires"
 
 [[members]]
 id = "rz-scala#159"

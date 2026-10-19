@@ -31,6 +31,12 @@ remote = "origin"
 pr = 73
 title = "[1.x] Don't count `macro ???` definitions as macros"
 
+[[members]]
+id = "rz#79"
+remote = "origin"
+pr = 79
+title = "[1.x] Name an alias's type parameters the same from source and unpickled"
+
 # The IncBench harness, identical in every Zinc the IncBench campaign compares.
 [[members]]
 id = "rz#71"
