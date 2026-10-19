@@ -15,7 +15,7 @@ the campaign's dashboard data (OUT_DIR/dash) is refreshed every few seconds whil
 
 Campaigns compare compilers built from source, never a published release: `2.13.x-determinism`
 (upstream 2.13.x plus the output-determinism fixes) is the baseline, `2.13.x` the integration branch
-with the performance PRs. Arguments after `--` go to lockstep (e.g. `--verify --profile`).
+with the performance PRs. Arguments after `--` go to lockstep (e.g. `--verify`; profiling is on unless `--no-profile`).
 """
 
 import argparse

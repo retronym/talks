@@ -165,7 +165,8 @@ def main():
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--warmup", type=int, default=2)
     ap.add_argument("--verify", action="store_true")
-    ap.add_argument("--profile", action="store_true")
+    # scalac's profiler costs little, and without it the dashboard has no phases or allocation.
+    ap.add_argument("--profile", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--only")
     # sbt's defaults where scripted's differ, and Zinc's optimistic macro invalidation, which
     # the macro fast-track fix (rz#73) otherwise gives only the Zincs that carry it.
