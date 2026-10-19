@@ -10,6 +10,7 @@ IncHandler reads a build:
     OUT_DIR/<module>/src/main/scala/...    the module's Scala sources, by path under its source root
     OUT_DIR/<module>/src/main/java/...     its Java sources
     OUT_DIR/<module>/lib/*.jar             its external dependency jars
+    OUT_DIR/<module>/plugins/*.jar         compiler plugins the checkout builds itself
     OUT_DIR/<module>/incOptions.properties scalac.options and javac.options
     OUT_DIR/export.json                    where it came from: commit, settings, file counts
 
@@ -114,6 +115,15 @@ def main():
         deps = [d for d in a.modules if d != m and class_dirs[d] in map(attributed_path, get(m, "internalDependencyClasspath"))]
 
         def rewrite(opt):
+            # A compiler plugin built by the checkout is frozen with the module, like its jars.
+            if opt.startswith("-Xplugin:") and str(src) in opt:
+                plugins = base / "plugins"
+                plugins.mkdir(exist_ok=True)
+                kept = []
+                for p in map(Path, opt[len("-Xplugin:"):].split(",")):
+                    shutil.copy2(p, plugins / p.name)
+                    kept.append(f"[basedir]/plugins/{p.name}")
+                return "-Xplugin:" + ",".join(kept)
             for r in roots:
                 if opt.startswith(str(r)):
                     rel = "scala"
