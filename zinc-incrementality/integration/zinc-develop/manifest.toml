@@ -200,6 +200,12 @@ remote = "origin"
 pr = 45
 title = "CLAUDE.md: run sbt with --server --batch"
 
+# rz#71's 4cba55a47 on the develop line: IncHandler caches what each jar defines, as sbt does.
+[[members]]
+id = "rz#71-dcc"
+patch = "fixups/incbench-defines-class-cache.patch"
+title = "IncHandler caches what each jar defines, as sbt does (rz#71's 4cba55a47)"
+
 [[excluded]]
 id = "rz#1"
 reason = "2019-era performance work (flat classpath caching); conflicts with UsedName/protobuf"
