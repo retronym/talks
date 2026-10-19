@@ -486,12 +486,20 @@ dash.calc('effects', {
     return w;
   };
 
-  const scalaOf = (c) => (/^\d/.test(c.compiler) ? c.compiler : (c.line || (c.corpus === 'scala/scala3' ? '3' : '2.13')) + ' ' + c.compiler);
+  // The Scala line a cell compiles with; a run from before cells had one says it by its corpus.
+  const lineOf = (c) => c.line || (c.corpus === 'scala/scala3' ? '3' : '2.13');
+  const LINES = ['2.13', '3'];
+  // The heading for a line's cells: the corpus alone when it is the compiler's own build.
+  const lineLabel = (line, cells) => {
+    const corpus = (cells.find((c) => lineOf(c) === line) || {}).corpus;
+    return !corpus || corpus.startsWith('scala/scala') ? corpus || 'Scala ' + line : `${corpus}, Scala ${line}`;
+  };
+  const scalaOf = (c) => (/^\d/.test(c.compiler) ? c.compiler : lineOf(c) + ' ' + c.compiler);
   const CELL_COLS = [['Scala', scalaOf], ['Zinc', (c) => c.zinc], ['Hashing', (c) => c.algo]];
   const cellLabel = (c) => `Scala ${scalaOf(c)} · Zinc ${c.zinc}` + (c.zinc.toLowerCase().includes(String(c.algo).toLowerCase()) ? '' : ` · ${c.algo}`);
 
   const FILTERS = [
-    ['corpus', 'Build', [['scala/scala', 'scala/scala'], ['scala/scala3', 'scala/scala3']]],
+    ['line', 'Scala', [['2.13', '2.13'], ['3', '3']]],
     ['compilerKey', 'Compiler', [['released', 'base'], ['integration', 'integration']]],
     ['zincKey', 'Zinc', [['released', '1.12.x'], ['perf', '+ fixes'], ['merklenames', '+ fixes + Merkle, name hashing'], ['merkle', '+ fixes + Merkle']]],
   ];
@@ -510,8 +518,7 @@ dash.calc('effects', {
   const filtered = () => FILTERS.some(([dim, , opts]) => filt[dim].size < opts.length);
   // A value the filters don't list, such as another project's build, is always shown.
   const passes = (dim, v) => filt[dim].has(v) || !FILTERS.find((f) => f[0] === dim)[2].some((o) => o[0] === v);
-  const cellOk = (c) => !!c && FILTERS.every(([dim]) => passes(dim, c[dim]));
-  const corpusOk = (corpus) => passes('corpus', corpus);
+  const cellOk = (c) => !!c && FILTERS.every(([dim]) => passes(dim, dim === 'line' ? lineOf(c) : c[dim]));
   const cellById = () => (ok('cells') ? new Map(dash.data('cells').data.map((c) => [c.cell, c])) : new Map());
   const cellIdOk = (id, byId) => (byId.size ? cellOk(byId.get(id)) : true);
 
@@ -609,7 +616,8 @@ dash.calc('effects', {
       n.dataset.source = src; n.dataset.field = field; if (where) n.dataset.where = where;
       n.textContent = text; return n;
     };
-    const parts = [['scala/scala', s2], ['scala/scala3', s3]].filter(([, r]) => r && r.steps > 0);
+    const cs = ok('cells') ? dash.data('cells').data : [];
+    const parts = [[lineLabel('2.13', cs), s2], [lineLabel('3', cs), s3]].filter(([, r]) => r && r.steps > 0);
     take.append('Lockstep is at step ', span('progress', 'currentStep', null, String(p.currentStep)), '.');
     parts.forEach(([corpus, r], i) => {
       const id = r.id;
@@ -678,11 +686,11 @@ dash.calc('effects', {
     const totals = new Map(dash.data('cellTotals').data.map((t) => [t.cell, t]));
     const sel = params().cell;
     el.replaceChildren();
-    for (const corpus of ['scala/scala', 'scala/scala3']) {
-      if (!cells.some((x) => x.corpus === corpus && cellOk(x))) continue;
+    for (const line of LINES) {
+      if (!cells.some((x) => lineOf(x) === line && cellOk(x))) continue;
       const row = document.createElement('div'); row.className = 'ib-mrow';
-      const h = document.createElement('h3'); h.textContent = corpus; row.appendChild(h);
-      for (const c of cells.filter((x) => x.corpus === corpus && cellOk(x))) {
+      const h = document.createElement('h3'); h.textContent = lineLabel(line, cells); row.appendChild(h);
+      for (const c of cells.filter((x) => lineOf(x) === line && cellOk(x))) {
         const t = totals.get(c.cell);
         const b = document.createElement('button'); b.type = 'button'; b.className = 'ib-cell';
         b.setAttribute('aria-pressed', String(c.cell === sel));
@@ -722,9 +730,9 @@ dash.calc('effects', {
     const gap = 4;
     const groupGap = 14;
     const order = [];
-    for (const corpus of ['scala/scala', 'scala/scala3']) for (const c of cells.filter((x) => x.corpus === corpus && cellOk(x))) order.push(c);
+    for (const line of LINES) for (const c of cells.filter((x) => lineOf(x) === line && cellOk(x))) order.push(c);
     if (!order.length) { const d = document.createElement('div'); d.className = 'ib-failed'; d.textContent = 'No cells match the filters'; host.appendChild(d); return; }
-    const firstS3 = order.findIndex((c) => c.corpus === 'scala/scala3');
+    const firstS3 = order.findIndex((c) => lineOf(c) === '3');
     const svg = d3.select(host).append('svg').attr('width', '100%').style('overflow', 'hidden');
     const colW = CELL_COLS.map(([h, f]) => Math.max(textWidth(svg, h), ...order.map((c) => textWidth(svg, f(c)))) + 12);
     const colX = colW.map((_, i) => d3.sum(colW.slice(0, i)));
@@ -838,9 +846,11 @@ dash.calc('effects', {
 
   function drawPerStep(hostId, prefix) {
     const host = document.getElementById(hostId);
-    const corpus = prefix === 's2' ? 'scala/scala' : 'scala/scala3';
-    const present = ok('cells') ? dash.data('cells').data.filter((c) => c.corpus === corpus) : [];
-    host.closest('article').hidden = !corpusOk(corpus) || (ok('cells') && !present.length);
+    const line = prefix === 's2' ? '2.13' : '3';
+    const all = ok('cells') ? dash.data('cells').data : [];
+    const present = all.filter((c) => lineOf(c) === line);
+    host.closest('article').hidden = !passes('line', line) || (ok('cells') && !present.length);
+    host.closest('article').querySelector('h2').textContent = `${lineLabel(line, all)}: each step by Zinc`;
     if (failed('steps')) return showFailed(host);
     if (!ok('steps')) { host.replaceChildren(); return; }
     const comp = filt.compilerKey.has('released') && present.some((c) => c.compilerKey === 'released') ? 'released' : 'integration';
@@ -1027,7 +1037,7 @@ dash.calc('effects', {
   function drawEdits() {
     const body = document.getElementById('edits-table').tBodies[0];
     if (!ok('edits')) { body.replaceChildren(); return; }
-    body.replaceChildren(...dash.data('edits').data.filter((e) => corpusOk(e.corpus)).map((e) => {
+    body.replaceChildren(...dash.data('edits').data.map((e) => {
       const tr = document.createElement('tr'); tr.dataset.key = `${e.corpus},${e.step}`;
       [e.corpus, String(e.step), e.kind, e.target, e.edit].forEach((v, i) => { const td = document.createElement('td'); td.textContent = v; if (i === 1) td.className = 'num'; if (i === 4) td.className = 'wrap'; tr.appendChild(td); });
       return tr;
