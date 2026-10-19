@@ -10,13 +10,7 @@ base = { remote = "origin", branch = "integration/develop" }
 id = "rz#24"
 remote = "origin"
 pr = 24
-title = "[PoC] Merkle name hashes, bridge-side hashing, coarse library ancestors (with merged #25, #29, #31, #38, #39, #41, #55, #56)"
-
-[[members]]
-id = "rz#72"
-remote = "origin"
-pr = 72
-title = "Merkle: a nested class of this subproject is not a library ancestor (onto rz#24)"
+title = "[PoC] Merkle name hashes, bridge-side hashing, coarse library ancestors (with merged #25, #29, #31, #38, #39, #41, #55, #56, #72, #78)"
 
 [[members]]
 id = "rz#30"
