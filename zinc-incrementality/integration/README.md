@@ -10,6 +10,7 @@ The Zinc fixes are spread over many open PRs across retronym/zinc, sbt/zinc, ret
 | `integration/merkle-1.12.x` | retronym/zinc | sbt/zinc `1.12.x` | [zinc-merkle-1.12.x](zinc-merkle-1.12.x/manifest.toml) |
 | `integration/bench-1.12.x` | retronym/zinc | sbt/zinc `1.12.x` | [zinc-bench-1.12.x](zinc-bench-1.12.x/manifest.toml) |
 | `integration/2.13.x` | retronym/scala | scala/scala `2.13.x` | [scala-2.13.x](scala-2.13.x/manifest.toml) |
+| `integration/2.13.x-determinism` | retronym/scala | scala/scala `2.13.x` | [scala-2.13.x-determinism](scala-2.13.x-determinism/manifest.toml) |
 | `integration/scala3-main` | retronym/scala3 | scala/scala3 `main` | [scala3-main](scala3-main/manifest.toml) |
 | `integration/scala3-merkle` | retronym/scala3 | `integration/scala3-main` | [scala3-merkle](scala3-merkle/manifest.toml) |
 
