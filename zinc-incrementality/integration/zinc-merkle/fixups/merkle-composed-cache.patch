@@ -1,0 +1,214 @@
+From 9edd4d729a8bd511c32383dac9e1611b87dd1b14 Mon Sep 17 00:00:00 2001
+From: Jason Zaugg <jzaugg@gmail.com>
+Date: Tue, 20 Oct 2026 00:55:35 +1000
+Subject: [PATCH] Merkle: reuse composed classes of an unchanged upstream
+ analysis
+
+Detecting upstream changes looks up every external class a subproject
+depends on, on every compile, and Merkle composed each one afresh from
+its ancestors. On scala/scala that is every library and reflect class
+the compiler module uses: 45 MB and 20 ms of initial change detection
+per compile, even for a one-file body edit.
+
+An analysis now keeps the classes it composed, with the ancestors from
+other analyses that went into each, and reuses one while those
+ancestors are the same instances. AnalyzedClass is immutable, and an
+analysis that does not change stays in memory across compiles (sbt's
+and the scripted harness's cached store), so the result is the same as
+composing again.
+---
+ .../scala/sbt/internal/inc/Analysis.scala     |  5 ++
+ .../scala/sbt/internal/inc/MerkleHashes.scala | 81 ++++++++++++++-----
+ .../internal/inc/MerkleHashesCacheSpec.scala  | 47 +++++++++++
+ .../inc/MerkleHashesStabilitySpec.scala       |  4 +-
+ 4 files changed, 115 insertions(+), 22 deletions(-)
+ create mode 100644 internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala
+
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/Analysis.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/Analysis.scala
+index b4e68c192..4273877c6 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/Analysis.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/Analysis.scala
+@@ -148,6 +148,11 @@ private class MAnalysis(
+     val infos: SourceInfos,
+     val compilations: Compilations
+ ) extends Analysis:
++
++  /** [[MerkleHashes.composed]] results for this analysis's classes. */
++  private[inc] lazy val composedCache =
++    new java.util.concurrent.ConcurrentHashMap[String, MerkleHashes.Composed]
++
+   def ++(o: Analysis): Analysis =
+     new MAnalysis(
+       stamps ++ o.stamps,
+diff --git a/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala b/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
+index 9e1d74c22..b08722bbe 100644
+--- a/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
++++ b/internal/zinc-core/src/main/scala/sbt/internal/inc/MerkleHashes.scala
+@@ -43,28 +43,69 @@ private[inc] object MerkleHashes:
+       elsewhere: String => Option[AnalyzedClass] = _ => None
+   ): Option[AnalyzedClass] =
+     analysis.apis.internal.get(className).map { own =>
+-      val ancestors = linearization(own)
+-        .filter(_ != className)
+-        .flatMap(a => analysis.apis.internal.get(a).orElse(elsewhere(a)))
+-      val forwarded =
+-        if isTrait(own) then
+-          val traits = (own +: ancestors).filter(isTrait)
+-          val fields = traits.map(c => (c.name, c.extraHash)).hashCode
+-          compose(traits, ForwarderSuffix) :+ NameHash.of(ForwarderSuffix, UseScope.Default, fields)
+-        else Array.empty[NameHash]
+-      if ancestors.isEmpty then
+-        own
+-          .withApiHash((own.apiHash, header(own)).hashCode)
+-          .withNameHashes(own.nameHashes ++ forwarded)
+-      else
+-        val apiHash =
+-          (own.apiHash +: header(own) +: ancestors.map(c => (c.name, c.extraHash, implicits(c))))
+-            .hashCode
+-        own
+-          .withApiHash(apiHash)
+-          .withNameHashes(compose(own +: ancestors, "") ++ forwarded)
++      analysis match
++        case a: MAnalysis =>
++          val cached = a.composedCache.get(className)
++          if (cached ne null) && cached.isCurrent(elsewhere) then cached.result
++          else
++            val c = compose(analysis, own, elsewhere)
++            a.composedCache.put(className, c)
++            c.result
++        case _ => compose(analysis, own, elsewhere).result
+     }
+ 
++  /**
++   * Composing every class that a subproject depends on is costly, and it happens on every
++   * compile, to detect changes upstream. An analysis keeps what it composed, with the ancestors
++   * from other analyses that went into it, and the result is reused while those ancestors are
++   * the same instances: an `AnalyzedClass` is immutable, and an analysis is kept in memory
++   * across compiles while it does not change.
++   */
++  private[inc] final class Composed(
++      externalNames: Array[String],
++      externals: Array[AnalyzedClass],
++      val result: AnalyzedClass
++  ):
++    def isCurrent(elsewhere: String => Option[AnalyzedClass]): Boolean =
++      var i = 0
++      while i < externalNames.length do
++        if !(elsewhere(externalNames(i)).orNull eq externals(i)) then return false
++        i += 1
++      true
++
++  private def compose(
++      analysis: Analysis,
++      own: AnalyzedClass,
++      elsewhere: String => Option[AnalyzedClass]
++  ): Composed =
++    val className = own.name
++    val names = linearization(own).filter(_ != className)
++    val externalNames = names.filterNot(analysis.apis.internal.contains).toArray
++    val externals = externalNames.map(elsewhere(_).orNull)
++    val ancestors = names.flatMap { a =>
++      analysis.apis.internal.get(a).orElse(Option(externals(externalNames.indexOf(a))))
++    }
++    new Composed(externalNames, externals, composed(own, ancestors))
++
++  private def composed(own: AnalyzedClass, ancestors: Vector[AnalyzedClass]): AnalyzedClass =
++    val forwarded =
++      if isTrait(own) then
++        val traits = (own +: ancestors).filter(isTrait)
++        val fields = traits.map(c => (c.name, c.extraHash)).hashCode
++        compose(traits, ForwarderSuffix) :+ NameHash.of(ForwarderSuffix, UseScope.Default, fields)
++      else Array.empty[NameHash]
++    if ancestors.isEmpty then
++      own
++        .withApiHash((own.apiHash, header(own)).hashCode)
++        .withNameHashes(own.nameHashes ++ forwarded)
++    else
++      val apiHash =
++        (own.apiHash +: header(own) +: ancestors.map(c => (c.name, c.extraHash, implicits(c))))
++          .hashCode
++      own
++        .withApiHash(apiHash)
++        .withNameHashes(compose(own +: ancestors, "") ++ forwarded)
++
+   /** Marks a name hash that covers a trait's mixin forwarders: see the class comment. */
+   val ForwarderSuffix = " <forwarders>"
+ 
+diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala
+new file mode 100644
+index 000000000..12b315da0
+--- /dev/null
++++ b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesCacheSpec.scala
+@@ -0,0 +1,47 @@
++/*
++ * Zinc - The incremental compiler for Scala.
++ * Copyright Scala Center, Lightbend, and Mark Harrah
++ *
++ * Licensed under Apache License 2.0
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * See the NOTICE file distributed with this work for
++ * additional information regarding copyright ownership.
++ */
++
++package sbt.internal.inc
++
++import xsbti.api.*
++import MerkleHashesStability.{ analyzed, parent }
++
++class MerkleHashesCacheSpec extends UnitSpec:
++  private def analysis = Analysis.empty.copy(apis =
++    APIs(
++      Map(
++        "p.A" -> analyzed("p.A", DefinitionType.ClassDef, Array(parent("p.B"), parent("q.C")), "a"),
++        "p.B" -> analyzed("p.B", DefinitionType.Trait, Array.empty, "b")
++      ),
++      Map.empty
++    )
++  )
++  private val c1 = analyzed("q.C", DefinitionType.Trait, Array.empty, "c")
++  private val c2 = analyzed("q.C", DefinitionType.Trait, Array.empty, "c2")
++  private def lookup(c: AnalyzedClass): String => Option[AnalyzedClass] =
++    case "q.C" => Some(c)
++    case _     => None
++  private def hashes(c: AnalyzedClass) =
++    (c.apiHash, c.nameHashes.map(h => (h.name, h.scope, h.hash)).toSet)
++
++  it should "reuse a composed class while its ancestors elsewhere are the same" in:
++    val a = analysis
++    val first = MerkleHashes.composed(a, "p.A", lookup(c1)).get
++    MerkleHashes.composed(a, "p.A", lookup(c1)).get shouldBe theSameInstanceAs(first)
++
++  it should "compose again when an ancestor elsewhere changes" in:
++    val a = analysis
++    val first = MerkleHashes.composed(a, "p.A", lookup(c1)).get
++    val second = MerkleHashes.composed(a, "p.A", lookup(c2)).get
++    hashes(second) should not be hashes(first)
++    hashes(second) shouldBe hashes(MerkleHashes.composed(analysis, "p.A", lookup(c2)).get)
++    hashes(MerkleHashes.composed(a, "p.A", _ => None).get) shouldBe
++      hashes(MerkleHashes.composed(analysis, "p.A", _ => None).get)
+diff --git a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala
+index 8cc1612d1..357530838 100644
+--- a/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala
++++ b/internal/zinc-core/src/test/scala/sbt/internal/inc/MerkleHashesStabilitySpec.scala
+@@ -66,7 +66,7 @@ object MerkleHashesStability:
+ 
+   private def lzy[T <: AnyRef](t: T): Lazy[T] = SafeLazyProxy.strict(t)
+ 
+-  private def parent(name: String): Type =
++  def parent(name: String): Type =
+     val segments = name.split('.')
+     val path = Path.of(segments.init.map(s => Id.of(s): PathComponent) :+ This.of())
+     Projection.of(Singleton.of(path), segments.last)
+@@ -86,7 +86,7 @@ object MerkleHashesStability:
+       Array.empty
+     )
+ 
+-  private def analyzed(
++  def analyzed(
+       name: String,
+       defType: DefinitionType,
+       parents: Array[Type],
+-- 
+2.56.0
+

@@ -15,6 +15,7 @@ package inc
 
 import java.io.{ ByteArrayOutputStream, PrintStream }
 import java.nio.file.{ Files, Path, Paths, StandardCopyOption }
+import java.nio.file.attribute.{ BasicFileAttributes, FileTime }
 import java.net.URLClassLoader
 import java.util.jar.Manifest
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -23,7 +24,7 @@ import java.util.zip.ZipFile
 import sbt.util.Logger
 import sbt.util.InterfaceUtil.*
 import xsbt.api.Discovery
-import xsbti.{ FileConverter, Problem, Severity, VirtualFileRef, VirtualFile }
+import xsbti.{ FileConverter, PathBasedFile, Problem, Severity, VirtualFileRef, VirtualFile }
 import xsbti.compile.{
   AnalysisContents,
   AnalysisStore,
@@ -820,7 +821,7 @@ case class ProjectStructure(
     import i.*
     val sources = scalaSources ++ javaSources
     val vs = sources.map(converter.toVirtualFile)
-    val entryLookup = new PerClasspathEntryLookupImpl(lookupAnalysis, Locate.definesClass)
+    val entryLookup = new PerClasspathEntryLookupImpl(lookupAnalysis, IncHandler.definesClass)
     val reporter = new ManagedLoggedReporter(maxErrors, scriptedLog)
     val extra = Array(t2(("key", "value")))
     val previousResult = prev()
@@ -1046,3 +1047,26 @@ object IncHandler:
 
   private[internal] final val classLoaderCache =
     Some(new ClassLoaderCache(new URLClassLoader(Array())))
+
+  private val jarDefinesClassCache =
+    new java.util.concurrent.ConcurrentHashMap[Path, (FileTime, Long, DefinesClass)]
+
+  /**
+   * What a classpath entry defines, as sbt looks it up: sbt caches each jar's index across
+   * compiles (`classpathDefinesClassCache`), keyed by the file and its stamp. `Locate.entry` asks
+   * for the index of every entry before the one that defines a class, on every lookup, so without
+   * the cache each lookup on the classpath reopens those jars.
+   */
+  def definesClass(entry: VirtualFile): DefinesClass =
+    entry match
+      case p: PathBasedFile if Files.isRegularFile(p.toPath) =>
+        val path = p.toPath
+        val attrs = Files.readAttributes(path, classOf[BasicFileAttributes])
+        val (time, size) = (attrs.lastModifiedTime, attrs.size)
+        val cached = jarDefinesClassCache.get(path)
+        if (cached ne null) && cached._1 == time && cached._2 == size then cached._3
+        else
+          val defines = Locate.definesClass(entry)
+          jarDefinesClassCache.put(path, (time, size, defines))
+          defines
+      case _ => Locate.definesClass(entry)

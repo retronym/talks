@@ -39,3 +39,9 @@ title = "Merkle: ancestors' declarations without override checks; cheaper compos
 id = "fixup-83-63"
 patch = "fixups/83-63-hashing-mode.patch"
 title = "Integration: rz#63's merkle-discovery-overridden test opts into hashing=merkle"
+
+# The 1.12.x line's 9e99fb249 (in rz#48), which the develop line lacked.
+[[members]]
+id = "merkle-composed-cache"
+patch = "fixups/merkle-composed-cache.patch"
+title = "Merkle: reuse composed classes of an unchanged upstream analysis (rz#48's 9e99fb249)"
