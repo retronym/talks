@@ -800,11 +800,6 @@ private final class AnalysisCallback(
   private[this] val intSrcDeps = new TrieMap[String, ConcurrentSet[InternalDependency]]
   // external source dependencies
   private[this] val extSrcDeps = new TrieMap[String, ConcurrentSet[ExternalDependency]]
-  // Parents of the class side only. `trait B extends A` and `object B extends A` are one
-  // edge in the relations above, but only the trait's members reach B's inheritors.
-  private[this] val typeParents = new TrieMap[String, ConcurrentSet[String]]
-  // the same for parents in other projects, whose hash is all this compile has of them
-  private[this] val externalTypeParentHashes = new TrieMap[String, ConcurrentSet[HashAPI.Hash]]
   private[this] val binaryClassName = new TrieMap[VirtualFile, String]
   // source files containing a macro def.
   private[this] val macroClasses = ConcurrentHashMap.newKeySet[String]()
@@ -906,8 +901,6 @@ private final class AnalysisCallback(
       onClassName != sourceClassName || context == DependencyContext.LocalDependencyByInheritance
     ) {
       add(intSrcDeps, sourceClassName, InternalDependency.of(sourceClassName, onClassName, context))
-      if (context == DependencyContext.DependencyByInheritance && sourceClass.kind == NameKind.Type)
-        add(typeParents, sourceClassName, onClassName)
     }
   }
 
@@ -947,8 +940,6 @@ private final class AnalysisCallback(
     val dependency =
       ExternalDependency.of(sourceClassName, targetBinaryClassName, targetClass, context)
     add(extSrcDeps, sourceClassName, dependency)
-    if (context == DependencyContext.DependencyByInheritance && sourceClass.kind == NameKind.Type)
-      add(externalTypeParentHashes, sourceClassName, targetClass.extraHash())
   }
 
   // Called by sbt-dotty
@@ -1209,7 +1200,7 @@ private final class AnalysisCallback(
   }
 
   private def getAnalysis: Analysis = {
-    val analysis0 = addProductsAndDeps(Analysis.empty, new ExtraHashes)
+    val analysis0 = addProductsAndDeps(Analysis.empty)
     addUsedNames(addCompilation(analysis0))
   }
 
@@ -1229,103 +1220,7 @@ private final class AnalysisCallback(
     )
   }
 
-  /**
-   * A trait's extraHash includes its parents', so a private change in a parent reaches every
-   * class that inherits it (sbt/zinc#662). Taking the parents from the cycle being compiled, not
-   * from the previous analysis, makes a trait hash the same on a cold and a warm build.
-   *
-   * An instance is a snapshot. Zinc builds an analysis several times while a compile runs, to
-   * decide what still needs recompiling, and each one has more classes than the last - javac's
-   * arrive last of all - so make a new instance per analysis.
-   */
-  private final class ExtraHashes {
-    private val apis = classApis.readOnlySnapshot()
-    private val moduleNames = objectApis.readOnlySnapshot().keySet
-
-    private val internalParents: Map[String, Set[String]] =
-      typeParents.readOnlySnapshot().iterator.map {
-        case (from, ps) =>
-          from -> ps.asScala.toSet
-      }.toMap
-
-    private val externalParentHashes: Map[String, Set[HashAPI.Hash]] =
-      externalTypeParentHashes.readOnlySnapshot().iterator.map {
-        case (from, hs) =>
-          from -> hs.asScala.toSet
-      }.toMap
-
-    private val previousApis: Map[String, AnalyzedClass] =
-      incHandlerOpt.fold(Map.empty[String, AnalyzedClass])(_.previousAnalysisPruned.apis.internal)
-
-    private val memo = new mutable.HashMap[String, HashAPI.Hash]
-    private val visiting = new mutable.HashSet[String]
-
-    /** The extraHash published for `className`, as `analyzeClass` will store it. */
-    def apply(className: String): HashAPI.Hash =
-      if (visiting.contains(className)) breakCycle(className)
-      else
-        memo.get(className) match {
-          case Some(hash) => hash
-          case None =>
-            val hash = compute(className)
-            memo.put(className, hash)
-            hash
-        }
-
-    /**
-     * Only trait parents carry private members into a trait's implementors. A class parent's
-     * extraHash is its whole API hash, so folding it in reported every public change to it as a
-     * private change to each trait extending it.
-     */
-    private def isTrait(className: String): Boolean =
-      apis.get(className) match {
-        case Some(info) => info.classLike.definitionType == DefinitionType.Trait
-        case None =>
-          previousApis.get(className).forall(_.api().classApi().definitionType ==
-            DefinitionType.Trait)
-      }
-
-    private def compute(className: String): HashAPI.Hash =
-      apis.get(className) match {
-        case Some(info) if info.classLike.definitionType == DefinitionType.Trait =>
-          visiting += className
-          try {
-            val traitParents = internalParents.getOrElse(className, Set.empty).filter(isTrait)
-            val parents = traitParents.map(apply) ++
-              externalParentHashes.getOrElse(className, Set.empty)
-            (parents + info.extraHash).hashCode()
-          } finally visiting -= className
-        case Some(info) => info.extraHash
-        // A module-only name has no class side; match what companionsWithHash publishes.
-        case None if moduleNames.contains(className) => emptyApiHash
-        case None =>
-          previousApis.get(className) match {
-            case Some(previous) => previous.extraHash()
-            // Scala 3 can report a Java parent that has no API here: a JDK class under `-release`
-            // (scala/scala3#27117), or a Java source when pipelining is on but the compiler
-            // predates it (before 3.5). extraHash carries a trait's private members; a Java class
-            // has none.
-            case None =>
-              log.debug(s"No extra API hash found for parent $className")
-              emptyApiHash
-          }
-      }
-
-    /**
-     * Inheritance is keyed by source class name, so without name kinds
-     * `trait B extends A; object A extends B` looks like a cycle. Fall back to the published
-     * hash, as folding a stored hash did.
-     */
-    private def breakCycle(className: String): HashAPI.Hash = {
-      log.debug(s"Cyclic inheritance relation while hashing $className")
-      previousApis.get(className).map(_.extraHash()).getOrElse(apis(className).extraHash)
-    }
-  }
-
-  private def companionsWithHash(
-      className: String,
-      extraHashes: ExtraHashes
-  ): (Companions, HashAPI.Hash, HashAPI.Hash) = {
+  private def companionsWithHash(className: String): (Companions, HashAPI.Hash, HashAPI.Hash) = {
     val emptyClass =
       ApiInfo(
         emptyApiHash,
@@ -1334,13 +1229,17 @@ private final class AnalysisCallback(
       )
     val emptyObject =
       ApiInfo(emptyApiHash, emptyApiHash, APIUtil.emptyClassLike(className, DefinitionType.Module))
-    val ApiInfo(classApiHash, _, classApi) = classApis.getOrElse(className, emptyClass)
+    val ApiInfo(classApiHash, extraHash, classApi) = classApis.getOrElse(className, emptyClass)
     val ApiInfo(objectApiHash, _, objectApi) = objectApis.getOrElse(className, emptyObject)
     val companions = Companions.of(classApi, objectApi)
     val apiHash = (classApiHash, objectApiHash).hashCode
     // extraHash covers a trait's private members. An object's is a copy of its apiHash,
-    // already merged above, so only the class side contributes.
-    (companions, apiHash, extraHashes(className))
+    // already merged above, so only the class side contributes. It covers the trait's own
+    // members only: a class sees every ancestor's, as an ancestor's private change invalidates
+    // its descendants here and the hashes composed for another subproject fold in each
+    // ancestor's extraHash. Folding in the parents' made a public member added to a trait read
+    // as a change to the private members of each trait extending it.
+    (companions, apiHash, extraHash)
   }
 
   private def nameHashesForCompanions(className: String): Array[NameHash] = {
@@ -1386,9 +1285,9 @@ private final class AnalysisCallback(
       else Some(files.map(f => stampReader.library(f).toString).sorted.hashCode)
     }
 
-  private def analyzeClass(name: String, extraHashes: ExtraHashes): AnalyzedClass = {
+  private def analyzeClass(name: String): AnalyzedClass = {
     val hasMacro: Boolean = macroClasses.contains(name)
-    val (companions, apiHash0, extraHash) = companionsWithHash(name, extraHashes)
+    val (companions, apiHash0, extraHash) = companionsWithHash(name)
     val nameHashes0 = nameHashesForCompanions(name)
     val sides = List(companions.classApi, companions.objectApi)
     val (apiHash, nameHashes) = libraryFingerprint(sides) match {
@@ -1409,7 +1308,7 @@ private final class AnalysisCallback(
     )
   }
 
-  private def addProductsAndDeps(base: Analysis, extraHashes: ExtraHashes): Analysis = {
+  private def addProductsAndDeps(base: Analysis): Analysis = {
     import scala.collection.JavaConverters._
     srcs.asScala.foldLeft(base) {
       case (a, src) =>
@@ -1418,7 +1317,7 @@ private final class AnalysisCallback(
           .getOrElse(src, ConcurrentHashMap.newKeySet[(String, String)]())
           .asScala
           .map(_._1)
-        val analyzedApis = classesInSrc.map(analyzeClass(_, extraHashes))
+        val analyzedApis = classesInSrc.map(analyzeClass)
         val info = SourceInfos.makeInfo(
           getOrNil(reporteds.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, src),
           getOrNil(unreporteds.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, src),
