@@ -6,7 +6,7 @@
 Reads RUN_DIR (from `lockstep`: campaign.json and steps.jsonl) and writes OUT_DIR/{campaign,cells,
 steps,phases,cycles,edits}.json, one JSON array each, in the shapes the dashboard reads.
 
-A cell's name is its dashboard id, `s2|s3`-`released|integration`-`released|perf|merkle`: build,
+A cell's name is its dashboard id, `s2|s3`-`released|integration`-`released|perf|merkle|merklenames`: build,
 compiler (base or integration) and Zinc (1.12.x, + fixes, + fixes + Merkle). Step 1 is the clean
 build that starts each cell; steps 2.. are lockstep's rounds in order, ending with the clean build
 in the warm JVM.
@@ -22,7 +22,9 @@ from pathlib import Path
 BUILDS = {"s2": "scala/scala", "s3": "scala/scala3"}
 COMPILERS = {"released": "base", "integration": "integration"}
 ZINCS = {"released": ("1.12.x", "name hashing"), "perf": ("1.12.x + fixes", "name hashing"),
-         "merkle": ("1.12.x + fixes + Merkle", "Merkle")}
+         "merkle": ("1.12.x + fixes + Merkle", "Merkle"),
+         # the Merkle build with hashing left at its default
+         "merklenames": ("1.12.x + fixes + Merkle", "name hashing")}
 # scalac phases by the dashboard's groups; every other phase is a transform.
 GROUPS = {
     "frontend": {"<init phase>", "parser", "namer", "packageobjects"},

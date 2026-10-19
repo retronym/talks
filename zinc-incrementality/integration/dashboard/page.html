@@ -397,8 +397,8 @@ dash.calc('effects', {
     return i < 7 ? dash.colors[(i % 7) + 1] : dash.colors[0];
   };
   const phaseOpacity = (g) => (g === 'zinc-setup' ? 0.45 : g === 'zinc-analysis' ? 0.72 : g.startsWith('zinc') ? 1 : 0.6);
-  const ZINC = [['released', 'Zinc 1.12.x'], ['perf', 'Zinc 1.12.x + fixes'], ['merkle', 'Zinc 1.12.x + fixes + Merkle']];
-  const zincFill = (z) => (z === 'released' ? 'var(--cds-chart-muted)' : z === 'perf' ? dash.colors[2] : dash.colors[0]);
+  const ZINC = [['released', 'Zinc 1.12.x'], ['perf', 'Zinc 1.12.x + fixes'], ['merklenames', 'Zinc 1.12.x + fixes + Merkle, name hashing'], ['merkle', 'Zinc 1.12.x + fixes + Merkle']];
+  const zincFill = (z) => (z === 'released' ? 'var(--cds-chart-muted)' : z === 'perf' ? dash.colors[2] : z === 'merklenames' ? dash.colors[4] : dash.colors[0]);
   const fmt = d3.format(',');
   const mb = (b) => (b >= 10 * 2 ** 30 ? d3.format(',.0f')(b / 2 ** 30) + ' GB' : b >= 2 ** 30 ? d3.format(',.1f')(b / 2 ** 30) + ' GB' : d3.format(',.0f')(b / 2 ** 20) + ' MB');
   const allocOf = (parts) => (parts.some((p) => p.allocBytes != null) ? d3.sum(parts, (p) => p.allocBytes || 0) : null);
@@ -483,7 +483,7 @@ dash.calc('effects', {
   const FILTERS = [
     ['corpus', 'Build', [['scala/scala', 'scala/scala'], ['scala/scala3', 'scala/scala3']]],
     ['compilerKey', 'Compiler', [['released', 'base'], ['integration', 'integration']]],
-    ['zincKey', 'Zinc', [['released', '1.12.x'], ['perf', '+ fixes'], ['merkle', '+ fixes + Merkle']]],
+    ['zincKey', 'Zinc', [['released', '1.12.x'], ['perf', '+ fixes'], ['merklenames', '+ fixes + Merkle, name hashing'], ['merkle', '+ fixes + Merkle']]],
   ];
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -942,7 +942,7 @@ dash.calc('effects', {
     const sel = params();
     const cells = dash.data('cells').data;
     const [corpusKey, comp, z] = sel.cell.split('-');
-    const sibling = `${corpusKey}-${comp}-${z === 'merkle' ? 'perf' : 'merkle'}`;
+    const sibling = `${corpusKey}-${comp}-${z === 'merkle' ? 'perf' : z === 'merklenames' ? 'perf' : 'merkle'}`;
     cycleTable('cyc-a', 'cyc-a-title', sel.cell, sel.step, cells);
     cycleTable('cyc-b', 'cyc-b-title', sibling, sel.step, cells);
   }
