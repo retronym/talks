@@ -65,3 +65,10 @@ title = "Merkle: find upstream ancestors nested in objects or reached through on
 id = "merkle-scala3-nested-names"
 patch = "fixups/merkle-scala3-nested-names.patch"
 title = "Merkle: match Scala 3's names for classes nested in objects"
+
+# New (2026-10-20 bug hunt): the previous member's candidates dropped the name as stored, and a clean
+# build took the output directory for a library; Scala 3 builds over-compiled (pekko 869 vs 156).
+[[members]]
+id = "merkle-own-output-not-library"
+patch = "fixups/merkle-own-output-not-library.patch"
+title = "Merkle: don't take this subproject's output for a library"
