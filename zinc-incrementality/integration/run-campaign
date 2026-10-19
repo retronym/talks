@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Run a lockstep campaign with every cell on a Scala compiler built from an integration branch.
 
-    run-campaign OUT_DIR --build BUILD --edits EDITS --cell NAME=ZINC:SCALA... [-- LOCKSTEP_ARG...]
+    run-campaign OUT_DIR --build BUILD --edits EDITS --cell NAME=ZINC:SCALA[+KEY=VALUE...]... [-- LOCKSTEP_ARG...]
 
 Each cell names a Zinc integration branch and a Scala integration branch, by the suffix after
-`integration/` (e.g. `merkle-1.12.x:2.13.x`). The Zinc checkouts and Scala checkouts are the
+`integration/` (e.g. `merkle-1.12.x:2.13.x`), and optionally incOptions for that cell only after `+`: Merkle is opt-in, so a
+Merkle cell is `s2-integration-merkle=merkle-1.12.x:2.13.x+hashing=merkle`, and the name-hashing cell can
+run on the same Zinc build with no option. The Zinc checkouts and Scala checkouts are the
 build-integration clones in ~/code/.integration (`integration-<branch>`). Each Scala branch is built
 once, optimized as a release is, with `publish-scala2-starr` into its own Ivy home
 (~/code/.integration/starr/<branch>), which skips the build when the branch hasn't moved. Then
@@ -58,20 +60,22 @@ def main():
     ap.add_argument("out_dir", type=Path)
     ap.add_argument("--build", type=Path, required=True)
     ap.add_argument("--edits", type=Path, required=True)
-    ap.add_argument("--cell", action="append", required=True, help="NAME=ZINC_BRANCH:SCALA_BRANCH")
+    ap.add_argument("--cell", action="append", required=True, help="NAME=ZINC_BRANCH:SCALA_BRANCH[+KEY=VALUE...]")
     ap.add_argument("--name", help="the campaign's name on the dashboard")
     a = ap.parse_args(argv)
     out = a.out_dir.resolve()
     cells = []
     for spec in a.cell:
-        name, branches = spec.split("=", 1)
+        name, rest = spec.split("=", 1)
+        branches, *options = rest.split("+")
         zinc, scala = branches.split(":", 1)
-        cells.append((name, zinc, scala))
-    compilers = {scala: build_compiler(scala) for scala in dict.fromkeys(s for _, _, s in cells)}
+        cells.append((name, zinc, scala, options))
+    compilers = {scala: build_compiler(scala) for scala in dict.fromkeys(s for _, _, s, _ in cells)}
     args = [str(HERE / "lockstep"), str(out), "--build", str(a.build), "--edits", str(a.edits)]
-    for name, zinc, scala in cells:
+    for name, zinc, scala, options in cells:
         version, jars = compilers[scala]
         args += ["--cell", f"{name}={INTEGRATION / f'integration-{zinc}'}", "--cell-scala", f"{name}={version}:{jars}"]
+        args += [x for o in options for x in ("--cell-option", f"{name}={o}")]
     args += rest
     out.mkdir(parents=True, exist_ok=True)
     logf = Path(str(out) + ".log")

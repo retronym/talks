@@ -156,6 +156,9 @@ def main():
     ap.add_argument("--build", type=Path, required=True)
     ap.add_argument("--edits", type=Path, required=True)
     ap.add_argument("--cell", action="append", required=True, help="NAME=ZINC_CHECKOUT")
+    ap.add_argument("--cell-option", action="append", default=[],
+                    help="NAME=KEY=VALUE, an incOptions entry for that cell only, after the common --inc-options "
+                         "(e.g. hashing=merkle for a Merkle cell)")
     ap.add_argument("--cell-scala", action="append", default=[],
                     help="NAME=VERSION:JARS, a locally built Scala 2.13 for that cell: its version and its library, "
                          "reflect and compiler jars separated by ':' (scripted's 2.13.local bridge label)")
@@ -203,7 +206,9 @@ def main():
         "machine": machine(),
         "cells": [{"name": c.name, "checkout": str(c.checkout), "commit": git(c.checkout, "rev-parse", "HEAD"),
                    "branch": git(c.checkout, "rev-parse", "--abbrev-ref", "HEAD"),
-                   "scala": scala[c.name][0] if c.name in scala else None} for c in cells],
+                   "scala": scala[c.name][0] if c.name in scala else None,
+                   "options": [s.split("=", 1)[1] for s in a.cell_option if s.split("=", 1)[0] == c.name]}
+                  for c in cells],
     }
     (out / "campaign.json").write_text(json.dumps(campaign, indent=2, default=str) + "\n")
     steps = open(out / "steps.jsonl", "w")
@@ -235,6 +240,8 @@ def main():
             args = ["--build", str(build), "--edits", str(a.edits.resolve()), "--reps", str(a.reps),
                     "--warmup", str(a.warmup), "--label", c.name, "--serve", "--out", str(c.dir / "incbench.jsonl")]
             args += [x for kv in a.inc_option for x in ("--inc-option", kv)]
+            args += [x for spec in a.cell_option if spec.split("=", 1)[0] == c.name
+                     for x in ("--inc-option", spec.split("=", 1)[1])]
             args += (["--verify"] if a.verify else []) + (["--profile"] if a.profile else [])
             args += (["--only", a.only] if a.only else [])
             log(f"{c.name}: clean build and warm-up")
