@@ -23,3 +23,19 @@ title = "Merkle PoC across modules: Spark catalyst → core, traitDirect fix, In
 id = "fixup-83-30"
 patch = "fixups/83-30-hashing-mode.patch"
 title = "Integration: rz#30's Merkle tests opt into hashing=merkle; implicit-scope-grandparent-companion un-pended"
+
+# Cheaper composition and member selection, found by profiling scala/scala's build. It was cut
+# before rz#83 (in rz#24) made Merkle hashing opt-in, so it conflicts with rz#24 in the bridge's
+# member selection (kept: its ancestorDecls under `merkle`, nonPrivateMembers otherwise) and in
+# MerkleHashes.compose (kept: its one-pass compose, with the forwarder suffix); see rr-cache. In
+# integration/merkle-1.12.x it reaches the series as a squashed [1.x] commit in rz#48.
+[[members]]
+id = "rz#63"
+remote = "origin"
+pr = 63
+title = "Merkle: ancestors' declarations without override checks; cheaper composition"
+
+[[members]]
+id = "fixup-83-63"
+patch = "fixups/83-63-hashing-mode.patch"
+title = "Integration: rz#63's merkle-discovery-overridden test opts into hashing=merkle"
