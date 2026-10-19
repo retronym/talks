@@ -66,8 +66,8 @@ def main():
     out = a.out_dir.resolve()
     cells = []
     for spec in a.cell:
-        name, rest = spec.split("=", 1)
-        branches, *options = rest.split("+")
+        name, cell = spec.split("=", 1)
+        branches, *options = cell.split("+")
         zinc, scala = branches.split(":", 1)
         cells.append((name, zinc, scala, options))
     compilers = {scala: build_compiler(scala) for scala in dict.fromkeys(s for _, _, s, _ in cells)}
