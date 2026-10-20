@@ -19,3 +19,9 @@ id = "rz#88"
 remote = "origin"
 pr = 88
 title = "[PoC] Merkle: hash class APIs in the compiler bridge"
+
+[[members]]
+id = "merkle-typed-class-identity"
+remote = "origin"
+branch = "claude/merkle-typed-class-identity"
+title = "Merkle: ancestors reported by the bridge as binary names (onto rz#88)"
