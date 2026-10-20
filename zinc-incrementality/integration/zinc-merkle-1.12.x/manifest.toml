@@ -19,6 +19,12 @@ remote = "origin"
 pr = 89
 title = "[1.x] [PoC] Merkle: hash class APIs in the compiler bridge"
 
+[[members]]
+id = "merkle-typed-class-identity-1.12.x"
+remote = "origin"
+branch = "backport/1.12.x-merkle-typed-class-identity"
+title = "[1.x] Merkle: ancestors reported by the bridge as binary names (onto rz#89)"
+
 # Not Merkle, but it changes how fast every class is hashed, so it is in integration/develop-1.12.x
 # too and the two branches still differ by Merkle alone.
 [[members]]

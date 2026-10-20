@@ -783,6 +783,8 @@ private final class AnalysisCallback(
   private[this] val objectApis = new TrieMap[String, ApiInfo]
   private[this] val classPublicNameHashes = new TrieMap[String, Array[NameHash]]
   private[this] val objectPublicNameHashes = new TrieMap[String, Array[NameHash]]
+  private[this] val classAncestors = new TrieMap[String, Array[String]]
+  private[this] val objectAncestors = new TrieMap[String, Array[String]]
   private[this] val usedNames = new TrieMap[String, mutable.Set[UsedName]]
   private[this] val unreporteds = new TrieMap[VirtualFileRef, ConcurrentLinkedQueue[Problem]]
   private[this] val reporteds = new TrieMap[VirtualFileRef, ConcurrentLinkedQueue[Problem]]
@@ -1131,6 +1133,9 @@ private final class AnalysisCallback(
     storeApi(sourceFile, if (Incremental.apiDebug(options)) fullClass else thinClass, hashes)
   }
 
+  override def ancestors(className: String, module: Boolean, binaryNames: Array[String]): Unit =
+    (if (module) objectAncestors else classAncestors) (className) = binaryNames
+
   private def storeApi(
       sourceFile: VirtualFileRef,
       classApi: ClassLike,
@@ -1358,29 +1363,23 @@ private final class AnalysisCallback(
     }
   }
 
-  private val libraryFiles = new TrieMap[String, Option[VirtualFileRef]]
+  private val libraryFiles = new TrieMap[BinaryName, Option[VirtualFileRef]]
 
   /**
-   * The classpath entry defining a library class, if `name` (as rendered) is one. A class of
-   * this subproject is ruled out by any of its candidate names, not just the one that matches its
-   * binary name: a nested class compiled in this run is known here by its source name only, and
-   * the output directory, already holding its classfile, would otherwise be taken for the library
-   * defining `a.b.C$D`, but only until the next run knows that binary name.
+   * The classpath entry defining a library class, if `name` is one: not a class of this
+   * subproject, compiled in this run or before, nor of another subproject that Zinc analysed.
    */
-  private def libraryFile(name: String): Option[VirtualFileRef] =
+  private def libraryFile(name: BinaryName): Option[VirtualFileRef] =
     libraryFiles.getOrElseUpdate(
       name, {
-        val candidates = LibraryAncestors.binaryNameCandidates(name)
-        val internal = candidates.exists(n => {
-          classApis.contains(n) || objectApis.contains(n) ||
-          internalBinaryToSourceClassName(n).isDefined || isSubprojectClass(n)
-        })
-        if (internal) None
+        val n = name.value
+        if (
+          binaryNameToSourceName.contains(n) || internalBinaryToSourceClassName(n).isDefined ||
+          isSubprojectClass(n)
+        ) None
         else
-          candidates.iterator
-            .flatMap(lookup.lookupOnClasspath(_))
-            .toStream
-            .headOption
+          lookup
+            .lookupOnClasspath(n)
             .filterNot(f => ownOutputs(converter.toPath(f).toAbsolutePath.normalize))
       }
     )
@@ -1398,10 +1397,10 @@ private final class AnalysisCallback(
   }
 
   /** The stamps of the libraries defining a class's library ancestors. See [[LibraryAncestors]]. */
-  private def libraryFingerprint(sides: List[ClassLike]): Option[Int] =
+  private def libraryFingerprint(ancestors: Array[String]): Option[Int] =
     if (!LibraryAncestors.invalidates(options)) None
     else {
-      val files = LibraryAncestors.ancestorNames(sides).flatMap(libraryFile).distinct
+      val files = ancestors.toList.distinct.map(BinaryName(_)).flatMap(libraryFile).distinct
       if (files.isEmpty) None
       else Some(files.map(f => stampReader.library(f).toString).sorted.hashCode)
     }
@@ -1411,7 +1410,9 @@ private final class AnalysisCallback(
     val (companions, apiHash0, extraHash) = companionsWithHash(name, extraHashes)
     val nameHashes0 = nameHashesForCompanions(name)
     val sides = List(companions.classApi, companions.objectApi)
-    val (apiHash, nameHashes1) = libraryFingerprint(sides) match {
+    val ancestors = ancestorsOf(name, companions.classApi, classAncestors)
+    val moduleAncestors = ancestorsOf(name, companions.objectApi, objectAncestors)
+    val (apiHash, nameHashes1) = libraryFingerprint(ancestors ++ moduleAncestors) match {
       case Some(fingerprint) =>
         LibraryAncestors.withFingerprint(apiHash0, nameHashes0, name, sides, fingerprint)
       case None => (apiHash0, nameHashes0)
@@ -1426,9 +1427,47 @@ private final class AnalysisCallback(
       nameHashes,
       hasMacro,
       extraHash,
-      provenance
+      provenance,
+      ancestors,
+      moduleAncestors
     )
   }
+
+  /** A side's ancestors, as the bridge reported them or else from its parents. */
+  private def ancestorsOf(
+      name: String,
+      side: ClassLike,
+      reported: TrieMap[String, Array[String]]
+  ): Array[String] =
+    if (!merkle) NoAncestors
+    else
+      reported.getOrElse(
+        name,
+        LegacyAncestors(side.structure.parents, isClass, upstreamParents(name))
+      )
+
+  private[this] val knownClasses = new TrieMap[String, Boolean]
+
+  /** Whether a class has this binary name, in this subproject, another, or a library. */
+  private def isClass(binaryName: String): Boolean =
+    knownClasses.getOrElseUpdate(
+      binaryName,
+      binaryNameToSourceName.contains(binaryName) ||
+        internalBinaryToSourceClassName(binaryName).isDefined ||
+        isSubprojectClass(binaryName) || lookup.lookupOnClasspath(binaryName).isDefined
+    )
+
+  /** A class's parents in other subprojects, by the inheritance relation, with their ancestors. */
+  private def upstreamParents(name: String): Seq[(String, Array[String])] =
+    extSrcDeps
+      .get(name)
+      .fold(Seq.empty[ExternalDependency])(_.asScala.toSeq)
+      .collect {
+        case d if d.context == DependencyContext.DependencyByInheritance =>
+          (d.targetProductClassName, d.targetClass.ancestors)
+      }
+
+  private[this] val NoAncestors = new Array[String](0)
 
   private def addProductsAndDeps(base: Analysis, extraHashes: Option[ExtraHashes]): Analysis = {
     import scala.collection.JavaConverters._
@@ -1551,10 +1590,7 @@ private final class AnalysisCallback(
     val trimmedAnalysis = merged.copy(
       Stamps.empty,
       APIs(merged.apis.internal, Map.empty),
-      Relations.empty.copy(
-        productClassName = merged.relations.productClassName,
-        externalDependencies = earlyExternalDependencies(merged.relations),
-      ),
+      Relations.empty.copy(productClassName = merged.relations.productClassName),
       SourceInfos.empty,
       Compilations.empty,
     )
@@ -1567,20 +1603,6 @@ private final class AnalysisCallback(
     mergeUpdates() // must merge updates each cycle or else scalac will clobber it
     Incremental.writeEarlyOut(lookup, progress, earlyOutput, merged, knownProducts(merged), log)
   }
-
-  /**
-   * Under Merkle hashing a downstream subproject composes a class's hashes with those of its
-   * upstream ancestors, which it finds through the external inheritance relation (see
-   * [[MerkleHashes]]), so the early analysis keeps that relation.
-   */
-  private def earlyExternalDependencies(relations: Relations): ExternalDependencies =
-    if (!merkle) ExternalDependencies.empty
-    else
-      ExternalDependencies(
-        relations.externalDependencies.dependencies.filter(
-          _._1 == DependencyContext.DependencyByInheritance
-        )
-      )
 
   private def mergeUpdates() = {
     pickleJarPair.foreach {

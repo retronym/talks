@@ -391,7 +391,7 @@ private[inc] abstract class IncrementalCommon(
     Set.empty
 
   /** The classes of the libraries that changed since the previous compile, set before it. */
-  private[inc] var changedLibraryClasses: Set[String] = Set.empty
+  private[inc] var changedLibraryClasses: Set[BinaryName] = Set.empty
 
   def detectAPIChanges(
       recompiledClasses: collection.Set[String],
