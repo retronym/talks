@@ -53,7 +53,12 @@ def main():
                 name = json.loads((d / "campaign.json").read_text())[0]["name"]
             except (OSError, ValueError, LookupError):
                 pass
-            out.append({"id": i, "name": name, "ready": (d / "campaign.json").exists()})
+            live = False
+            try:
+                live = json.loads(((d.parent if d.name == "dash" else d) / "progress.json").read_text())["next"] is not None
+            except (OSError, ValueError, LookupError):
+                pass
+            out.append({"id": i, "name": name, "ready": (d / "campaign.json").exists(), "live": live})
         return out
 
     class Handler(http.server.BaseHTTPRequestHandler):

@@ -41,8 +41,8 @@
     // A run is remembered by name: ids are positions on the server's command line and shift when it restarts.
     const want = new URLSearchParams(location.search).get('run') ?? load('dash-run-name', null);
     const ready = runs.filter((r) => r.ready);
-    run = (ready.find((r) => r.name === want || String(r.id) === String(want)) ?? ready[0] ?? runs[0]).id;
-    sel.replaceChildren(...runs.map((r) => Object.assign(new Option(r.ready ? r.name : r.name + ' (queued)', r.id), { disabled: !r.ready })));
+    run = (ready.find((r) => r.name === want || String(r.id) === String(want)) ?? ready.find((r) => r.live) ?? ready[0] ?? runs[0]).id;
+    sel.replaceChildren(...runs.map((r) => Object.assign(new Option(!r.ready ? r.name + ' (queued)' : r.live ? r.name + ' (running)' : r.name, r.id), { disabled: !r.ready })));
     sel.value = run;
     sel.hidden = runs.length < 2;
     sel.onchange = () => {
