@@ -2,97 +2,28 @@ branch = "integration/merkle"
 repo = "~/code/sbt/zinc"
 push = "origin"
 
-# Conflicts between the Merkle PoC's own name invalidation (rz#41, merged into rz#24) and rz#34/#47
-# are resolved in favour of Merkle's (decision 4); see rr-cache.
+# rz#24 is the curated Merkle series (2026-10-20), stacked on rz#86 (precursors) and under rz#88 (bridge hashing): rz#30, rz#63, the composition cache and the bug-hunt
+# fixes are folded into its units, and IncBench is in integration/develop (incbench-develop).
+# Conflicts between the Merkle PoC's own name invalidation (rz#41, in rz#24) and rz#34/#47 are
+# resolved in favour of Merkle's (decision 4); see rr-cache.
 base = { remote = "origin", branch = "integration/develop" }
 
 [[members]]
 id = "rz#24"
 remote = "origin"
 pr = 24
-title = "[PoC] Merkle name hashes, bridge-side hashing, coarse library ancestors (with merged #25, #29, #31, #38, #39, #41, #55, #56, #72, #78)"
+title = "[PoC] Merkle name hashes and coarse library ancestors, on the precursors of rz#86 (curated; with #30, #63 and the bug-hunt fixes)"
 
 [[members]]
-id = "rz#30"
+id = "rz#88"
 remote = "origin"
-pr = 30
-title = "Merkle PoC across modules: Spark catalyst → core, traitDirect fix, IncBench --verify"
+pr = 88
+title = "[PoC] Merkle: hash class APIs in the compiler bridge"
 
-# rz#83 (in rz#24) makes Merkle hashing opt-in; rz#30's Merkle tests predate it.
+# IncBench and Zinc's phase timings, which rz#24 carried until the curation; the develop counterpart
+# of rz#71. integration/develop has an older IncBench through the conformance members; this one wins.
 [[members]]
-id = "fixup-83-30"
-patch = "fixups/83-30-hashing-mode.patch"
-title = "Integration: rz#30's Merkle tests opt into hashing=merkle; implicit-scope-grandparent-companion un-pended"
-
-# Cheaper composition and member selection, found by profiling scala/scala's build. It was cut
-# before rz#83 (in rz#24) made Merkle hashing opt-in, so it conflicts with rz#24 in the bridge's
-# member selection (kept: its ancestorDecls under `merkle`, nonPrivateMembers otherwise) and in
-# MerkleHashes.compose (kept: its one-pass compose, with the forwarder suffix); see rr-cache. In
-# integration/merkle-1.12.x it reaches the series as a squashed [1.x] commit in rz#48.
-[[members]]
-id = "rz#63"
+id = "incbench-develop"
 remote = "origin"
-pr = 63
-title = "Merkle: ancestors' declarations without override checks; cheaper composition"
-
-[[members]]
-id = "fixup-83-63"
-patch = "fixups/83-63-hashing-mode.patch"
-title = "Integration: rz#63's merkle-discovery-overridden test opts into hashing=merkle"
-
-# The 1.12.x line's 9e99fb249 (in rz#48), which the develop line lacked.
-[[members]]
-id = "merkle-composed-cache"
-patch = "fixups/merkle-composed-cache.patch"
-title = "Merkle: reuse composed classes of an unchanged upstream analysis (rz#48's 9e99fb249)"
-
-# New (2026-10-20 bug hunt): a library ancestor nested in an object or taking type arguments
-# was not recognised, and its descendants undercompiled when the jar changed.
-[[members]]
-id = "merkle-nested-library-ancestors"
-patch = "fixups/merkle-nested-library-ancestors.patch"
-title = "Merkle: name library ancestors that are nested or take type arguments"
-
-# New (2026-10-20 bug hunt): the descendant rules looked upstream ancestors nested in objects up by
-# source name among binary-keyed APIs, and missed parents reached through an object.
-[[members]]
-id = "merkle-upstream-nested-ancestors"
-patch = "fixups/merkle-upstream-nested-ancestors.patch"
-title = "Merkle: find upstream ancestors nested in objects or reached through one"
-
-# New (2026-10-20 bug hunt): Scala 3 names classes nested in objects `p.O$.A`.
-[[members]]
-id = "merkle-scala3-nested-names"
-patch = "fixups/merkle-scala3-nested-names.patch"
-title = "Merkle: match Scala 3's names for classes nested in objects"
-
-# New (2026-10-20 bug hunt): the previous member's candidates dropped the name as stored, and a clean
-# build took the output directory for a library; Scala 3 builds over-compiled (pekko 869 vs 156).
-[[members]]
-id = "merkle-own-output-not-library"
-patch = "fixups/merkle-own-output-not-library.patch"
-title = "Merkle: don't take this subproject's output for a library"
-
-[[members]]
-id = "merkle3-nested-ancestor-stable-test"
-patch = "fixups/merkle3-nested-ancestor-stable-test.patch"
-title = "Test: a Scala 3 class nested in an object keeps its API across a clean build"
-
-# New (2026-10-20): finding 4's open case; hashes composed for a third subproject missed upstream
-# ancestors reached through an object.
-[[members]]
-id = "merkle-upstream-instance-composition"
-patch = "fixups/merkle-upstream-instance-composition.patch"
-title = "Merkle: compose with upstream ancestors reached through an object"
-
-# New (2026-10-20): the mirror rule missed static forwarders for ancestors nested in or reached through an object.
-[[members]]
-id = "merkle-mirror-nested"
-patch = "fixups/merkle-mirror-nested.patch"
-title = "Merkle: static forwarders for ancestors nested in or reached through an object"
-
-# New (2026-10-20): Scala 3 names a constructor `p;C;init;`; the header rule only knew `<init>`.
-[[members]]
-id = "merkle-header-scala3-ctor"
-patch = "fixups/merkle-header-scala3-ctor.patch"
-title = "Merkle: the header rule knows Scala 3's constructor names"
+branch = "claude/incbench-develop"
+title = "IncBench: incremental-compile benchmarks with --verify, and Zinc phase timings"

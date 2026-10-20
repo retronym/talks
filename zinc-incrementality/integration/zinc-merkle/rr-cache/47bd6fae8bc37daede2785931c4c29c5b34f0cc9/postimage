@@ -1,0 +1,1683 @@
+/*
+ * Zinc - The incremental compiler for Scala.
+ * Copyright Scala Center, Lightbend, and Mark Harrah
+ *
+ * Licensed under Apache License 2.0
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
+package sbt
+package internal
+package inc
+
+import java.io.File
+import java.nio.file.{ Files, Path, Paths }
+import java.util as ju
+import ju.{ EnumSet, Optional, UUID }
+import ju.concurrent.atomic.AtomicBoolean
+import sbt.internal.inc.Analysis.{ LocalProduct, NonLocalProduct, computeBytecodeHash }
+import sbt.util.{ InterfaceUtil, Level, Logger }
+import sbt.util.InterfaceUtil.{ jl2l, jo2o, l2jl, t2 }
+
+import scala.jdk.CollectionConverters.*
+import scala.jdk.OptionConverters.*
+import scala.collection.mutable
+import scala.util.control.NonFatal
+import xsbti.{
+  ClassRef,
+  FileConverter,
+  NameKind,
+  Position,
+  Problem,
+  Severity,
+  UseScope,
+  VirtualFile,
+  VirtualFileRef
+}
+import xsbt.api.{ APIUtil, HashAPI, NameHashing }
+import xsbti.api.*
+import xsbti.compile.{
+  AnalysisContents,
+  CompileAnalysis,
+  CompileProgress,
+  DependencyChanges,
+  IncOptions,
+  MiniOptions,
+  MiniSetup,
+  Output,
+  AnalysisStore as XAnalysisStore,
+  ClassFileManager as XClassFileManager
+}
+import xsbti.compile.analysis.{ ReadStamps, Stamp as XStamp }
+
+/**
+ * Helper methods for running incremental compilation.
+ * This is responsible for is adapting any xsbti.AnalysisCallback into one
+ * compatible with the [[sbt.internal.inc.Incremental]] class.
+ */
+object Incremental:
+  class PrefixingLogger(val prefix: String)(orig: Logger) extends Logger:
+    def trace(t: => Throwable): Unit = orig.trace(t)
+    def success(message: => String): Unit = orig.success(message)
+    def log(level: Level.Value, message: => String): Unit = level match
+      case Level.Debug => orig.log(level, message.replaceAll("(?m)^", prefix))
+      case _           => orig.log(level, message)
+
+  /**
+   * This is a callback from AnalysisCallback back up to Zinc code to
+   * perform mid-compilation.
+   *
+   * @param classFileManager
+   */
+  abstract class IncrementalCallback(classFileManager: XClassFileManager):
+
+    /**
+     * Merge latest analysis as of pickling into pruned previous analysis, compute invalidations
+     * and decide whether we need another cycle.
+     */
+    def mergeAndInvalidate(
+        partialAnalysis: Analysis,
+        shouldRegisterCycle: Boolean
+    ): CompileCycleResult
+
+    /**
+     * Merge latest analysis as of analyzer into pruned previous analysis and inform file manager.
+     */
+    def completeCycle(
+        prev: Option[CompileCycleResult],
+        partialAnalysis: Analysis,
+        shouldRegisterCycle: Boolean
+    ): CompileCycleResult
+
+    def previousAnalysisPruned: Analysis
+
+    def previousAnalysis: Analysis
+
+    /**
+     * @return true when the compilation cycle is compiling all the sources; false, otherwise.
+     */
+    def isFullCompilation: Boolean
+  end IncrementalCallback
+
+  sealed trait CompileCycle:
+    def run(
+        sources: Set[VirtualFile],
+        changes: DependencyChanges,
+        incHandler: IncrementalCallback
+    ): CompileCycleResult
+  case class CompileCycleResult(
+      continue: Boolean,
+      nextInvalidations: Set[String],
+      analysis: Analysis
+  )
+  object CompileCycleResult:
+    def apply(
+        continue: Boolean,
+        nextInvalidations: Set[String],
+        analysis: Analysis
+    ): CompileCycleResult =
+      new CompileCycleResult(continue, nextInvalidations, analysis)
+    def empty = CompileCycleResult(false, Set.empty, Analysis.empty)
+
+  /**
+   * Runs the incremental compilation algorithm.
+   *
+   * @param sources The full set of input sources
+   * @param converter FileConverter to convert between Path and VirtualFileRef.
+   * @param lookup An instance of the `Lookup` that implements looking up both classpath elements
+   *               and Analysis object instances by a binary class name.
+   * @param compile The mechanism to run a single 'step' of compile, for ALL source files involved.
+   * @param previous0 The previous dependency Analysis (or an empty one).
+   * @param output The configured output directory/directory mapping for source files.
+   * @param log Where all log messages should go
+   * @param options Incremental compiler options (like name hashing vs. not).
+   * @return A flag of whether or not compilation completed successfully, and the resulting
+   *         dependency analysis object.
+   */
+  def apply(
+      sources: Set[VirtualFile],
+      converter: FileConverter,
+      lookup: Lookup,
+      previous0: CompileAnalysis,
+      options: IncOptions,
+      currentSetup: MiniSetup,
+      stamper: ReadStamps,
+      output: Output,
+      outputJarContent: JarUtils.OutputJarContent,
+      earlyOutput: Option[Output],
+      earlyAnalysisStore: Option[XAnalysisStore],
+      progress: Option[CompileProgress],
+      log: Logger
+  )(
+      compile: (
+          Set[VirtualFile],
+          DependencyChanges,
+          xsbti.AnalysisCallback,
+          XClassFileManager
+      ) => Unit
+  ): (Boolean, Analysis) =
+    log.debug(s"[zinc] IncrementalCompile -----------")
+    val previous = previous0 match
+      case a: Analysis => a
+    val currentStamper = Stamps.initial(stamper)
+
+    val earlyJar = extractEarlyJar(earlyOutput)
+    val pickleJarPair = earlyJar.map { p =>
+      val newName = s"${p.getFileName.toString.stripSuffix(".jar")}-${UUID.randomUUID()}.jar"
+      val updatesJar = p.resolveSibling(newName)
+      PickleJar.touch(
+        updatesJar
+      ) // scalac should create -Ypickle-write jars but it throws FileNotFoundException :-/
+      p -> updatesJar
+    }
+    val earlyRollback = EarlyOutputRollback(earlyJar, earlyAnalysisStore, currentSetup)
+
+    val profiler = options.externalHooks.getInvalidationProfiler
+    val runProfiler = new AdaptedRunProfiler(profiler.profileRun)
+    val incremental: IncrementalCommon = new IncrementalNameHashing(
+      log,
+      options,
+      runProfiler,
+      PackageScope.packagePrefixImplicits(currentSetup)
+    )
+    try
+      incrementalCompile(
+        sources,
+        converter,
+        lookup,
+        previous,
+        currentStamper,
+        (vs, depCh, cb, cfm) =>
+          val startTime = System.nanoTime()
+          compile(vs, depCh, cb, cfm)
+          runProfiler.timeCompilation(startTime, System.nanoTime() - startTime)
+        ,
+        new AnalysisCallback.Builder(
+          lookup.lookupAnalyzedClass(_, _),
+          currentStamper,
+          options,
+          currentSetup,
+          converter,
+          lookup,
+          output,
+          outputJarContent,
+          earlyOutput,
+          earlyRollback.store,
+          pickleJarPair,
+          progress,
+          log
+        ),
+        incremental,
+        options,
+        currentSetup,
+        output,
+        outputJarContent,
+        earlyOutput,
+        progress,
+        log
+      )(using Equiv.universal)
+    catch
+      case e: Throwable =>
+        earlyRollback.rollback(log)
+        e match
+          case _: xsbti.CompileCancelled =>
+            log.info("Compilation has been cancelled")
+            // in case compilation got cancelled potential partial compilation results (e.g. produced class files) got rolled back
+            // and we can report back as there was no change (false) and return a previous Analysis which is still up-to-date
+            (false, previous)
+          case _ => throw e
+    finally runProfiler.registerRun()
+    end try
+  end apply
+
+  def extractEarlyJar(earlyOutput: Option[Output]): Option[Path] =
+    for
+      early <- earlyOutput
+      jar <- jo2o(early.getSingleOutputAsPath)
+    yield jar
+
+  def isPickleJava(scalacOptions: Seq[String]): Boolean = scalacOptions.contains("-Ypickle-java")
+
+  /**
+   * Compile all Java sources.
+   * We are using Incremental class because we still need to perform Analysis so other subprojects
+   * can do incremental compilation.
+   */
+  def compileAllJava(
+      sources: Seq[VirtualFile],
+      converter: FileConverter,
+      lookup: Lookup,
+      previous0: CompileAnalysis,
+      options: IncOptions,
+      currentSetup: MiniSetup,
+      stamper: ReadStamps,
+      output: Output,
+      outputJarContent: JarUtils.OutputJarContent,
+      earlyOutput: Option[Output],
+      earlyAnalysisStore: Option[XAnalysisStore],
+      progress: Option[CompileProgress],
+      log: Logger
+  )(
+      compileJava: (Seq[VirtualFile], xsbti.AnalysisCallback, XClassFileManager) => Unit
+  ): (Boolean, Analysis) =
+    log.debug("[zinc] compileAllJava")
+    val previous = previous0 match
+      case a: Analysis => a
+    val currentStamper = Stamps.initial(stamper)
+    val builder = new AnalysisCallback.Builder(
+      lookup.lookupAnalyzedClass(_, _),
+      currentStamper,
+      options,
+      currentSetup,
+      converter,
+      lookup,
+      output,
+      outputJarContent,
+      earlyOutput,
+      earlyAnalysisStore,
+      None,
+      progress,
+      log
+    )
+    // val profiler = options.externalHooks.getInvalidationProfiler
+    // val runProfiler = new AdaptedRunProfiler(profiler.profileRun)
+    // val incremental: IncrementalCommon = new IncrementalNameHashing(log, options, runProfiler)
+    val callback = builder.build(previous)
+    try
+      val analysis = withClassfileManager(options, converter, output, outputJarContent) {
+        classFileManager =>
+          // See IncrementalCommon.scala's completeCycle
+          def completeCycle(partialAnalysis: Analysis): Analysis =
+            val a1 = previous ++ partialAnalysis
+            val products = partialAnalysis.relations.allProducts
+              .map(converter.toVirtualFile(_))
+            classFileManager.generated(products.toArray)
+            a1
+          compileJava(sources, callback, classFileManager)
+          val a0 = callback.getPostJavaAnalysis
+          completeCycle(a0)
+      }
+      (sources.nonEmpty, analysis)
+    catch
+      case _: xsbti.CompileCancelled =>
+        log.info("Compilation has been cancelled")
+        // in case compilation got cancelled potential partial compilation results (e.g. produced class files) got rolled back
+        // and we can report back as there was no change (false) and return a previous Analysis which is still up-to-date
+        (false, previous)
+    end try
+  end compileAllJava
+
+  /**
+   * Runs the incremental compiler algorithm.
+   *
+   * @param sources   The sources to compile
+   * @param converter FileConverter to convert between Path and VirtualFileRef.
+   * @param lookup
+   *              An instance of the `Lookup` that implements looking up both classpath elements
+   *              and Analysis object instances by a binary class name.
+   * @param previous0 The previous dependency Analysis (or an empty one).
+   * @param current  A mechanism for generating stamps (timestamps, hashes, etc).
+   * @param compile  The function which can run one level of compile.
+   * @param callbackBuilder The builder that builds callback where we report dependency issues.
+   * @param log  The log where we write debugging information
+   * @param options  Incremental compilation options
+   * @param outputJarContent Object that holds cached content of output jar
+   * @param equivS  The means of testing whether two "Stamps" are the same.
+   * @return
+   *         A flag of whether or not compilation completed successfully, and the resulting dependency analysis object.
+   */
+  def incrementalCompile(
+      sources: Set[VirtualFile],
+      converter: FileConverter,
+      lookup: Lookup,
+      previous0: CompileAnalysis,
+      current: ReadStamps,
+      compile: (
+          Set[VirtualFile],
+          DependencyChanges,
+          xsbti.AnalysisCallback,
+          XClassFileManager
+      ) => Unit,
+      callbackBuilder: AnalysisCallback.Builder,
+      incremental: IncrementalCommon,
+      options: IncOptions,
+      currentSetup: MiniSetup,
+      output: Output,
+      outputJarContent: JarUtils.OutputJarContent,
+      earlyOutput: Option[Output],
+      progress: Option[CompileProgress],
+      log: sbt.util.Logger
+  )(implicit equivS: Equiv[XStamp]): (Boolean, Analysis) =
+    log.debug("IncrementalCompile.incrementalCompile")
+    val previous = previous0 match
+      case a: Analysis => a
+    val initialChanges =
+      incremental.detectInitialChanges(sources, previous, current, lookup, converter, output)
+    val binaryChanges = new DependencyChanges:
+      override def modifiedBinaries: Array[File] =
+        modifiedLibraries.map(converter.toPath(_).toFile)
+      override val modifiedLibraries = initialChanges.libraryDeps.toArray
+      override val modifiedClasses = initialChanges.external.allModified.toArray
+      def isEmpty = modifiedLibraries.isEmpty && modifiedClasses.isEmpty
+    incremental.previousAPIs = previous.apis
+    incremental.changedLibraryClasses =
+      if !LibraryAncestors.invalidates(options) then Set.empty
+      else LibraryAncestors.classesOf(initialChanges.libraryDeps, previous.relations, converter)
+    val (initialInvClasses, initialInvSources0) =
+      incremental.invalidateInitial(previous.relations, initialChanges)
+
+    // During early output, if there's any compilation at all, invalidate all Java sources too, so the downstream Scala subprojects would have type information via early output (pickle jar).
+    val javaSources: Set[VirtualFileRef] = sources.collect {
+      case s: VirtualFileRef if s.id.endsWith(".java") => s
+    }
+    val scalacOptions = currentSetup.options.scalacOptions
+    val earlyJar = extractEarlyJar(earlyOutput)
+    val isPickleWrite = scalacOptions.contains("-Ypickle-write")
+    if earlyOutput.isDefined || isPickleWrite then
+      val idx = scalacOptions.indexOf("-Ypickle-write")
+      val p =
+        if !isPickleWrite || scalacOptions.size <= idx + 1 then None
+        else Some(Paths.get(scalacOptions(idx + 1)))
+      (p, earlyJar) match
+        case (None, _) =>
+          if isPickleWrite then log.warn(s"expected -Ypickle-write <path> but <path> is missing")
+          else
+            log.warn(
+              s"-Ypickle-write should be included into scalacOptions if early output is defined"
+            )
+        case (x1, x2) if x1 == x2 => ()
+        case _                    =>
+          sys.error(
+            s"early output must match -Ypickle-write path '$p' but was '$earlyJar' instead"
+          )
+    val pickleJava = isPickleJava(scalacOptions.toIndexedSeq)
+    val hasModified = initialInvClasses.nonEmpty || initialInvSources0.nonEmpty
+    if javaSources.nonEmpty && earlyOutput.isDefined && !pickleJava then
+      log.warn(
+        s"-Ypickle-java should be included into scalacOptions if early output is enabled with Java sources"
+      )
+    val initialInvSources =
+      if pickleJava && hasModified then initialInvSources0 ++ javaSources
+      else initialInvSources0
+    if hasModified then
+      incremental.invalidationLog.debug(
+        InvalidationLog.section(
+          "Initial invalidation outcome",
+          Seq(
+            "classes" -> initialInvClasses,
+            "sources" -> initialInvSources.map(_.id),
+          )
+        )
+      )
+
+    val hasSubprojectChange = initialChanges.external.apiChanges.nonEmpty
+
+    /**
+     * Records the current API of every upstream class whose change this run has processed. A
+     * recompiled class records the upstream APIs it depends on, but a descendant that the rules
+     * skip records nothing, and a stale record would hide the next change to that class.
+     */
+    def refreshExternalAPIs(analysis: Analysis): Analysis =
+      if !hasSubprojectChange then analysis
+      else
+        analysis.copy(
+          apis = initialChanges.external.allModified.foldLeft[APIs](analysis.apis) {
+            (apis, clazz) =>
+              lookup.lookupAnalyzedClass(clazz, None) match
+                case Some(ac) if apis.external.contains(clazz) => apis.markExternalAPI(clazz, ac)
+                case _                                         => apis
+          }
+        )
+
+    val analysis = withClassfileManager(options, converter, output, outputJarContent) {
+      classfileManager =>
+        if hasModified then
+          refreshExternalAPIs(incremental.cycle(
+            initialInvClasses,
+            initialInvSources,
+            sources,
+            converter,
+            binaryChanges,
+            lookup,
+            previous,
+            doCompile(compile, callbackBuilder, classfileManager),
+            classfileManager,
+            output,
+            1,
+            initialInvSources -- initialInvSources0,
+          ))
+        else
+          val analysis =
+            if hasSubprojectChange then
+              previous.copy(
+                apis = initialChanges.external.allModified.foldLeft[APIs](previous.apis) {
+                  (apis, clazz) =>
+                    lookup.lookupAnalyzedClass(clazz, None) match
+                      case Some(ac) => apis.markExternalAPI(clazz, ac)
+                      case _        => apis
+                }
+              )
+            else previous
+          if earlyOutput.isDefined then
+            val available =
+              lookup.shouldDoEarlyOutput(analysis) && callbackBuilder.lastCompileWroteEarlyOutput
+            writeEarlyOut(progress, earlyOutput, available, new java.util.HashSet, log)
+          analysis
+    }
+    (hasModified || hasSubprojectChange, analysis)
+  end incrementalCompile
+
+  /**
+   * Compilation unit in each compile cycle.
+   */
+  def doCompile(
+      compile: (
+          Set[VirtualFile],
+          DependencyChanges,
+          xsbti.AnalysisCallback,
+          XClassFileManager
+      ) => Unit,
+      callbackBuilder: AnalysisCallback.Builder,
+      classFileManager: XClassFileManager
+  ): CompileCycle = new CompileCycle:
+    override def run(
+        srcs: Set[VirtualFile],
+        changes: DependencyChanges,
+        incHandler: IncrementalCallback
+    ): CompileCycleResult =
+      // Note `ClassFileManager` is shared among multiple cycles in the same incremental compile run,
+      // in order to rollback entirely if transaction fails. `AnalysisCallback` is used by each cycle
+      // to report its own analysis individually.
+      val callback = callbackBuilder.build(incHandler)
+      compile(srcs, changes, callback, classFileManager)
+      callback.getCycleResultOnce
+
+  // the name of system property that was meant to enable debugging mode of incremental compiler but
+  // it ended up being used just to enable debugging of relations. That's why if you migrate to new
+  // API for configuring incremental compiler (IncOptions) it's enough to control value of `relationsDebug`
+  // flag to achieve the same effect as using `incDebugProp`.
+  @deprecated("Use `IncOptions.relationsDebug` flag to enable debugging of relations.", "0.13.2")
+  val incDebugProp = "xsbt.inc.debug"
+
+  private[inc] val apiDebugProp = "xsbt.api.debug"
+  private[inc] def apiDebug(options: IncOptions): Boolean =
+    options.apiDebug || java.lang.Boolean.getBoolean(apiDebugProp)
+
+  /** The implicit name hash a class publishes for the implicit scope it inherits. */
+  private[inc] val InheritedImplicitScope = "<inherited implicit scope>"
+
+  /** The hash of the implicit name hashes among `nameHashes`, if there are any. */
+  private[inc] def implicitScopeHash(nameHashes: Array[NameHash]): Option[Int] =
+    val implicits = nameHashes.iterator.collect {
+      case nh if nh.scope == UseScope.Implicit => (nh.name, nh.hash)
+    }.toSet
+    if implicits.isEmpty then None else Some(implicits.hashCode)
+
+  private[sbt] def prune(
+      invalidatedSrcs: Set[VirtualFile],
+      previous0: CompileAnalysis,
+      output: Output,
+      outputJarContent: JarUtils.OutputJarContent,
+      converter: FileConverter,
+      incOptions: IncOptions
+  ): Analysis =
+    val previous = previous0.asInstanceOf[Analysis]
+    IncrementalCommon.pruneClassFilesOfInvalidations(
+      invalidatedSrcs,
+      previous,
+      ClassFileManager.getClassFileManager(incOptions, output, outputJarContent),
+      converter
+    )
+
+  private[sbt] def withClassfileManager[T](
+      options: IncOptions,
+      converter: FileConverter,
+      output: Output,
+      outputJarContent: JarUtils.OutputJarContent
+  )(run: XClassFileManager => T): T =
+    val classfileManager =
+      ClassFileManager.getClassFileManager(options, output, outputJarContent)
+    val result =
+      try run(classfileManager)
+      catch
+        case e: Throwable =>
+          classfileManager.complete(false)
+          throw e
+    classfileManager.complete(true)
+    result
+
+  private[inc] def writeEarlyOut(
+      progress: Option[CompileProgress],
+      earlyOutput: Option[Output],
+      available: Boolean,
+      knownProducts: java.util.Set[String],
+      log: Logger,
+  ) =
+    for
+      earlyO <- earlyOutput
+      pickleJar <- jo2o(earlyO.getSingleOutputAsPath)
+    do
+      PickleJar.write(pickleJar, knownProducts, log)
+      progress.foreach(_.afterEarlyOutput(available))
+end Incremental
+
+/**
+ * Restores the early output and early analysis of the last successful compile when a compile
+ * fails. With pipelining, a compile writes its early output before it is known to succeed (for
+ * Scala 2, before refchecks). If that output survived a failure, a later compile with no changes
+ * would hand it to downstream subprojects again.
+ *
+ * The early jar is only appended to and its index rewritten, so restoring its earlier index
+ * restores its contents, in place.
+ */
+private final class EarlyOutputRollback(
+    earlyJar: Option[Path],
+    earlyAnalysisStore: Option[XAnalysisStore],
+    currentSetup: MiniSetup
+):
+  private val earlyJarIndex: Option[IndexBasedZipFsOps.CentralDir] =
+    earlyJar.filter(Files.exists(_)).map(p => IndexBasedZipFsOps.readCentralDir(p.toFile))
+  @volatile private var previousEarlyAnalysis: Option[Optional[AnalysisContents]] = None
+
+  val store: Option[XAnalysisStore] = earlyAnalysisStore.map { underlying =>
+    new XAnalysisStore:
+      override def get(): Optional[AnalysisContents] = underlying.get()
+      override def unsafeGet(): AnalysisContents = underlying.unsafeGet()
+      override def set(contents: AnalysisContents): Unit =
+        EarlyOutputRollback.this.synchronized {
+          if previousEarlyAnalysis.isEmpty then previousEarlyAnalysis = Some(underlying.get())
+        }
+        underlying.set(contents)
+  }
+
+  def rollback(log: Logger): Unit =
+    try
+      earlyJar.filter(Files.exists(_)).foreach { p =>
+        earlyJarIndex match
+          case Some(index) => IndexBasedZipFsOps.writeCentralDir(p.toFile, index)
+          case None        =>
+            IndexBasedZipFsOps.removeEntries(p.toFile, IndexBasedZipFsOps.listEntries(p.toFile))
+      }
+      for
+        underlying <- earlyAnalysisStore
+        previous <- previousEarlyAnalysis
+      do
+        underlying.set(
+          previous.orElse(AnalysisContents.create(Analysis.empty, currentSetup))
+        )
+    catch
+      case NonFatal(e) =>
+        log.warn(s"Failed to restore the early output of the last successful compile: $e")
+end EarlyOutputRollback
+
+/**
+ * With pipelining, this runs `onDependenciesSent` once the compiler has sent its dependencies and called
+ * `dependencyPhaseCompleted`.
+ *
+ * Scala 3.8.3 and 3.9 call `dependencyPhaseCompleted` before they actually send the dependencies, which
+ * only happens in the Inlining phase (scala/scala3#27125). As a workaround, zinc waits for the inlining
+ * phase to complete.
+ *
+ * Concurrency: phases are reported once per unit, `dependencyPhaseCompleted` is called on another thread.
+ */
+private[sbt] final class CompilerPhaseListener(
+    waitForInlining: Boolean,
+    onDependenciesSent: () => Unit
+):
+  @volatile private var dependenciesSent = !waitForInlining
+  @volatile private var compilerStarted = false
+  private var inliningStarted = false
+  private var dependencyPhaseCompletedCalled = false
+  private var notified = false
+
+  def phaseStarted(phase: String): Unit =
+    compilerStarted = true
+    if !dependenciesSent then
+      notifyIfReady {
+        if phase == "inlining" then inliningStarted = true
+        else if inliningStarted then dependenciesSent = true
+      }
+
+  def dependencyPhaseCompleted(): Unit = notifyIfReady { dependencyPhaseCompletedCalled = true }
+
+  /** For a run that did not reach the phase after Inlining, such as one with only Java sources. */
+  def runCompleted(): Unit = notifyIfReady { dependenciesSent = true }
+
+  /** The compiler ran but never called `dependencyPhaseCompleted`. */
+  def dependencyPhaseCompletedMissing: Boolean =
+    synchronized(compilerStarted && !dependencyPhaseCompletedCalled)
+
+  private def notifyIfReady(update: => Unit): Unit =
+    val ready = synchronized {
+      update
+      val ready = !notified && dependenciesSent && dependencyPhaseCompletedCalled
+      if ready then notified = true
+      ready
+    }
+    if ready then onDependenciesSent()
+
+  /** Tells this listener about phases and forwards everything to `progress`. */
+  def progress(progress: Option[CompileProgress]): CompileProgress =
+    new CompileProgress:
+      override def startUnit(phase: String, unitPath: String): Unit =
+        phaseStarted(phase)
+        progress.foreach(_.startUnit(phase, unitPath))
+      override def advance(current: Int, total: Int, prevPhase: String, nextPhase: String) =
+        progress.forall(_.advance(current, total, prevPhase, nextPhase))
+      override def afterEarlyOutput(success: Boolean): Unit =
+        progress.foreach(_.afterEarlyOutput(success))
+end CompilerPhaseListener
+
+/** A callback whose compiler progress goes through `phaseListener`. */
+private[sbt] trait HasCompilerPhaseListener:
+  def phaseListener: CompilerPhaseListener
+
+private object AnalysisCallback:
+
+  /** Allow creating new callback instance to be used in each compile iteration */
+  class Builder(
+      externalAPI: (String, Option[VirtualFileRef]) => Option[AnalyzedClass],
+      stampReader: ReadStamps,
+      options: IncOptions,
+      currentSetup: MiniSetup,
+      converter: FileConverter,
+      lookup: Lookup,
+      output: Output,
+      outputJarContent: JarUtils.OutputJarContent,
+      earlyOutput: Option[Output],
+      earlyAnalysisStore: Option[XAnalysisStore],
+      pickleJarPair: Option[(Path, Path)],
+      progress: Option[CompileProgress],
+      log: Logger
+  ):
+    def build(incHandler: Incremental.IncrementalCallback): AnalysisCallback =
+      buildImpl(Some(incHandler))
+
+    /**
+     * An AnalysisCallback without IncHandler, for compiling Java alone (with pipelining, after
+     * Scala). Its dependencies on classes of `previous` are internal: without the lookup they were
+     * recorded as dependencies on another subproject, through this one's own analysis.
+     */
+    def build(previous: Analysis): AnalysisCallback = buildImpl(None, Some(previous))
+
+    /**
+     * A compile that writes no early output leaves an empty early analysis, see
+     * `AnalysisCallback.getCycleResultOnce`. The early output on disk is then stale.
+     */
+    def lastCompileWroteEarlyOutput: Boolean =
+      earlyAnalysisStore.forall(_.get.toScala.exists(_.getAnalysis match
+        case a: Analysis => a.apis.internal.nonEmpty
+        case _           => false))
+
+    private def buildImpl(
+        incHandlerOpt: Option[Incremental.IncrementalCallback],
+        previous: Option[Analysis] = None
+    ) =
+      val previousAnalysisOpt = incHandlerOpt.map(_.previousAnalysisPruned).orElse(previous)
+      val binaryToSourceLookup: String => Option[String] = previousAnalysisOpt match
+        case Some(analysis) => (binaryClassName: String) =>
+            analysis.relations.productClassName.reverse(binaryClassName).headOption
+        case None => _ => None
+      new AnalysisCallback(
+        binaryToSourceLookup,
+        externalAPI,
+        stampReader,
+        options,
+        currentSetup,
+        outputJarContent,
+        converter,
+        lookup,
+        output,
+        earlyOutput,
+        earlyAnalysisStore,
+        pickleJarPair,
+        progress,
+        incHandlerOpt,
+        log
+      )
+    end buildImpl
+  end Builder
+end AnalysisCallback
+
+private final class AnalysisCallback(
+    internalBinaryToSourceClassName: String => Option[String],
+    externalAPI: (String, Option[VirtualFileRef]) => Option[AnalyzedClass],
+    stampReader: ReadStamps,
+    options: IncOptions,
+    currentSetup: MiniSetup,
+    outputJarContent: JarUtils.OutputJarContent,
+    converter: FileConverter,
+    lookup: Lookup,
+    output: Output,
+    earlyOutput: Option[Output],
+    earlyAnalysisStore: Option[XAnalysisStore],
+    pickleJarPair: Option[(Path, Path)],
+    progress: Option[CompileProgress],
+    incHandlerOpt: Option[Incremental.IncrementalCallback],
+    log: Logger
+) extends xsbti.AnalysisCallback5, HasCompilerPhaseListener:
+
+  private val merkle = Hashing.isMerkle(options)
+
+  private val subprojectClasses = new scala.collection.concurrent.TrieMap[String, Boolean]
+
+  private val externalAPIs = new scala.collection.concurrent.TrieMap[String, Option[AnalyzedClass]]
+
+  override def isSubprojectClass(binaryClassName: String): Boolean =
+    subprojectClasses.getOrElseUpdate(
+      binaryClassName,
+      lookup.lookupAnalysis(binaryClassName).isDefined
+    )
+
+  override def merkleHashing(): Boolean = merkle
+
+  override def materialiseLibraryMembers(binaryClassName: String): Boolean =
+    !LibraryAncestors.coarse(options)
+  import Incremental.CompileCycleResult
+
+  // This must have a unique value per AnalysisCallback
+  private val compileStartTime: Long = System.currentTimeMillis()
+  private val compilation: Compilation = Compilation(compileStartTime, output)
+
+  private val hooks = options.externalHooks
+  private val provenance =
+    jo2o(output.getSingleOutputAsPath).fold("")(hooks.getProvenance.get(_)).intern
+
+  override def toString =
+    (List("Class APIs", "Object APIs", "Library deps", "Products", "Source deps") zip
+      List(classApis, objectApis, libraryDeps, nonLocalClasses, intSrcDeps))
+      .map { case (label, map) => label + "\n\t" + map.mkString("\n\t") }
+      .mkString("\n")
+
+  private val emptyApiHash = -1
+
+  case class ApiInfo(
+      publicHash: HashAPI.Hash,
+      extraHash: HashAPI.Hash,
+      classLike: ClassLike
+  )
+
+  import java.util.concurrent.{ ConcurrentLinkedQueue, ConcurrentHashMap }
+  import scala.collection.concurrent.TrieMap
+
+  private type ConcurrentSet[A] = ConcurrentHashMap.KeySetView[A, java.lang.Boolean]
+
+  private val srcs = ConcurrentHashMap.newKeySet[VirtualFile]()
+  private val classApis = new TrieMap[String, ApiInfo]
+  private val objectApis = new TrieMap[String, ApiInfo]
+  private val classPublicNameHashes = new TrieMap[String, Array[NameHash]]
+  private val objectPublicNameHashes = new TrieMap[String, Array[NameHash]]
+  private val usedNames = new TrieMap[String, mutable.Set[UsedName]]
+  private val unreporteds = new TrieMap[VirtualFileRef, ConcurrentLinkedQueue[Problem]]
+  private val reporteds = new TrieMap[VirtualFileRef, ConcurrentLinkedQueue[Problem]]
+  private val mainClasses = new TrieMap[VirtualFileRef, ConcurrentLinkedQueue[String]]
+  private val libraryDeps = new TrieMap[VirtualFileRef, ConcurrentSet[VirtualFile]]
+
+  // source file to set of generated (class file, binary class name); only non local classes are stored here
+  private val nonLocalClasses =
+    new TrieMap[VirtualFileRef, ConcurrentSet[(VirtualFileRef, String)]]
+  private val localClasses = new TrieMap[VirtualFileRef, ConcurrentSet[VirtualFileRef]]
+  // mapping between src class name and binary (flat) class name for classes generated from src file
+  private val classNames = new TrieMap[VirtualFileRef, ConcurrentSet[(String, String)]]
+  // generated class name to its source class name
+  private val binaryNameToSourceName = new TrieMap[String, String]
+  // internal source dependencies
+  private val intSrcDeps = new TrieMap[String, ConcurrentSet[InternalDependency]]
+  // external source dependencies
+  private val extSrcDeps = new TrieMap[String, ConcurrentSet[ExternalDependency]]
+  // Parents of the class side only. `trait B extends A` and `object B extends A` are one
+  // edge in the relations above, but only the trait's members reach B's inheritors.
+  private val typeParents = new TrieMap[String, ConcurrentSet[String]]
+  // the same for parents in other projects, whose hash is all this compile has of them
+  private val externalTypeParentHashes = new TrieMap[String, ConcurrentSet[HashAPI.Hash]]
+  // Parents of the object side, which, unlike for extraHash, do reach the implicit scope of its
+  // singleton type: `object O extends B` puts B's companion in the implicit scope of `O.type`
+  private val termParents = new TrieMap[String, ConcurrentSet[String]]
+  // the implicit scope of parents in other projects, of either side, see InheritedImplicitScopes
+  private val externalParentImplicitScopes = new TrieMap[String, ConcurrentSet[Int]]
+  private val binaryClassName = new TrieMap[VirtualFile, String]
+  // source files containing a macro def.
+  private val macroClasses = ConcurrentHashMap.newKeySet[String]()
+  // source files containing a Java annotation definition
+  private val annotationClasses = ConcurrentHashMap.newKeySet[String]()
+
+  // Results of invalidation calculations (including whether to continue cycles) - the analysis at this point is
+  // not useful and so isn't included.
+  @volatile private var invalidationResults: Option[CompileCycleResult] = None
+
+  private def add[A, B](map: TrieMap[A, ConcurrentSet[B]], a: A, b: B): Unit =
+    map.getOrElseUpdate(a, ConcurrentHashMap.newKeySet[B]()).add(b)
+    ()
+
+  override def isPickleJava: Boolean =
+    currentSetup.options.scalacOptions.contains("-Ypickle-java")
+
+  override def getPickleJarPair = pickleJarPair.map { case (p1, p2) => t2((p1, p2)) }.toJava
+
+  override def startSource(source: File): Unit = startSource(converter.toVirtualFile(source.toPath))
+  override def startSource(source: VirtualFile): Unit =
+    if options.strictMode() then
+      assert(
+        !srcs.contains(source),
+        s"The startSource can be called only once per source file: $source"
+      )
+    srcs.add(source)
+    ()
+
+  override def toVirtualFile(path: Path): VirtualFile = converter.toVirtualFile(path)
+
+  override def problem2(
+      category: String,
+      pos: Position,
+      msg: String,
+      severity: Severity,
+      reported: Boolean,
+      rendered: Optional[String],
+      diagnosticCode: Optional[xsbti.DiagnosticCode],
+      diagnosticRelatedInformation: ju.List[xsbti.DiagnosticRelatedInformation],
+      actions: ju.List[xsbti.Action],
+  ): Unit =
+    for
+      path <- jo2o(pos.sourcePath())
+    do
+      val source = VirtualFileRef.of(path)
+      val map = if reported then reporteds else unreporteds
+      map
+        .getOrElseUpdate(source, new ConcurrentLinkedQueue)
+        .add(InterfaceUtil.problem(
+          cat = category,
+          pos = pos,
+          msg = msg,
+          sev = severity,
+          rendered = jo2o(rendered),
+          diagnosticCode = jo2o(diagnosticCode),
+          diagnosticRelatedInformation = jl2l(diagnosticRelatedInformation),
+          actions = jl2l(actions),
+        ))
+
+  override def problem(
+      category: String,
+      pos: Position,
+      msg: String,
+      severity: Severity,
+      reported: Boolean
+  ): Unit =
+    problem2(
+      category = category,
+      pos = pos,
+      msg = msg,
+      severity = severity,
+      reported = reported,
+      rendered = Optional.empty(),
+      diagnosticCode = Optional.empty(),
+      diagnosticRelatedInformation = l2jl(Nil),
+      actions = l2jl(Nil),
+    )
+
+  /**
+   * A class's dependencies on itself are dropped, except by local inheritance: a local or
+   * anonymous subclass of a trait, declared in the trait or its companion, is charged to the
+   * trait's own name. It mixes the trait in, so it holds forwarders and fields for members the
+   * trait inherits, and under Merkle hashing the edge is how invalidation finds it when the trait
+   * itself is not recompiled.
+   */
+  private def internalClassDependency(
+      onClassName: String,
+      sourceClass: ClassRef,
+      context: DependencyContext
+  ): Unit =
+    val sourceClassName = sourceClass.name
+    if onClassName != sourceClassName ||
+      merkle && context == DependencyContext.LocalDependencyByInheritance
+    then
+      add(intSrcDeps, sourceClassName, InternalDependency.of(sourceClassName, onClassName, context))
+      if context == DependencyContext.DependencyByInheritance then
+        if sourceClass.kind == NameKind.Type then add(typeParents, sourceClassName, onClassName)
+        else add(termParents, sourceClassName, onClassName)
+
+  override def classDependency(
+      onClass: ClassRef,
+      sourceClass: ClassRef,
+      context: DependencyContext
+  ): Unit = internalClassDependency(onClass.name, sourceClass, context)
+
+  // For older bridges that do not report name kinds
+  def classDependency(onClassName: String, sourceClassName: String, context: DependencyContext) =
+    // Passing `NameKind.Type` is safe, it over-approximates in case it's a term (see internalClassDependency)
+    internalClassDependency(onClassName, ClassRef.of(sourceClassName, NameKind.Type), context)
+
+  private def externalLibraryDependency(
+      binary: VirtualFile,
+      className: String,
+      source: VirtualFileRef,
+      context: DependencyContext
+  ): Unit =
+    // Break ties via lexicographic ordering on the className, which ensures a stable
+    // representative class name is picked for each binary avoiding non-deterministic output
+    binaryClassName.updateWith(binary) {
+      case Some(existing) if className.compareTo(existing) >= 0 => Some(existing)
+      case _                                                    => Some(className)
+    }
+    add(libraryDeps, source, binary)
+
+  private def externalSourceDependency(
+      sourceClass: ClassRef,
+      targetBinaryClassName: String,
+      targetClass: AnalyzedClass,
+      context: DependencyContext
+  ): Unit =
+    val sourceClassName = sourceClass.name
+    val dependency =
+      ExternalDependency.of(sourceClassName, targetBinaryClassName, targetClass, context)
+    add(extSrcDeps, sourceClassName, dependency)
+    if context == DependencyContext.DependencyByInheritance then
+      if sourceClass.kind == NameKind.Type then
+        add(externalTypeParentHashes, sourceClassName, targetClass.extraHash())
+      Incremental
+        .implicitScopeHash(targetClass.nameHashes())
+        .foreach(add(externalParentImplicitScopes, sourceClassName, _))
+
+  // Called by sbt-dotty
+  override def binaryDependency(
+      classFile: File,
+      onBinaryClassName: String,
+      fromClassName: String,
+      fromSourceFile: File,
+      context: DependencyContext
+  ): Unit =
+    binaryDependency(
+      classFile.toPath,
+      onBinaryClassName,
+      fromClassName,
+      converter.toVirtualFile(fromSourceFile.toPath),
+      context
+    )
+
+  // See the note on the String overload of `classDependency`.
+  override def binaryDependency(
+      classFile: Path,
+      onBinaryClassName: String,
+      fromClassName: String,
+      fromSourceFile: VirtualFileRef,
+      context: DependencyContext
+  ): Unit =
+    binaryDependency(
+      classFile,
+      onBinaryClassName,
+      ClassRef.of(fromClassName, NameKind.Type),
+      fromSourceFile,
+      context
+    )
+
+  // since the binary at this point could either *.class files or
+  // library JARs, we need to accept Path here.
+  override def binaryDependency(
+      classFile: Path,
+      onBinaryClassName: String,
+      fromClass: ClassRef,
+      fromSourceFile: VirtualFileRef,
+      context: DependencyContext
+  ): Unit =
+    internalBinaryToSourceClassName(onBinaryClassName) match
+      case Some(dependsOn) => // dependsOn is a source class name
+        // dependency is a product of a source not included in this compilation
+        internalClassDependency(dependsOn, fromClass, context)
+      case None =>
+        binaryNameToSourceName.get(onBinaryClassName) match
+          case Some(dependsOn) =>
+            // dependency is a product of a source in this compilation step,
+            //  but not in the same compiler run (as in javac v. scalac)
+            internalClassDependency(dependsOn, fromClass, context)
+          case None =>
+            externalDependency(classFile, onBinaryClassName, fromClass, fromSourceFile, context)
+
+  private def externalDependency(
+      classFile: Path,
+      onBinaryName: String,
+      sourceClass: ClassRef,
+      sourceFile: VirtualFileRef,
+      context: DependencyContext
+  ): Unit =
+    // TODO: handle library JARs and rt.jar.
+    val vf = converter.toVirtualFile(classFile)
+    externalAPIs.getOrElseUpdate(onBinaryName, externalAPI(onBinaryName, Some(vf))) match
+      case Some(api) =>
+        // dependency is a product of a source in another project
+        val targetBinaryClassName = onBinaryName
+        externalSourceDependency(sourceClass, targetBinaryClassName, api, context)
+      case None =>
+        // dependency is some other binary on the classpath.
+        // exclude dependency tracking with rt.jar, for example java.lang.String -> rt.jar.
+        if !vf.id.endsWith("rt.jar") then
+          externalLibraryDependency(
+            vf,
+            onBinaryName,
+            sourceFile,
+            context
+          )
+  end externalDependency
+
+  // Called by sbt-dotty
+  override def generatedNonLocalClass(
+      source: File,
+      classFile: File,
+      binaryClassName: String,
+      srcClassName: String
+  ): Unit =
+    generatedNonLocalClass(
+      converter.toVirtualFile(source.toPath),
+      classFile.toPath,
+      binaryClassName,
+      srcClassName
+    )
+
+  override def generatedNonLocalClass(
+      source: VirtualFileRef,
+      classFile: Path,
+      binaryClassName: String,
+      srcClassName: String
+  ): Unit =
+    // println(s"Generated non local class ${source}, ${classFile}, ${binaryClassName}, ${srcClassName}")
+    val vf = converter.toVirtualFile(classFile)
+    add(nonLocalClasses, source, (vf, binaryClassName))
+    add(classNames, source, (srcClassName, binaryClassName))
+    binaryNameToSourceName.put(binaryClassName, srcClassName)
+    ()
+
+  // Called by sbt-dotty
+  override def generatedLocalClass(source: File, classFile: File): Unit =
+    generatedLocalClass(converter.toVirtualFile(source.toPath), classFile.toPath)
+
+  override def generatedLocalClass(source: VirtualFileRef, classFile: Path): Unit =
+    // println(s"Generated local class ${source}, ${classFile}")
+    val vf = converter.toVirtualFile(classFile)
+    add(localClasses, source, vf)
+    ()
+
+  // Called by sbt-dotty
+  override def api(sourceFile: File, classApi: ClassLike): Unit =
+    api(converter.toVirtualFile(sourceFile.toPath), classApi)
+
+  override def api(sourceFile: VirtualFileRef, classApi: ClassLike): Unit =
+    import xsbt.api.{ APIUtil, HashAPI }
+    val className = classApi.name
+    if APIUtil.isScalaSourceName(sourceFile.id) && APIUtil.hasMacro(classApi) then
+      macroClasses.add(className)
+    // sbt/zinc#630
+    if !APIUtil.isScalaSourceName(sourceFile.id) && APIUtil.isAnnotationDefinition(classApi) then
+      annotationClasses.add(className)
+    val shouldMinimize = !Incremental.apiDebug(options)
+    val savedClassApi =
+      if !shouldMinimize then classApi
+      else if merkle then APIUtil.minimizeWithStubs(classApi)
+      else APIUtil.minimize(classApi)
+    val apiHash: HashAPI.Hash = HashAPI(classApi)
+    val nameHashes = (new xsbt.api.NameHashing(options.useOptimizedSealed())).nameHashes(classApi)
+    classApi.definitionType match
+      case d @ (DefinitionType.ClassDef | DefinitionType.Trait) =>
+        // Only the trait's own members; ExtraHashes folds in the parents' later.
+        val extraApiHash =
+          if d != DefinitionType.Trait then apiHash
+          else HashAPI(_.hashAPI(classApi), includePrivateDefsInTrait = true)
+
+        classApis(className) = ApiInfo(apiHash, extraApiHash, savedClassApi)
+        classPublicNameHashes(className) = nameHashes
+      case DefinitionType.Module | DefinitionType.PackageModule =>
+        objectApis(className) = ApiInfo(apiHash, apiHash, savedClassApi)
+        objectPublicNameHashes(className) = nameHashes
+  end api
+
+  // Called by sbt-dotty
+  override def mainClass(sourceFile: File, className: String): Unit =
+    mainClass(converter.toVirtualFile(sourceFile.toPath), className)
+
+  override def mainClass(sourceFile: VirtualFileRef, className: String): Unit =
+    mainClasses.getOrElseUpdate(sourceFile, new ConcurrentLinkedQueue).add(className)
+    ()
+
+  // `qualifierKinds` is not used yet, it was added in preparation for fixing sbt/zinc#1796
+  override def usedName(
+      className: String,
+      name: String,
+      qualifierKinds: EnumSet[NameKind],
+      useScopes: EnumSet[UseScope]
+  ): Unit = usedName(className, name, useScopes)
+
+  def usedName(className: String, name: String, useScopes: EnumSet[UseScope]) =
+    // Canonicalize freshly-produced used names and their strings into the
+    // process-wide pools, so a just-compiled analysis shares them with every
+    // other resident analysis. (Api tree nodes are deduped only when an
+    // analysis is deserialized, not on this fresh-compile path.)
+    usedNames
+      .getOrElseUpdate(className, ConcurrentHashMap.newKeySet[UsedName].asScala)
+      .add(
+        AnalysisInterner.usedName(
+          AnalysisInterner.internString(name),
+          AnalysisInterner.scopeBits(useScopes)
+        )
+      )
+    ()
+
+  override def enabled(): Boolean = options.enabled
+
+  private val gotten: AtomicBoolean = new AtomicBoolean(false)
+  def getCycleResultOnce: CompileCycleResult =
+    if gotten.compareAndSet(false, true) then
+      val incHandler = incHandlerOpt.getOrElse(sys.error("incHandler was expected"))
+      outputJarContent.scalacRunCompleted()
+      phaseListener.runCompleted()
+      if earlyOutput.isDefined && !writtenEarlyArtifacts then
+        mergeUpdates() // must merge updates each cycle or else scalac will clobber it
+
+      val partialAnalysis = getAnalysis
+      val hasScala = Analysis.sources(partialAnalysis).scala.nonEmpty
+      // If we had early output and scala sources, then the cycle has already been registered
+      val shouldRegisterCycle = earlyOutput.isEmpty || !hasScala
+
+      val result =
+        incHandler.completeCycle(invalidationResults, partialAnalysis, shouldRegisterCycle)
+      // A run that did not reach the phase that sends dependencies (one that compiles no Scala
+      // source) writes its early output here, once it is known to be the last cycle. Scala 3 skips
+      // `dependencyPhaseCompleted`, and may skip TASTy files, if its early TASTy is still being
+      // written when the run ends (scala/scala3#27139); the early output is then incomplete. Only
+      // the last cycle announces that there is no early output. The empty early analysis marks the
+      // early output on disk as stale, see `Builder.lastCompileWroteEarlyOutput`.
+      if earlyOutput.isDefined && !result.continue && !writtenEarlyArtifacts then
+        val early = incHandler.previousAnalysisPruned
+        if invalidationResults.isEmpty && !phaseListener.dependencyPhaseCompletedMissing &&
+          lookup.shouldDoEarlyOutput(early)
+        then writeEarlyArtifacts(early)
+        else
+          earlyAnalysisStore.foreach(_.set(AnalysisContents.create(Analysis.empty, earlySetup)))
+          progress.foreach(_.afterEarlyOutput(false))
+      result
+    else
+      throw new IllegalStateException(
+        "can't call AnalysisCallback#getCycleResultOnce more than once"
+      )
+
+  private def getAnalysis: Analysis =
+    val analysis0 = addProductsAndDeps(
+      Analysis.empty,
+      if merkle then None else Some(new ExtraHashes),
+      new InheritedImplicitScopes
+    )
+    addUsedNames(addCompilation(addTransitiveBytecodeHash(analysis0)))
+
+  def getPostJavaAnalysis: Analysis =
+    getAnalysis
+
+  def getOrNil[A, B](m: collection.Map[A, Seq[B]], a: A): Seq[B] = m.get(a).toList.flatten
+
+  def addCompilation(base: Analysis): Analysis =
+    base.copy(compilations = base.compilations.add(compilation))
+
+  def addUsedNames(base: Analysis): Analysis =
+    assert(base.relations.names.isEmpty)
+    base.copy(
+      relations = base.relations.addUsedNames(UsedNames.fromMultiMap(usedNames))
+    )
+
+  private def addTransitiveBytecodeHash(base: Analysis): Analysis =
+    import base.{ apis, relations }
+    val findUpstream = relations.memberRef.internal.forward
+    val internalAPIs = apis.internal.map { case (className, analyzedClass) =>
+      if !analyzedClass.hasMacro then
+        (className, analyzedClass)
+      else
+        val upstreamClasses =
+          IncrementalCommon.transitiveDeps(Set(className), log, logging = false)(findUpstream)
+        val upstreamAnalyzedClasses = upstreamClasses.map(apis.internalAPI)
+        val upstreamHashes = upstreamAnalyzedClasses.map(_.bytecodeHash())
+        (className, analyzedClass.withTransitiveBytecodeHash(upstreamHashes.hashCode()))
+    }
+    val APIs = new MAPIs(internalAPIs, apis.external)
+    base.copy(apis = APIs)
+
+  /**
+   * Under name hashing, a trait's extraHash includes its parents', so a private change in a parent reaches every
+   * class that inherits it (sbt/zinc#662). Taking the parents from the cycle being compiled, not
+   * from the previous analysis, makes a trait hash the same on a cold and a warm build.
+   *
+   * An instance is a snapshot. Zinc builds an analysis several times while a compile runs, to
+   * decide what still needs recompiling, and each one has more classes than the last - javac's
+   * arrive last of all - so make a new instance per analysis.
+   */
+  private final class ExtraHashes:
+    private val apis = classApis.readOnlySnapshot()
+    private val moduleNames = objectApis.readOnlySnapshot().keySet
+
+    private val internalParents: Map[String, Set[String]] =
+      typeParents.readOnlySnapshot().iterator.map { case (from, ps) =>
+        from -> ps.asScala.toSet
+      }.toMap
+
+    private val externalParentHashes: Map[String, Set[HashAPI.Hash]] =
+      externalTypeParentHashes.readOnlySnapshot().iterator.map { case (from, hs) =>
+        from -> hs.asScala.toSet
+      }.toMap
+
+    private val previousApis: Map[String, AnalyzedClass] =
+      incHandlerOpt.fold(Map.empty[String, AnalyzedClass])(_.previousAnalysisPruned.apis.internal)
+
+    private val memo = new mutable.HashMap[String, HashAPI.Hash]
+    private val visiting = new mutable.HashSet[String]
+
+    /** The extraHash published for `className`, as `analyzeClass` will store it. */
+    def apply(className: String): HashAPI.Hash =
+      if visiting.contains(className) then breakCycle(className)
+      else
+        memo.get(className) match
+          case Some(hash) => hash
+          case None       =>
+            val hash = compute(className)
+            memo.put(className, hash)
+            hash
+
+    private def compute(className: String): HashAPI.Hash =
+      apis.get(className) match
+        case Some(info) if info.classLike.definitionType == DefinitionType.Trait =>
+          visiting += className
+          try
+            val parents = internalParents.getOrElse(className, Set.empty).map(apply) ++
+              externalParentHashes.getOrElse(className, Set.empty)
+            (parents + info.extraHash).hashCode()
+          finally visiting -= className
+        case Some(info) => info.extraHash
+        // A module-only name has no class side; match what companionsWithHash publishes.
+        case None if moduleNames.contains(className) => emptyApiHash
+        case None                                    =>
+          previousApis.get(className) match
+            case Some(previous) => previous.extraHash()
+            // Scala 3 can report a Java parent that has no API here: a JDK class under `-release`
+            // (scala/scala3#27117), or a Java source when pipelining is on but the compiler
+            // predates it (before 3.5). extraHash carries a trait's private members; a Java class
+            // has none.
+            case None =>
+              log.debug(s"No extra API hash found for parent $className")
+              emptyApiHash
+
+    /**
+     * Inheritance is keyed by source class name, so without name kinds
+     * `trait B extends A; object A extends B` looks like a cycle. Fall back to the published
+     * hash, as folding a stored hash did.
+     */
+    private def breakCycle(className: String): HashAPI.Hash =
+      log.debug(s"Cyclic inheritance relation while hashing $className")
+      previousApis.get(className).map(_.extraHash()).getOrElse(apis(className).extraHash)
+  end ExtraHashes
+
+  /**
+   * The implicit scope of a type includes the companions of its base classes, so a client that
+   * resolves `Show[C]` depends on the companion of every ancestor of `C`, though it names only
+   * `C`. Within a project an implicit change invalidates the clients of the owner's inheritors,
+   * but a downstream project only checks the classes it depends on. So a class also publishes its
+   * parents' implicit name hashes, folded into one more implicit name hash and into its apiHash.
+   * A parent's own implicit name hashes include that entry, so it covers every ancestor. The
+   * parents of an object count as well, for the clients of its singleton type.
+   *
+   * Like [[ExtraHashes]], an instance is a snapshot: make one per analysis.
+   */
+  private final class InheritedImplicitScopes:
+    private val internalParents: Map[String, Set[String]] =
+      (typeParents.readOnlySnapshot().iterator ++ termParents.readOnlySnapshot().iterator)
+        .toSeq
+        .groupMapReduce(_._1)(_._2.asScala.toSet)(_ ++ _)
+
+    private val externalParentScopes: Map[String, Set[Int]] =
+      externalParentImplicitScopes.readOnlySnapshot().iterator.map { case (from, hs) =>
+        from -> hs.asScala.toSet
+      }.toMap
+
+    private val previousApis: Map[String, AnalyzedClass] =
+      incHandlerOpt.fold(Map.empty[String, AnalyzedClass])(_.previousAnalysisPruned.apis.internal)
+
+    private val memo = new mutable.HashMap[String, Option[Int]]
+    private val visiting = new mutable.HashSet[String]
+
+    /** The hash of the implicit scope `className` inherits, if any parent contributes to it. */
+    def apply(className: String): Option[Int] =
+      if visiting.contains(className) then breakCycle(className)
+      else
+        memo.get(className) match
+          case Some(hash) => hash
+          case None       =>
+            visiting += className
+            val hash =
+              try compute(className)
+              finally visiting -= className
+            memo.put(className, hash)
+            hash
+
+    /** The name hashes published for `className`, as `analyzeClass` will store them. */
+    def nameHashes(className: String): Array[NameHash] =
+      val own = nameHashesForCompanions(className)
+      apply(className) match
+        case None       => own
+        case Some(hash) =>
+          NameHashing.merge(
+            own,
+            Array(NameHash.of(Incremental.InheritedImplicitScope, UseScope.Implicit, hash))
+          )
+
+    private def compute(className: String): Option[Int] =
+      val parents = internalParents.getOrElse(className, Set.empty).flatMap(parentScope) ++
+        externalParentScopes.getOrElse(className, Set.empty)
+      if parents.isEmpty then None else Some(parents.hashCode)
+
+    private def parentScope(parent: String): Option[Int] =
+      if classPublicNameHashes.contains(parent) || objectPublicNameHashes.contains(parent) then
+        Incremental.implicitScopeHash(nameHashes(parent))
+      else previousApis.get(parent).flatMap(p => Incremental.implicitScopeHash(p.nameHashes()))
+
+    private def breakCycle(className: String): Option[Int] =
+      log.debug(s"Cyclic inheritance relation while hashing the implicit scope of $className")
+      previousApis.get(className).flatMap { previous =>
+        previous.nameHashes().collectFirst {
+          case nh if nh.name == Incremental.InheritedImplicitScope => nh.hash
+        }
+      }
+  end InheritedImplicitScopes
+
+  private def companionsWithHash(
+      className: String,
+      extraHashes: Option[ExtraHashes]
+  ): (Companions, HashAPI.Hash, HashAPI.Hash) =
+    val emptyClass =
+      ApiInfo(
+        emptyApiHash,
+        emptyApiHash,
+        APIUtil.emptyClassLike(className, DefinitionType.ClassDef)
+      )
+    val emptyObject =
+      ApiInfo(emptyApiHash, emptyApiHash, APIUtil.emptyClassLike(className, DefinitionType.Module))
+    val ApiInfo(classApiHash, extraHash, classApi) = classApis.getOrElse(className, emptyClass)
+    val ApiInfo(objectApiHash, _, objectApi) = objectApis.getOrElse(className, emptyObject)
+    val companions = Companions.of(classApi, objectApi)
+    val apiHash = (classApiHash, objectApiHash).hashCode
+    // extraHash covers a trait's private members. An object's is a copy of its apiHash,
+    // already merged above, so only the class side contributes. Under name hashing it folds in
+    // the trait's parents' (see `ExtraHashes`). Under Merkle hashing it covers the trait's own
+    // members only: a class sees every ancestor's, as an ancestor's private change invalidates
+    // its descendants here and the hashes composed for another subproject fold in each
+    // ancestor's extraHash. Folding in the parents' made a public member added to a trait read
+    // as a change to the private members of each trait extending it.
+    (companions, apiHash, extraHashes.fold(extraHash)(_(className)))
+  end companionsWithHash
+
+  private def nameHashesForCompanions(className: String): Array[NameHash] =
+    val classNameHashes = classPublicNameHashes.get(className)
+    val objectNameHashes = objectPublicNameHashes.get(className)
+    (classNameHashes, objectNameHashes) match
+      case (Some(nm1), Some(nm2)) =>
+        NameHashing.merge(nm1, nm2)
+      case (Some(nm), None) => nm
+      case (None, Some(nm)) => nm
+      case (None, None)     => sys.error("Failed to find name hashes for " + className)
+
+  private val libraryFiles = new TrieMap[String, Option[VirtualFileRef]]
+
+  /**
+   * The classpath entry defining a library class, if `name` (as rendered) is one. A class of
+   * this subproject is ruled out by any of its candidate names, not just the one that matches its
+   * binary name: a nested class compiled in this run is known here by its source name only, and
+   * the output directory, already holding its classfile, would otherwise be taken for the library
+   * defining `a.b.C$D`, but only until the next run knows that binary name.
+   */
+  private def libraryFile(name: String): Option[VirtualFileRef] =
+    libraryFiles.getOrElseUpdate(
+      name, {
+        val candidates = LibraryAncestors.binaryNameCandidates(name)
+        val internal = candidates.exists(n =>
+          classApis.contains(n) || objectApis.contains(n) ||
+            internalBinaryToSourceClassName(n).isDefined || isSubprojectClass(n)
+        )
+        if internal then None
+        else
+          candidates.iterator
+            .flatMap(lookup.lookupOnClasspath(_))
+            .nextOption()
+            .filterNot(f => ownOutputs(converter.toPath(f).toAbsolutePath.normalize))
+      }
+    )
+
+  /**
+   * This compile's own outputs, which the classpath holds too. A class found there is one of
+   * this subproject's, whatever name it was looked up by, and not a library: in a clean build
+   * nothing yet records its binary name, and its classfile is already written.
+   */
+  private lazy val ownOutputs: Set[Path] =
+    def paths(o: Output): List[Path] =
+      o.getSingleOutputAsPath.toScala.toList ++
+        o.getMultipleOutput.toScala.toList.flatMap(_.toList.map(_.getOutputDirectoryAsPath))
+    (paths(output) ++ earlyOutput.toList.flatMap(paths)).map(_.toAbsolutePath.normalize).toSet
+
+  /** The stamps of the libraries defining a class's library ancestors. See [[LibraryAncestors]]. */
+  private def libraryFingerprint(sides: List[ClassLike]): Option[Int] =
+    if !LibraryAncestors.invalidates(options) then None
+    else
+      val files = LibraryAncestors.ancestorNames(sides).flatMap(libraryFile).distinct
+      if files.isEmpty then None
+      else Some(files.map(f => stampReader.library(f).toString).sorted.hashCode)
+
+  private def analyzeClass(
+      name: String,
+      bytecodeHash: Int,
+      extraHashes: Option[ExtraHashes],
+      inheritedImplicitScopes: InheritedImplicitScopes
+  ): AnalyzedClass =
+    val hasMacro: Boolean = macroClasses.contains(name)
+    val (companions, ownApiHash, extraHash) = companionsWithHash(name, extraHashes)
+    val apiHash0 = inheritedImplicitScopes(name).fold(ownApiHash)((ownApiHash, _).hashCode)
+    val nameHashes0 = inheritedImplicitScopes.nameHashes(name)
+    val sides = List(companions.classApi, companions.objectApi)
+    val (apiHash, nameHashes1) = libraryFingerprint(sides) match
+      case Some(fingerprint) =>
+        LibraryAncestors.withFingerprint(apiHash0, nameHashes0, name, sides, fingerprint)
+      case None => (apiHash0, nameHashes0)
+    val nameHashes = if merkle then nameHashes1 :+ Hashing.Marker else nameHashes1
+    val safeCompanions = SafeLazyProxy(companions)
+    AnalyzedClass.of(
+      compileStartTime,
+      name,
+      safeCompanions,
+      apiHash,
+      nameHashes,
+      hasMacro,
+      extraHash,
+      provenance,
+      bytecodeHash,
+      0,
+    )
+  end analyzeClass
+
+  private def addProductsAndDeps(
+      base: Analysis,
+      extraHashes: Option[ExtraHashes],
+      inheritedImplicitScopes: InheritedImplicitScopes
+  ): Analysis =
+    import scala.jdk.CollectionConverters.*
+    srcs.asScala.foldLeft(base) {
+      case (a, src) =>
+        val stamp = stampReader.source(src)
+        val classesInSrc = classNames
+          .getOrElse(src, ConcurrentHashMap.newKeySet[(String, String)]())
+          .asScala
+          .map(_._1)
+        val info = SourceInfos.makeInfo(
+          getOrNil(reporteds.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, src),
+          getOrNil(unreporteds.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, src),
+          getOrNil(mainClasses.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, src)
+        )
+        val libraries: collection.mutable.Set[VirtualFile] =
+          libraryDeps.getOrElse(src, ConcurrentHashMap.newKeySet[VirtualFile]).asScala
+        val localProds = localClasses
+          .getOrElse(src, ConcurrentHashMap.newKeySet[VirtualFileRef]())
+          .asScala map { classFile =>
+          val classFileStamp = stampReader.product(classFile)
+          LocalProduct(classFile, classFileStamp)
+        }
+        val binaryToSrcClassName =
+          (classNames.getOrElse(src, ConcurrentHashMap.newKeySet[(String, String)]()).asScala map {
+            case (srcClassName, binaryClassName) => (binaryClassName, srcClassName)
+          }).toMap
+        val nonLocalProds = nonLocalClasses
+          .getOrElse(src, ConcurrentHashMap.newKeySet[(VirtualFileRef, String)]())
+          .asScala map {
+          case (classFile, binaryClassName) =>
+            val srcClassName = binaryToSrcClassName(binaryClassName)
+            val classFileStamp = stampReader.product(classFile)
+            NonLocalProduct(srcClassName, binaryClassName, classFile, classFileStamp)
+        }
+
+        val internalDeps = classesInSrc.flatMap(cls =>
+          intSrcDeps.getOrElse(cls, ConcurrentHashMap.newKeySet[InternalDependency]()).asScala
+        )
+        val externalDeps = classesInSrc.flatMap(cls =>
+          extSrcDeps.getOrElse(cls, ConcurrentHashMap.newKeySet[ExternalDependency]()).asScala
+        )
+        val libDeps = libraries.map(d => (d, binaryClassName(d), stampReader.library(d)))
+
+        val bytecodeHash = computeBytecodeHash(localProds, nonLocalProds)
+        val analyzedApis =
+          classesInSrc.map(analyzeClass(_, bytecodeHash, extraHashes, inheritedImplicitScopes))
+
+        a.addSource(
+          src,
+          analyzedApis,
+          stamp,
+          info,
+          nonLocalProds,
+          localProds,
+          internalDeps,
+          externalDeps,
+          libDeps
+        )
+    }
+  end addProductsAndDeps
+
+  def getSourceInfos: SourceInfos =
+    // Collect Source Info from current run
+    val sources = reporteds.keySet ++ unreporteds.keySet ++ mainClasses.keySet
+    val sourceToInfo = sources.map { source =>
+      val info = SourceInfos.makeInfo(
+        getOrNil(reporteds.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, source),
+        getOrNil(unreporteds.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, source),
+        getOrNil(mainClasses.iterator.map { case (k, v) => k -> v.asScala.toSeq }.toMap, source)
+      )
+      (source, info)
+    }.toMap
+    val sourceInfoFromCurrentRun = SourceInfos.of(sourceToInfo)
+    // Collect reported problems from previous run
+    incHandlerOpt.map(_.previousAnalysisPruned) match
+      case Some(prevAnalysis) => prevAnalysis.infos ++ sourceInfoFromCurrentRun
+      case None               => sourceInfoFromCurrentRun
+
+  override def apiPhaseCompleted(): Unit = ()
+
+  val phaseListener = CompilerPhaseListener(
+    waitForInlining = currentSetup.compilerVersion.startsWith("3."),
+    onDependenciesSent = () => invalidateAndWriteEarlyOutput()
+  )
+
+  // Sent too early on Scala 3.8.3 (scala/scala3#27125), see `CompilerPhaseListener`
+  override def dependencyPhaseCompleted(): Unit =
+    phaseListener.dependencyPhaseCompleted()
+    outputJarContent.dependencyPhaseCompleted()
+
+  private def invalidateAndWriteEarlyOutput(): Unit =
+    val incHandler = incHandlerOpt.getOrElse(sys.error("incHandler was expected"))
+    if earlyOutput.isDefined && invalidationResults.isEmpty then
+      val a = getAnalysis
+      val CompileCycleResult(continue, invalidations, merged) =
+        incHandler.mergeAndInvalidate(a, shouldRegisterCycle = true)
+      // Store invalidations and continuation decision; the analysis will be computed again after Analyze phase.
+      invalidationResults = Some(CompileCycleResult(continue, invalidations, Analysis.empty))
+      // If there will be no more compilation cycles, store the early analysis file and update the pickle jar
+      if !continue && lookup.shouldDoEarlyOutput(merged) then
+        writeEarlyArtifacts(merged)
+
+  override def classesInOutputJar(): java.util.Set[String] =
+    outputJarContent.get().asJava
+
+  @volatile private var writtenEarlyArtifacts: Boolean = false
+
+  private def earlySetup: MiniSetup =
+    currentSetup
+      .withOutput(CompileOutput.empty)
+      .withOptions(MiniOptions.of(Array.empty, Array.empty, Array.empty))
+      .withExtra(Array.empty)
+
+  private def writeEarlyArtifacts(merged: Analysis): Unit =
+    writtenEarlyArtifacts = true
+
+    // Only need internal apis & the productClassName relation from early analysis - drop the rest
+    // Because early analysis is only used by downstream to detect whether APIs have changed
+    val trimmedAnalysis = merged.copy(
+      Stamps.empty,
+      APIs(merged.apis.internal, Map.empty),
+      Relations.empty.copy(
+        productClassName = merged.relations.productClassName,
+        externalDependencies = earlyExternalDependencies(merged.relations),
+      ),
+      SourceInfos.empty,
+      Compilations.empty,
+    )
+    earlyAnalysisStore.foreach(_.set(AnalysisContents.create(trimmedAnalysis, earlySetup)))
+
+    mergeUpdates() // must merge updates each cycle or else scalac will clobber it
+    val available = lookup.shouldDoEarlyOutput(merged)
+    Incremental.writeEarlyOut(progress, earlyOutput, available, knownProducts(merged), log)
+
+  /**
+   * Under Merkle hashing a downstream subproject composes a class's hashes with those of its
+   * upstream ancestors, which it finds through the external inheritance relation (see
+   * [[MerkleHashes]]), so the early analysis keeps that relation.
+   */
+  private def earlyExternalDependencies(relations: Relations): ExternalDependencies =
+    if !merkle then ExternalDependencies.empty
+    else
+      ExternalDependencies(
+        relations.externalDependencies.dependencies.filter(
+          _._1 == DependencyContext.DependencyByInheritance
+        )
+      )
+
+  private def mergeUpdates() =
+    pickleJarPair.foreach {
+      case (originalJar, updatesJar) =>
+        if Files.exists(updatesJar) then
+          log.debug(s"merging $updatesJar into $originalJar")
+          if Files.exists(originalJar) then
+            IndexBasedZipFsOps.mergeArchives(originalJar, updatesJar)
+          else
+            Files.move(updatesJar, originalJar)
+    }
+
+  private def knownProducts(merged: Analysis) =
+    // List classes defined in the files that were compiled in this run.
+    val ps: java.util.Set[String] = new java.util.HashSet[String]()
+    val knownProducts: collection.Set[VirtualFileRef] = merged.relations.allProducts
+
+    // extract product paths
+    val so = jo2o(output.getSingleOutputAsPath).getOrElse(sys.error(s"unsupported output $output"))
+    val isJarOutput = so.getFileName.toString.endsWith(".jar")
+    knownProducts foreach { product =>
+      if isJarOutput then
+        new JarUtils.ClassInJar(product.id).toClassFilePathOrNull match
+          case null =>
+          case path =>
+            ps.add(path.replace('\\', '/'))
+      else
+        val productPath = converter.toPath(product)
+        try
+          ps.add(so.relativize(productPath).toString.replace('\\', '/'))
+        catch
+          case NonFatal(_) => ps.add(product.id)
+    }
+    ps
+  end knownProducts
+end AnalysisCallback
