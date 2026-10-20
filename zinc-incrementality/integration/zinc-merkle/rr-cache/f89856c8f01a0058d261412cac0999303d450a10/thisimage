@@ -1,0 +1,1441 @@
+/*
+ * Zinc - The incremental compiler for Scala.
+ * Copyright Scala Center, Lightbend, and Mark Harrah
+ *
+ * Licensed under Apache License 2.0
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
+package sbt
+package internal
+package inc
+
+import sbt.util.Logger
+import xsbti.{ FileConverter, VirtualFile, VirtualFileRef }
+import xsbt.api.APIUtil
+import xsbti.UseScope
+import xsbti.api.{ AnalyzedClass, NameHash }
+import xsbti.compile.{ Changes, DependencyChanges, IncOptions, MiniSetup, Output }
+import xsbti.compile.ClassFileManager as XClassFileManager
+import xsbti.compile.analysis.{ ReadStamps, Stamp as XStamp }
+import scala.collection.Iterator
+import scala.collection.parallel.immutable.ParVector
+import Incremental.{ CompileCycle, CompileCycleResult, IncrementalCallback, PrefixingLogger }
+
+/**
+ * Defines the core logic to compile incrementally and apply the class invalidation after
+ * every compiler run. This class defines only the core logic and the algorithm-specific
+ * bits are implemented in its subclasses.
+ *
+ * In the past, there were several incremental compiler strategies. Now, there's only
+ * one, the default [[IncrementalNameHashing]] strategy that invalidates classes based
+ * on name hashes.
+ *
+ * @param log An instance of a logger.
+ * @param options An instance of incremental compiler options.
+ * @param packagePrefixImplicits Whether the compiler puts the package objects of a type's prefix
+ *                               packages in its implicit scope (Scala 2, see
+ *                               [[IncrementalCommon.packagePrefixImplicits]]).
+ */
+private[inc] abstract class IncrementalCommon(
+    val log: Logger,
+    options: IncOptions,
+    profiler: RunProfiler,
+    packagePrefixImplicits: Boolean = true,
+) extends InvalidationProfilerUtils:
+  // Work around bugs in classpath handling such as the "currently" problematic -javabootclasspath
+  private def enableShallowLookup: Boolean =
+    java.lang.Boolean.getBoolean("xsbt.skip.cp.lookup")
+
+  private[inc] final val invalidationLog = new InvalidationLog(log, options.relationsDebug)
+  private[inc] final val timings = new PhaseTimings
+  def debug(s: => String): Unit = invalidationLog.detail(s)
+
+  final def iterations(state0: CycleState): Iterator[CycleState] =
+    new Iterator[CycleState]:
+      var state: CycleState = state0
+      override def hasNext: Boolean = state.hasNext
+      override def next(): CycleState =
+        val n = state.next
+        state = n
+        n
+  case class CycleState(
+      invalidatedClasses: Set[String],
+      initialChangedSources: Set[VirtualFileRef],
+      allSources: Set[VirtualFile],
+      converter: FileConverter,
+      binaryChanges: DependencyChanges,
+      lookup: ExternalLookup,
+      previous: Analysis,
+      doCompile: CompileCycle,
+      classfileManager: XClassFileManager,
+      output: Output,
+      cycleNum: Int,
+      pipelinedJavaSources: Set[VirtualFileRef],
+  ):
+    def toVf(ref: VirtualFileRef): VirtualFile = converter.toVirtualFile(ref)
+    def sourceRefs: Set[VirtualFileRef] = allSources.asInstanceOf[Set[VirtualFileRef]]
+    lazy val javaSources: Set[VirtualFileRef] = sourceRefs.filter(_.id.endsWith(".java"))
+
+    def hasNext: Boolean = invalidatedClasses.nonEmpty || initialChangedSources.nonEmpty
+
+    def next: CycleState =
+      // Compute all the invalidated classes by aggregating invalidated package objects
+      val invalidatedByPackageObjects =
+        invalidatedPackageObjects(invalidatedClasses, previous.relations, previous.apis)
+      val classesToRecompile = invalidatedClasses ++ invalidatedByPackageObjects
+
+      // Computes which source files are mapped to the invalidated classes and recompile them
+      val invalidatedRefs: Set[VirtualFileRef] =
+        mapInvalidationsToSources(classesToRecompile, initialChangedSources, sourceRefs, previous)
+
+      val invalidatedSources: Set[VirtualFile] = invalidatedRefs.map(toVf)
+
+      invalidationLog.debug(
+        InvalidationLog.section(
+          s"Cycle $cycleNum",
+          Seq(
+            "invalidated classes" -> invalidatedClasses,
+            "package-object invalidations" -> invalidatedByPackageObjects,
+            "initially changed sources" -> initialChangedSources.map(_.id),
+            "sources selected for recompilation" -> invalidatedSources.map(_.id),
+          )
+        )
+      )
+
+      val pruned = timings.time("prune") {
+        IncrementalCommon
+          .pruneClassFilesOfInvalidations(invalidatedSources, previous, classfileManager, converter)
+      }
+
+      invalidationLog.detail(s"Cycle $cycleNum pruned relations:\n${pruned.relations}")
+
+      val handler = new IncrementalCallbackImpl(
+        invalidatedSources,
+        classfileManager,
+        pruned,
+        classesToRecompile,
+        profiler.registerCycle(
+          invalidatedClasses,
+          invalidatedByPackageObjects,
+          initialChangedSources,
+          invalidatedSources,
+          _,
+          _,
+          _,
+          _
+        )
+      )
+
+      // Actual compilation takes place here
+      val result = doCompile.run(invalidatedSources, binaryChanges, handler)
+      val CompileCycleResult(continue, nextInvalidations, current) = result
+
+      // Include all Java sources into each Scala compilation cycle during pipelining.
+      // In normal compilation without pipelining the product of javac compilation would
+      // be available in /classes directory, but with pipelining javac compilation is
+      // deferred till later.
+      // This means that for each cycle (A.scala), (B.scala, ...), etc all Java sources
+      // must be included into scalac invocation so the sources that are being recompiled
+      // get to see the symbols coming from Java.
+      // See also sbt/zinc#918
+      val nextChangedSources: Set[VirtualFileRef] =
+        if continue && !handler.isFullCompilation && options.pipelining then javaSources
+        else Set.empty
+
+      // Return immediate analysis as all sources have been recompiled
+      copy(
+        if continue && !handler.isFullCompilation then nextInvalidations else Set.empty,
+        nextChangedSources,
+        binaryChanges = IncrementalCommon.emptyChanges,
+        previous = current,
+        cycleNum = cycleNum + 1,
+        pipelinedJavaSources = nextChangedSources,
+      )
+    end next
+
+    /**
+     * IncrementalCallbackImpl is a callback hanlder that the custom
+     * phases injected by Zinc call back to perform certain operations mid-compilation.
+     * In particular, for pipelining, we need to know whether the current
+     * incremental cycle is going to be the last cycle or not.
+     */
+    class IncrementalCallbackImpl(
+        invalidatedSources: Set[VirtualFile],
+        classFileManager: XClassFileManager,
+        pruned: Analysis,
+        classesToRecompile: Set[String],
+        registerCycle: (Set[String], APIChanges, Set[String], Boolean) => Unit
+    ) extends IncrementalCallback(classFileManager):
+      override val isFullCompilation: Boolean = allSources.subsetOf(invalidatedSources)
+      override val previousAnalysis: Analysis = previous
+      override val previousAnalysisPruned: Analysis = pruned
+      override def timings: PhaseTimings = IncrementalCommon.this.timings
+
+      override def mergeAndInvalidate(
+          partialAnalysis: Analysis,
+          shouldRegisterCycle: Boolean,
+      ): CompileCycleResult =
+        val analysis = timings.time("merge") {
+          if isFullCompilation then
+            partialAnalysis.copy(compilations = pruned.compilations ++ partialAnalysis.compilations)
+          else pruned ++ partialAnalysis
+        }
+
+        // Represents all classes that were compiled as a result of external and internal invalidation (by a previous cycle)
+        // Maps the changed sources by the user to class names we can count as invalidated
+        val getClasses = (a: Analysis) => initialChangedSources.flatMap(a.relations.classNames)
+        val recompiledClasses = classesToRecompile ++
+          getClasses(previous) ++ getClasses(analysis) ++
+          invalidatedSources.flatMap(previous.relations.classNames)
+
+        // Java sources that are only here because pipelining passes all of them to scalac. Their
+        // stored API was read from the compiled classes and never equals the one from scalac.
+        val unchangedJavaClasses =
+          pipelinedJavaSources.flatMap(previous.relations.classNames) -- classesToRecompile
+        val newApiChanges = timings.time("detectAPIChanges") {
+          detectAPIChanges(
+            recompiledClasses -- unchangedJavaClasses,
+            previous.apis.internalAPI,
+            analysis.apis.internalAPI
+          )
+        }
+        if !isFullCompilation && newApiChanges.apiChanges.nonEmpty then
+          invalidationLog.debug(
+            InvalidationLog.section(
+              s"Cycle $cycleNum API changes",
+              Seq("detected" -> newApiChanges.apiChanges.map(InvalidationLog.formatApiChange))
+            )
+          )
+
+        val nextInvalidations =
+          if isFullCompilation then Set.empty[String]
+          else
+<<<<<<<
+            timings.time("invalidate") {
+              val compiledClasses = invalidatedSources.flatMap(analysis.relations.classNames)
+              invalidateAfterInternalCompilation(
+                analysis,
+                newApiChanges,
+                recompiledClasses,
+                cycleNum >= options.transitiveStep,
+                IncrementalCommon.comesFromScalaSource(previous.relations, Some(analysis.relations))
+              ) ++
+                ((invalidateByAddedClasses(compiledClasses, previous, analysis) ++
+                  invalidateCoDefinedByAddedNames(newApiChanges, previous, analysis) ++
+                  invalidateByPackageObjectChanges(compiledClasses, previous, analysis)) --
+                  recompiledClasses -- compiledClasses) ++
+                invalidateByPackageObjectClashes(compiledClasses, previous, analysis)
+            }
+=======
+            val compiledClasses = invalidatedSources.flatMap(analysis.relations.classNames)
+            invalidateAfterInternalCompilation(
+              analysis,
+              newApiChanges,
+              recompiledClasses,
+              cycleNum >= options.transitiveStep,
+              IncrementalCommon.comesFromScalaSource(previous.relations, Some(analysis.relations))
+            ) ++
+              (invalidateByAddedClasses(compiledClasses, previous, analysis) --
+                recompiledClasses -- compiledClasses) ++
+              invalidateByPackageScope(analysis.relations, recompiledClasses ++ compiledClasses)
+>>>>>>>
+
+        // No matter what shouldDoIncrementalCompilation returns, we are not in fact going to
+        // continue if there are no invalidations.
+        val continue = nextInvalidations.nonEmpty &&
+          lookup.shouldDoIncrementalCompilation(nextInvalidations, analysis)
+
+        invalidationLog.debug(
+          InvalidationLog.cycleOutcome(cycleNum, nextInvalidations, continue, isFullCompilation)
+        )
+
+        if shouldRegisterCycle then
+          registerCycle(recompiledClasses, newApiChanges, nextInvalidations, continue)
+        CompileCycleResult(continue, nextInvalidations, analysis)
+      end mergeAndInvalidate
+
+      override def completeCycle(
+          prev: Option[CompileCycleResult],
+          partialAnalysis: Analysis,
+          shouldRegisterCycle: Boolean
+      ): CompileCycleResult =
+        classFileManager.generated(partialAnalysis.relations.allProducts.map(toVf).toArray)
+        prev match
+          case Some(prev) => prev.copy(analysis = timings.time("merge")(pruned ++ partialAnalysis))
+          case _          => mergeAndInvalidate(partialAnalysis, shouldRegisterCycle)
+    end IncrementalCallbackImpl
+  end CycleState
+
+  /**
+   * Compile a project as many times as it is required incrementally. This logic is the start
+   * point of the incremental compiler and the place where all the invalidation logic happens.
+   *
+   * The current logic does merge the compilation step and the analysis step, by making them
+   * execute sequentially. There are cases where, for performance reasons, build tools and
+   * users of Zinc may be interested in separating the two. If this is the case, the user needs
+   * to reimplement this logic by copy pasting this logic and relying on the utils defined
+   * in `IncrementalCommon`.
+   *
+   * @param invalidatedClasses The invalidated classes either initially or by a previous cycle.
+   * @param initialChangedSources The initial changed sources by the user, empty if previous cycle.
+   * @param allSources All the sources defined in the project and compiled in the first iteration.
+   * @param converter FileConverter to convert between Path and VirtualFileRef.
+   * @param binaryChanges The initially detected changes derived from [[InitialChanges]].
+   * @param lookup The lookup instance to query classpath and analysis information.
+   * @param previous The last analysis file known of this project.
+   * @param doCompile A function that compiles a project and returns an analysis file.
+   * @param classfileManager The manager that takes care of class files in compilation.
+   * @param cycleNum The counter of incremental compiler cycles.
+   * @param pipelinedJavaSources The Java sources in `initialChangedSources` that did not change
+   *                             and are only there because pipelining compiles all of them.
+   * @return A fresh analysis file after all the incremental compiles have been run.
+   */
+  final def cycle(
+      invalidatedClasses: Set[String],
+      initialChangedSources: Set[VirtualFileRef],
+      allSources: Set[VirtualFile],
+      converter: FileConverter,
+      binaryChanges: DependencyChanges,
+      lookup: ExternalLookup,
+      previous: Analysis,
+      doCompile: CompileCycle,
+      classfileManager: XClassFileManager,
+      output: Output,
+      cycleNum: Int,
+      pipelinedJavaSources: Set[VirtualFileRef],
+  ): Analysis =
+    var s = CycleState(
+      invalidatedClasses,
+      initialChangedSources,
+      allSources,
+      converter,
+      binaryChanges,
+      lookup,
+      previous,
+      doCompile,
+      classfileManager,
+      output,
+      cycleNum,
+      pipelinedJavaSources,
+    )
+    val it = iterations(s)
+    while it.hasNext do
+      s = it.next()
+    s.previous
+  end cycle
+
+  def mapInvalidationsToSources(
+      invalidatedClasses: Set[String],
+      aggregateSources: Set[VirtualFileRef],
+      allSources: Set[VirtualFileRef],
+      previous: Analysis
+  ): Set[VirtualFileRef] =
+    def expand(invalidated: Set[VirtualFileRef]): Set[VirtualFileRef] =
+      val recompileAllFraction = options.recompileAllFraction
+      // when pipelining we currently always invalidate all java sources, so it doesn't make sense to include them
+      // when checking recompileAllFraction
+      def countRelevant(ss: Set[VirtualFileRef]): Int =
+        if options.pipelining then ss.count(_.name.endsWith(".scala")) else ss.size
+
+      if countRelevant(invalidated) <= countRelevant(allSources) * recompileAllFraction then
+        invalidated
+      else
+        invalidationLog.debug(
+          s"Recompiling all sources: number of invalidated sources > ${recompileAllFraction * 100.00} percent of all sources"
+        )
+        allSources ++ invalidated // Union because `all` doesn't contain removed sources
+
+    expand(invalidatedClasses.flatMap(previous.relations.definesClass) ++ aggregateSources)
+  end mapInvalidationsToSources
+
+  /**
+   * Detects the API changes of `recompiledClasses`.
+   *
+   * @param recompiledClasses The list of classes that were recompiled in this round.
+   * @param oldAPI A function that returns the previous class associated with a given class name.
+   * @param newAPI A function that returns the current class associated with a given class name.
+   * @return A list of API changes of the given two analyzed classes.
+   */
+  /** The classes to recompile because a library ancestor changed. See [[LibraryAncestors]]. */
+  protected def libraryDescendants(relations: Relations): Set[String] = Set.empty
+
+  /**
+   * The classes that a change to a package's members reaches without an edge to its package
+   * object, for the API changes last detected: those of upstream classes, or of this subproject's
+   * classes in the last cycle. See [[PackageScope]].
+   *
+   * @param compiled The classes compiled in the last cycle, which saw the new members; empty for
+   *                 upstream changes.
+   */
+  protected def invalidateByPackageScope(relations: Relations, compiled: Set[String]): Set[String] =
+    Set.empty
+
+  /** The classes of the libraries that changed since the previous compile, set before it. */
+  private[inc] var changedLibraryClasses: Set[String] = Set.empty
+
+  def detectAPIChanges(
+      recompiledClasses: collection.Set[String],
+      oldAPI: String => AnalyzedClass,
+      newAPI: String => AnalyzedClass
+  ): APIChanges =
+    def hashesMatch(a: AnalyzedClass, b: AnalyzedClass, hasMacro: Boolean): Boolean =
+      (a.bytecodeHash() == b.bytecodeHash()) &&
+        (a.apiHash == b.apiHash) &&
+        (a.extraHash == b.extraHash) &&
+        (!hasMacro || a.transitiveBytecodeHash() == b.transitiveBytecodeHash())
+    // log.debug(s"[zinc] detectAPIChanges(recompiledClasses = $recompiledClasses)")
+    def classDiff(className: String, a: AnalyzedClass, b: AnalyzedClass): Option[APIChange] =
+      // log.debug(s"[zinc] classDiff($className, ${a.name}, ${b.name})")
+      val hasMacro = a.hasMacro || b.hasMacro
+      if hashesMatch(a, b, hasMacro) then None
+      else
+        if hasMacro && IncOptions.getRecompileOnMacroDef(options) then
+          Some(APIChangeDueToMacroDefinition(className))
+        else if
+          APIUtil.isAnnotationDefinition(a.api().classApi()) ||
+          APIUtil.isAnnotationDefinition(b.api().classApi())
+        then
+          Some(APIChangeDueToAnnotationDefinition(className))
+        else
+          findAPIChange(className, a, b)
+    val apiChanges = recompiledClasses.flatMap(name => classDiff(name, oldAPI(name), newAPI(name)))
+    if Incremental.apiDebug(options) && apiChanges.nonEmpty then
+      logApiChanges(apiChanges, oldAPI, newAPI)
+    new APIChanges(apiChanges)
+  end detectAPIChanges
+
+  /**
+   * Detects the initial changes after the first compiler iteration is over.
+   *
+   * This method only requires the compiled sources, the previous analysis and the
+   * stamps reader to be able to populate [[InitialChanges]] with all the data
+   * structures that will be used for the first incremental compiler cycle.
+   *
+   * The logic of this method takes care of the following tasks:
+   *
+   * 1. Detecting the sources that changed between the past and present compiler iteration.
+   * 2. Detecting the removed products based on the stamps from the previous and current products.
+   * 3. Detects the class names changed in a library (classpath entry such as jars or analysis).
+   * 4. Computes the API changes in dependent and external projects.
+   *
+   * @param sources The sources that were compiled.
+   * @param previousAnalysis The analysis from the previous compilation.
+   * @param stamps The stamps reader to get stamp for sources, products and binaries.
+   * @param lookup The lookup instance that provides hooks and inspects the classpath.
+   * @param equivS A function to compare stamps.
+   * @return An instance of [[InitialChanges]].
+   */
+  def detectInitialChanges(
+      sources: Set[VirtualFile],
+      previousAnalysis: Analysis,
+      stamps: ReadStamps,
+      lookup: Lookup,
+      converter: FileConverter,
+      output: Output
+  )(implicit equivS: Equiv[XStamp]): InitialChanges =
+    import IncrementalCommon.isLibraryModified
+    import lookup.lookupAnalyzedClass
+    val previous = previousAnalysis.stamps
+    val previousRelations = previousAnalysis.relations
+
+    val sourceChanges: Changes[VirtualFileRef] = lookup.changedSources(previousAnalysis).getOrElse {
+      val previousSources = previous.allSources
+
+      invalidationLog.detail(s"Previous stamps:\n$previous")
+      invalidationLog.detail(
+        InvalidationLog.section("Current sources", Seq("sources" -> sources.map(_.id)))
+      )
+
+      new UnderlyingChanges[VirtualFileRef]:
+        val sourceIds = sources.map(_.id)
+        val previousSourceIds = previousSources.map(_.id)
+
+        val added0 = java.util.concurrent.ConcurrentHashMap.newKeySet[VirtualFileRef]
+        val changed0 = java.util.concurrent.ConcurrentHashMap.newKeySet[VirtualFileRef]
+        val removed0 = java.util.concurrent.ConcurrentHashMap.newKeySet[VirtualFileRef]
+        val unmodified0 = java.util.concurrent.ConcurrentHashMap.newKeySet[VirtualFileRef]
+
+        new ParVector(sources.toVector).foreach { f =>
+          if previousSourceIds.contains(f.id) then
+            if equivS.equiv(previous.source(f), stamps.source(f)) then unmodified0.add(f)
+            else changed0.add(f)
+          else added0.add(f)
+        }
+        previousSources.foreach(f => if !sourceIds.contains(f.id) then removed0.add(f))
+
+        val added = new WrappedSet(added0)
+        val changed = new WrappedSet(changed0)
+        val removed = new WrappedSet(removed0)
+        val unmodified = new WrappedSet(unmodified0)
+      end new
+    }
+
+    val removedProducts: Set[VirtualFileRef] =
+      lookup.removedProducts(previousAnalysis).getOrElse {
+        new ParVector(previous.allProducts.toVector)
+          .filter(p =>
+            // println(s"removedProducts? $p")
+            !equivS.equiv(previous.product(p), stamps.product(p))
+          )
+          .toVector
+          .toSet
+      }
+
+    val changedLibraries: Set[VirtualFileRef] = lookup.changedBinaries(previousAnalysis).getOrElse {
+      val detectChange =
+        isLibraryModified(
+          enableShallowLookup,
+          lookup,
+          previous,
+          stamps,
+          previousRelations,
+          converter,
+          log
+        )
+      new ParVector(previous.allLibraries.toVector).filter(detectChange).toVector.toSet
+    }
+
+    val subprojectApiChanges: APIChanges =
+      val incrementalExternalChanges =
+        val previousAPIs = previousAnalysis.apis
+        val externalFinder = lookupAnalyzedClass(_: String, None).getOrElse(APIs.emptyAnalyzedClass)
+        // A class of this subproject is tracked internally. An analysis may still list it as
+        // external, from Java compiled apart with pipelining (see `AnalysisCallback.Builder`).
+        val externals = previousAPIs.allExternals.filter(previousRelations.definesClass(_).isEmpty)
+        detectAPIChanges(externals, previousAPIs.externalAPI, externalFinder)
+
+      val changedExternalClassNames = incrementalExternalChanges.allModified.toSet
+      if !lookup.shouldDoIncrementalCompilation(changedExternalClassNames, previousAnalysis) then
+        new APIChanges(Nil)
+      else incrementalExternalChanges
+
+    val init =
+      InitialChanges(sourceChanges, removedProducts, changedLibraries, subprojectApiChanges)
+    profiler.registerInitial(init)
+    // log.debug(s"initial changes: $init")
+    init
+  end detectInitialChanges
+
+  /**
+   * Invalidates classes internally to a project after an incremental compiler run.
+   *
+   * @param analysis The analysis produced by the immediate previous incremental compiler cycle.
+   * @param changes The changes produced by the immediate previous incremental compiler cycle.
+   * @param recompiledClasses The immediately recompiled class names.
+   * @param invalidateTransitively A flag that tells whether transitive invalidations should be
+   *                               applied. This flag is only enabled when there have been more
+   *                               than `incOptions.transitiveStep` incremental runs.
+   * @param isScalaClass A function to know if a class name comes from a Scala source file or not.
+   * @return A list of invalidated class names for the next incremental compiler run.
+   */
+  def invalidateAfterInternalCompilation(
+      analysis: Analysis,
+      changes: APIChanges,
+      recompiledClasses: Set[String],
+      invalidateTransitively: Boolean,
+      isScalaClass: String => Boolean
+  ): Set[String] =
+    val relations = analysis.relations
+    val initial = changes.allModified.toSet
+    val dependsOnClass = findClassDependencies(_, relations)
+    val firstClassInvalidation: Set[String] =
+      val invalidated =
+        changes.apiChanges.flatMap(invalidateClassesInternally(relations, _, isScalaClass)).toSet
+      includeTransitiveInitialInvalidations(initial, invalidated, dependsOnClass)
+    if firstClassInvalidation.nonEmpty then
+      invalidationLog.detail(
+        InvalidationLog.section(
+          "Transitive invalidation result",
+          Seq("classes" -> firstClassInvalidation)
+        )
+      )
+
+    // Invalidate classes linked with a class file that is produced by more than one source file
+    val secondClassInvalidation = IncrementalCommon.invalidateNamesProducingSameClassFile(relations)
+    if secondClassInvalidation.nonEmpty then
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Generated class-file collision",
+          Seq("invalidated classes" -> secondClassInvalidation)
+        )
+      )
+
+    // Invalidate macro classes that transitively depend on any of the recompiled classes
+    //
+    // The macro expansion tree can depend on the behavioural change of any upstream code change,
+    // not just API changes, so correctness requires aggressive recompilation of downstream classes.
+    //
+    // Technically the macro doesn't need to be recompiled - it's the classes downstream of the macro
+    // that need to be recompiled, so that the macros can be re-expanded.  But recompiling is the most
+    // straightforward way to signal any classes downstream of the _macro_ that they need to recompile.
+    //
+    // Also, note, that this solution only works for behavioural changes in sources within the same
+    // subproject as the macro.  Changes in behaviour in upstream subprojects don't cause downstream
+    // macro classes to recompile - because downstream projects only have visibility of the upstream
+    // API, and if it changed, which is insufficient, and upstream projects have no other way than
+    // their API to signal to downstream.
+    val thirdClassInvalidation =
+      val transitive =
+        IncrementalCommon.transitiveDeps(recompiledClasses, invalidationLog.detailLogger)(
+          dependsOnClass
+        )
+      (transitive -- recompiledClasses).filter(analysis.apis.internalAPI(_).hasMacro)
+    if thirdClassInvalidation.nonEmpty then
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Upstream changes affecting macros",
+          Seq("invalidated classes" -> thirdClassInvalidation)
+        )
+      )
+
+    val newInvalidations = (firstClassInvalidation -- recompiledClasses) ++
+      secondClassInvalidation ++ thirdClassInvalidation
+    val nextInvalidations =
+      if newInvalidations.isEmpty then Set.empty[String]
+      else if invalidateTransitively then
+        // NOTE: As member reference relations do not include local relations, this invalidation will fully propagate
+        // thus we can't rely solely on `firstClassTransitiveInvalidation`. Better bet is to try to find transitive
+        // dependencies from result of `firstClassInvalidation`
+        val firstClassTransitiveInvalidation =
+          IncrementalCommon.transitiveDeps(firstClassInvalidation, invalidationLog.detailLogger)(
+            dependsOnClass
+          )
+        invalidationLog.detail(
+          InvalidationLog.section(
+            "Brute-force transitive invalidation",
+            Seq("classes" -> firstClassTransitiveInvalidation),
+            Some("no classes")
+          )
+        )
+        firstClassTransitiveInvalidation ++ secondClassInvalidation ++ thirdClassInvalidation ++
+          recompiledClasses
+      else firstClassInvalidation ++ secondClassInvalidation ++ thirdClassInvalidation
+
+    nextInvalidations
+  end invalidateAfterInternalCompilation
+
+<<<<<<<
+  /**
+   * Invalidates the classes that use the simple name of a top-level class added by this cycle and
+   * can see the class's package.
+   *
+   * An added class can change how an existing class resolves a name, although neither depends on
+   * the other: `a.b.Foo` shadows `a.Foo` in a client in `package a; package b`, and `q.Foo`
+   * shadows `a.Foo` or `scala.Foo` in a client in package `a` that imports `q._`. Zinc does not
+   * record the scopes that a lookup searched, so this invalidates the classes that use the name and
+   * see package `q` (see [[PackageScope]]).
+   *
+   * @param compiledClasses The classes defined by the sources compiled in this cycle.
+   * @param previous The analysis before this cycle.
+   * @param current The analysis after this cycle.
+   */
+  def invalidateByAddedClasses(
+      compiledClasses: Set[String],
+      previous: Analysis,
+      current: Analysis
+  ): Set[String] =
+    val added = compiledClasses.filter(c =>
+      previous.relations.definesClass(c).isEmpty && IncrementalCommon.isTopLevel(current, c)
+    )
+    if added.isEmpty then Set.empty
+    else
+      val scope = new PackageScope(current.relations)
+      // No reference resolves to a package object by its name, `package`.
+      val namesByPackage = added.toList
+        .map(IncrementalCommon.splitClassName)
+        .filter(_._2 != "package")
+        .groupMap(_._1)(_._2)
+      val invalidated = namesByPackage.iterator.flatMap { (pkg, names) =>
+        scope.usersOf(pkg, names.toSet)
+      }.toSet
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Added classes",
+          Seq("added classes" -> added, "classes using their names" -> invalidated)
+        )
+      )
+      invalidated
+  end invalidateByAddedClasses
+
+  /**
+   * Invalidates the classes that use a name added to a class and are defined in the source file
+   * of one of its dependents.
+   *
+   * A top-level import is in scope for every class of its file, but the bridges charge its
+   * dependency to one of them (Scala 2 the first, Scala 3 the last). When an object imported with
+   * a wildcard gains a member, a class of the file that uses the name now resolves it to the
+   * member, although the name-hash filter only checked the class charged with the import. A
+   * client that uses an existing member through the import references it, so this concerns
+   * added names only.
+   *
+   * @param changes The API changes detected in this cycle.
+   * @param previous The analysis before this cycle.
+   * @param current The analysis after this cycle.
+   */
+  def invalidateCoDefinedByAddedNames(
+      changes: APIChanges,
+      previous: Analysis,
+      current: Analysis
+  ): Set[String] =
+    val relations = current.relations
+    val usedNames = relations.names.toMultiMap
+    val invalidated =
+      for
+        case NamesChange(className, _) <- changes.apiChanges.toSet
+        added = IncrementalCommon.names(current, className) --
+          IncrementalCommon.names(previous, className)
+        if added.nonEmpty
+        dependent <- relations.memberRef.internal.reverse(className)
+        coDefined <- relations.definesClass(dependent).flatMap(relations.classNames)
+        if coDefined != dependent && usedNames.get(coDefined).exists(_.exists(u => added(u.name)))
+      yield coDefined
+    if invalidated.nonEmpty then
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Names added to a class, used beside its dependents",
+          Seq("invalidated classes" -> invalidated)
+        )
+      )
+    invalidated
+  end invalidateCoDefinedByAddedNames
+
+  /**
+   * Invalidates the classes that a member added to a package object, or a change to its implicits,
+   * can make resolve a name differently.
+   *
+   * A package object's members (and, in Scala 3, the top-level definitions and exports of a
+   * file, in its `F$package` class) are in scope in their package and its nested packages, and
+   * `import a.b._` brings in those of `a.b`, without a dependency on the package object. A member
+   * added to it can shadow what a client resolved a name to, so this invalidates the classes that
+   * use its name and see the package. An implicit added to or removed from it can change an
+   * implicit search without the name appearing in the client, so this invalidates every class that
+   * sees the package.
+   *
+   * @param compiledClasses The classes defined by the sources compiled in this cycle.
+   * @param previous The analysis before this cycle.
+   * @param current The analysis after this cycle.
+   */
+  def invalidateByPackageObjectChanges(
+      compiledClasses: Set[String],
+      previous: Analysis,
+      current: Analysis
+  ): Set[String] =
+    val changes = packageObjectChanges(compiledClasses, previous, current)
+    if changes.isEmpty then Set.empty
+    else
+      val scope = new PackageScope(current.relations)
+      val byName = changes.flatMap(c => scope.memberUsersOf(c.pkg, c.added)).toSet
+      val byImplicits =
+        changes.filter(_.implicitsChanged).flatMap(c => scope.implicitSeers(c.pkg)).toSet
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Package object changes",
+          Seq(
+            "with added names" -> changes.filter(_.added.nonEmpty).map(_.packageObject),
+            "with changed implicits" -> changes.filter(_.implicitsChanged).map(_.packageObject),
+            "added names" -> changes.flatMap(_.added),
+            "classes using the added names" -> byName,
+            "classes seeing a package whose implicits changed" -> byImplicits
+          )
+        )
+      )
+      byName ++ byImplicits
+    end if
+  end invalidateByPackageObjectChanges
+
+  /**
+   * Invalidates a package object together with a class of its package that has the name of one of
+   * its members, when the member or the class is new.
+   *
+   * The two definitions clash, but Scala 3 reports it only when it compiles both, so this
+   * recompiles them in one cycle, unless this cycle already compiled them together.
+   *
+   * @param compiledClasses The classes defined by the sources compiled in this cycle.
+   * @param previous The analysis before this cycle.
+   * @param current The analysis after this cycle.
+   */
+  def invalidateByPackageObjectClashes(
+      compiledClasses: Set[String],
+      previous: Analysis,
+      current: Analysis
+  ): Set[String] =
+    def qualified(pkg: String, name: String) = if pkg.isEmpty then name else s"$pkg.$name"
+    val byAddedMember =
+      for
+        change <- packageObjectChanges(compiledClasses, previous, current)
+        name <- change.added
+        className = qualified(change.pkg, name)
+        if !compiledClasses(className) && current.relations.definesClass(className).nonEmpty
+        invalidated <- List(change.packageObject, className)
+      yield invalidated
+    val addedClasses = compiledClasses.filter { className =>
+      previous.relations.definesClass(className).isEmpty &&
+      IncrementalCommon.packageOfPackageObject(className).isEmpty &&
+      IncrementalCommon.isTopLevel(current, className)
+    }
+    val byAddedClass =
+      if addedClasses.isEmpty then Nil
+      else
+        val packageObjects = current.relations.classes._2s.toList.flatMap { c =>
+          IncrementalCommon.packageOfPackageObject(c).filterNot(_ => compiledClasses(c)).map(c -> _)
+        }
+        for
+          (packageObject, pkg) <- packageObjects
+          name <- IncrementalCommon
+            .names(current, packageObject)
+            .filterNot(IncrementalCommon.isNotInPackageScope)
+          className = qualified(pkg, name)
+          if addedClasses(className)
+          invalidated <- List(packageObject, className)
+        yield invalidated
+    val clashes = byAddedMember ++ byAddedClass
+    if clashes.nonEmpty then
+      invalidationLog.debug(
+        InvalidationLog.section("Package object clashes", Seq("invalidated classes" -> clashes))
+      )
+    clashes.toSet
+  end invalidateByPackageObjectClashes
+
+  private case class PackageObjectChange(
+      packageObject: String,
+      pkg: String,
+      added: Set[String],
+      implicitsChanged: Boolean
+  )
+
+  /**
+   * The package objects compiled in this cycle whose name hashes changed. A package object that
+   * inherits a new member is recompiled after its parent, so its previous API lacks the member.
+   * A new package object adds all its names.
+   */
+  private def packageObjectChanges(
+      compiledClasses: Set[String],
+      previous: Analysis,
+      current: Analysis
+  ): List[PackageObjectChange] =
+    def nameHashes(analysis: Analysis, className: String): Set[NameHash] =
+      if analysis.relations.definesClass(className).isEmpty then Set.empty
+      else analysis.apis.internalAPI(className).nameHashes.toSet
+    compiledClasses.toList.flatMap { packageObject =>
+      IncrementalCommon.packageOfPackageObject(packageObject).flatMap { pkg =>
+        val before = nameHashes(previous, packageObject)
+        val after = nameHashes(current, packageObject)
+        val added = (after -- before).map(_.name).filterNot(IncrementalCommon.isNotInPackageScope)
+        val implicitsChanged = ((after -- before) ++ (before -- after)).exists(_.scope ==
+          UseScope.Implicit)
+        Option.when(added.nonEmpty || implicitsChanged)(
+          PackageObjectChange(packageObject, pkg, added, implicitsChanged)
+        )
+      }
+    }
+  end packageObjectChanges
+
+  /**
+   * The classes that can see the definitions of a package without naming it.
+   *
+   * A class sees the package it is in. It sees another package `p` when a class of its source
+   * records the reserved used name `p._`, which the bridges record for a wildcard import of `p` and
+   * for the outer clause of a chained package clause (`package p; package q`). A top-level import
+   * is charged to one class of the source, so the whole source counts. A Java class records
+   * neither, so it is taken to see the classes of every package, though not the members of a
+   * package object, nor implicits.
+   *
+   * An implicit of a package object is also in the implicit scope of a type whose prefix is the
+   * package or a nested one, in Scala 2 unless `package-prefix-implicits` is enabled (not in
+   * Scala 3). A class can only search such a type if it refers to a class of the package or a
+   * nested one, so [[implicitSeers]] adds those classes when `packagePrefixImplicits`.
+   *
+   * With `packageScope=global` every class sees every package, for a build whose bridge does not
+   * record the reserved names.
+   */
+  private class PackageScope(relations: Relations):
+    private val global = IncrementalCommon.isGlobalPackageScope(options)
+    private val usedNames = relations.names.toMultiMap
+    private lazy val importers: Map[String, Set[String]] =
+      val bySource =
+        for
+          (className, used) <- usedNames.iterator
+          u <- used.iterator
+          if u.name.endsWith(IncrementalCommon.PackageWildcardSuffix)
+          source <- relations.definesClass(className).iterator
+        yield u.name.stripSuffix(IncrementalCommon.PackageWildcardSuffix) -> source
+      bySource.toList
+        .groupMap(_._1)(_._2)
+        .view
+        .mapValues(_.toSet.flatMap(relations.classNames))
+        .toMap
+
+    private def isJava(className: String): Boolean =
+      relations.definesClass(className).exists(_.id.endsWith(".java"))
+
+    /** Whether `className` is a class of package `pkg`, or nested in one, not of a subpackage. */
+    private def isIn(pkg: String)(className: String): Boolean =
+      val rest =
+        if pkg.isEmpty then className
+        else if className.startsWith(pkg + ".") then className.substring(pkg.length + 1)
+        else null
+      rest != null && {
+        val top = rest.takeWhile(_ != '.')
+        top == rest || relations.definesClass(if pkg.isEmpty then top else s"$pkg.$top").nonEmpty
+      }
+
+    private def seesMembers(pkg: String)(className: String): Boolean =
+      global || isIn(pkg)(className) || importers.get(pkg).exists(_(className))
+
+    def sees(pkg: String)(className: String): Boolean =
+      seesMembers(pkg)(className) || isJava(className)
+
+    def implicitSeers(pkg: String): Set[String] =
+      val seers = relations.classes._2s.filter(seesMembers(pkg)).toSet
+      if packagePrefixImplicits then seers ++ referrers(pkg) else seers
+
+    private def referrers(pkg: String): Set[String] =
+      def under(target: String) = pkg.isEmpty || target.startsWith(pkg + ".")
+      val referrers = relations.classes._2s.filter { className =>
+        relations.memberRef.internal.forward(className).exists(under) ||
+        relations.inheritance.internal.forward(className).exists(under)
+      }
+      referrers.toSet
+    end referrers
+
+    /** The classes that use one of `names` and see the classes of `pkg`. */
+    def usersOf(pkg: String, names: Set[String]): Set[String] = users(names, sees(pkg))
+
+    /** The classes that use one of `names` and see the package object members of `pkg`. */
+    def memberUsersOf(pkg: String, names: Set[String]): Set[String] =
+      users(names, seesMembers(pkg))
+
+    private def users(names: Set[String], sees: String => Boolean): Set[String] =
+      usedNames.iterator.collect {
+        case (className, used) if used.exists(u => names(u.name)) && sees(className) => className
+      }.toSet
+  end PackageScope
+
+=======
+  /**
+   * Invalidates the classes that use the simple name of a top-level class added by this cycle.
+   *
+   * An added class can change how an existing class resolves a name, although neither depends on
+   * the other: `a.b.Foo` shadows `a.Foo` in a client in `package a; package b`, and `q.Foo`
+   * shadows `a.Foo` or `scala.Foo` in a client in package `a` that imports `q._`. Zinc does not
+   * record the scopes that a lookup searched, so this invalidates the classes that use the name
+   * and see the added class's package (see [[PackageScope.Reach]]).
+   *
+   * @param compiledClasses The classes defined by the sources compiled in this cycle.
+   * @param previous The analysis before this cycle.
+   * @param current The analysis after this cycle.
+   */
+  def invalidateByAddedClasses(
+      compiledClasses: Set[String],
+      previous: Analysis,
+      current: Analysis
+  ): Set[String] =
+    def isTopLevel(className: String): Boolean =
+      // A class without a companion has an empty, top-level placeholder for it.
+      val api = current.apis.internalAPI(className).api()
+      api.classApi.topLevel && api.objectApi.topLevel
+    val added =
+      compiledClasses.filter(c => previous.relations.definesClass(c).isEmpty && isTopLevel(c))
+    if added.isEmpty then Set.empty
+    else
+      val reach = PackageScope.Reach(
+        current.relations,
+        IncrementalCommon.comesFromScalaSource(previous.relations, Some(current.relations)),
+        PackageScope.global(options)
+      )
+      // No reference resolves to a package object by its name, `package`.
+      val names = added.iterator
+        .map(c => c.substring(c.lastIndexOf('.') + 1) -> PackageScope.packageOf(c))
+        .filter(_._1 != "package")
+        .toList
+      val invalidated = PackageScope.usersOf(names, current.relations, reach)
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Added classes",
+          Seq("added classes" -> added, "classes using their names" -> invalidated)
+        )
+      )
+      invalidated
+  end invalidateByAddedClasses
+
+>>>>>>>
+  /** Invalidates classes and sources based on initially detected 'changes' to the sources, products, and dependencies.*/
+  /** The previous analysis's APIs, which external invalidation reads for unrecompiled classes. */
+  private[inc] var previousAPIs: APIs = APIs.empty
+
+  def invalidateInitial(
+      previous: Relations,
+      changes: InitialChanges
+  ): (Set[String], Set[VirtualFileRef]) =
+    def classNames(srcs: Set[VirtualFileRef]): Set[String] = srcs.flatMap(previous.classNames)
+    def toImmutableSet(srcs: java.util.Set[VirtualFileRef]): Set[VirtualFileRef] =
+      import scala.jdk.CollectionConverters.*
+      srcs.iterator().asScala.toSet
+
+    val srcChanges = changes.internalSrc
+    val removedSrcs = toImmutableSet(srcChanges.getRemoved)
+    val modifiedSrcs = toImmutableSet(srcChanges.getChanged)
+    val addedSrcs = toImmutableSet(srcChanges.getAdded)
+    IncrementalCommon.checkAbsolute(addedSrcs)
+
+    val removedClasses = classNames(removedSrcs)
+    val dependentOnRemovedClasses = removedClasses.flatMap(previous.memberRef.internal.reverse)
+    val modifiedClasses = classNames(modifiedSrcs)
+    val invalidatedClasses = removedClasses ++ dependentOnRemovedClasses ++ modifiedClasses
+
+    val byProduct = changes.removedProducts.flatMap(previous.produced)
+    val byLibraryDep = changes.libraryDeps.flatMap(previous.usesLibrary)
+    val byExtSrcDep =
+      // Invalidate changes
+      val isScalaSource = IncrementalCommon.comesFromScalaSource(previous)
+      changes.external.apiChanges.iterator.flatMap { externalAPIChange =>
+        invalidateClassesExternally(previous, externalAPIChange, isScalaSource)
+      }.toSet
+
+    val byLibraryAncestor = libraryDescendants(previous)
+    val byPackageScope =
+      if changes.external.apiChanges.isEmpty then Set.empty[String]
+      else invalidateByPackageScope(previous, Set.empty)
+    val allInvalidatedClasses =
+      invalidatedClasses ++ byExtSrcDep ++ byLibraryAncestor ++ byPackageScope
+    val allInvalidatedSourcefiles = addedSrcs ++ modifiedSrcs ++ byProduct ++ byLibraryDep
+
+    if previous.allSources.isEmpty then
+      invalidationLog.debug(
+        InvalidationLog.section("Initial changes", Nil, Some("full compilation"))
+      )
+    else if allInvalidatedClasses.isEmpty && allInvalidatedSourcefiles.isEmpty then
+      invalidationLog.debug(InvalidationLog.section("Initial changes", Nil, Some("no changes")))
+    else
+      invalidationLog.debug(
+        InvalidationLog.section(
+          "Initial changes",
+          Seq(
+            "removed sources" -> removedSrcs.map(_.id),
+            "added sources" -> addedSrcs.map(_.id),
+            "modified sources" -> modifiedSrcs.map(_.id),
+            "removed products" -> changes.removedProducts.map(_.id),
+            "external API changes" -> changes.external.apiChanges.map(
+              InvalidationLog.formatApiChange
+            ),
+            "modified binary dependencies" -> changes.libraryDeps.map(_.id),
+            "directly invalidated classes" -> invalidatedClasses,
+            "sources invalidated by products" -> byProduct.map(_.id),
+            "sources invalidated by binary dependencies" -> byLibraryDep.map(_.id),
+            "classes invalidated by external sources" -> byExtSrcDep,
+            "classes with a changed library ancestor" -> byLibraryAncestor,
+            "classes invalidated by a package's external members" -> byPackageScope,
+          )
+        )
+      )
+    end if
+
+    (allInvalidatedClasses, allInvalidatedSourcefiles)
+  end invalidateInitial
+
+  /**
+   * Returns the invalidations that are the result of the `currentInvalidations` + the
+   * `previousInvalidations` that depend transitively on `currentInvalidations`.
+   *
+   * We do this step on every incremental compiler iteration of a project where
+   * `previousInvalidations` typically refers to the classes invalidated in the
+   * previous incremental compiler cycle.
+   *
+   * @param previousInvalidations
+   * @param currentInvalidations
+   * @param findClassDependencies
+   * @return
+   */
+  private def includeTransitiveInitialInvalidations(
+      previousInvalidations: Set[String],
+      currentInvalidations: Set[String],
+      findClassDependencies: String => Set[String]
+  ): Set[String] =
+    val newInvalidations = currentInvalidations -- previousInvalidations
+    if newInvalidations.nonEmpty then
+      invalidationLog.detail(
+        InvalidationLog.section(
+          "New invalidations",
+          Seq("classes" -> newInvalidations)
+        )
+      )
+
+    val newTransitiveInvalidations =
+      IncrementalCommon.transitiveDeps(newInvalidations, invalidationLog.detailLogger)(
+        findClassDependencies
+      )
+    // Include the initial invalidations that are present in the transitive new invalidations
+    val reInvalidated = previousInvalidations.intersect(newTransitiveInvalidations)
+
+    if reInvalidated.nonEmpty then
+      invalidationLog.detail(
+        InvalidationLog.section(
+          "Previously invalidated classes depending on new invalidations",
+          Seq("classes" -> reInvalidated)
+        )
+      )
+    newInvalidations ++ reInvalidated
+  end includeTransitiveInitialInvalidations
+
+  /**
+   * Logs API changes using debug-level logging. The API are obtained using the APIDiff class.
+   *
+   * NOTE: This method creates a new APIDiff instance on every invocation.
+   */
+  private def logApiChanges(
+      apiChanges: Iterable[APIChange],
+      oldAPIMapping: String => AnalyzedClass,
+      newAPIMapping: String => AnalyzedClass
+  ): Unit =
+    val contextSize = options.apiDiffContextSize
+    try
+      val wrappedLog = new PrefixingLogger("[diff] ")(log)
+      val apiDiff = new APIDiff
+      apiChanges foreach {
+        case APIChangeDueToMacroDefinition(src) =>
+          wrappedLog.debug(s"Detected API change because $src contains a macro definition.")
+        case APIChangeDueToAnnotationDefinition(src) =>
+          wrappedLog.debug(s"Detected API change because $src contains an annotation definition.")
+        case TraitPrivateMembersModified(modifiedClass) =>
+          wrappedLog.debug(s"Detect change in private members of trait ${modifiedClass}.")
+        case apiChange: NamesChange =>
+          val src = apiChange.modifiedClass
+          val oldApi = oldAPIMapping(src)
+          val newApi = newAPIMapping(src)
+          val apiUnifiedPatch =
+            apiDiff.generateApiDiff(src, oldApi.api, newApi.api, contextSize)
+          wrappedLog.debug(s"Detected a change in a public API ($src):\n$apiUnifiedPatch")
+      }
+    catch
+      case e: Exception =>
+        log.error("An exception has been thrown while trying to dump an api diff.")
+        log.trace(e)
+    end try
+  end logApiChanges
+
+  /**
+   * Add package objects that inherit from the set of invalidated classes to avoid
+   * "class file needed by package is missing" compilation errors.
+   *
+   * This might be to conservative. We probably only need the package objects for packages
+   * of invalidated classes.
+   *
+   * @param invalidatedClasses The set of invalidated classes.
+   * @param relations The current relations.
+   * @param apis The current APIs information.
+   * @return The set of invalidated classes + the set of package objects.
+   */
+  protected def invalidatedPackageObjects(
+      invalidatedClasses: Set[String],
+      relations: Relations,
+      apis: APIs
+  ): Set[String]
+
+  /**
+   * Find an API change between the `previous` and `current` class representations of `className`.
+   *
+   * @param className The class name that identifies both analyzed classes.
+   * @param previous The analyzed class that comes from the previous analysis.
+   * @param current The analyzed class that comes from the current analysis.
+   * @return An optional API change detected between `previous` and `current`.
+   */
+  protected def findAPIChange(
+      className: String,
+      previous: AnalyzedClass,
+      current: AnalyzedClass
+  ): Option[APIChange]
+
+  /**
+   * Finds the class dependencies of `className` given an instance of [[Relations]].
+   *
+   * @param className The class name from which we detect dependencies.
+   * @param relations The instance of relations.
+   * @return A collection of classes that depend on `className`.
+   */
+  protected def findClassDependencies(
+      className: String,
+      relations: Relations
+  ): Set[String]
+
+  /**
+   * Invalidates a set of class names given the current relations and an internal API change.
+   *
+   * This step happens in every cycle of the incremental compiler as it is required to know
+   * what classes were invalidated given the previous incremental compiler run.
+   *
+   * @param relations    The relations from the previous analysis file of the compiled project.
+   * @param change       The internal API change detected by [[invalidateAfterInternalCompilation]].
+   * @param isScalaClass A function that tell us whether a class is defined in a Scala file or not.
+   */
+  protected def invalidateClassesInternally(
+      relations: Relations,
+      change: APIChange,
+      isScalaClass: String => Boolean
+  ): Set[String]
+
+  /**
+   * Invalidates a set of class names given the current relations and an external API change
+   * that has been detected in upstream projects. This step only happens in `invalidateInitial`
+   * because that's where external changes need to be detected and properly invalidated.
+   *
+   * @param currentRelations The relations from the previous analysis file of the compiled project.
+   * @param externalAPIChange The external API change detected by [[detectInitialChanges()]].
+   * @param isScalaClass A function that tell us whether a class is defined in a Scala file or not.
+   */
+  protected def invalidateClassesExternally(
+      currentRelations: Relations,
+      externalAPIChange: APIChange,
+      isScalaClass: String => Boolean
+  ): Set[String]
+end IncrementalCommon
+
+object IncrementalCommon:
+
+  /**
+   * A name that a package object's API has but does not put in its package's scope: a member of
+   * `Any` or `AnyRef`, a constructor, a trait initialiser, or the name of the class itself.
+   */
+  /**
+   * The incOption that widens the name-resolution rules to every class, when `global`, instead of
+   * the classes that see a package (`packages`, the default).
+   */
+  val PackageScopeKey = "packageScope"
+
+  def isGlobalPackageScope(options: IncOptions): Boolean =
+    options.extra.get(PackageScopeKey) == "global"
+
+  /** The suffix of the used name that a bridge records for a wildcard import of a package. */
+  val PackageWildcardSuffix = "._"
+
+  private[inc] def isTopLevel(analysis: Analysis, className: String): Boolean =
+    // A class without a companion has an empty, top-level placeholder for it.
+    val api = analysis.apis.internalAPI(className).api()
+    api.classApi.topLevel && api.objectApi.topLevel
+
+  private[inc] def splitClassName(className: String): (String, String) =
+    val i = className.lastIndexOf('.')
+    if i < 0 then ("", className) else (className.substring(0, i), className.substring(i + 1))
+
+  private[inc] def names(analysis: Analysis, className: String): Set[String] =
+    if analysis.relations.definesClass(className).isEmpty then Set.empty
+    else analysis.apis.internalAPI(className).nameHashes.iterator.map(_.name).toSet
+
+  def isNotInPackageScope(name: String): Boolean =
+    universalMemberNames(name) || name.contains(';') || name == "$init$" ||
+      name.endsWith("$package")
+
+  private val universalMemberNames: Set[String] = Set(
+    "==",
+    "!=",
+    "##",
+    "eq",
+    "ne",
+    "equals",
+    "hashCode",
+    "toString",
+    "getClass",
+    "clone",
+    "finalize",
+    "notify",
+    "notifyAll",
+    "wait",
+    "synchronized",
+    "asInstanceOf",
+    "isInstanceOf",
+    "$asInstanceOf",
+    "$isInstanceOf",
+  )
+
+  /**
+   * The package whose scope a package object's members are in: `a.b` for the Scala 2 or 3
+   * package object `a.b.package` and for Scala 3's top-level definitions `a.b.F$package`.
+   */
+  /**
+   * Whether the compiler of `setup` puts the package objects of a type's prefix packages in its
+   * implicit scope: Scala 2, unless `-Xsource:3-cross` or `-Xsource-features` (`_`,
+   * `package-prefix-implicits`, or a `v2.13.13` or later group) drops them. Scala 3 does not
+   * (only under `-source:3.0-migration`, which it treats as an anchor for packages).
+   */
+  def packagePrefixImplicits(setup: MiniSetup): Boolean =
+    packagePrefixImplicits(setup.compilerVersion, setup.options.scalacOptions.toSeq)
+
+  def packagePrefixImplicits(compilerVersion: String, scalacOptions: Seq[String]): Boolean =
+    def drops(option: String) =
+      option == "-Xsource:3-cross" || option.startsWith("-Xsource-features:") &&
+        option.stripPrefix("-Xsource-features:").split(',').exists { f =>
+          f == "_" || f == "package-prefix-implicits" || f.startsWith("v2.13.")
+        }
+    compilerVersion.startsWith("2.") && !scalacOptions.exists(drops) ||
+    compilerVersion.startsWith("3.") && scalacOptions.exists(_.contains("3.0-migration"))
+  end packagePrefixImplicits
+
+  def packageOfPackageObject(className: String): Option[String] =
+    if className == "package" then Some("")
+    else if className.endsWith(".package") then Some(className.stripSuffix(".package"))
+    else if className.endsWith("$package") then
+      Some(className.substring(0, math.max(className.lastIndexOf('.'), 0)))
+    else None
+
+  /** Tell if given class names comes from a Scala source file or not by inspecting relations. */
+  def comesFromScalaSource(
+      previous: Relations,
+      current: Option[Relations] = None
+  )(className: String): Boolean =
+    val previousSourcesWithClassName = previous.classes.reverse(className)
+    val newSourcesWithClassName = current.map(_.classes.reverse(className)).getOrElse(Set.empty)
+    if previousSourcesWithClassName.isEmpty && newSourcesWithClassName.isEmpty then
+      sys.error(s"Fatal Zinc error: no entry for class $className in classes relation.")
+    else
+      // Makes sure that the dependency doesn't possibly come from Java
+      previousSourcesWithClassName.forall(src => APIUtil.isScalaSourceName(src.id)) &&
+      newSourcesWithClassName.forall(src => APIUtil.isScalaSourceName(src.id))
+
+  /** Invalidate all classes that claim to produce the same class file as another class. */
+  def invalidateNamesProducingSameClassFile(merged: Relations): Set[String] =
+    merged.srcProd.reverseMap.flatMap {
+      case (_, sources) => if sources.size > 1 then sources.flatMap(merged.classNames(_)) else Nil
+    }.toSet
+
+  /**
+   * - If the classpath hash has NOT changed, check if there's been name shadowing
+   *   by looking up the library-associated class names into the Analysis file.
+   * - If the classpath hash has changed, check if the library-associated classes
+   *   are still associated with the same library.
+   *   This would avoid recompiling everything when classpath changes.
+   *
+   * @param lookup A lookup instance to ask questions about the classpath.
+   * @param previousStamps The stamps associated with the previous compilation.
+   * @param currentStamps The stamps associated with the current compilation.
+   * @param previousRelations The relation from the previous compiler iteration.
+   * @param log A logger.
+   * @param equivS An equivalence function to compare stamps.
+   * @return
+   */
+  def isLibraryModified(
+      skipClasspathLookup: Boolean,
+      lookup: Lookup,
+      previousStamps: Stamps,
+      currentStamps: ReadStamps,
+      previousRelations: Relations,
+      converter: FileConverter,
+      log: Logger
+  )(implicit equivS: Equiv[XStamp]): VirtualFileRef => Boolean =
+    val invalidationLog = new InvalidationLog(log, relationsDebug = false)
+    (binaryFile: VirtualFileRef) =>
+      def invalidateBinary(reason: String): Boolean =
+        invalidationLog.debug(s"Invalidating '$binaryFile' because $reason")
+        true
+
+      def compareStamps(previousFile: VirtualFileRef, currentFile: VirtualFileRef): Boolean =
+        val previousStamp = previousStamps.library(previousFile)
+        val currentStamp = currentStamps.library(currentFile)
+        if equivS.equiv(previousStamp, currentStamp) then false
+        else invalidateBinary(s"$previousFile ($previousStamp) != $currentFile ($currentStamp)")
+
+      def isLibraryChanged(file: VirtualFileRef): Boolean =
+        def compareOriginClassFile(className: String, classpathEntry: VirtualFileRef): Boolean =
+          if classpathEntry.id.endsWith(".jar") then compareStamps(file, classpathEntry)
+          else
+            val resolved = Locate.classFile(converter.toPath(classpathEntry), className)
+            compareStamps(file, converter.toVirtualFile(resolved))
+
+        val classNames = previousRelations.libraryClassNames(file)
+        classNames.exists { binaryClassName =>
+          if lookup.changedClasspathHash.isEmpty then
+            // If classpath is not changed, the only possible change needs to come from same project
+            lookup.lookupAnalysis(binaryClassName) match
+              case None => false
+              // Most of the cases this is a build tool misconfiguration when using Zinc
+              case Some(a) => invalidateBinary(s"${binaryClassName} came from analysis $a")
+          else
+            // Find
+            lookup.lookupOnClasspath(binaryClassName) match
+              case None =>
+                invalidateBinary(s"could not find class $binaryClassName on the classpath.")
+              case Some(classpathEntry) => compareOriginClassFile(binaryClassName, classpathEntry)
+        }
+      end isLibraryChanged
+
+      if skipClasspathLookup then compareStamps(binaryFile, binaryFile)
+      else isLibraryChanged(binaryFile)
+  end isLibraryModified
+
+  def transitiveDeps[T](
+      nodes: Iterable[T],
+      log: Logger,
+      logging: Boolean = true
+  )(dependencies: T => Iterable[T]): Set[T] =
+    val visited = new collection.mutable.HashSet[T]
+    def all(from: T, tos: Iterable[T]): Unit = tos.foreach(to => visit(from, to))
+    def visit(from: T, to: T): Unit =
+      if !visited.contains(to) then
+        if logging then log.debug(s"Transitive dependency traversal: including $to from $from")
+        visited += to
+        all(to, dependencies(to))
+
+    if logging && nodes.nonEmpty then
+      log.debug(
+        InvalidationLog.section(
+          "Transitive dependency traversal",
+          Seq("initial nodes" -> nodes.iterator.map(_.toString).toVector)
+        )
+      )
+    nodes.foreach { start =>
+      visited += start
+      all(start, dependencies(start))
+    }
+    visited.toSet
+  end transitiveDeps
+
+  /**
+   * Check that a collection of files are absolute and not relative.
+   *
+   * For legacy reasons, the logic to check the absolute path of source files has been
+   * implemented in the core invalidation algorithm logic. It remains here as there are
+   * more important things to do than fixing this issue.
+   *
+   * @param addedSources
+   */
+  def checkAbsolute(addedSources: Iterable[VirtualFileRef]): Unit =
+    if addedSources.isEmpty then ()
+    else {
+      // addedSources.filterNot(_.isAbsolute).toList match {
+      //   case first :: more =>
+      //     val fileStrings = more match {
+      //       case Nil      => first.toString
+      //       case x :: Nil => s"$first and $x"
+      //       case _        => s"$first and ${more.size} others"
+      //     }
+      //     sys.error(s"Expected absolute source files instead of ${fileStrings}.")
+      //   case Nil => ()
+      // }
+    }
+
+  lazy val emptyChanges: DependencyChanges = new DependencyChanges:
+    override val modifiedBinaries = new Array[java.io.File](0)
+    override val modifiedLibraries = new Array[VirtualFileRef](0)
+    override val modifiedClasses = new Array[String](0)
+    override def isEmpty = true
+
+  /**
+   * Prunes from the analysis and deletes the class files of `invalidatedSources`.
+   *
+   * @param invalidatedSources The set of invalidated sources.
+   * @param previous The previous analysis instance.
+   * @param classfileManager The class file manager.
+   * @return An instance of analysis that doesn't contain the invalidated sources.
+   */
+  def pruneClassFilesOfInvalidations(
+      invalidatedSources: Set[VirtualFile],
+      previous: Analysis,
+      classfileManager: XClassFileManager,
+      converter: FileConverter
+  ): Analysis =
+    val products = invalidatedSources.flatMap(previous.relations.products).toList
+    classfileManager.delete(products.map(converter.toVirtualFile(_)).toArray)
+    previous -- invalidatedSources
+end IncrementalCommon

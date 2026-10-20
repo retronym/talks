@@ -200,11 +200,13 @@ remote = "origin"
 pr = 45
 title = "CLAUDE.md: run sbt with --server --batch"
 
-# rz#71's 4cba55a47 on the develop line: IncHandler caches what each jar defines, as sbt does.
+# IncBench and Zinc's phase timings, the develop counterpart of rz#71; it includes the jar-index cache
+# that was the rz#71-dcc patch member.
 [[members]]
-id = "rz#71-dcc"
-patch = "fixups/incbench-defines-class-cache.patch"
-title = "IncHandler caches what each jar defines, as sbt does (rz#71's 4cba55a47)"
+id = "rz#90"
+remote = "origin"
+pr = 90
+title = "IncBench: incremental-compile benchmarks with --verify, --profile and --serve, and Zinc phase timings"
 
 # Java conformance triage (2026-10-20, JAVA-CONFORMANCE-TRIAGE.md): N1, a classOf literal records no used name.
 [[members]]

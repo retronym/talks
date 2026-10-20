@@ -3,7 +3,7 @@ repo = "~/code/sbt/zinc"
 push = "origin"
 
 # rz#24 is the curated Merkle series (2026-10-20), stacked on rz#86 (precursors) and under rz#88 (bridge hashing): rz#30, rz#63, the composition cache and the bug-hunt
-# fixes are folded into its units, and IncBench is in integration/develop (incbench-develop).
+# fixes are folded into its units, and IncBench is in integration/develop (rz#90).
 # Conflicts between the Merkle PoC's own name invalidation (rz#41, in rz#24) and rz#34/#47 are
 # resolved in favour of Merkle's (decision 4); see rr-cache.
 base = { remote = "origin", branch = "integration/develop" }
@@ -19,11 +19,3 @@ id = "rz#88"
 remote = "origin"
 pr = 88
 title = "[PoC] Merkle: hash class APIs in the compiler bridge"
-
-# IncBench and Zinc's phase timings, which rz#24 carried until the curation; the develop counterpart
-# of rz#71. integration/develop has an older IncBench through the conformance members; this one wins.
-[[members]]
-id = "incbench-develop"
-remote = "origin"
-branch = "claude/incbench-develop"
-title = "IncBench: incremental-compile benchmarks with --verify, and Zinc phase timings"
