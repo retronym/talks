@@ -215,6 +215,10 @@ def main():
         version, jars = rest.split(":", 1)
         scala[name] = (version, jars)
 
+    # A sleeping laptop inflates whichever compile spans the sleep; macOS's caffeinate holds off idle and system
+    # sleep for as long as this process lives.
+    if shutil.which("caffeinate"):
+        subprocess.Popen(["caffeinate", "-ims", "-w", str(os.getpid())])
     start = time.time()
     campaign = {
         "start": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
