@@ -460,6 +460,7 @@ flowchart LR
 ```
 
 - dotc had no precedent for concurrent readers of symbols or types ([readers §3][M]).
+- A *root* is the unit a completion is claimed by: whatever one completion writes together. A symbol loader completes a class and its module at once, and the TASTy completers of one file share one unpickler's address maps, so the claim is per pair or per file, not per symbol ([readers §3.1][M]). §24 lists the roots.
 - The `Reader` (kind A) found its own bug: it cannot be a field of the context, because contexts are captured (completer creation contexts, import contexts, skipped statements' contexts) and run later under another request. It is bound to the thread ([readers §8][M] step 2).
 
 ### 23. Step 3: one coarse lock, and why it was not enough
@@ -489,7 +490,7 @@ stateDiagram-v2
   Done --> [*]
 ```
 
-- One claim per *root*: a loader's class and module together, a TASTy file (its address maps are shared), a Namer symbol, an inherited cache, a `LazyRef` ([readers §8][M] step 4).
+- One claim per root (§22): a loader's class and module together, a TASTy file, a Namer symbol by itself, and as roots of their own the inherited caches (base data, member names), the lazy TASTy reads, `LazyRef` computations and, under one key, every bring-forward to a new run ([readers §8][M] step 4).
 - While it runs, the symbol's info is an `InProgress`, a lazy type only the owner sees through. Every other reader meets a lazy type and takes the existing slow path of `Denotation.info`, which waits on the root. The hot test, `myInfo.isInstanceOf[LazyType]`, is unchanged.
 - A Namer completion runs in a committable typer state of its own and reports to the namer's reporter, so a hover that forces a signature does not swallow its diagnostics.
 - Behind `-Yinteractive-readers`; batch never allocates an `InProgress`.
