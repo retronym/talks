@@ -959,7 +959,78 @@ Left to `decide` rather than proved: progress.
 | I52, I55, I57 | a read action in the run's root typer state; a shared implicit `SearchRoot`; a `LazyRef` in progress taken for a cycle |
 | I63–I67 | found by the throughput runs: a false self-type cycle, explicit nulls' flow facts, committed creation states, a class's caches read twice |
 | I60 | two-reader soak failures under heavy load, a different symptom each time: an import's selector facts, now published as one value |
-| I68 | open: with four or eight readers over the whole source set, now and then one file's errors differ from the whole-set run |
+| I68 | with four or eight readers, now and then one file's errors differ from the whole-set run: the hunt in §33a–§33c |
+| I70, I72, I73, I75 | found by that hunt: a completion typed in the run's shared state without the lock; three more peeks at another reader's `InProgress` (`ensureCompletions`, `typeParams`, the self type); a cached empty list computed while another reader's completion started |
+
+
+### 33a. The shapes of race in shared caches (I68)
+
+Types are hash-consed, and symbols, denotations, scopes, annotations and import infos are reached by every reader, so every plain `var` that typing fills lazily is shared. The hunt for I68 found the same four shapes again and again ([readers §4.4][M]):
+
+| shape | where it was found | cure |
+|---|---|---|
+| a cache in several fields, written one after the other | `PreDenotation.asSeenFrom`, `NamedType.denot`, `AppliedType.superType`, `MatchType.reduced` | one immutable value, one release store; or the period read first with acquire |
+| a sentinel during a computation | `packageObjsCache = Nil`, a lazy annotation's `myTree = null`, `myTypeParams` set early | a claim keyed by the object, as `LazyRef` has since I57: the owner meets the sentinel, others wait |
+| a field read twice | `ImportInfo.featureImported`, `SourceFile.offsetToLine` | read once into a local, return what was computed |
+| a structure published while it is filled | `MutableScope.toList` (I77), `ImportInfo.SelectorInfo` (I60) | build in a local and publish once, or a synchronised map in a concurrent base |
+
+- Each fix is taken only on a concurrent base where it costs anything on the batch path; most cost nothing (a local instead of a field, the order of two stores).
+- The races hide in the 484-file loop, about one divergent file a round, and show in a small one: `ShownSoak` types conversions to the compiler's `Formatting.Shown` with eight readers every round, and diverged in ten of seventeen files a round before the fixes.
+- After them, 20 rounds of 484 files at k=8: no failed cell, 7 divergent files, all from §33c's raised cycles ([readers §8][M] step 4).
+
+### 33b. A statement's typer state is private (I76)
+
+<figure class="fig pair">
+<svg viewBox="0 0 340 200" role="img" aria-label="Before: readers commit statements into the run's shared typer state and fork from it">
+  <text x="0" y="14" class="h">before</text>
+  <rect x="80" y="26" width="180" height="40" rx="6" class="bad"/><text x="170" y="43" text-anchor="middle" class="b">the run's TyperState</text><text x="170" y="58" text-anchor="middle" class="m">shared, committed into</text>
+  <rect x="0" y="100" width="130" height="30" rx="6" class="own"/><text x="65" y="120" text-anchor="middle">R1's statement</text>
+  <rect x="210" y="100" width="130" height="30" rx="6" class="own"/><text x="275" y="120" text-anchor="middle">R2's statement</text>
+  <path d="M 65 100 L 120 68" class="s-bad"/><text x="40" y="88" class="c-bad">commit</text>
+  <path d="M 220 68 L 275 100" class="s-wait"/><text x="262" y="88" class="c-wait">fork</text>
+  <text x="0" y="156">the given's [A], bound by R1's commit,</text>
+  <text x="0" y="172">met by R2's typing</text>
+  <text x="0" y="192" class="c-bad">conversion to Shown rejected; an NPE</text>
+</svg>
+<svg viewBox="0 0 340 200" role="img" aria-label="After: a statement's typer state is settled when it ends and dropped; the run's state is read-only">
+  <text x="0" y="14" class="h">after</text>
+  <rect x="80" y="26" width="180" height="40" rx="6" class="typed"/><text x="170" y="43" text-anchor="middle" class="b">the run's TyperState</text><text x="170" y="58" text-anchor="middle" class="m">read-only once the run opens</text>
+  <rect x="0" y="100" width="130" height="30" rx="6" class="own"/><text x="65" y="120" text-anchor="middle">R1's statement</text>
+  <rect x="210" y="100" width="130" height="30" rx="6" class="own"/><text x="275" y="120" text-anchor="middle">R2's statement</text>
+  <path d="M 120 68 L 65 100" class="s-typed"/><path d="M 220 68 L 275 100" class="s-typed"/>
+  <text x="0" y="156">each settled when it ends (variables</text>
+  <text x="0" y="172">instantiated), then dropped, never committed</text>
+  <text x="0" y="192" class="c-typed">an assertion in commit keeps it so</text>
+</svg>
+<figcaption>The rule I66 made for locals, applied to statements; lazy annotation arguments and inline bodies, typed by whichever reader forces them, get a private child state too ([readers §8][M] step 4). A change to how a session keeps constraints, not a race fix.</figcaption>
+</figure>
+
+### 33c. Who backs off: victim selection (I74)
+
+<figure class="fig pair">
+<svg viewBox="0 0 340 200" role="img" aria-label="Before: a reader inside a Namer completion backs off and leaves it unwound for the rest of the run">
+  <text x="0" y="14" class="h">before: whoever closes the cycle</text>
+  <rect x="0" y="30" width="150" height="40" rx="6" class="own"/><text x="10" y="47">R1 inside a Namer</text><text x="10" y="62">completion of s</text>
+  <rect x="190" y="30" width="150" height="40" rx="6" class="own"/><text x="200" y="47">R2 typing</text><text x="200" y="62">a body</text>
+  <text x="0" y="96">R1 closes a wait-for cycle and backs off</text>
+  <rect x="0" y="108" width="320" height="26" rx="6" class="bad"/><text x="10" y="125">s: UnwoundCompletion (cannot run twice, I53)</text>
+  <text x="0" y="156">pre-empts every reader that reaches it</text>
+  <text x="0" y="172">until a fresh run: with every file in one</text>
+  <text x="0" y="188" class="c-bad">run, 4 of 20 cells at k=8 never recovered</text>
+</svg>
+<svg viewBox="0 0 340 200" role="img" aria-label="After: the body-typing reader backs off; a reader inside a Namer completion never does">
+  <text x="0" y="14" class="h">after: a victim with no Namer completion</text>
+  <rect x="0" y="30" width="150" height="40" rx="6" class="typed"/><text x="10" y="47">R1 finishes s</text><text x="10" y="62">and publishes</text>
+  <rect x="190" y="30" width="150" height="40" rx="6" class="skip"/><text x="200" y="47">R2 backs off,</text><text x="200" y="62">its request restarts</text>
+  <text x="0" y="96">all parties inside Namer completions,</text>
+  <text x="0" y="112">every root a symbol: one raises</text>
+  <text x="0" y="128">CyclicReference, the single-reader answer;</text>
+  <text x="0" y="144">through a coarse root it waits, bounded</text>
+  <text x="0" y="172" class="m">a raised cycle no sequential order has:</text>
+  <text x="0" y="188" class="m">7 divergent files in 20 rounds (Setting)</text>
+</svg>
+<figcaption>The backoff of §28, made to choose its victim ([readers §8][M] step 4). The remaining divergences are two readers completing <code>Settings.Setting</code>'s members in opposite orders. The fix is a Namer completion that can run again (non-destructive attachments, I8), out of scope here.</figcaption>
+</figure>
 
 ---
 
@@ -1153,20 +1224,41 @@ Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a me
 - Inlay hints always carry a range; semantic tokens have a `range` form. The compiler half is done and checked against whole-file answers; Metals still sends the whole-file forms. `RangeParams` already extends `VirtualFileParams`, so Metals can pass one to the existing method.
 - Document highlight stays whole-file: its question is a point, its answer is every occurrence in the file.
 
-### 41. Diagnostics by provenance (in progress)
+### 41. Diagnostics by provenance (I69)
 
-```mermaid
-flowchart TB
-  H["hover (R2)<br/>forces f's signature"] --> F["f's completion<br/>reports an error"]
-  F -- "today: to the forcer's reporter" --> X["discarded with the hover"]
-  F -- "the rule: stored with the fact" --> S["f's diagnostics"]
-  S --> P["re-issued to every reader<br/>that reads f, deduplicated"]
-  P --> D["the diagnostics pass sees it"]
-```
+<figure class="fig pair">
+<svg viewBox="0 0 340 210" role="img" aria-label="Before: after a body edit, diagnostics are kept or dropped by position">
+  <text x="0" y="14" class="h">before: keyed by position</text>
+  <rect x="0" y="26" width="320" height="24" rx="5" class="box"/><text x="10" y="42" class="mono">inline def helper = … error …</text>
+  <rect x="0" y="56" width="320" height="56" rx="5" class="own"/><text x="10" y="72" class="mono">def D: Int = helper   (edited)</text>
+  <text x="10" y="90" class="m">drop what is positioned in D's span</text>
+  <text x="10" y="104" class="m">keep the rest, shifted</text>
+  <text x="0" y="134" class="c-bad">D's inlined error, positioned in helper: kept, stale</text>
+  <text x="0" y="152" class="c-bad">the class's check positioned at D: dropped</text>
+  <text x="0" y="170" class="c-bad">a @nowarn removed from D: still in force</text>
+  <text x="0" y="198" class="m">span-based: 4 of 13 SessionEditSuite cases fail</text>
+</svg>
+<svg viewBox="0 0 340 210" role="img" aria-label="After: each diagnostic is tagged with the fact whose computation reported it">
+  <text x="0" y="14" class="h">after: keyed by provenance</text>
+  <rect x="0" y="26" width="104" height="24" rx="5" class="pub"/><text x="52" y="42" text-anchor="middle" class="mono">Stat(sym)</text>
+  <rect x="110" y="26" width="128" height="24" rx="5" class="pub"/><text x="174" y="42" text-anchor="middle" class="mono">Completion(sym)</text>
+  <rect x="244" y="26" width="40" height="24" rx="5" class="pub"/><text x="264" y="42" text-anchor="middle" class="mono">run</text>
+  <rect x="290" y="26" width="46" height="24" rx="5" class="pub"/><text x="313" y="42" text-anchor="middle" class="mono">Parse</text>
+  <text x="0" y="74">tagged where a reporter first issues it,</text>
+  <text x="0" y="90">carried through typer-state buffers</text>
+  <text x="0" y="116">an edit of D drops Stat and Completion of</text>
+  <text x="0" y="132">D's symbols and their suppressions; keeps</text>
+  <text x="0" y="148">the rest, shifted; D's old ones shown stale</text>
+  <text x="0" y="164">until D is typed again</text>
+  <text x="0" y="198" class="c-typed">all 13 pass; the whole suite, 2,072 tests</text>
+</svg>
+<figcaption>[session §12][S], Diagnostics, on the branch <code>claude/diag-provenance-2d3c5e</code>. Found by the x-ray's replay: a body edit kept a stale diagnostic (I69).</figcaption>
+</figure>
 
-- Whoever forces a fact gets its side effects ([readers §4.3][M]). With several readers, an error in a signature goes to whichever reader forced it first.
-- Step 4 sends a Namer completion's diagnostics to the namer's reporter; a classpath completion still reports to its forcer. I49 is the single-reader form: a scaladoc warning cooked once per symbol under a typer state that was thrown away, missed in 108 of 109.
-- Being built on its own branch, not part of the numbers here.
+- The invariant: after every edit, the completed session's diagnostics equal a fresh whole-file run's as a multiset of level, position and message, not a count. The body-edit soaks and oracles check it before each edit and at the end.
+- Not a buffer per fact: step 4 tried a `StoreReporter` per Namer completion and dropped it (I59), because completers created inside it report into it after it has been flushed. A tag has no flush.
+- This is IntelliJ's rule, highlighting kept by the pass that made it, and the answer to [readers §4.3][M]: a side effect of forcing is stored with the fact, whichever reader forced it.
+- Cost: 0.2 ms median per edit on `Types.scala` (55 diagnostics), against 4–15 ms for the span shift.
 
 ---
 
@@ -1289,7 +1381,7 @@ The modes tie because the first request after each edit types the whole file. Wh
 
 - Eight readers are 2.7 times one and twice the batch typer. Batching files into islands, or warming shared roots first, changes nothing beyond round noise: contention on the symbol table is not the limit.
 - What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
-- Getting these numbers took six more race fixes (I60, I63–I67); I68 is open (§33).
+- Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§33a–§33c) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
 
 ### 47. The batch compiler pays nothing it can measure
 
@@ -1364,7 +1456,8 @@ The modes tie because the first request after each edit types the whole file. Wh
 ### 56. Where it stands
 
 - Built, behind flags, on [retronym/scala3#84][PR]: the `Reader`, the read/write regime, completion as lazy resolve (`-Yinteractive-readers`), body edits (`-Yinteractive-body-edits`), range targets. Gates: the presentation-compiler suite (2,034 tests) and the session suites in both reader modes.
-- Open: I68 (four and eight readers, now and then one file's errors differ), I49 (one scaladoc warning of 109), diagnostics by provenance (§41).
+- On its own branch: diagnostics by provenance (§41, I69).
+- Open: re-runnable Namer completions, which would remove I74's raised cycles (§33c); the sweep's list of shared state not yet hit (`MutableScope` enters, signature caches, read-modify-write of flags, `OfTypeImplicits`' lazy vals); I49 (one scaladoc warning of 109).
 - Next: trees as facts with a barrier and the typed tree as a persistent value (step 5, after non-destructive attachments, I8); facts that outlive a run, which snapshot readers across an edit need (stage 3); and the Metals side: range forms, no restart after a build compile.
 
 [PR]: https://github.com/retronym/scala3/pull/84
@@ -1538,7 +1631,8 @@ The modes tie because the first request after each edit types the whole file. Wh
     mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
     try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
   }
-  const firstRender = renderMermaid();
+  // Mermaid measures label text; wait for the web fonts or the boxes are sized for the fallback font.
+  const firstRender = (document.fonts ? document.fonts.ready : Promise.resolve()).then(renderMermaid);
 
   // 7. Navigation: current card, keyboard, focus mode, theme.
   let current = 0, suppressObserverUntil = 0;

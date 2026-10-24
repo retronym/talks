@@ -375,7 +375,8 @@ body.focus .focus-counter { display: block; }
     mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
     try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
   }
-  const firstRender = renderMermaid();
+  // Mermaid measures label text; wait for the web fonts or the boxes are sized for the fallback font.
+  const firstRender = (document.fonts ? document.fonts.ready : Promise.resolve()).then(renderMermaid);
 
   // 7. Navigation: current card, keyboard, focus mode, theme.
   let current = 0, suppressObserverUntil = 0;
