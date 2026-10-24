@@ -265,6 +265,7 @@ body.focus .focus-counter { display: block; }
 8. Edits that keep the run, range requests, diagnostics by provenance.
 9. The measurements.
 10. Prior art.
+11. Checkpoint: where it stands, what is open, the lessons, what can go upstream now.
 
 Every number is from the design notes, cited by section: [session §n][S] is `interactive-session.md`, [readers §n][M] is `interactive-multi-reader.md`, [Track I §n][TI] is the model. `§n` alone is a card of this talk.
 
@@ -1453,12 +1454,103 @@ The modes tie because the first request after each edit types the whole file. Wh
 - The Scala 3 presentation compiler moved into the compiler repository with Jędrzej Rochala's [scala/scala3#17528][pc17528] (2023, released in 3.4.0). That module, with mtags' `CompilerAccess` and its one-thread LIFO queue, is what this work instruments and changes; I50 is a stock mtags bug the measurement surfaced (a reset job queue whose old backlog keeps running).
 - Zinc's name hashing (Grzegorz Kossakowski; default since sbt 0.13.6, class-based in Zinc 1) recompiles a dependent only if a changed member's name appears in it ([sbt docs][nh], [credits][sbtcred]). It is incrementality by name-level footprint across files; the body edit of §37 is the same idea inside one file, keyed on a definition's signature.
 
-### 56. Where it stands
+---
 
-- Built, behind flags, on [retronym/scala3#84][PR]: the `Reader`, the read/write regime, completion as lazy resolve (`-Yinteractive-readers`), body edits (`-Yinteractive-body-edits`), range targets. Gates: the presentation-compiler suite (2,034 tests) and the session suites in both reader modes.
-- On its own branch: diagnostics by provenance (§41, I69).
-- Open: re-runnable Namer completions, which would remove I74's raised cycles (§33c); the sweep's list of shared state not yet hit (`MutableScope` enters, signature caches, read-modify-write of flags, `OfTypeImplicits`' lazy vals); I49 (one scaladoc warning of 109).
-- Next: trees as facts with a barrier and the typed tree as a persistent value (step 5, after non-destructive attachments, I8); facts that outlive a run, which snapshot readers across an edit need (stage 3); and the Metals side: range forms, no restart after a build compile.
+## Part XI — Checkpoint
+
+### 56. Where the PoC stands
+
+Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged in behaviour and within the noise of a cross-build A/B (§47).
+
+| piece | flag |
+|---|---|
+| the `Reader`; several readers under one completion lock | default in interactive mode |
+| independent readers: owner and barrier per root, `InProgress` seen by its owner only, a typer state and reporter per completion, peeks that wait, victim selection then backoff or `CyclicReference` | `-Yinteractive-readers` |
+| edits inside a body keep the run; diagnostics invalidated by provenance | `-Yinteractive-body-edits` |
+| range targets for inlay hints and semantic tokens | none (the compiler half) |
+
+- Hovers about 1 ms beside a background pass, whose diagnostics equal a whole-file run's (§44).
+- The whole-file run after a keystroke in `Types.scala`: 382 → 6 ms (§39).
+- All 484 `dotc` sources typed in 2.1 s with 8 readers, against the batch typer's 4.1 s; root waits a few milliseconds in all (§46).
+- On the recorded editor window the three modes tie, because the whole-file askers dominate it (§45).
+- The presentation-compiler suite and the session suites pass in both reader modes; findings I34–I76 on this branch, each with its mechanism and a test.
+
+### 57. What is open
+
+- **I68's residue.** At k=8, 7 of 20 × 484 files diverge, all from cycles raised on `Setting`'s hierarchy: a wait-for chain through Namer roots that is a lock order, not a dependency cycle. The victim rule has to tell the two apart, probably by asking whether the waited-on completion's rule actually needs the waiter's symbol (§33c).
+- **I74.** A Namer completion cannot run again after an unwind, so the reader that backs off must never be inside one. The long-term fix is re-runnable completions: I8's non-destructive attachments.
+- **The step 3 vs step 4 perflab campaign**, paused at 4 of 8 rounds, within 1–4 percent.
+- `testCompilation` not yet run on the provenance branch.
+
+### 58. Lessons: what to measure, and what the proof is
+
+- **Measure the queue before building the concurrency.** Nine tenths of the queueing was behind whole-file work (§42); that set the order of everything after it.
+- **The barrier is the whole correctness argument.** `run_agree` said so, and every divergence found since was a reader seeing unpublished state, not a scheduling problem (§26).
+- **dotc has no "concurrency in body typing only".** Typing a body forces completions, and 65–79 percent of a reader's time is inside them; step 3 was a correct stepping stone and a wrong ship point (§23).
+- **The editor's cost is the whole-file askers.** Readers pay off once inlay hints and semantic tokens are ranges and the whole-file work is a background pass; for keystrokes, the win is keeping the run (§39, §40).
+
+### 59. Lessons: every peek is a race
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 150" role="img" aria-label="A completion in progress on another reader is a state to wait for, never one to act on">
+  <defs><marker id="m60" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <g class="a-in" style="--d:.1s"><rect x="0" y="50" width="200" height="44" rx="6" class="own"/><text x="100" y="69" text-anchor="middle" class="b">in progress</text><text x="100" y="85" text-anchor="middle">on another reader</text></g>
+  <path d="M 202 64 C 260 40, 300 30, 356 30" class="mut a-draw" pathLength="1" style="--d:.4s" marker-end="url(#m60)"/>
+  <path d="M 202 82 C 260 106, 300 118, 356 118" class="mut a-draw" pathLength="1" style="--d:.8s" marker-end="url(#m60)"/>
+  <g class="a-in" style="--d:.5s"><rect x="360" y="10" width="340" height="40" rx="6" class="bad"/><text x="372" y="35">act on it: skip it, cache what it says, call it a cycle</text></g>
+  <line x1="364" y1="30" x2="696" y2="30" class="s-bad a-draw" pathLength="1" style="--d:1.3s" stroke-width="2"/>
+  <g class="a-pop" style="--d:1s"><rect x="360" y="98" width="340" height="40" rx="6" class="typed"/><text x="372" y="123">wait for it, then look at the symbol again</text></g>
+</svg>
+</figure>
+
+- The design counted thirteen `isCompleting` sites; the hunt found seven more shapes of the same thing: `typeParams` caching an empty list, `ensureCompletions` skipping a constructor, a `LazyRef` in progress taken for a cycle (§27, §33).
+- **Roots coarser than facts turn lock orders into cycles.** Raising `CyclicReference` there made false errors (I54); backing off made I74. The `Setting` residue is the same tension one level down (§28, §33c).
+- **The hunt that worked:** the k=8 whole-set run in a loop, each file's diagnostics diffed against a single-reader run, the claim log around each divergence, one shape at a time, each added to a suite; and two review sweeps for the known shapes, which found eleven more instances before the loop would have (§33a).
+
+### 60. Lessons: a shared typer state is a channel
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 170" role="img" aria-label="Committing into a shared typer state lets one reader's binding reach another's typing; a private state, settled and dropped, closes the channel">
+  <defs><marker id="m61" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <g class="a-in" style="--d:.1s"><rect x="0" y="20" width="150" height="40" rx="6" class="own"/><text x="75" y="45" text-anchor="middle">R1: binds A := T</text></g>
+  <path d="M 152 40 L 266 40" class="s-bad a-draw" pathLength="1" style="--d:.4s" marker-end="url(#m61)"/><text x="209" y="32" text-anchor="middle" class="c-bad a-in" style="--d:.4s">commit</text>
+  <g class="a-in" style="--d:.6s"><rect x="270" y="20" width="180" height="40" rx="6" class="bad"/><text x="360" y="45" text-anchor="middle">the run's typer state</text></g>
+  <path d="M 452 40 L 566 40" class="s-bad a-draw" pathLength="1" style="--d:.9s" marker-end="url(#m61)"/><text x="509" y="32" text-anchor="middle" class="c-bad a-in" style="--d:.9s">fork</text>
+  <g class="a-in" style="--d:1.1s"><rect x="570" y="20" width="150" height="40" rx="6" class="own"/><text x="645" y="45" text-anchor="middle">R2 meets A = T</text></g>
+  <g class="a-pop" style="--d:1.6s"><rect x="0" y="100" width="150" height="40" rx="6" class="own"/><text x="75" y="125" text-anchor="middle">R1's statement</text></g>
+  <path d="M 152 120 L 266 120" class="s-typed a-draw" pathLength="1" style="--d:1.9s" marker-end="url(#m61)"/><text x="209" y="112" text-anchor="middle" class="c-typed a-in" style="--d:1.9s">settle</text>
+  <g class="a-pop" style="--d:2.1s"><rect x="270" y="100" width="180" height="40" rx="6" class="typed"/><text x="360" y="118" text-anchor="middle">private state: every</text><text x="360" y="133" text-anchor="middle">variable instantiated</text></g>
+  <path d="M 452 120 L 566 120" class="s-typed a-draw" pathLength="1" style="--d:2.4s" marker-end="url(#m61)"/><text x="509" y="112" text-anchor="middle" class="c-typed a-in" style="--d:2.4s">drop</text>
+  <g class="a-pop" style="--d:2.6s"><rect x="570" y="100" width="150" height="40" rx="6" class="skip"/><text x="645" y="125" text-anchor="middle">nothing shared</text></g>
+</svg>
+</figure>
+
+- The same channel, four times: I52, I62, I70 and the `Shown` mismatches; the same fix each time (§31, §33b).
+- **Keep batch fast by paying at construction and along existing seams:** a `protected def` answered once per `ContextBase`, one virtual `reader`, the in-progress state as a lazy type on the slow path already there. The one per-access cost, release/acquire on `checkedPeriod`, is the one that still needs a paired A/B (§47).
+- **Demo honesty costs a day and is worth it:** the baseline must go through `CachingDriver`, the driver must use the build's options, and a server that outlives its build misleads (I58, the `Shown` warnings, the wedged x-ray).
+
+### 61. Next steps
+
+- Close I68: tell a lock-order chain from a dependency cycle at Namer roots, then 20 clean rounds at k=8.
+- Re-runnable Namer completions (I8, non-destructive attachments): removes I74's limit, and is stage 3's first step.
+- A pool of background annotators over a session per open file: the unit a statement, visible range first, results versioned by content, delivered per statement.
+- Metals: range requests for semantic tokens and inlay hints, a presentation-compiler source for the Problems panel, a reader pool in `CompilerAccess` with whole-file requests as writers, and the queue-reset fix (I50).
+- Perflab: the step 3 costs behind a `-Y` switch so paired in-fork variants resolve below 2 percent; finish step 3 vs step 4.
+- Stage 3: facts that outlive a run (completers as functions of node and owner, re-validation by trace), for snapshot readers across an edit.
+- The same inventory for Scala 2 runtime reflection: one composite scratch object behind a single override, then per-root barriers in place of the global lock (in progress on a branch of scala/scala).
+
+### 62. Upstreamable now
+
+Independent of the experiment's flags, each with a test on the branch:
+
+| | stock compiler or Metals |
+|---|---|
+| I50 | after a request timeout, mtags' queue reset leaves the old executor's backlog running beside the new queue on one driver (`denotation … invalid in run`); the presentation-compiler side holds the driver's monitor per job, the mtags side needs an issue |
+| I15 | an empty completion prefix bypasses `CachingDriver`, so the commonest member completion never benefits from it |
+| I10 | the 16-bit run id is unguarded; a long-lived driver overflows it into the phase bits |
+| I11, cancellation | `isCancelled` consumes the interrupt bit and nothing in the typer polls it, so Metals' token cancels the future, not the work; the sticky flag and the typer checkpoints are separable from targeting (§14) |
+| I49 | after a stock reproduction: a scaladoc comment cooked under a discarded typer state is cached without its warning |
+| the `Reader` | kind A out of `ContextBase` and `Run`: hygiene the batch compiler could take with a paired A/B, since it names every piece of per-request state in one place |
 
 [PR]: https://github.com/retronym/scala3/pull/84
 [PR68]: https://github.com/retronym/scala3/pull/68
