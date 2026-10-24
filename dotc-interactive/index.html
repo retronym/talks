@@ -1061,6 +1061,316 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 <figcaption>The x-ray's background pass. On a quiet machine with <code>-Yinteractive-readers</code>, the pass types <code>Types.scala</code> in 560–850 ms with 27–53 hovers served beside it at about 1 ms median; serialised, 3–6 hovers at 17–490 ms median. Its diagnostics equal a whole-file run's ([readers §8][M] step 4).</figcaption>
 </figure>
 
+---
+
+## Part VIII — Edits that keep the run, ranges, diagnostics
+
+### 37. Classifying an edit
+
+```mermaid
+flowchart TB
+  N["new content"] --> R["edit region: common prefix and suffix<br/>old [s, eOld), new [s, eNew), delta"]
+  R --> P["parse the new content"]
+  P --> C{"equal to the session's pristine parse,<br/>modulo the offset map?"}
+  C -- "yes" --> L["layout edit:<br/>keep the run, shift spans"]
+  C -- "differs only inside one<br/>member's right-hand side D" --> E{"D eligible?<br/>declared result type,<br/>not inline, not a constructor"}
+  E -- yes --> B["body edit: keep the run,<br/>shift spans, re-index D<br/>with its old symbols, skip it"]
+  E -- no --> F["fresh run"]
+  C -- "anything else" --> F
+```
+
+- IntelliJ's `BlockModificationTracker` is the rule: an edit inside a body whose definition has a declared type bumps that body's count only ([session §12][S]).
+- The comparison is with a pristine parse kept on the session, not the unit's tree: the Namer mutates the trees it indexes (`setMods`), and comparing against those would take false fresh runs.
+- The re-index refines D's old symbols (same identity, so every typed reference stays valid) and checks that the new info is `=:=` the old: the Lean toy's backdating (`tier1_body_edit`). Behind `-Yinteractive-body-edits`.
+
+### 38. Shifting the spans
+
+<figure class="fig anim">
+<svg viewBox="0 0 740 230" role="img" aria-label="After an edit inside method10, spans after the edit move by delta; spans containing it grow; method10 is re-indexed and skipped">
+  <text x="0" y="14" class="h">spans of A.scala, offset →</text>
+  <rect x="300" y="28" width="40" height="106" class="pub a-in" style="--d:.2s;opacity:.45"/>
+  <text x="346" y="24" class="c-pub a-in" style="--d:.2s">the edit: delta characters</text>
+  <rect x="10" y="40" width="720" height="22" rx="4" class="typed"/><text x="18" y="55" class="mono">PackageDef</text>
+  <rect x="20" y="72" width="160" height="22" rx="4" class="typed"/><text x="28" y="87" class="mono">O9</text>
+  <rect x="190" y="72" width="320" height="22" rx="4" class="typed"/><text x="198" y="87" class="mono">O10 (contains the edit: grows)</text>
+  <g class="a-slide" style="--dx:-40px;--d:.6s"><rect x="520" y="72" width="200" height="22" rx="4" class="typed"/><text x="528" y="87" class="mono">O11 (moves by delta)</text></g>
+  <rect x="200" y="104" width="80" height="22" rx="4" class="typed"/><text x="208" y="119" class="mono">method9</text>
+  <rect x="290" y="104" width="130" height="22" rx="4" class="skip a-in" style="--d:1.4s"/><text x="298" y="119" class="mono">D = method10</text>
+  <g class="a-slide" style="--dx:-40px;--d:.75s"><rect x="430" y="104" width="70" height="22" rx="4" class="typed"/><text x="438" y="119" class="mono">val r</text></g>
+  <g class="a-slide" style="--dx:-40px;--d:.9s"><rect x="530" y="104" width="80" height="22" rx="4" class="typed"/><text x="538" y="119" class="mono">def a</text><rect x="620" y="104" width="90" height="22" rx="4" class="typed"/><text x="628" y="119" class="mono">def b</text></g>
+  <g class="a-in" style="--d:1.6s">
+    <text x="20" y="156" class="b">on Types.scala, the edit costs:</text>
+    <text x="20" y="176">parse 9–15 ms · compare 3–6 ms · shift 43,000 trees and 5,400 symbols 10–20 ms · re-index 1–2 ms</text>
+    <text x="20" y="198" class="m">D becomes a skipped statement; the next request decides whether it is typed</text>
+  </g>
+</svg>
+<figcaption>Eager, in place: every tree the session holds, every symbol's coordinate, the diagnostics, and the <code>SourceFile</code> itself, so identity checks need no rewriting. A copying <code>TreeMap</code> would leave <code>defTree</code>, root trees and caches in the old frame ([session §12][S]).</figcaption>
+</figure>
+
+### 39. 382 ms to 6 ms
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 200" role="img" aria-label="The whole-file run after a keystroke, with and without body edits, median ms">
+  <text x="0" y="14" class="h">whole-file run after a keystroke in a body, median ms</text>
+  <text x="0" y="46" class="b">Types.scala</text>
+  <rect x="150" y="32" width="478" height="16" rx="3" class="own a-grow-x" style="--d:.1s"/><text x="634" y="45" class="a-in" style="--d:.6s">382 (p90 607)</text>
+  <rect x="150" y="52" width="7" height="16" rx="2" class="typed a-grow-x" style="--d:.3s"/><text x="163" y="65" class="c-typed b a-in" style="--d:.6s">5.9 (p90 25)</text>
+  <text x="0" y="104" class="b">TypeComparer.scala</text>
+  <rect x="150" y="90" width="181" height="16" rx="3" class="own a-grow-x" style="--d:.2s"/><text x="337" y="103" class="a-in" style="--d:.7s">145</text>
+  <rect x="150" y="110" width="10" height="16" rx="2" class="typed a-grow-x" style="--d:.4s"/><text x="166" y="123" class="c-typed b a-in" style="--d:.7s">7.9</text>
+  <text x="0" y="162" class="b">Contexts.scala</text>
+  <rect x="150" y="148" width="40" height="16" rx="3" class="own a-grow-x" style="--d:.3s"/><text x="196" y="161" class="a-in" style="--d:.8s">32.1</text>
+  <rect x="150" y="168" width="2" height="16" rx="1" class="typed a-grow-x" style="--d:.5s"/><text x="158" y="181" class="c-typed b a-in" style="--d:.8s">0.8</text>
+</svg>
+<div class="legend"><span><i class="own"></i>flag off: the edit is a fresh run</span><span><i class="typed"></i><code>-Yinteractive-body-edits</code></span></div>
+<figcaption>45 rounds per file: a digit added inside a method body, a hover elsewhere, then a whole-file run as document highlight or semantic tokens ask; first five rounds dropped ([session §12][S], Measured). The hover right after the edit is unchanged (31.5 / 32.4 ms on Types.scala): it pays the edit itself, mostly the shift.</figcaption>
+</figure>
+
+Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a method with an inferred result type) took a fresh run, as designed. Step 0 found about 90 percent of the queueing behind exactly this whole-file request (§42).
+
+### 40. Range requests
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 210" role="img" aria-label="A range target types the statements that touch the visible window and skips the rest">
+  <text x="0" y="14" class="h">Types.scala, 7,000 lines</text>
+  <rect x="0" y="24" width="40" height="176" rx="4" class="skip"/>
+  <rect x="0" y="94" width="40" height="22" rx="2" class="own a-pop" style="--d:.2s"/>
+  <text x="50" y="110" class="c-own b a-in" style="--d:.3s">the visible 60 lines</text>
+  <g class="a-in" style="--d:.7s">
+    <rect x="200" y="24" width="200" height="20" rx="4" class="skip"/><text x="208" y="38" class="mono">statements before</text>
+    <rect x="200" y="86" width="200" height="20" rx="4" class="typed"/><text x="208" y="100" class="mono">touches the window</text>
+    <rect x="200" y="110" width="200" height="20" rx="4" class="typed"/><text x="208" y="124" class="mono">touches the window</text>
+    <rect x="200" y="172" width="200" height="20" rx="4" class="skip"/><text x="208" y="186" class="mono">statements after</text>
+  </g>
+  <g class="a-in" style="--d:1.2s">
+    <text x="430" y="70" class="b">a 60-line window</text>
+    <text x="430" y="90" class="c-typed b">637–969 trees, 26–38 ms</text>
+    <text x="430" y="122" class="b">the whole file</text>
+    <text x="430" y="142">41,123 trees, 307–328 ms</text>
+    <text x="430" y="174" class="m">semantic tokens for the window</text>
+    <text x="430" y="192" class="m">after the hints: 0–1 ms (vs 68–72 ms)</text>
+  </g>
+</svg>
+<figcaption><code>Run.typingTarget</code> may be a range: at each statement list, a statement is typed if its span touches it ([session §7][S], Range requests).</figcaption>
+</figure>
+
+- Inlay hints always carry a range; semantic tokens have a `range` form. The compiler half is done and checked against whole-file answers; Metals still sends the whole-file forms. `RangeParams` already extends `VirtualFileParams`, so Metals can pass one to the existing method.
+- Document highlight stays whole-file: its question is a point, its answer is every occurrence in the file.
+
+### 41. Diagnostics by provenance (in progress)
+
+```mermaid
+flowchart TB
+  H["hover (R2)<br/>forces f's signature"] --> F["f's completion<br/>reports an error"]
+  F -- "today: to the forcer's reporter" --> X["discarded with the hover"]
+  F -- "the rule: stored with the fact" --> S["f's diagnostics"]
+  S --> P["re-issued to every reader<br/>that reads f, deduplicated"]
+  P --> D["the diagnostics pass sees it"]
+```
+
+- Whoever forces a fact gets its side effects ([readers §4.3][M]). With several readers, an error in a signature goes to whichever reader forced it first.
+- Step 4 sends a Namer completion's diagnostics to the namer's reporter; a classpath completion still reports to its forcer. I49 is the single-reader form: a scaladoc warning cooked once per symbol under a typer state that was thrown away, missed in 108 of 109.
+- Being built on its own branch, not part of the numbers here.
+
+---
+
+## Part IX — The measurements
+
+### 42. Where the queueing went
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 200" role="img" aria-label="Share of queueing delay by what ran in between, four replays">
+  <text x="0" y="14" class="h">waiting time, by what the jobs in between did</text>
+  <text x="0" y="45" class="b">burst</text>
+  <g class="a-grow-x" style="--d:.1s"><rect x="80" y="32" width="280" height="18" class="own"/><rect x="360" y="32" width="224" height="18" class="pub"/><rect x="584" y="32" width="17" height="18" class="wait"/><rect x="601" y="32" width="6" height="18" class="typed"/><rect x="607" y="32" width="11" height="18" class="skip"/></g>
+  <text x="0" y="81" class="b">spread</text>
+  <g class="a-grow-x" style="--d:.25s"><rect x="80" y="68" width="280" height="18" class="own"/><rect x="360" y="68" width="185" height="18" class="pub"/><rect x="545" y="68" width="28" height="18" class="wait"/><rect x="573" y="68" width="39" height="18" class="typed"/><rect x="612" y="68" width="6" height="18" class="skip"/></g>
+  <text x="0" y="117" class="b">jars</text>
+  <g class="a-grow-x" style="--d:.4s"><rect x="80" y="104" width="213" height="18" class="own"/><rect x="293" y="104" width="168" height="18" class="pub"/><rect x="461" y="104" width="84" height="18" class="wait"/><rect x="545" y="104" width="39" height="18" class="typed"/><rect x="584" y="104" width="17" height="18" class="skip"/></g>
+  <text x="0" y="153" class="b">Metals</text>
+  <g class="a-grow-x" style="--d:.55s"><rect x="80" y="140" width="258" height="18" class="own"/><rect x="338" y="140" width="196" height="18" class="pub"/><rect x="534" y="140" width="45" height="18" class="wait"/><rect x="579" y="140" width="34" height="18" class="typed"/><rect x="613" y="140" width="28" height="18" class="skip"/></g>
+  <text x="90" y="46" class="a-in" style="--d:.9s">50%</text><text x="370" y="46" class="a-in" style="--d:.9s">40%</text>
+  <text x="90" y="154" class="a-in" style="--d:.9s">46%</text><text x="348" y="154" class="a-in" style="--d:.9s">35%</text>
+  <text x="80" y="188" class="m a-in" style="--d:1.1s">89–93% behind whole-file work; a hover behind a hover waits a frame</text>
+</svg>
+<div class="legend"><span><i class="own"></i>a whole-file run</span><span><i class="pub"></i>a provider over a cached whole-file run</span><span><i class="wait"></i>completing the session</span><span><i class="typed"></i>targeted, fresh or resumed</span><span><i class="skip"></i>targeted, served</span></div>
+<figcaption>814 events of a recorded VS Code session on the compiler's own sources, replayed four ways ([readers §0][M]). Hover wait median 6–7 ms in the burst, jars and Metals replays, p90 142–533 ms; the hover's own driver time 0.1 ms.</figcaption>
+</figure>
+
+The verdict at the time: concurrency would overlap the fifth of a reader that is body typing; the cheaper moves (a session that survives an edit, range requests) come first. That is the order the work then took.
+
+### 43. Where a reader's CPU goes
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 170" role="img" aria-label="Share of a reader's CPU inside completers, body typing and other work">
+  <text x="0" y="14" class="h">async-profiler, CPU samples by stack</text>
+  <text x="0" y="45" class="b">targeted reader, jars</text>
+  <g class="a-grow-x" style="--d:.1s"><rect x="170" y="32" width="403" height="18" class="own"/><rect x="573" y="32" width="31" height="18" class="typed"/><rect x="604" y="32" width="76" height="18" class="skip"/></g>
+  <text x="180" y="46" class="a-in" style="--d:.7s">completers 79%</text><text x="578" y="46" class="a-in" style="--d:.7s">6</text>
+  <text x="0" y="81" class="b">whole-file run, jars</text>
+  <g class="a-grow-x" style="--d:.25s"><rect x="170" y="68" width="326" height="18" class="own"/><rect x="496" y="68" width="153" height="18" class="typed"/><rect x="649" y="68" width="31" height="18" class="skip"/></g>
+  <text x="180" y="82" class="a-in" style="--d:.8s">64%</text><text x="506" y="82" class="a-in" style="--d:.8s">body typing 30%</text>
+  <text x="0" y="117" class="b">targeted, oracle (cold)</text>
+  <g class="a-grow-x" style="--d:.4s"><rect x="170" y="104" width="331" height="18" class="own"/><rect x="501" y="104" width="102" height="18" class="typed"/><rect x="603" y="104" width="77" height="18" class="skip"/></g>
+  <text x="180" y="118" class="a-in" style="--d:.9s">65%</text><text x="511" y="118" class="a-in" style="--d:.9s">20%</text>
+  <text x="170" y="152" class="m a-in" style="--d:1.1s">of the completers' share, a fifth to two fifths is classpath IO under the loaders</text>
+</svg>
+<div class="legend"><span><i class="own"></i>inside a completion</span><span><i class="typed"></i>body typing</span><span><i class="skip"></i>parse, index, splice, providers</span></div>
+<figcaption>[readers §0][M]. A coarse completion lock would serialise four fifths of a reader. Step 3's lock did; step 4 replaced it with a claim per root (§24).</figcaption>
+</figure>
+
+### 44. Hovers beside a background pass
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 190" role="img" aria-label="Hover wall time beside a background pass on Types.scala, median and p90, log scale">
+  <text x="0" y="14" class="h">hover beside a pass, Types.scala, ms (log scale)</text>
+  <line x1="171" y1="150" x2="680" y2="150" class="ln"/>
+  <line x1="171" y1="30" x2="171" y2="150" class="ln"/><text x="171" y="166" text-anchor="middle" class="m">1</text>
+  <line x1="341" y1="30" x2="341" y2="150" class="ln"/><text x="341" y="166" text-anchor="middle" class="m">10</text>
+  <line x1="510" y1="30" x2="510" y2="150" class="ln"/><text x="510" y="166" text-anchor="middle" class="m">100</text>
+  <line x1="680" y1="30" x2="680" y2="150" class="ln"/><text x="680" y="166" text-anchor="middle" class="m">1,000</text>
+  <text x="0" y="52" class="b">coarse lock</text><text x="0" y="66" class="m">reads outside</text>
+  <path d="M 171 56 L 323 56" class="s-bad a-draw" pathLength="1" style="--d:.3s" stroke-width="2"/><circle cx="171" cy="56" r="6" class="f-bad a-pop" style="--d:.2s"/><text x="330" y="60" class="c-bad a-in" style="--d:.6s">1.0 / 7.9, wrong answers (I48)</text>
+  <text x="0" y="92" class="b">serialised</text><text x="0" y="106" class="m">reads under it</text>
+  <path d="M 536 96 L 622 96" class="s-own a-draw" pathLength="1" style="--d:.6s" stroke-width="2"/><circle cx="536" cy="96" r="6" class="f-own a-pop" style="--d:.5s"/><text x="530" y="82" class="c-own a-in" style="--d:.9s">141 / 457</text>
+  <text x="0" y="132" class="b">lazy resolve</text><text x="0" y="146" class="m">-Yinteractive-readers</text>
+  <path d="M 184 136 L 328 136" class="s-typed a-draw" pathLength="1" style="--d:.9s" stroke-width="2"/><circle cx="184" cy="136" r="6" class="f-typed a-pop" style="--d:.8s"/><text x="336" y="140" class="c-typed b a-in" style="--d:1.2s">1.2 / 8.4, right answers</text>
+</svg>
+<figcaption>Dot: median; line to the p90. <code>Typer.scala</code>: 0.7 / 11.5, 158 / 279 and 0.7 / 15.5 ms. In the lazy-resolve runs 3 of 412 hovers waited on a root ([readers §8][M], steps 3 and 4).</figcaption>
+</figure>
+
+### 45. The replay ties, and why
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 170" role="img" aria-label="Replay latency median and p90 for three modes: they tie">
+  <text x="0" y="14" class="h">120 requests, Typer.scala edited 15 times, ms</text>
+  <text x="0" y="48" class="b">Metals today</text><text x="0" y="62" class="m">no targeting + CachingDriver</text>
+  <rect x="200" y="36" width="25" height="12" rx="2" class="skip a-grow-x" style="--d:.1s"/><rect x="200" y="50" width="403" height="12" rx="2" class="pub a-grow-x" style="--d:.2s"/><text x="610" y="60" class="a-in" style="--d:.7s">10.0 / 161</text>
+  <text x="0" y="96" class="b">targeted session</text><text x="0" y="110" class="m">default</text>
+  <rect x="200" y="84" width="28" height="12" rx="2" class="skip a-grow-x" style="--d:.2s"/><rect x="200" y="98" width="403" height="12" rx="2" class="pub a-grow-x" style="--d:.3s"/><text x="610" y="108" class="a-in" style="--d:.8s">11.0 / 161</text>
+  <text x="0" y="144" class="b">lazy resolve</text><text x="0" y="158" class="m">-Yinteractive-readers</text>
+  <rect x="200" y="132" width="26" height="12" rx="2" class="skip a-grow-x" style="--d:.3s"/><rect x="200" y="146" width="405" height="12" rx="2" class="pub a-grow-x" style="--d:.4s"/><text x="610" y="156" class="a-in" style="--d:.9s">10.4 / 162</text>
+</svg>
+<div class="legend"><span><i class="skip"></i>median</span><span><i class="pub"></i>p90</span></div>
+<figcaption>Every answer and every diagnostics count agrees with the baseline; 17–18 whole-file runs in each mode ([readers §8][M] step 4, the replay).</figcaption>
+</figure>
+
+```mermaid
+sequenceDiagram
+  participant E as editor
+  participant D as driver
+  E->>D: didChange (an edit)
+  E->>D: inlay hints for the visible range
+  Note over D: on Metals' whole-file form:<br/>run types the whole file
+  E->>D: hover, definition, highlight …
+  Note over D: all served: nothing left to skip,<br/>and one request at a time leaves<br/>nothing for a second reader to overlap
+```
+
+The modes tie because the first request after each edit types the whole file. What changes an editing session is the body-edit flag (§39) and range requests on the Metals side (§40); what the readers buy is the background pass beside hovers (§36, §44). An earlier table had the targeted modes at 231–296 ms median: I58, a whole-file run that left no session, hidden in the baseline by `CachingDriver`.
+
+### 46. Several readers over one run
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 336" role="img" aria-label="Wall time and worker CPU typing 484 compiler files with 1, 2, 4 and 8 readers">
+  <text x="0" y="14" class="h">484 files of compiler/src/dotty/tools/dotc, seconds</text>
+  <line x1="60" y1="280" x2="680" y2="280" class="ln"/>
+  <line x1="60" y1="30" x2="60" y2="280" class="ln"/>
+  <text x="52" y="284" text-anchor="end" class="m">0</text><line x1="56" y1="166" x2="680" y2="166" class="ln dash"/><text x="52" y="170" text-anchor="end" class="m">5</text><line x1="56" y1="53" x2="680" y2="53" class="ln dash"/><text x="52" y="57" text-anchor="end" class="m">10</text>
+  <text x="100" y="300" text-anchor="middle">k = 1</text><text x="280" y="300" text-anchor="middle">2</text><text x="460" y="300" text-anchor="middle">4</text><text x="640" y="300" text-anchor="middle">8</text>
+  <line x1="60" y1="187" x2="680" y2="187" class="s-wait dash a-in" style="--d:.1s"/><text x="676" y="181" text-anchor="end" class="c-wait a-in" style="--d:.1s">batch compiler up to the typer: 4.1 s</text>
+  <path d="M 100 150 L 280 215 L 460 248 L 640 264" class="mut dash a-draw" pathLength="1" style="--d:.3s"/><text x="648" y="272" class="m a-in" style="--d:.9s">linear</text>
+  <path d="M 100 162 L 280 137 L 460 110 L 640 48" class="s-own a-draw" pathLength="1" style="--d:.5s" stroke-width="2"/>
+  <circle cx="100" cy="162" r="4" class="f-own a-pop" style="--d:.5s"/><circle cx="280" cy="137" r="4" class="f-own a-pop" style="--d:.7s"/><circle cx="460" cy="110" r="4" class="f-own a-pop" style="--d:.9s"/><circle cx="640" cy="48" r="4" class="f-own a-pop" style="--d:1.1s"/>
+  <text x="640" y="38" text-anchor="middle" class="c-own a-in" style="--d:1.2s">worker CPU 10.2 s</text><text x="90" y="178" text-anchor="end" class="c-own a-in" style="--d:.6s">5.2</text>
+  <path d="M 100 150 L 280 191 L 460 216 L 640 232" class="s-typed a-draw" pathLength="1" style="--d:1.0s" stroke-width="2.5"/>
+  <circle cx="100" cy="150" r="5" class="f-typed a-pop" style="--d:1.0s"/><circle cx="280" cy="191" r="5" class="f-typed a-pop" style="--d:1.2s"/><circle cx="460" cy="216" r="5" class="f-typed a-pop" style="--d:1.4s"/><circle cx="640" cy="232" r="5" class="f-typed a-pop" style="--d:1.6s"/>
+  <text x="100" y="138" text-anchor="middle" class="c-typed b a-in" style="--d:1.1s">5.7</text><text x="280" y="210" text-anchor="middle" class="c-typed b a-in" style="--d:1.3s">3.9</text><text x="460" y="235" text-anchor="middle" class="c-typed b a-in" style="--d:1.5s">2.8</text><text x="640" y="252" text-anchor="middle" class="c-typed b a-in" style="--d:1.7s">wall 2.1 s</text>
+  <text x="0" y="326" class="m a-in" style="--d:1.9s">root waits</text><text x="100" y="326" text-anchor="middle" class="m a-in" style="--d:1.9s">0</text><text x="280" y="326" text-anchor="middle" class="m a-in" style="--d:1.9s">&lt;1 ms</text><text x="460" y="326" text-anchor="middle" class="m a-in" style="--d:2.0s">&lt;3 ms</text><text x="640" y="326" text-anchor="middle" class="m a-in" style="--d:2.1s">&lt;4 ms</text>
+</svg>
+<div class="legend"><span><i class="typed"></i>wall time, round-robin</span><span><i class="own"></i>worker CPU</span><span><i class="wait"></i>batch typer</span></div>
+<figcaption>Every top-level statement of every file skipped in one run, then k reader threads type their files (visible lines, then the rest), with work stealing; JDK 21, 18 cores (6 performance), medians of 3 rounds, including the single-threaded open of 0.5 s ([readers §8][M] step 4, Throughput).</figcaption>
+</figure>
+
+- Eight readers are 2.7 times one and twice the batch typer. Batching files into islands, or warming shared roots first, changes nothing beyond round noise: contention on the symbol table is not the limit.
+- What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
+- Getting these numbers took six more race fixes (I60, I63–I67); I68 is open (§33).
+
+### 47. The batch compiler pays nothing it can measure
+
+| corpus | build | ms/op, median of 5 rounds | Δ | instructions/op | Δ |
+|---|---|---|---|---|---|
+| dottyUtil | base | 140.9 | | 1.900G | |
+| dottyUtil | step 2 (the `Reader`) | 141.4 | +0.4% | 1.895G | −0.3% |
+| dottyUtil | step 3 (structures per base, lock, publication) | 141.3 | +0.3% | 1.919G | +1.0% |
+| re2s | base | 240.4 | | 4.793G | |
+| re2s | step 2 | 237.5 | −1.2% | 4.711G | −1.7% |
+| re2s | step 3 | 237.6 | −1.2% | 4.744G | −1.0% |
+
+- The pattern: pay at construction and along existing seams. A `ContextBase` decides once whether it is concurrent; batch answers false and the concurrent classes are never loaded. The reader is a field read in batch, a `ThreadLocal` in the interactive subclass. `InProgress` lives on the existing slow path ([PR][PR]).
+- The round-to-round spread of one build is 1–2 percent, as large as the differences: nothing above about 2 percent is paid, nothing below it is resolved ([readers §5][M]).
+
+---
+
+## Part X — Prior art
+
+### 48. Kotlin K2: the Analysis API's low-level FIR
+
+- FIR declarations are resolved lazily, in place, to a requested phase (`LLFirModuleLazyDeclarationResolver`, one target resolver per phase) ([LL FIR README][llfir]).
+- The lock is the declaration's own resolve state, set by compare-and-set. A contending thread installs `FirInProcessOfResolvingToPhaseStateWithBarrier`, whose latch it waits on with a timeout, calling `checkCanceled()` between waits; a "jumping" state links waiting threads so that cross-thread resolution cycles are detected ([`FirResolveState.kt`][firstate], [`LLFirLockProvider.kt`][lllock]).
+- A `KaSession` is valid only inside the `analyze {}` block and read action that made it; its lifetime token reports whether it is still valid and accessible ([Analysis API fundamentals][kafund], [`KaLifetimeToken.kt`][katoken]).
+- dotc's `InProgress` with an owner, the root's latch and the backoff on a wait-for cycle are this design; the deviation is that dotc's roots are coarser (a file, a loader pair), so a cycle is often a lock order (§28).
+
+### 49. IntelliJ PSI
+
+- Read actions run on any thread; writes are write actions, and a pending write cancels running reads, which must check for cancellation often ([threading model][ijthread]). `ProcessCanceledException` is thrown at `checkCanceled()` and must never be swallowed ([background processes][ijcancel]).
+- Results that are pure functions of PSI are cached under modification trackers (`CachedValuesManager`; [PSI performance][ijpsi]).
+- `RecursionManager` returns `null` on re-entry on the current thread and, with `markStack()`/`mayCacheNow()`, refuses to cache results computed above a prevented recursion ([`RecursionManager.java`][ijrm]). §18 maps it onto `completeFrom`.
+- The Scala plugin's `BlockModificationTracker` is the rule behind §37 ([Track I §6][TI]).
+
+### 50. Roslyn
+
+- A `Compilation` is immutable, realised on demand, and a new one can be derived by deltas from an old one ([docs][roscomp]). This is what dotc cannot yet do across an edit (§20).
+- Symbols complete in parts: `SymbolCompletionState` is a bitset of completed parts, and `ForceComplete` takes a cancellation token ([source][rosscs]).
+- Syntax trees are red-green: an immutable persistent green tree without parent pointers, and a red facade built on demand ([Lippert 2012][lippert]). `CompilationOptions.ConcurrentBuild` lets a compilation use several threads ([docs][rosconc]).
+
+### 51. Salsa and rust-analyzer
+
+- A change bumps a global revision and waits for other threads; a thread that sees the bump unwinds with `Cancelled`, which the IDE layer catches ([rust-analyzer architecture][raarch], [Salsa book][salsart]).
+- When one thread needs a query another is computing, it blocks; before adding the edge it checks for a path back, and a cycle runs the configured strategy ([Salsa, cycles][salsacyc]). The Lean model's `closesCycle` is this check for two forcers.
+- Track I's reading: dotc under Metals approximated this with a fresh run per request; the session's writer raising the sticky flag is the revision bump.
+
+### 52. Lazy evaluation and build systems
+
+- Marlow, Peyton Jones, Moran and Reppy, *Asynchronous exceptions in Haskell*, PLDI 2001 ([doi][marlow01]): a thunk interrupted by an asynchronous exception is not overwritten with the exception but reverted or frozen at the point of interruption, so the next demand resumes it. That is abort safety over lazy facts, and the reason §16 restores `Touched`.
+- Harris, Marlow and Peyton Jones, *Haskell on a shared-memory multiprocessor*, Haskell Workshop 2005 ([doi][harris05]): lock-free evaluation of shared thunks, black-holing lazily or eagerly, blocking queues on a black hole, and harmless duplicate evaluation bounded. dotc's roots block rather than duplicate: a Namer completion cannot run twice (I53).
+- Peyton Jones, *Implementing lazy functional languages on stock hardware: the Spineless Tagless G-machine*, JFP 2(2), 1992 ([doi][stg]): update frames and black holes.
+- Mokhov, Mitchell and Peyton Jones, *Build systems à la carte*, ICFP 2018 ([doi][bsalc]), and *Theory and practice*, JFP 2020 ([doi][bsalc2]): the `Task` abstraction over keys that Track L's lazy store is.
+
+### 53. scalac's presentation compiler
+
+- Martin Odersky wrote it: the first commits in `scala.tools.nsc.interactive` are his, "new presentation compiler Global" and "new presentation compiler design" (May 2009), and he is its main committer. Miles Sabin committed alongside him from the same week; Iulian Dragos, the second most active committer to the Scala IDE for Eclipse, has 51 commits there (git history of scala/scala, checked for this talk).
+- The `ask*` API (`askTypeAt`, `askTypeCompletion`, `askLoadedTyped`) is `CompilerControl` ([scaladoc][compctl]). The Scala IDE's architecture notes describe it as an asynchronous, interruptible component for targeted type checking on its own thread ([scala-ide docs][scideppc]).
+- The targeted rule of §8 descends from scalac's `typedStats` with `unit.targetPos`, which leaves siblings that do not contain the target untyped; what scalac lacks is the recorded context that makes a later resume possible ([session §8][S]).
+- Unverified, and so not claimed: a paper or conference talk devoted to the Scala 2 presentation compiler; any role for Nikolay Mihaylov (his scala/scala commits, 2003–2008, are the old scalac and the MSIL backend).
+
+### 54. Dotty: periods, the interactive driver, the Dotty team
+
+- **Martin Odersky's** design of time in dotc: runs as hours, phases as minutes, symbols with a phase-indexed meaning, and the compiler meant to be re-run as often as every keystroke ([periods.md][periods]; the page's author is not recorded in git, which starts at the 2016 move of the wiki). The talk *Compilers are Databases*, JVM Language Summit 2015 ([video][cadb]).
+- **Guillaume Martres** added dotc's interactive APIs (`InteractiveDriver`, `Interactive`) and the Dotty Language Server in May 2017, described in *Interactive development using the Dotty compiler*, Scala Symposium 2017 ([doi][martres17], [video][martres17v]), and earlier (May 2016) the API and dependency extraction phases that let Zinc compile Dotty incrementally. Everything in this talk runs inside his driver.
+- **Dmytro Petrashko**: the Dotty linker, *Call graphs for languages with parametric polymorphism*, OOPSLA 2016 ([doi][petrcg]); *Miniphases*, PLDI 2017 ([doi][miniph]); his thesis, EPFL 2017 ([doi][petrth]). Miniphases is why dotc's phases fuse into few tree traversals. No work of his on parallel or incremental typing was found.
+
+### 55. Metals and Zinc
+
+- Metals began in November 2017 (first commit by Gabriele Petronella, Ólafur Páll Geirsson its most active early committer), absorbing Iulian Dragos's 2016 language server; Ólafur created `mtags` in October 2018 ([Metals acknowledgements][metack]). Tomasz Godzik maintains it.
+- The Scala 3 presentation compiler moved into the compiler repository with Jędrzej Rochala's [scala/scala3#17528][pc17528] (2023, released in 3.4.0). That module, with mtags' `CompilerAccess` and its one-thread LIFO queue, is what this work instruments and changes; I50 is a stock mtags bug the measurement surfaced (a reset job queue whose old backlog keeps running).
+- Zinc's name hashing (Grzegorz Kossakowski; default since sbt 0.13.6, class-based in Zinc 1) recompiles a dependent only if a changed member's name appears in it ([sbt docs][nh], [credits][sbtcred]). It is incrementality by name-level footprint across files; the body edit of §37 is the same idea inside one file, keyed on a definition's signature.
+
+### 56. Where it stands
+
+- Built, behind flags, on [retronym/scala3#84][PR]: the `Reader`, the read/write regime, completion as lazy resolve (`-Yinteractive-readers`), body edits (`-Yinteractive-body-edits`), range targets. Gates: the presentation-compiler suite (2,034 tests) and the session suites in both reader modes.
+- Open: I68 (four and eight readers, now and then one file's errors differ), I49 (one scaladoc warning of 109), diagnostics by provenance (§41).
+- Next: trees as facts with a barrier and the typed tree as a persistent value (step 5, after non-destructive attachments, I8); facts that outlive a run, which snapshot readers across an edit need (stage 3); and the Metals side: range forms, no restart after a build compile.
+
 [PR]: https://github.com/retronym/scala3/pull/84
 [PR68]: https://github.com/retronym/scala3/pull/68
 [S]: https://github.com/retronym/scala3/blob/claude/mr-code-813f14/docs/_docs/internals/interactive-session.md
@@ -1069,6 +1379,39 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 [TC]: https://github.com/retronym/jvm-lang-models/blob/main/packages/scala/docs/track-i-concurrent.md
 [11328]: https://github.com/scala/scala/pull/11328
 [periods]: https://github.com/scala/scala3/blob/main/docs/_docs/internals/periods.md
+[llfir]: https://github.com/JetBrains/kotlin/blob/master/analysis/low-level-api-fir/README.md
+[firstate]: https://github.com/JetBrains/kotlin/blob/master/compiler/fir/tree/src/org/jetbrains/kotlin/fir/declarations/FirResolveState.kt
+[lllock]: https://github.com/JetBrains/kotlin/blob/master/analysis/low-level-api-fir/src/org/jetbrains/kotlin/analysis/low/level/api/fir/file/builder/LLFirLockProvider.kt
+[kafund]: https://kotlin.github.io/analysis-api/fundamentals.html
+[katoken]: https://github.com/JetBrains/kotlin/blob/master/analysis/analysis-api/src/org/jetbrains/kotlin/analysis/api/lifetime/KaLifetimeToken.kt
+[ijthread]: https://plugins.jetbrains.com/docs/intellij/threading-model.html
+[ijcancel]: https://plugins.jetbrains.com/docs/intellij/background-processes.html#handling-cancellation
+[ijpsi]: https://plugins.jetbrains.com/docs/intellij/psi-performance.html
+[ijrm]: https://github.com/JetBrains/intellij-community/blob/master/platform/util/src/com/intellij/openapi/util/RecursionManager.java
+[roscomp]: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.compilation
+[rosscs]: https://github.com/dotnet/roslyn/blob/main/src/Compilers/CSharp/Portable/Symbols/SymbolCompletionState.cs
+[lippert]: https://learn.microsoft.com/en-us/archive/blogs/ericlippert/persistence-facades-and-roslyns-red-green-trees
+[rosconc]: https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.compilationoptions.concurrentbuild
+[raarch]: https://rust-analyzer.github.io/book/contributing/architecture.html
+[salsart]: https://salsa-rs.github.io/salsa/plumbing/database_and_runtime.html
+[salsacyc]: https://salsa-rs.github.io/salsa/plumbing/cycles.html
+[marlow01]: https://doi.org/10.1145/378795.378858
+[harris05]: https://doi.org/10.1145/1088348.1088354
+[stg]: https://doi.org/10.1017/S0956796800000319
+[bsalc]: https://doi.org/10.1145/3236774
+[bsalc2]: https://doi.org/10.1017/S0956796820000088
+[compctl]: https://www.scala-lang.org/api/2.13.2/scala-compiler/scala/tools/nsc/interactive/CompilerControl.html
+[scideppc]: https://github.com/scala-ide/docs/blob/master/src/sphinx/dev/architecture/presentation-compiler.rst
+[cadb]: https://www.youtube.com/watch?v=WxyyJyB_Ssc
+[martres17]: https://doi.org/10.1145/3136000.3136012
+[martres17v]: https://www.youtube.com/watch?v=1Nk5EL94uJc
+[petrcg]: https://doi.org/10.1145/2983990.2983991
+[miniph]: https://doi.org/10.1145/3062341.3062346
+[petrth]: https://doi.org/10.5075/epfl-thesis-7979
+[metack]: https://github.com/scalameta/metals/blob/main/docs/acknowledgements/development.md
+[pc17528]: https://github.com/scala/scala3/pull/17528
+[nh]: https://www.scala-sbt.org/1.x/docs/Understanding-Recompilation.html
+[sbtcred]: https://www.scala-sbt.org/1.x/docs/Credits.html
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
