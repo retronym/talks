@@ -275,18 +275,13 @@ Every number is from the design notes, cited by section: [session §n][S] is `in
 ### 1. One thread, one run
 
 ```mermaid
-flowchart LR
-  subgraph CB["ContextBase (lives across runs)"]
-    ST["symbol table<br/>denotations, scopes"]
-    UQ["uniques, names"]
-    CA["caches"]
-  end
-  subgraph R["Run n"]
+flowchart TB
+  subgraph R["Run n, one thread"]
     direction LR
     P[parser] --> N[namer] --> T[typer] --> X["… → backend"]
   end
-  R -- "reads and writes" --> CB
-  U["compilation units<br/>trees"] --- R
+  U["compilation units: trees"] --- R
+  R -- "reads and writes" --> CB["ContextBase, lives across runs:<br/>symbol table (denotations, scopes),<br/>uniques, names, caches"]
 ```
 
 - A `Run` takes a set of units through the phases, on one thread. The symbol table, uniques and caches live on the `ContextBase` and outlive the run.
@@ -309,7 +304,7 @@ flowchart LR
 
 ```mermaid
 stateDiagram-v2
-  direction LR
+  direction TB
   [*] --> Lazy: Namer enters the symbol
   Lazy --> Touched: completeFrom sets Touched,<br/>runs the completer
   Touched --> Completed: info set,<br/>Touched cleared
@@ -406,7 +401,7 @@ stateDiagram-v2
 ### 7. dotc under Metals, before this work
 
 ```mermaid
-flowchart LR
+flowchart TB
   E["editor request"] --> Q["CompilerJobQueue<br/>one thread, LIFO"]
   Q --> D["InteractiveDriver.run<br/>fresh Run per request"]
   D --> W["parse, index,<br/>type the whole file"]
@@ -730,14 +725,14 @@ The premise did not hold: body typing reads what completions are in the middle o
 
 ```mermaid
 stateDiagram-v2
-  direction LR
+  direction TB
   [*] --> Idle
-  Idle: Idle (info is a LazyType)
+  Idle: Idle, info is a LazyType
   Idle --> InProgress: acquire(R)
-  InProgress: InProgress(owner R, latch)
+  InProgress: InProgress, owner R, latch
   InProgress --> Done: release(R), latch opens
-  InProgress --> Idle: R unwinds; LazyType restored, latch opens
-  Done: Done (info published)
+  InProgress --> Idle: R unwinds, LazyType restored, latch opens
+  Done: Done, info published
   Done --> [*]
 ```
 
@@ -1069,13 +1064,13 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 
 ```mermaid
 flowchart TB
-  N["new content"] --> R["edit region: common prefix and suffix<br/>old [s, eOld), new [s, eNew), delta"]
-  R --> P["parse the new content"]
-  P --> C{"equal to the session's pristine parse,<br/>modulo the offset map?"}
-  C -- "yes" --> L["layout edit:<br/>keep the run, shift spans"]
-  C -- "differs only inside one<br/>member's right-hand side D" --> E{"D eligible?<br/>declared result type,<br/>not inline, not a constructor"}
-  E -- yes --> B["body edit: keep the run,<br/>shift spans, re-index D<br/>with its old symbols, skip it"]
-  E -- no --> F["fresh run"]
+  N["new content"] --> R["edit region, from the common<br/>prefix and suffix; offset map"]
+  R --> P["parse it"]
+  P --> C{"vs the pristine<br/>parse"}
+  C -- "no difference" --> L["layout edit: keep the run,<br/>shift spans"]
+  C -- "only inside one member's<br/>right-hand side D" --> E{"D eligible?"}
+  E -- "declared result type,<br/>not inline, not a constructor" --> B["body edit: keep the run, shift spans,<br/>re-index D with its old symbols, skip it"]
+  E -- "otherwise" --> F["fresh run"]
   C -- "anything else" --> F
 ```
 
