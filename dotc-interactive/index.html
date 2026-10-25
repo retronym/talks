@@ -302,7 +302,7 @@ body.focus .focus-counter { display: block; }
 
 Every number is from the design notes, cited by section: [session §n][S] is `interactive-session.md`, [readers §n][M] is `interactive-multi-reader.md`, [Track I §n][TI] is the earlier comparison of the Scala 2, Scala 3 and IntelliJ presentation compilers. `§n` alone is a card of this talk.
 
-### How the labels work
+### Labels on the cards
 
 Small labels mark the cards whose subject is a kind of mutable state (teal) or a concurrency pattern (amber), and appear only there. The five kinds are introduced together in §22; each has a card that explains it.
 
@@ -638,7 +638,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 
 ## Part V — Several readers: K2's rules
 
-### 19. Why run a second request concurrently
+### 19. A second concurrent request is for background work
 
 - With targeting, a hover queued behind a hover waits milliseconds. Step 0 replayed a recorded VS Code session (814 presentation-compiler events) with Metals' job queue instrumented: 89 to 93 percent of all queueing was behind whole-file work, the first `run` after an edit and the providers that walk the whole typed tree ([readers §0][M], §42).
 - So what a second reader buys is a *background pass* (diagnostics, semantic tokens, the session completed) beside foreground hovers that stay fast, and later several open files over one classpath symbol table ([readers §1][M]).
@@ -667,7 +667,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 
 - Not snapshots. Roslyn's compilations are immutable, so an old reader finishes against the old world. Scala 3 cannot do that while a run brings shared classpath denotations forward to its own run id: two runs cannot be read at once (I14). Snapshot readers need facts that outlive a run (stage 3) ([readers §2][M]).
 
-### 21. What a concurrent request may write: K2's rules
+### 21. K2's rules for writes by a concurrent request
 
 | rule | stated for Scala 3 ([readers §3][M]) |
 |---|---|
@@ -1059,7 +1059,7 @@ class Cell:                      // starts with a pair from an earlier period
 
 - A guard has to say which mode it means: `concurrent` is true for serialised and parallel readers, `parallel` for parallel only. A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86).
 
-### 33. How the concurrency was tested
+### 33. Testing the concurrency
 
 | layer | what it checks | found |
 |---|---|---|
@@ -1281,7 +1281,7 @@ Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a me
 
 ## Part IX — Measurements
 
-### 42. What a hover waits behind in Metals' queue
+### 42. A hover in Metals' queue waits behind whole-file work
 
 **The experiment** (step 0). A VS Code session on the compiler's own sources was recorded (814 presentation-compiler requests) and replayed against Metals' real job queue, which runs one request at a time. For every request that had to wait, the chart shows what the requests that ran ahead of it were doing.
 
@@ -1306,7 +1306,7 @@ Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a me
 
 The verdict at the time: concurrency would overlap the fifth of a reader that is body typing; the cheaper moves (a session that survives an edit, range requests) come first. That is the order the work then took.
 
-### 43. How much of a request's CPU is spent completing symbols
+### 43. Most of a request's CPU is spent completing symbols
 
 **The experiment** (step 0). CPU profiles of the replays above, each sample classified by its stack: inside a completion (computing a symbol's signature, loading a class, reading TASTy), typing a body, or anything else.
 
@@ -1430,7 +1430,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 - What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
 - Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§29–§28) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
 
-### 46b. Why four threads are not four times faster
+### 46b. Four threads: the machine costs more than sharing
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 180" role="img" aria-label="Worker CPU per file: shared k=1 9.06 ms, independent k=4 10.57 ms, shared k=4 11.08 ms">
@@ -1524,7 +1524,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 
 ## Part XI — Checkpoint
 
-### 56. Where the PoC stands
+### 56. State of the PoC
 
 Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged in behaviour and within the noise of a cross-build A/B (§47).
 
@@ -1542,7 +1542,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 - On the recorded editor window the three modes tie, because the whole-file askers dominate it (§45).
 - The presentation-compiler suite and the session suites pass in both reader modes; findings I34–I76 on this branch, each with its mechanism and a test.
 
-### 57. What is open
+### 57. Open problems
 
 - **I68's residue.** At k=8, 7 of 20 × 484 files diverge, all from cycles raised on `Setting`'s hierarchy: a wait-for chain through Namer roots that is a lock order, not a dependency cycle. The victim rule has to tell the two apart, probably by asking whether the waited-on completion's rule actually needs the waiter's symbol (§28).
 - **I74.** A Namer completion cannot run again after an unwind, so the reader that backs off must never be inside one. The long-term fix is re-runnable completions: I8's non-destructive attachments.
@@ -1624,7 +1624,7 @@ Independent of the experiment's flags, each with a test on the branch:
 
 ## Overflow — detail moved out of the main sequence
 
-### What scala/scala#11328 fixed: state that breaks at a safepoint
+### scala/scala#11328: state that breaks at a safepoint
 
 | commit in [scala/scala#11328][11328] | state that is not a fact | broken at a safepoint |
 |---|---|---|
@@ -1660,7 +1660,7 @@ sequenceDiagram
 - A whole-file run never exposed this: it completed every member while typing the bodies ([session §3][S]).
 - The rule, honestly stated: a run's lazy facts must be forced or discarded before the run is left, until completers become functions of node and owner (stage 3 of the cancellation design).
 
-### How a cancellation reaches the typer
+### The path of a cancellation to the typer
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 150" role="img" aria-label="The cancellation token's path from the editor to the typer's checkpoint">
@@ -1682,7 +1682,7 @@ sequenceDiagram
 - `CompletionAbortSuite.abort-via-token` is this path without the editor: a token cancelled 20 ms after submission, the request answers its default, the driver is kept (the next run id is exactly one more) ([session §4][S]).
 - Not built on thread interrupts: the bit is unsticky and consumed, `ClosedByInterruptException` in a loader becomes a symbol marked absent, and catch-alls swallowed it.
 
-### What is kept after a cancellation
+### State kept after a cancellation
 
 | kind of state | after a cancellation ([session §4][S]) |
 |---|---|

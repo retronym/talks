@@ -6,9 +6,9 @@
 
 ---
 
-## Opening
+## The problem
 
-### 1. What an editor needs from a compiler
+### 1. An editor's requirements of a compiler
 
 - An answer to a hover or a completion in milliseconds, on a file that is being edited.
 - Work nobody needs any more stopped as soon as the next keystroke arrives.
@@ -17,7 +17,7 @@
 
 Scala 3's presentation compiler did one whole-file typecheck per request, on one thread, and could not stop it. The proof of concept asked how far that can change.
 
-### 2. What the editor waits for
+### 2. Editor latency is dominated by whole-file work
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="Share of queueing delay by what ran in between, four replays">
@@ -40,7 +40,7 @@ Scala 3's presentation compiler did one whole-file typecheck per request, on one
 
 Measured before anything was built: in a recorded editing session, almost all of the waiting was behind whole-file work, not behind other targeted requests. That decided the order of everything after it ([full talk §42](../dotc-interactive/index.html#s42)).
 
-### 3. What the batch compiler assumes
+### 3. Assumptions of the batch compiler
 
 ```mermaid
 stateDiagram-v2
@@ -63,7 +63,7 @@ Each assumption breaks somewhere below ([full talk §1](../dotc-interactive/inde
 
 ---
 
-## What the proof of concept showed is feasible
+## Techniques the proof of concept tried
 
 ### 4. Typing only the path to a request
 
@@ -209,31 +209,39 @@ Options: a fresh run per edit, re-typing one body when its signature is unchange
 
 Inlay hints and semantic tokens over the visible range type a small fraction of the file. The compiler half works; the editor sees the benefit only once Metals asks for ranges instead of whole files ([full talk §40](../dotc-interactive/index.html#s40)).
 
-### 9. Background work beside requests
+### 9. Computing diagnostics while answering hovers
+
+**The need.** To show errors and highlighting, the editor needs the whole file typed. Meanwhile the user keeps hovering, and each hover should answer in milliseconds. That means two threads using the compiler at once: one typing the whole file in the background, one answering hovers.
+
+**The experiment.** One thread types all of `Types.scala` (7,000 lines); a second sends hovers at random identifiers, back to back, and each is timed. Three ways for the two threads to share the compiler:
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 190" role="img" aria-label="Hover wall time beside a background pass on Types.scala, median and p90, log scale">
-  <text x="0" y="14" class="h">hover time while the pass runs, Types.scala, ms (log scale)</text>
+  <text x="0" y="14" class="h">hover time while another thread types Types.scala, ms (log scale)</text>
   <line x1="171" y1="150" x2="680" y2="150" class="ln"/>
   <line x1="171" y1="30" x2="171" y2="150" class="ln"/><text x="171" y="166" text-anchor="middle" class="m">1</text>
   <line x1="341" y1="30" x2="341" y2="150" class="ln"/><text x="341" y="166" text-anchor="middle" class="m">10</text>
   <line x1="510" y1="30" x2="510" y2="150" class="ln"/><text x="510" y="166" text-anchor="middle" class="m">100</text>
   <line x1="680" y1="30" x2="680" y2="150" class="ln"/><text x="680" y="166" text-anchor="middle" class="m">1,000</text>
-  <text x="0" y="52" class="b">step 3</text><text x="0" y="66" class="m">hover outside the lock</text>
-  <path d="M 171 56 L 323 56" class="s-bad a-draw" pathLength="1" style="--d:.3s" stroke-width="2"/><circle cx="171" cy="56" r="6" class="f-bad a-pop" style="--d:.2s"/><text x="330" y="60" class="c-bad a-in" style="--d:.6s">1.0 / 7.9, wrong answers (I48)</text>
-  <text x="0" y="92" class="b">step 3</text><text x="0" y="106" class="m">hover under the lock</text>
+  <text x="0" y="52" class="b">no coordination</text><text x="0" y="66" class="m">hovers read freely</text>
+  <path d="M 171 56 L 323 56" class="s-bad a-draw" pathLength="1" style="--d:.3s" stroke-width="2"/><circle cx="171" cy="56" r="6" class="f-bad a-pop" style="--d:.2s"/><text x="330" y="60" class="c-bad a-in" style="--d:.6s">1.0 / 7.9, sometimes wrong</text>
+  <text x="0" y="92" class="b">taking turns</text><text x="0" y="106" class="m">one lock for everything</text>
   <path d="M 536 96 L 622 96" class="s-own a-draw" pathLength="1" style="--d:.6s" stroke-width="2"/><circle cx="536" cy="96" r="6" class="f-own a-pop" style="--d:.5s"/><text x="530" y="82" class="c-own a-in" style="--d:.9s">141 / 457</text>
-  <text x="0" y="132" class="b">step 4</text><text x="0" y="146" class="m">a claim per root</text>
-  <path d="M 184 136 L 328 136" class="s-typed a-draw" pathLength="1" style="--d:.9s" stroke-width="2"/><circle cx="184" cy="136" r="6" class="f-typed a-pop" style="--d:.8s"/><text x="336" y="140" class="c-typed b a-in" style="--d:1.2s">1.2 / 8.4, right answers</text>
+  <text x="0" y="132" class="b">wait per signature</text><text x="0" y="146" class="m">slides 11 and 12</text>
+  <path d="M 184 136 L 328 136" class="s-typed a-draw" pathLength="1" style="--d:.9s" stroke-width="2"/><circle cx="184" cy="136" r="6" class="f-typed a-pop" style="--d:.8s"/><text x="336" y="140" class="c-typed b a-in" style="--d:1.2s">1.2 / 8.4, correct</text>
 </svg>
-<figcaption>Dot: median hover; line to the p90. <code>Typer.scala</code> gives the same picture: 0.7 / 11.5, 158 / 279 and 0.7 / 15.5 ms ([readers §8][M], steps 3 and 4).</figcaption>
+<figcaption>Dot: median hover; line to the 90th percentile. <code>Typer.scala</code> gives the same picture ([readers §8][M]).</figcaption>
 </figure>
 
-A second reader is worth having only for work that runs beside requests. With one lock around all completions a hover waits for the pass; with a claim per root it stays at about a millisecond, and the pass's diagnostics are still right ([full talk §44](../dotc-interactive/index.html#s44)).
+- **No coordination:** a hover takes 1 ms, but can read a signature the other thread is halfway through computing, and answer wrongly.
+- **Taking turns,** with one lock for everything: always correct, but a hover waits for whatever the background thread is typing, 141 ms at the median.
+- **Waiting only for the one signature it needs,** when another thread is computing it (slides 11 and 12): about 1 ms and correct, and the errors found in the background equal those of a normal whole-file run.
+
+A second thread helps an editor only in this situation. With one request at a time, as in today's Metals queue (slide 2), there is nothing to run beside it ([full talk §44](../dotc-interactive/index.html#s44)).
 
 ---
 
-## What it taught
+## Lessons for sharing a symbol table
 
 ### 10. Classify the shared state before fixing any of it
 
@@ -270,7 +278,7 @@ Every fix that followed is one of these treatments. The classification was worth
 
 One seam decides, when a symbol table is made, whether readers are absent, serialised or parallel. Batch call sites compile to the original code and allocate nothing; the concurrent branches live elsewhere ([full talk §22a](../dotc-interactive/index.html#s22a)).
 
-### 12. Who completes a symbol, and who waits
+### 12. Claims: one thread completes a symbol, the others wait
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 360" role="img" aria-label="R2 owns g; R1 owns f and waits on g's barrier; R2 publishes g; R1 completes f and answers">
@@ -328,9 +336,9 @@ Within one run every writer of a stamped cache computes the same value, so the c
 
 ---
 
-## How it was checked
+## Testing and measurement
 
-### 15. A harness you can watch
+### 15. The x-ray harness
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 380" role="img" aria-label="A background pass claims and types one skipped statement at a time; hovers on another reader are served, wait for the claimed statement, or claim one the pass has not reached">
@@ -376,7 +384,7 @@ The x-ray drives the driver directly: a background pass beside hovers, a recorde
 
 Every answer is compared with a single-reader whole-file run; a divergence is a race until shown otherwise ([full talk §33](../dotc-interactive/index.html#s33)).
 
-### 17. What batch compilation pays
+### 17. Batch compilation: no measurable cost
 
 | corpus | build | ms/op, median of 5 rounds | Δ | instructions/op | Δ |
 |---|---|---|---|---|---|
@@ -391,7 +399,7 @@ Nothing above about 2 percent, which is the spread between rounds of one build. 
 
 ---
 
-## Landing it
+## A landing order
 
 ### 18. Fixes that need no flag
 
@@ -419,7 +427,7 @@ flowchart TB
 
 An order to discuss, not a plan. Each step is flag-gated and can stop without the next. Concurrent readers come last because the measurements say they pay off only once whole-file work is no longer what the editor waits for (slide 2).
 
-### 20. What is open, and what to compare with
+### 20. Open problems and comparable designs
 
 - **Open in the PoC:** Namer completions that can run again (two readers completing in opposite orders still raise a cycle no sequential order has); facts that outlive a run, which snapshot readers across an edit would need; the shared state a sweep listed and no test has hit yet.
 - **Designs to weigh it against:** Kotlin K2's lazy resolve and analysis sessions, IntelliJ's read and write actions, Roslyn's immutable compilations, Salsa's revisions and cancellation ([full talk §48](../dotc-interactive/index.html#s48)–[full talk §51](../dotc-interactive/index.html#s51)).
