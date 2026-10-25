@@ -1080,6 +1080,87 @@ The soak flake that showed only in full-suite runs, `CompletionSoakSuite.two-rea
 
 A soak that hammers one pattern, written out longhand as well, separates "the search picked wrong" from "the answer it checked was wrong" ([readers §4.4][M]).
 
+
+### 33a. A map of the shared state, extracted from TASTy
+
+<div class="chips">{chip:A scratch} {chip:B lazy fact} {chip:C cache} {chip:D interning} {chip:E trees}</div>
+
+A script over the compiler's TASTy collects every `var`, and every `val` holding a mutable collection, of the classes a reader can reach: 1047 fields in 350 classes. For each it records:
+
+- **the kind** of §22, A to E, by rules over owner, base classes, declared type and name;
+- **what protects it** from other readers: `Caching`, `util.Publish`, a packed or single volatile, the completion lock, a root's claim, confinement to one thread, a monitor, batch only, post-typer, or none;
+- **its feature area** and the classes its type names, which give the diagram its edges.
+
+Protection is read from the trees around every access, not from the declaration, so a field protected at most accesses but not all shows as *partial*, with the unprotected lines listed. Checked against the design notes' tables (the stamped caches of §30, the race register), it reports 12 mismatches, each a real access outside the stated discipline ([PR][PR], [`tools/state-map`][statemap]).
+
+### 33b. Declaring what names and types do not show
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 230" role="img" aria-label="Annotated exemplar fields with kind, annotations, protection and what the extractor says">
+  <text x="0" y="14" class="h">rows of the state map: kind, field, declared, protection</text>
+  <g class="a-in" style="--d:0.15s"><rect x="0" y="30" width="720" height="28" rx="4" class="box"/><rect x="0" y="30" width="6" height="28" rx="2" class="f-typed"/><text x="16" y="48" class="b">A</text><text x="34" y="48" class="mono">ContextPool.inUse</text><text x="270" y="48" class="mono m">@scratch @confined</text><text x="520" y="48">confined</text><text x="600" y="48" class="m">agrees</text></g>
+  <g class="a-in" style="--d:0.45s"><rect x="0" y="64" width="720" height="28" rx="4" class="box"/><rect x="0" y="64" width="6" height="28" rx="2" class="f-typed"/><text x="16" y="82" class="b">B</text><text x="34" y="82" class="mono">Namer.myNestedTyper</text><text x="270" y="82" class="mono m">@lazyFact @publishedBy(&quot;volatile&quot;)</text><text x="520" y="82">volatile</text><text x="600" y="82" class="m">agrees</text></g>
+  <g class="a-in" style="--d:0.75s"><rect x="0" y="98" width="720" height="28" rx="4" class="bad"/><rect x="0" y="98" width="6" height="28" rx="2" class="f-typed"/><text x="16" y="116" class="b">C</text><text x="34" y="116" class="mono">Symbol.lastDenot</text><text x="270" y="116" class="mono m">@cache @publishedBy(&quot;Publish&quot;)</text><text x="520" y="116">Publish</text></g>
+  <text x="270" y="142" class="c-bad a-in" style="--d:1.15s">≠ the rules find eleven reads outside the publishing methods</text>
+  <g class="a-in" style="--d:1.05s"><rect x="0" y="150" width="720" height="28" rx="4" class="box"/><rect x="0" y="150" width="6" height="28" rx="2" class="f-typed"/><text x="16" y="168" class="b">C</text><text x="34" y="168" class="mono">LambdaParam.myVariance</text><text x="270" y="168" class="mono m">@cache @benignRace</text><text x="520" y="168">benign race</text><text x="600" y="168" class="m">races by design</text></g>
+  <g class="a-in" style="--d:1.35s"><rect x="0" y="184" width="720" height="28" rx="4" class="box"/><rect x="0" y="184" width="6" height="28" rx="2" class="f-typed"/><text x="16" y="202" class="b">D</text><text x="34" y="202" class="mono">NameKinds.uniqueNameKinds</text><text x="270" y="202" class="mono m">@interned</text><text x="520" y="202">(and @sharable)</text></g>
+  <g class="a-in" style="--d:1.65s"><rect x="0" y="218" width="720" height="28" rx="4" class="box"/><rect x="0" y="218" width="6" height="28" rx="2" class="f-typed"/><text x="16" y="236" class="b">E</text><text x="34" y="236" class="mono">InteractiveDriver.myOpenedTrees</text><text x="270" y="236" class="mono m">@treeState @guardedBy(&quot;myOpenedTrees&quot;)</text><text x="520" y="236">monitor</text></g>
+</svg>
+<figcaption>The seven fields annotated as exemplars, one per kind and protection the rules cannot place (one, a feature-area marker, not shown). <code>@</code> marks a declared fact; <code>≠</code> a disagreement the extractor reports. From <code>tools/state-map/README.md</code> on #84.</figcaption>
+</figure>
+
+- Naming and types carry the rules a long way, not all of it: a pool field is per reader only because the pools moved to the `Reader`; a completer writes `myInfo` under a lock taken further up the stack; `LambdaParam.myVariance` races by design.
+- Ten annotations in `scala.annotation.internal` say it on the field: kind (`@scratch`, `@lazyFact`, `@cache`, `@interned`, `@treeState`), protection (`@guardedBy`, `@confined`, `@publishedBy`, `@benignRace`) and `@featureArea`. They win over the rules, which still report whether they *agree*, *disagree* or cannot check (*unverified*).
+- `@sharable` and `@unshared` are a different axis: they tell `-Ycheck-reentrant` that state reachable from a static object is safe across compiler instances, which says nothing about readers sharing one symbol table. Nothing runs that check today.
+- Prior art: JCIP's `@GuardedBy`, checked by [Error Prone][epguarded]; IntelliJ's `@RequiresReadLock`, checked by instrumentation in tests.
+
+### 33c. A claim held further up the stack, as a capability
+
+<div class="chips">{chip:claim}</div>
+
+A lock taken further up the stack is what neither the rules nor an annotation can check at the access. [Clang's thread-safety analysis][clangtsa] makes it a capability (`REQUIRES(...)` on a function); Scala can do the same with a context parameter.
+
+```scala
+sealed abstract class Holds[K]                          // evidence of holding the claim on K
+inline def unguarded[K](inline why: String): Holds[K]   // the named escape hatch
+
+// made only by Sharing.exclusive, Sharing.claimed, and a completion (lockAndComplete0); signatures:
+def complete(denot: SymDenotation)(using Context, Sharing.Holds[denot.type]): Unit   // LazyType
+protected final def isLocked(using Sharing.Holds[this.type]): Boolean               // InheritedCacheImpl
+```
+
+- State only the holder may touch is reachable only through methods that take a `Holds`, so a touch outside the claim does not compile.
+- `Holds` is invariant in its key, one shared instance serves every key, and nothing is allocated.
+
+### 33d. Compile errors as the list of gaps
+
+Each pilot put one kind of state behind a `Holds` and recompiled. The errors were short lists, and most held a latent bug:
+
+| behind the capability | errors | what they were |
+|---|---|---|
+| inherited caches (`Sharing.exclusive`) | 3 | both `invalidate`s read another reader's black hole as their own re-entry: fixed. `signalProvisional` holds the claim further up the same stack: `unguarded` |
+| `LazyRef` (`Sharing.claimed`) | 2 | both in `update`, which wrote the reference while another reader computed it: it takes the claim now |
+| bring-forward (`bringForward`, `updateValidity`) | 0 | the denotation ring, which the map had counted under this claim, is written only by phases after typer (53 sites): the claim is not its guard. The capability shows where the map had the wrong lock |
+| completers (`LazyType.complete`) | 2 of 33 callers | `PackageLoader` completing its module val, a root of the same load: `unguarded`. `integrateOpaqueMembers` running an opaque alias's completer directly: fixed, below |
+
+```scala
+// before: run directly, outside any completion
+case completer: LazyType =>
+  completer.complete(sym)   // two readers could run it at once
+  null
+```
+
+```scala
+// after: through the completion's own path
+case completer: LazyType =>
+  sym.denot.completeFrom(completer)
+  null
+```
+
+On one thread, a re-entry had also run it a second time, nested in the first. `completeFrom` gives it `Touched`, the root's claim and the hiding from other readers.
+
+None of these races has been reproduced, and the batch-path cost (`Thread.currentThread` around an inherited cache's computation, one more argument per completion) has not been measured ([PR][PR]).
+
 ---
 
 ## Part VII — Several readers drawn as lanes over time
@@ -1885,6 +1966,9 @@ sequenceDiagram
 [11328]: https://github.com/scala/scala/pull/11328
 [periods]: https://github.com/scala/scala3/blob/main/docs/_docs/internals/periods.md
 [sharing]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/src/dotty/tools/dotc/core/Sharing.scala
+[statemap]: https://github.com/retronym/scala3/tree/494e469bdc/tools/state-map
+[clangtsa]: https://clang.llvm.org/docs/ThreadSafetyAnalysis.html
+[epguarded]: https://errorprone.info/bugpattern/GuardedBy
 [marlowbook]: https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/ch01.html
 [pike]: https://go.dev/blog/waza-talk
 [kt200]: https://github.com/JetBrains/kotlin/blob/v2.0.0/ChangeLog.md
