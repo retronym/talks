@@ -931,11 +931,27 @@ Each card names a hazard that appears once several readers share one symbol tabl
 
 - **In the seam:** each fix is taken under `ctx.base.concurrent` where it costs anything; most cost nothing on the batch path (a local instead of a field, the order of two stores). Maps and interners that readers share are chosen when the base is made (`Sharing.newEqHashMap`, `newMap`, `newUniques`; §22c).
 
+### 29a. Alternatives to a packed value
+
+<div class="chips">{chip:packed value} {chip:ordered stamp}</div>
+
+Three ways to publish a group of fields that several readers fill lazily:
+
+| | how | correct when | cost |
+|---|---|---|---|
+| packed value | one immutable object in one `@volatile` field, built in a local, stored once | always | an allocation per store |
+| seqlock (`StampedLock`'s optimistic read) | the writer makes a version odd, writes the fields, makes it even with release; a reader rereads the version after its reads and retries if it changed | always | writers exclude each other; every read rereads and may retry |
+| release and acquire on a last field | the fields stored plainly, one designated field last with release; readers load it first with acquire | every writer in a period stores the same values | a fence per read on ARM, no allocation |
+
+- It is not enough for `asSeenFrom` (a prefix and a result) or `MatchType.reduced` (one reduction per reader's constraint), whose writers in one period store different values. Release and acquire order one writer's stores but do not make the group atomic across two writers, so a reader can pair one writer's key with another's value: I78.
+- For caches written this rarely a packed value is the simpler of the two that are always correct. They were not measured against each other.
+- The last row is cheaper than both and is correct whenever the writers agree. They do agree for the commonest cache of all, a value and the period it was computed in: within one run every writer computes the same value. That is the next card.
+
 ### 30. A value and its stamp in two fields
 
 <div class="chips">{chip:C cache} {chip:ordered stamp}</div>
 
-**Hazard.** The commonest cache is a value and the period or run id it was computed in, in two plain fields. Plain stores are seen reordered on Apple silicon: a reader finds the new stamp and the old value, a null (I36's `lastSymbol`, I60's `underlyingNormalizable`), a `false`, or the previous run's value.
+**Hazard.** The commonest cache is a value and the period or run id it was computed in, in two plain fields: the case where the last row of §29a is enough, if the stores are ordered. Plain stores are seen reordered on Apple silicon: a reader finds the new stamp and the old value, a null (I36's `lastSymbol`, I60's `underlyingNormalizable`), a `false`, or the previous run's value.
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 190" role="img" aria-label="Before: a value and its stamp in two plain fields; a reader can see the new stamp and the old value">
