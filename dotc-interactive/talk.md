@@ -903,6 +903,8 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 
 ### 33c. Who backs off: victim selection (I74)
 
+<div class="chips">{chip:claim} {chip:wait, don't peek}</div>
+
 <figure class="fig pair">
 <svg viewBox="0 0 340 200" role="img" aria-label="Before: a reader inside a Namer completion backs off and leaves it unwound for the rest of the run">
   <text x="0" y="14" class="h">before: whoever closes the cycle</text>
@@ -927,6 +929,8 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 </svg>
 <figcaption>The backoff of §28, made to choose its victim ([readers §8][M] step 4). The remaining divergences are two readers completing <code>Settings.Setting</code>'s members in opposite orders. The fix is a Namer completion that can run again (non-destructive attachments, I8), out of scope here.</figcaption>
 </figure>
+
+- **I87, a cycle raised from a stale chain.** A reader clears its `waitingOn` only after it wakes, so the wait-for chain could still run through a claim just released, and a `CyclicReference` was raised between two readers neither of which was waiting; it became the symbol's info, and every later answer reading it was wrong. `cycleChain` now stops at a released claim, and a cycle is raised only when the same chain of live claims is seen at two looks a slice apart ([#84][PR], 88d7abff96).
 
 
 ### 33d. Stamped caches: one idiom
@@ -1026,7 +1030,7 @@ Coarse-grained against fine-grained is the step 3 / step 4 split. The fine-grain
 | one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
 | lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps §33d true |
 
-Not yet explained: `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log) failed in 1 of 4 full-suite runs and in one more, 0 of 180 runs of the test alone, 0 of 60 full-suite runs without the build's `.jvmopts`. The candidates are state left by earlier tests in the same JVM, or JIT and timing (runs of 25 October).
+The soak flake that showed only in full-suite runs, `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log), has I87 as its likely cause (§33c): the symptom is the one I87's commit describes. With the build's JVM options the full suite failed 4 times in about 90 runs, against 0 in 180 runs of the test alone and 0 in 60 runs of the suite with default options. The fix is not yet confirmed: the soak runs with it have not reported.
 
 A soak that hammers one pattern, written out longhand as well, separates "the search picked wrong" from "the answer it checked was wrong" ([readers §4.4][M]).
 
