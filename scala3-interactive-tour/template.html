@@ -151,6 +151,7 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 .fig .s-wait { stroke: var(--wait); fill: none; }   .fig .f-wait { fill: var(--wait); }
 .fig .s-bad { stroke: var(--bad); fill: none; }     .fig .f-bad { fill: var(--bad); }
 .fig .s-pub { stroke: var(--pub); fill: none; }     .fig .f-pub { fill: var(--pub); }
+.fig .tk { fill: var(--kw); } .fig .tt { fill: var(--typ); } .fig .tn { fill: var(--num); } .fig .editor { fill: var(--code-bg); stroke: var(--rule); } .fig .tab { fill: var(--card); stroke: var(--rule); }
 .fig .f-mut { fill: var(--muted); } .fig .f-ink { fill: var(--ink); }
 .fig .dash { stroke-dasharray: 4 3; }
 .fig text.c-typed { fill: var(--typed); } .fig text.c-own { fill: var(--own); } .fig text.c-wait { fill: var(--wait); }
@@ -185,24 +186,27 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 .fig .a-draw { stroke-dasharray: 1 0; }
 .fig .a-out { opacity: var(--o, .3); }
 .fig .a-sweep { transform: translateY(var(--ty, 0)); }
-.card.play .fig .a-in     { animation: k-in .5s ease-out var(--d, 0s) both; }
-.card.play .fig .a-pop    { animation: k-pop .45s cubic-bezier(.2,.8,.3,1.2) var(--d, 0s) both; }
-.card.play .fig .a-grow-x { animation: k-grow-x .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-grow-d { animation: k-grow-y .6s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-grow-y { animation: k-grow-y .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-draw   { stroke-dasharray: 1 1; animation: k-draw .6s ease-in-out var(--d, 0s) both; }
-.card.play .fig .a-out    { animation: k-out .5s ease-in var(--d, 0s) both; }
-.card.play .fig .a-slide  { animation: k-slide .8s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-drop   { animation: k-drop .55s cubic-bezier(.2,.8,.3,1) var(--d, 0s) both; }
-.card.play .fig .a-sweep  { animation: k-sweep var(--t, 4s) linear var(--d, 0s) both; }
-.card.play .fig .a-blink  { animation: k-blink 1s ease-in-out var(--d, 0s) var(--n, 3); }
+.motion .fig.anim .a-in     { animation: k-in var(--t, .5s) ease-out var(--d, 0s) both; }
+.motion .fig.anim .a-pop    { animation: k-pop .45s cubic-bezier(.2,.8,.3,1.2) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-x { animation: k-grow-x .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-d { animation: k-grow-y .6s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-y { animation: k-grow-y .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-draw   { stroke-dasharray: 1 1; animation: k-draw .6s ease-in-out var(--d, 0s) both; }
+.motion .fig.anim .a-out    { animation: k-out .5s ease-in var(--d, 0s) both; }
+.motion .fig.anim .a-slide  { animation: k-slide .8s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-drop   { animation: k-drop .55s cubic-bezier(.2,.8,.3,1) var(--d, 0s) both; }
+.motion .fig.anim .a-sweep  { animation: k-sweep var(--t, 4s) linear var(--d, 0s) both; }
+.motion .fig.anim .a-blink  { animation: k-blink 1s ease-in-out var(--d, 0s) var(--n, 3); }
 .fig .replay {
   position: absolute; top: -4px; right: 0; font: 11.5px Inter, system-ui, sans-serif; color: var(--muted);
   background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 2px 10px; cursor: pointer; opacity: .75;
 }
 .fig .replay:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.motion .card:not(.play) .fig.anim * { animation-play-state: paused !important; }
+.motion .card.rewind .fig.anim * { animation: none !important; }
+@media print { .motion .fig.anim * { animation: none !important; } }
 @media (prefers-reduced-motion: reduce) {
-  .card.play .fig * { animation: none !important; }
+  .fig * { animation: none !important; }
   .fig .replay { display: none; }
 }
 @media print { .fig .replay { display: none; } }
@@ -445,17 +449,25 @@ body.focus .focus-counter { display: block; }
   }, { rootMargin: '0px 0px -60% 0px' });
   cards.forEach(c => io.observe(c));
   // Motion: a card's figures play when it comes into view, and again on re-entry.
-  function play(c) { c.classList.remove('play'); void c.offsetWidth; c.classList.add('play'); }
+  // Without reduced motion, an animated figure waits at its first frame until its card plays.
+  const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (motion) document.documentElement.classList.add('motion');
+  function rewind(c) { c.classList.remove('play'); c.classList.add('rewind'); void c.offsetWidth; c.classList.remove('rewind'); }
+  function play(c) { rewind(c); c.classList.add('play'); }
   const animated = cards.filter(c => c.querySelector('figure.anim'));
+  // Watch the figures, not the cards: a card can be taller than the window, a figure is not.
+  // A figure half in view plays its card; a card whose figures have all left the view rewinds.
   const playObs = new IntersectionObserver(entries => {
     if (document.body.classList.contains('focus')) return;
     entries.forEach(e => {
-      if (e.isIntersecting && e.intersectionRatio >= 0.35) { if (!e.target.classList.contains('play')) play(e.target); }
-      else if (!e.isIntersecting) e.target.classList.remove('play');
+      const c = e.target.closest('.card');
+      e.target.dataset.seen = e.isIntersecting ? '1' : '';
+      if (e.isIntersecting && e.intersectionRatio >= 0.5) { if (!c.classList.contains('play')) play(c); }
+      else if (!e.isIntersecting && c.classList.contains('play') && ![...c.querySelectorAll('figure.anim')].some(f => f.dataset.seen)) rewind(c);
     });
-  }, { threshold: [0, 0.35] });
+  }, { threshold: [0, 0.5] });
   animated.forEach(c => {
-    playObs.observe(c);
+    c.querySelectorAll('figure.anim').forEach(f => playObs.observe(f));
     c.querySelectorAll('figure.anim').forEach(f => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'replay'; b.textContent = '↻ replay';
       b.onclick = () => play(c); f.appendChild(b);
@@ -464,7 +476,7 @@ body.focus .focus-counter { display: block; }
   const baseSetCurrent = setCurrent;
   setCurrent = function (i, scroll, smooth) {
     baseSetCurrent(i, scroll, smooth);
-    if (document.body.classList.contains('focus')) { animated.forEach(c => c !== cards[current] && c.classList.remove('play')); if (animated.includes(cards[current])) play(cards[current]); }
+    if (document.body.classList.contains('focus')) { animated.forEach(c => c !== cards[current] && c.classList.contains('play') && rewind(c)); if (animated.includes(cards[current])) play(cards[current]); }
   };
   function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
   function toggleTheme() {

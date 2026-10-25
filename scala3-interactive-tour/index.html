@@ -151,6 +151,7 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 .fig .s-wait { stroke: var(--wait); fill: none; }   .fig .f-wait { fill: var(--wait); }
 .fig .s-bad { stroke: var(--bad); fill: none; }     .fig .f-bad { fill: var(--bad); }
 .fig .s-pub { stroke: var(--pub); fill: none; }     .fig .f-pub { fill: var(--pub); }
+.fig .tk { fill: var(--kw); } .fig .tt { fill: var(--typ); } .fig .tn { fill: var(--num); } .fig .editor { fill: var(--code-bg); stroke: var(--rule); } .fig .tab { fill: var(--card); stroke: var(--rule); }
 .fig .f-mut { fill: var(--muted); } .fig .f-ink { fill: var(--ink); }
 .fig .dash { stroke-dasharray: 4 3; }
 .fig text.c-typed { fill: var(--typed); } .fig text.c-own { fill: var(--own); } .fig text.c-wait { fill: var(--wait); }
@@ -185,24 +186,27 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 .fig .a-draw { stroke-dasharray: 1 0; }
 .fig .a-out { opacity: var(--o, .3); }
 .fig .a-sweep { transform: translateY(var(--ty, 0)); }
-.card.play .fig .a-in     { animation: k-in .5s ease-out var(--d, 0s) both; }
-.card.play .fig .a-pop    { animation: k-pop .45s cubic-bezier(.2,.8,.3,1.2) var(--d, 0s) both; }
-.card.play .fig .a-grow-x { animation: k-grow-x .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-grow-d { animation: k-grow-y .6s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-grow-y { animation: k-grow-y .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-draw   { stroke-dasharray: 1 1; animation: k-draw .6s ease-in-out var(--d, 0s) both; }
-.card.play .fig .a-out    { animation: k-out .5s ease-in var(--d, 0s) both; }
-.card.play .fig .a-slide  { animation: k-slide .8s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
-.card.play .fig .a-drop   { animation: k-drop .55s cubic-bezier(.2,.8,.3,1) var(--d, 0s) both; }
-.card.play .fig .a-sweep  { animation: k-sweep var(--t, 4s) linear var(--d, 0s) both; }
-.card.play .fig .a-blink  { animation: k-blink 1s ease-in-out var(--d, 0s) var(--n, 3); }
+.motion .fig.anim .a-in     { animation: k-in var(--t, .5s) ease-out var(--d, 0s) both; }
+.motion .fig.anim .a-pop    { animation: k-pop .45s cubic-bezier(.2,.8,.3,1.2) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-x { animation: k-grow-x .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-d { animation: k-grow-y .6s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-y { animation: k-grow-y .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-draw   { stroke-dasharray: 1 1; animation: k-draw .6s ease-in-out var(--d, 0s) both; }
+.motion .fig.anim .a-out    { animation: k-out .5s ease-in var(--d, 0s) both; }
+.motion .fig.anim .a-slide  { animation: k-slide .8s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-drop   { animation: k-drop .55s cubic-bezier(.2,.8,.3,1) var(--d, 0s) both; }
+.motion .fig.anim .a-sweep  { animation: k-sweep var(--t, 4s) linear var(--d, 0s) both; }
+.motion .fig.anim .a-blink  { animation: k-blink 1s ease-in-out var(--d, 0s) var(--n, 3); }
 .fig .replay {
   position: absolute; top: -4px; right: 0; font: 11.5px Inter, system-ui, sans-serif; color: var(--muted);
   background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 2px 10px; cursor: pointer; opacity: .75;
 }
 .fig .replay:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.motion .card:not(.play) .fig.anim * { animation-play-state: paused !important; }
+.motion .card.rewind .fig.anim * { animation: none !important; }
+@media print { .motion .fig.anim * { animation: none !important; } }
 @media (prefers-reduced-motion: reduce) {
-  .card.play .fig * { animation: none !important; }
+  .fig * { animation: none !important; }
   .fig .replay { display: none; }
 }
 @media print { .fig .replay { display: none; } }
@@ -439,6 +443,84 @@ A request on unchanged text is served from what is typed, or types one skipped s
 Options: thread interrupts (consumed by the first check, swallowed by catch-alls), servicing requests inside the background check (Scala 2: every invariant must hold at every safepoint), or a sticky flag the typer polls and unwinds on. The PoC unwinds, each frame restoring what it set ([full talk §16](../dotc-interactive/index.html#s16)).
 
 ### 7. Keeping the run across an edit inside a body
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 250" role="img" aria-label="Source being edited. Left: an edit inside area's body invalidates only that body, which is typed again when a request needs it. Right: an edit to scale's parameter type invalidates the whole file">
+  <text x="0" y="14" class="h">an edit inside a body</text>
+  <rect x="0" y="24" width="336" height="162" rx="6" class="editor"/>
+  <rect x="8" y="28" width="96" height="20" rx="4" class="tab"/><text x="18" y="42" class="mono" style="font-size:10.5px">Shapes.scala</text>
+  <text x="22" y="64" text-anchor="end" class="mono m">1</text>
+  <rect x="27" y="50" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <text x="22" y="85" text-anchor="end" class="mono m">2</text>
+  <rect x="27" y="71" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <text x="22" y="106" text-anchor="end" class="mono m">3</text>
+  <rect x="27" y="92" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="27" y="92" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <rect x="27" y="92" width="4" height="19" rx="1" class="f-typed a-in" style="--d:4.6s;--t:1.6s"/>
+  <text x="22" y="127" text-anchor="end" class="mono m">4</text>
+  <rect x="27" y="113" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <text x="22" y="148" text-anchor="end" class="mono m">5</text>
+  <rect x="27" y="134" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <text x="22" y="169" text-anchor="end" class="mono m">6</text>
+  <rect x="27" y="155" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <text x="40" y="64" xml:space="preserve" style="white-space:pre" class="mono"><tspan class="tk">class</tspan> <tspan class="tt">Shapes</tspan>:</text>
+  <text x="40" y="85" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> area(s: <tspan class="tt">Shape</tspan>): <tspan class="tt">Double</tspan> =</text>
+  <text x="40" y="106" xml:space="preserve" style="white-space:pre" class="mono">    s.width * s.height</text>
+  <g class="a-slide" style="--dx:-26.5px;--d:1.0s"><rect x="212.1" y="95" width="1.5" height="14" class="f-ink a-blink" style="--d:.3s;--n:1"/></g>
+  <text x="185.6" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.00s"> </text>
+  <text x="192.3" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.18s">/</text>
+  <text x="198.9" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.36s"> </text>
+  <text x="205.5" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.54s"><tspan class="tn">2</tspan></text>
+  <text x="40" y="127" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> scale(s: <tspan class="tt">Shape</tspan>, k: <tspan class="tt">Int</tspan>): <tspan class="tt">Shape</tspan> =</text>
+  <text x="40" y="148" xml:space="preserve" style="white-space:pre" class="mono">    <tspan class="tt">Shape</tspan>(s.width * k, s.height * k)</text>
+  <text x="40" y="169" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">val</tspan> unit: <tspan class="tt">Shape</tspan> = scale(<tspan class="tt">Shape</tspan>(<tspan class="tn">1</tspan>, <tspan class="tn">1</tspan>), <tspan class="tn">1</tspan>)</text>
+  <g class="a-pop" style="--d:3.8s"><rect x="232" y="93" width="96" height="16" rx="8" class="own"/><text x="280" y="105" text-anchor="middle" class="c-own" style="font-size:10.5px">hover in area</text></g>
+  <text x="0" y="206" class="a-in" style="--d:2.1s">only <tspan class="mono">area</tspan>'s body is invalidated; its</text>
+  <text x="0" y="222" class="a-in" style="--d:2.1s">declared type, every other member and the run are kept</text>
+  <text x="0" y="242" class="c-typed b a-in" style="--d:5.4s;--t:.8s">typed again when a request needs it</text>
+  <text x="384" y="14" class="h">an edit to a signature</text>
+  <rect x="384" y="24" width="336" height="162" rx="6" class="editor"/>
+  <rect x="392" y="28" width="96" height="20" rx="4" class="tab"/><text x="402" y="42" class="mono" style="font-size:10.5px">Shapes.scala</text>
+  <text x="406" y="64" text-anchor="end" class="mono m">1</text>
+  <rect x="411" y="50" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="411" y="50" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <text x="406" y="85" text-anchor="end" class="mono m">2</text>
+  <rect x="411" y="71" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="411" y="71" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <text x="406" y="106" text-anchor="end" class="mono m">3</text>
+  <rect x="411" y="92" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="411" y="92" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <text x="406" y="127" text-anchor="end" class="mono m">4</text>
+  <rect x="411" y="113" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="411" y="113" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <text x="406" y="148" text-anchor="end" class="mono m">5</text>
+  <rect x="411" y="134" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="411" y="134" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <text x="406" y="169" text-anchor="end" class="mono m">6</text>
+  <rect x="411" y="155" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
+  <rect x="411" y="155" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
+  <text x="424" y="64" xml:space="preserve" style="white-space:pre" class="mono"><tspan class="tk">class</tspan> <tspan class="tt">Shapes</tspan>:</text>
+  <text x="424" y="85" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> area(s: <tspan class="tt">Shape</tspan>): <tspan class="tt">Double</tspan> =</text>
+  <text x="424" y="106" xml:space="preserve" style="white-space:pre" class="mono">    s.width * s.height</text>
+  <text x="424" y="127" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> scale(s: <tspan class="tt">Shape</tspan>, k: </text>
+  <text x="589.5" y="127" xml:space="preserve" class="mono tt a-out" style="white-space:pre;--d:1.14s;--o:0">I</text>
+  <text x="596.1" y="127" xml:space="preserve" class="mono tt a-out" style="white-space:pre;--d:1.02s;--o:0">n</text>
+  <text x="602.7" y="127" xml:space="preserve" class="mono tt a-out" style="white-space:pre;--d:0.90s;--o:0">t</text>
+  <text x="589.5" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.30s">L</text><g class="a-slide" style="--dx:-26.5px;--d:1.3s"><rect x="616.0" y="116" width="1.5" height="14" class="f-ink a-blink" style="--d:.5s;--n:1"/></g>
+  <text x="596.1" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.46s">o</text>
+  <text x="602.7" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.62s">n</text>
+  <text x="609.4" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.78s">g</text>
+  <g class="a-slide" style="--dx:-6.6px;--d:1.3s"><text x="616.0" y="127" xml:space="preserve" style="white-space:pre" class="mono">): <tspan class="tt">Shape</tspan> =</text></g>
+  <text x="424" y="148" xml:space="preserve" style="white-space:pre" class="mono">    <tspan class="tt">Shape</tspan>(s.width * k, s.height * k)</text>
+  <text x="424" y="169" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">val</tspan> unit: <tspan class="tt">Shape</tspan> = scale(<tspan class="tt">Shape</tspan>(<tspan class="tn">1</tspan>, <tspan class="tn">1</tspan>), <tspan class="tn">1</tspan>)</text>
+  <text x="384" y="206" class="a-in" style="--d:2.1s">a signature changed, and <tspan class="mono">unit</tspan> was typed</text>
+  <text x="384" y="222" class="a-in" style="--d:2.1s">against the old one</text>
+  <text x="384" y="242" class="c-bad b a-in" style="--d:2.5s">a fresh run: the whole file typed again</text>
+</svg>
+<div class="legend"><span><i class="typed"></i>gutter: typed, kept</span><span><i class="bad"></i>gutter: invalidated</span></div>
+</figure>
+
+
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="The whole-file run after a keystroke, with and without body edits, median ms">
@@ -913,17 +995,25 @@ An order to discuss, not a plan. Each step is flag-gated and can stop without th
   }, { rootMargin: '0px 0px -60% 0px' });
   cards.forEach(c => io.observe(c));
   // Motion: a card's figures play when it comes into view, and again on re-entry.
-  function play(c) { c.classList.remove('play'); void c.offsetWidth; c.classList.add('play'); }
+  // Without reduced motion, an animated figure waits at its first frame until its card plays.
+  const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (motion) document.documentElement.classList.add('motion');
+  function rewind(c) { c.classList.remove('play'); c.classList.add('rewind'); void c.offsetWidth; c.classList.remove('rewind'); }
+  function play(c) { rewind(c); c.classList.add('play'); }
   const animated = cards.filter(c => c.querySelector('figure.anim'));
+  // Watch the figures, not the cards: a card can be taller than the window, a figure is not.
+  // A figure half in view plays its card; a card whose figures have all left the view rewinds.
   const playObs = new IntersectionObserver(entries => {
     if (document.body.classList.contains('focus')) return;
     entries.forEach(e => {
-      if (e.isIntersecting && e.intersectionRatio >= 0.35) { if (!e.target.classList.contains('play')) play(e.target); }
-      else if (!e.isIntersecting) e.target.classList.remove('play');
+      const c = e.target.closest('.card');
+      e.target.dataset.seen = e.isIntersecting ? '1' : '';
+      if (e.isIntersecting && e.intersectionRatio >= 0.5) { if (!c.classList.contains('play')) play(c); }
+      else if (!e.isIntersecting && c.classList.contains('play') && ![...c.querySelectorAll('figure.anim')].some(f => f.dataset.seen)) rewind(c);
     });
-  }, { threshold: [0, 0.35] });
+  }, { threshold: [0, 0.5] });
   animated.forEach(c => {
-    playObs.observe(c);
+    c.querySelectorAll('figure.anim').forEach(f => playObs.observe(f));
     c.querySelectorAll('figure.anim').forEach(f => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'replay'; b.textContent = '↻ replay';
       b.onclick = () => play(c); f.appendChild(b);
@@ -932,7 +1022,7 @@ An order to discuss, not a plan. Each step is flag-gated and can stop without th
   const baseSetCurrent = setCurrent;
   setCurrent = function (i, scroll, smooth) {
     baseSetCurrent(i, scroll, smooth);
-    if (document.body.classList.contains('focus')) { animated.forEach(c => c !== cards[current] && c.classList.remove('play')); if (animated.includes(cards[current])) play(cards[current]); }
+    if (document.body.classList.contains('focus')) { animated.forEach(c => c !== cards[current] && c.classList.contains('play') && rewind(c)); if (animated.includes(cards[current])) play(cards[current]); }
   };
   function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
   function toggleTheme() {
