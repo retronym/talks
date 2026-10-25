@@ -275,7 +275,7 @@ body.focus .focus-counter { display: block; }
 5. Several readers: K2's rules, and completion as lazy resolve.
 6. The races the suites found, each as a before and after.
 7. Readers side by side, as lanes over one symbol table.
-8. Edits that keep the run, range requests, diagnostics by provenance.
+8. Incremental typechecking: an edit inside a body keeps the run, ranges type only the visible lines, diagnostics are invalidated by provenance.
 9. The measurements.
 10. Prior art.
 11. Checkpoint: where it stands, what is open, the lessons, what can go upstream now.
@@ -1220,7 +1220,7 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 
 ---
 
-## Part VIII — Edits that keep the run, ranges, diagnostics
+## Part VIII — Incremental typechecking: edits inside a body, visible ranges, diagnostics
 
 ### 37. After an edit: keep the run, or start a new one?
 
