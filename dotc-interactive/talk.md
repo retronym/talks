@@ -8,7 +8,7 @@
 
 **Arc:**
 
-1. The batch compiler as it was, and why scalac's presentation compiler was hard to get right.
+1. Batch typechecking, and why scalac's presentation compiler was hard to get right.
 2. Targeting: type only the path to the request.
 3. The session: one run serves many requests.
 4. Cancellable typechecking.
@@ -39,7 +39,7 @@ The patterns are summarised in §33f and §33g.
 
 ---
 
-## Part I — The batch compiler as it was
+## Part I — Batch typechecking
 
 ### 1. The batch compiler runs on one thread
 
