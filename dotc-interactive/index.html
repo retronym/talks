@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A more interactive dotc</title>
+<title>A more interactive Scala 3</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -247,7 +247,7 @@ body.focus .focus-counter { display: block; }
 <body>
 <div class="layout">
   <nav class="toc" aria-label="Contents">
-    <div class="title">A more interactive dotc</div>
+    <div class="title">A more interactive Scala 3</div>
     <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
     <div class="controls">
       <button id="btn-focus" type="button">Focus mode</button>
@@ -259,19 +259,19 @@ body.focus .focus-counter { display: block; }
 </div>
 <div class="focus-counter" id="counter"></div>
 
-<script type="text/markdown" id="talk-src"># A more interactive dotc
+<script type="text/markdown" id="talk-src"># A more interactive Scala 3
 
 <p class="sub">Targeted, cancellable, incremental and parallel typechecking for Scala 3's presentation compiler</p>
 
-**Audience:** people who work on scalac, dotc, Metals, the IntelliJ Scala plugin or another compiler that also has to serve an editor.
+**Audience:** people who work on Scala 2, Scala 3, Metals, the IntelliJ Scala plugin or another compiler that also has to serve an editor.
 
-**What this is:** a visual guide to a stream of work on Scala 3's presentation compiler (23–24 October 2026, the draft [retronym/scala3#84][PR] on top of [retronym/scala3#68][PR68]). It takes the driver from one whole-file run per request to a targeted, resumable, cancellable session, and then to several concurrent readers over one symbol table, following Kotlin K2's lazy resolve and IntelliJ's read and write actions.
+**What this is:** a visual guide to how Scala 3's presentation compiler goes from one whole-file typecheck per request to a targeted, resumable, cancellable session, and then to several concurrent readers over one symbol table, after Kotlin K2's lazy resolve and IntelliJ's read and write actions. The code is [retronym/scala3#84][PR].
 
 <!-- break -->
 
 **Arc:**
 
-1. Batch typechecking, and why scalac's presentation compiler was hard to get right.
+1. Batch typechecking, and why Scala 2's presentation compiler was hard to get right.
 2. Targeting: type only the path to the request.
 3. The session: one run serves many requests.
 4. Cancellable typechecking.
@@ -384,17 +384,17 @@ stateDiagram-v2
   <text x="140" y="186" class="a-in" style="--d:2.4s">brings d1 forward to run 4 (a write on the first read in the run), or finds it stale</text>
   <defs><marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
 </svg>
-<figcaption>Martin Odersky's design for dotc: a fact is valid for a period, a run id and a range of phases ([periods.md][periods]).</figcaption>
+<figcaption>Martin Odersky's design for Scala 3: a fact is valid for a period, a run id and a range of phases ([periods.md][periods]).</figcaption>
 </figure>
 
 - A `Period` is a run id and a phase interval; a `SymDenotation` is a symbol's meaning over one period, and the denotations of one symbol form a ring.
 - Reading a denotation in a later run is a write: `Denotation.current` validates it, or brings it forward and links it into the ring ([readers §3][M], kind B).
 - The run id is 16 bits, and nothing guarded it: a long-lived driver overflows it into the phase bits (I10, [session §9][S]). A livelock later ran it past 65,535 to 0 (I43).
 
-### 5. scalac's presentation compiler runs requests inside the background type check
+### 5. Scala 2's presentation compiler runs requests inside the background type check
 
 <figure class="fig anim">
-<svg viewBox="0 0 720 200" role="img" aria-label="scalac services a request at a safepoint inside the background type check">
+<svg viewBox="0 0 720 200" role="img" aria-label="Scala 2 services a request at a safepoint inside the background type check">
   <text x="0" y="16" class="h">compiler thread</text>
   <rect x="0" y="34" width="700" height="34" rx="6" class="box a-grow-x" style="--d:.1s"/>
   <text x="10" y="56" class="a-in" style="--d:.3s">backgroundCompile: typing unit A</text>
@@ -421,7 +421,7 @@ stateDiagram-v2
 - The typer calls `signalDone` after each tree; there `pollForWork` runs the requests that arrived, inside the type check, on the same thread.
 - The property needed is not thread safety (nothing runs at the same time, and a lock is either reentrant and lets the request in, or deadlocks). It is the discipline of async-signal safety ([Track I][TI] summary).
 
-### 7. dotc under Metals: a whole-file run per request
+### 7. Scala 3 under Metals: a whole-file run per request
 
 ```mermaid
 flowchart TB
@@ -648,18 +648,18 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 <figcaption>IntelliJ's pending write action cancelling read actions at <code>checkCanceled</code>, with the typer's checkpoint as <code>checkCanceled</code> ([readers §2][M], §8 step 3).</figcaption>
 </figure>
 
-- Not snapshots. Roslyn's compilations are immutable, so an old reader finishes against the old world. dotc cannot do that while a run brings shared classpath denotations forward to its own run id: two runs cannot be read at once (I14). Snapshot readers need facts that outlive a run (stage 3) ([readers §2][M]).
+- Not snapshots. Roslyn's compilations are immutable, so an old reader finishes against the old world. Scala 3 cannot do that while a run brings shared classpath denotations forward to its own run id: two runs cannot be read at once (I14). Snapshot readers need facts that outlive a run (stage 3) ([readers §2][M]).
 
 ### 21. What a concurrent request may write: K2's four rules
 
-| rule | stated for dotc ([readers §3][M]) |
+| rule | stated for Scala 3 ([readers §3][M]) |
 |---|---|
 | 1. disposable | everything a reader writes is thrown away or re-validated by the next writer; a run already is |
 | 2. published once, consistent | another reader sees "not computed" or the finished value, never a partial one |
 | 3. idempotent | any reader computing it would write the same value, so a race to publish needs only safe publication |
 | 4. cancellation leaves it unpublished | a reader unwound midway leaves the fact as it found it; the next reader recomputes |
 
-Kotlin's low-level FIR resolves declarations in place under these rules (§48). dotc's typer broke all four: trees mutated in place, nothing published a completion, nothing recorded what content a type was computed against, and a cancelled typer left half-typed trees ([PR][PR]).
+Kotlin's low-level FIR resolves declarations in place under these rules (§48). Scala 3's typer broke all four: trees mutated in place, nothing published a completion, nothing recorded what content a type was computed against, and a cancelled typer left half-typed trees ([PR][PR]).
 
 ### 22. Five kinds of mutable state a request writes
 
@@ -674,7 +674,7 @@ flowchart LR
   E["E · trees<br/>consumed attachments,<br/>the session's splice"] -->|"skipped statements as facts,<br/>a persistent typed tree"| E2["step 5, not built"]
 ```
 
-- dotc had no precedent for concurrent readers of symbols or types ([readers §3][M]).
+- Scala 3 had no precedent for concurrent readers of symbols or types ([readers §3][M]).
 - A *root* is the unit a completion is claimed by: whatever one completion writes together. A symbol loader completes a class and its module at once, and the TASTy completers of one file share one unpickler's address maps, so the claim is per pair or per file, not per symbol ([readers §3.1][M]). §24 lists the roots.
 - The `Reader` (kind A) found its own bug: it cannot be a field of the context, because contexts are captured (completer creation contexts, import contexts, skipped statements' contexts) and run later under another request. It is bound to the thread ([readers §8][M] step 2).
 
@@ -1186,7 +1186,7 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
   <rect x="30" y="284" width="140" height="30" rx="4" class="typed a-grow-d" style="--d:3.7s"/><text x="40" y="304" class="a-in" style="--d:3.8s">goes on with T_g</text>
   <line x1="20" y1="40" x2="700" y2="40" class="mut dash a-sweep" style="--ty:296px;--t:4.6s"/>
 </svg>
-<figcaption>Rule 4, and the model's <code>abort_waiter_takes_over</code>. With dotc's old discipline (<code>Touched</code> left set) the barrier is owned by a reader that no longer exists and R1 waits for the rest of the run (<code>abort_keep_hole_waiter_stuck</code>). So the owner resets the root in its own unwind path, before releasing it ([Track I, two readers][TC]). A waiter cancelled by a writer is cancelled too; hand-over is for an owner's own failure ([readers §9][M]).</figcaption>
+<figcaption>Rule 4, and the model's <code>abort_waiter_takes_over</code>. With Scala 3's old discipline (<code>Touched</code> left set) the barrier is owned by a reader that no longer exists and R1 waits for the rest of the run (<code>abort_keep_hole_waiter_stuck</code>). So the owner resets the root in its own unwind path, before releasing it ([Track I, two readers][TC]). A waiter cancelled by a writer is cancelled too; hand-over is for an owner's own failure ([readers §9][M]).</figcaption>
 </figure>
 
 ### 36. Lanes: hovers while another thread types the whole file
@@ -1525,7 +1525,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 - FIR declarations are resolved lazily, in place, to a requested phase (`LLFirModuleLazyDeclarationResolver`, one target resolver per phase) ([LL FIR README][llfir]).
 - The lock is the declaration's own resolve state, set by compare-and-set. A contending thread installs `FirInProcessOfResolvingToPhaseStateWithBarrier`, whose latch it waits on with a timeout, calling `checkCanceled()` between waits; a "jumping" state links waiting threads so that cross-thread resolution cycles are detected ([`FirResolveState.kt`][firstate], [`LLFirLockProvider.kt`][lllock]).
 - A `KaSession` is valid only inside the `analyze {}` block and read action that made it; its lifetime token reports whether it is still valid and accessible ([Analysis API fundamentals][kafund], [`KaLifetimeToken.kt`][katoken]).
-- dotc's `InProgress` with an owner, the root's latch and the backoff on a wait-for cycle are this design; the deviation is that dotc's roots are coarser (a file, a loader pair), so a cycle is often a lock order (§28).
+- Scala 3's `InProgress` with an owner, the root's latch and the backoff on a wait-for cycle are this design; the deviation is that Scala 3's roots are coarser (a file, a loader pair), so a cycle is often a lock order (§28).
 
 ### 49. IntelliJ PSI
 
@@ -1536,7 +1536,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 
 ### 50. Roslyn
 
-- A `Compilation` is immutable, realised on demand, and a new one can be derived by deltas from an old one ([docs][roscomp]). This is what dotc cannot yet do across an edit (§20).
+- A `Compilation` is immutable, realised on demand, and a new one can be derived by deltas from an old one ([docs][roscomp]). This is what Scala 3 cannot yet do across an edit (§20).
 - Symbols complete in parts: `SymbolCompletionState` is a bitset of completed parts, and `ForceComplete` takes a cancellation token ([source][rosscs]).
 - Syntax trees are red-green: an immutable persistent green tree without parent pointers, and a red facade built on demand ([Lippert 2012][lippert]). `CompilationOptions.ConcurrentBuild` lets a compilation use several threads ([docs][rosconc]).
 
@@ -1544,27 +1544,27 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 
 - A change bumps a global revision and waits for other threads; a thread that sees the bump unwinds with `Cancelled`, which the IDE layer catches ([rust-analyzer architecture][raarch], [Salsa book][salsart]).
 - When one thread needs a query another is computing, it blocks; before adding the edge it checks for a path back, and a cycle runs the configured strategy ([Salsa, cycles][salsacyc]). The Lean model's `closesCycle` is this check for two forcers.
-- Track I's reading: dotc under Metals approximated this with a fresh run per request; the session's writer raising the sticky flag is the revision bump.
+- Track I's reading: Scala 3 under Metals approximated this with a fresh run per request; the session's writer raising the sticky flag is the revision bump.
 
 ### 52. Lazy evaluation and build systems
 
 - Marlow, Peyton Jones, Moran and Reppy, *Asynchronous exceptions in Haskell*, PLDI 2001 ([doi][marlow01]): a thunk interrupted by an asynchronous exception is not overwritten with the exception but reverted or frozen at the point of interruption, so the next demand resumes it. That is abort safety over lazy facts, and the reason §16 restores `Touched`.
-- Harris, Marlow and Peyton Jones, *Haskell on a shared-memory multiprocessor*, Haskell Workshop 2005 ([doi][harris05]): lock-free evaluation of shared thunks, black-holing lazily or eagerly, blocking queues on a black hole, and harmless duplicate evaluation bounded. dotc's roots block rather than duplicate: a Namer completion cannot run twice (I53).
+- Harris, Marlow and Peyton Jones, *Haskell on a shared-memory multiprocessor*, Haskell Workshop 2005 ([doi][harris05]): lock-free evaluation of shared thunks, black-holing lazily or eagerly, blocking queues on a black hole, and harmless duplicate evaluation bounded. Scala 3's roots block rather than duplicate: a Namer completion cannot run twice (I53).
 - Peyton Jones, *Implementing lazy functional languages on stock hardware: the Spineless Tagless G-machine*, JFP 2(2), 1992 ([doi][stg]): update frames and black holes.
 - Mokhov, Mitchell and Peyton Jones, *Build systems à la carte*, ICFP 2018 ([doi][bsalc]), and *Theory and practice*, JFP 2020 ([doi][bsalc2]): the `Task` abstraction over keys that Track L's lazy store is.
 
-### 53. scalac's presentation compiler
+### 53. Scala 2's presentation compiler
 
 - Martin Odersky wrote it: the first commits in `scala.tools.nsc.interactive` are his, "new presentation compiler Global" and "new presentation compiler design" (May 2009), and he is its main committer. Miles Sabin committed alongside him from the same week; Iulian Dragos, the second most active committer to the Scala IDE for Eclipse, has 51 commits there (git history of scala/scala, checked for this talk).
 - The `ask*` API (`askTypeAt`, `askTypeCompletion`, `askLoadedTyped`) is `CompilerControl` ([scaladoc][compctl]). The Scala IDE's architecture notes describe it as an asynchronous, interruptible component for targeted type checking on its own thread ([scala-ide docs][scideppc]).
-- The targeted rule of §8 descends from scalac's `typedStats` with `unit.targetPos`, which leaves siblings that do not contain the target untyped; what scalac lacks is the recorded context that makes a later resume possible ([session §8][S]).
-- Unverified, and so not claimed: a paper or conference talk devoted to the Scala 2 presentation compiler; any role for Nikolay Mihaylov (his scala/scala commits, 2003–2008, are the old scalac and the MSIL backend).
+- The targeted rule of §8 descends from Scala 2's `typedStats` with `unit.targetPos`, which leaves siblings that do not contain the target untyped; what Scala 2 lacks is the recorded context that makes a later resume possible ([session §8][S]).
+- Unverified, and so not claimed: a paper or conference talk devoted to the Scala 2 presentation compiler; any role for Nikolay Mihaylov (his scala/scala commits, 2003–2008, are the old Scala 2 and the MSIL backend).
 
 ### 54. Dotty: periods, the interactive driver, the Dotty team
 
-- **Martin Odersky's** design of time in dotc: runs as hours, phases as minutes, symbols with a phase-indexed meaning, and the compiler meant to be re-run as often as every keystroke ([periods.md][periods]; the page's author is not recorded in git, which starts at the 2016 move of the wiki). The talk *Compilers are Databases*, JVM Language Summit 2015 ([video][cadb]).
-- **Guillaume Martres** added dotc's interactive APIs (`InteractiveDriver`, `Interactive`) and the Dotty Language Server in May 2017, described in *Interactive development using the Dotty compiler*, Scala Symposium 2017 ([doi][martres17], [video][martres17v]), and earlier (May 2016) the API and dependency extraction phases that let Zinc compile Dotty incrementally. Everything in this talk runs inside his driver.
-- **Dmytro Petrashko**: the Dotty linker, *Call graphs for languages with parametric polymorphism*, OOPSLA 2016 ([doi][petrcg]); *Miniphases*, PLDI 2017 ([doi][miniph]); his thesis, EPFL 2017 ([doi][petrth]). Miniphases is why dotc's phases fuse into few tree traversals. No work of his on parallel or incremental typing was found.
+- **Martin Odersky's** design of time in Scala 3: runs as hours, phases as minutes, symbols with a phase-indexed meaning, and the compiler meant to be re-run as often as every keystroke ([periods.md][periods]; the page's author is not recorded in git, which starts at the 2016 move of the wiki). The talk *Compilers are Databases*, JVM Language Summit 2015 ([video][cadb]).
+- **Guillaume Martres** added Scala 3's interactive APIs (`InteractiveDriver`, `Interactive`) and the Dotty Language Server in May 2017, described in *Interactive development using the Dotty compiler*, Scala Symposium 2017 ([doi][martres17], [video][martres17v]), and earlier (May 2016) the API and dependency extraction phases that let Zinc compile Dotty incrementally. Everything in this talk runs inside his driver.
+- **Dmytro Petrashko**: the Dotty linker, *Call graphs for languages with parametric polymorphism*, OOPSLA 2016 ([doi][petrcg]); *Miniphases*, PLDI 2017 ([doi][miniph]); his thesis, EPFL 2017 ([doi][petrth]). Miniphases is why Scala 3's phases fuse into few tree traversals. No work of his on parallel or incremental typing was found.
 
 ### 55. Metals and Zinc
 
@@ -1605,7 +1605,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 
 - **Measure the queue before building the concurrency.** Nine tenths of the queueing was behind whole-file work (§42); that set the order of everything after it.
 - **The barrier is the whole correctness argument.** `run_agree` said so, and every divergence found since was a reader seeing unpublished state, not a scheduling problem (§26).
-- **dotc has no "concurrency in body typing only".** Typing a body forces completions, and 65–79 percent of a reader's time is inside them; step 3 was a correct stepping stone and a wrong ship point (§23).
+- **Scala 3 has no "concurrency in body typing only".** Typing a body forces completions, and 65–79 percent of a reader's time is inside them; step 3 was a correct stepping stone and a wrong ship point (§23).
 - **The editor's cost is the whole-file askers.** Readers pay off once inlay hints and semantic tokens are ranges and the whole-file work is a background pass; for keystrokes, the win is keeping the run (§39, §40).
 
 ### 59. Lessons about races
@@ -1685,14 +1685,14 @@ Independent of the experiment's flags, each with a test on the branch:
 | keep the implicit factory | a symbol's identity | the implicit cache held the replaced symbol |
 | suspend a targeted check's warnings | `suppressionsKnown`, a completeness claim | made by a check that stopped early |
 
-- Track I's toy injects one request at every safepoint of a scalac-shaped kernel. Before the PR the four scenarios modelled on its tests diverge at 8–13 of 14–18 safepoints; after it, at none ([Track I §4][TI]).
+- Track I's toy injects one request at every safepoint of a kernel shaped like Scala 2's. Before the PR the four scenarios modelled on its tests diverge at 8–13 of 14–18 safepoints; after it, at none ([Track I §4][TI]).
 - Each fix is local to one shape, and the harness is the only way to know there is no fifth. One remains: a nested `askType(source)` still diverges at 16 of 16 (findings I1 and I2, confirmed against the PR's branch).
-- dotc under Metals diverges nowhere, because it never interrupts: a request waits, then pays a fresh whole-file run.
+- Scala 3 under Metals diverges nowhere, because it never interrupts: a request waits, then pays a fresh whole-file run.
 
 ### 9. Exceptions to the targeting rule
 
 - **Never skipped:** imports and exports (they shape the context of what follows), nested package clauses, synthetic trees with no span of their own.
-- **A point between statements** types only the next one. scalac's rule types the whole list there; on `class JavaParser`'s header that was 10,000 trees for one hover.
+- **A point between statements** types only the next one. Scala 2's rule types the whole list there; on `class JavaParser`'s header that was 10,000 trees for one hover.
 - **Blocks** are targeted too, but statements the target's statement names, transitively, are typed in order (200 dependent vals overflowed the stack through their completers), and a skipped local leaves a typed stub so the block's scope still has `x` in `locally { val x = 1; x@@ }`.
 - **Typed whole:** a tree that outlives the request as a value. A body typed ahead by an overload resolution (I21), a refinement's synthetic class (I25), an inline method's body (I28), and blocks under speculative typer states such as `tryEither` (I24) ([session §2][S]).
 
