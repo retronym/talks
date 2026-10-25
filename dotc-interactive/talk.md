@@ -808,6 +808,8 @@ A script over the compiler's TASTy collects every `var`, and every `val` holding
 
 Protection is read from the trees around every access, not from the declaration, so a field protected at most accesses but not all shows as *partial*, with the unprotected lines listed. Checked against the design notes' tables (the stamped caches of §30, the race register), it reports 12 mismatches, each a real access outside the stated discipline ([PR][PR], [`tools/state-map`][statemap]).
 
+[The diagram][statemapdiagram] draws the main classes as nodes, a row per field: the left bar is its kind, the right column its protection, a red row has none at some access, and an edge is the fields whose types name another class.
+
 ### 33b. Declaring what names and types do not show
 
 <figure class="fig anim">
@@ -1682,6 +1684,7 @@ sequenceDiagram
 [periods]: https://github.com/scala/scala3/blob/main/docs/_docs/internals/periods.md
 [sharing]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/src/dotty/tools/dotc/core/Sharing.scala
 [statemap]: https://github.com/retronym/scala3/tree/494e469bdc/tools/state-map
+[statemapdiagram]: https://claude.ai/artifact/D6J57HdiZ7SAu19NSKT64t
 [clangtsa]: https://clang.llvm.org/docs/ThreadSafetyAnalysis.html
 [epguarded]: https://errorprone.info/bugpattern/GuardedBy
 [marlowbook]: https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/ch01.html
