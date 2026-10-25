@@ -562,6 +562,13 @@ One seam decides, when a symbol table is made, whether readers are absent, seria
 
 ### 11. Claims: one thread completes a symbol, the others wait
 
+```scala
+def f = g + 1        // a hover on f: f's result type is inferred, so g's type is needed
+def g = parse(text)  // meanwhile a completion elsewhere is computing g's type
+```
+
+Both requests need `g`'s signature at the same moment. One thread should compute it; the other should wait for that result, neither seeing it half done nor computing it a second time.
+
 <figure class="fig anim">
 <svg viewBox="0 0 720 360" role="img" aria-label="R2 owns g; R1 owns f and waits on g's barrier; R2 publishes g; R1 completes f and answers">
   <defs><marker id="m34" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
