@@ -1,4 +1,6 @@
-# dotc, from batch to interactive: targeting, a session, cancellable typechecking, and several readers over one symbol table
+# A more interactive dotc
+
+<p class="sub">Targeted, cancellable, incremental and parallel typechecking for Scala 3's presentation compiler</p>
 
 **Audience:** people who work on scalac, dotc, Metals, the IntelliJ Scala plugin or another compiler that also has to serve an editor.
 
