@@ -32,12 +32,12 @@ Small labels mark the cards whose subject is a kind of mutable state (teal) or a
 |---|---|---|---|
 | {chip:A scratch} | §22b | {chip:coarse lock} | §23 |
 | {chip:B lazy fact} | §3, §24 | {chip:claim} | §24 |
-| {chip:C cache} | §33a | {chip:wait, don't peek} | §27 |
+| {chip:C cache} | §29 | {chip:wait, don't peek} | §27 |
 | {chip:D interning} | §22c | {chip:ordered stamp} | §30 |
-| {chip:E trees} | §2 | {chip:publish once} {chip:packed value} | §30a |
+| {chip:E trees} | §2 | {chip:publish once} {chip:packed value} | §29 |
 | | | {chip:private state} | §31 |
 
-The patterns are summarised in §33f and §33g.
+The patterns are summarised in §32.
 
 ---
 
@@ -389,7 +389,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 
 - Not snapshots. Roslyn's compilations are immutable, so an old reader finishes against the old world. Scala 3 cannot do that while a run brings shared classpath denotations forward to its own run id: two runs cannot be read at once (I14). Snapshot readers need facts that outlive a run (stage 3) ([readers §2][M]).
 
-### 21. What a concurrent request may write: K2's four rules
+### 21. What a concurrent request may write: K2's rules
 
 | rule | stated for Scala 3 ([readers §3][M]) |
 |---|---|
@@ -400,13 +400,13 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 
 Kotlin's low-level FIR resolves declarations in place under these rules (§48). Scala 3's typer broke all four: trees mutated in place, nothing published a completion, nothing recorded what content a type was computed against, and a cancelled typer left half-typed trees ([PR][PR]).
 
-### 22. Five kinds of mutable state a request writes
+### 22. Kinds of mutable state a request writes
 
 <figure class="fig anim kinds">
 <div class="krow khead"><span></span><span>kind</span><span></span><span>treatment</span></div>
 <div class="krow a-in" style="--d:0.15s"><span>{chip:A scratch}</span><div class="kbox"><div class="kt">Per-request scratch</div><div class="kd">State one request uses while it runs and then throws away.</div><div class="kx">comparers, context pools, targeting slots, the cancel checker</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Move to a per-thread <code>Reader</code>.</div><div class="kx">§22b</div></div></div>
 <div class="krow a-in" style="--d:0.50s"><span>{chip:B lazy fact}</span><div class="kbox"><div class="kt">Lazy facts</div><div class="kd">Computed once, on first use, and marked in progress while that runs (a black hole).</div><div class="kx">completeFrom's Touched, InheritedCache.locked, symbol loaders</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">An owner and a barrier per root.</div><div class="kx">§24</div></div></div>
-<div class="krow a-in" style="--d:0.85s"><span>{chip:C cache}</span><div class="kbox"><div class="kt">Caches</div><div class="kd">Derived values kept to avoid recomputing them; any reader would compute the same value.</div><div class="kx">lastDenot and checkedPeriod, member and base-type caches</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">One published value, or an ordered stamp; concurrent maps.</div><div class="kx">§30, §30a, §33d</div></div></div>
+<div class="krow a-in" style="--d:0.85s"><span>{chip:C cache}</span><div class="kbox"><div class="kt">Caches</div><div class="kd">Derived values kept to avoid recomputing them; any reader would compute the same value.</div><div class="kx">lastDenot and checkedPeriod, member and base-type caches</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">One published value, or an ordered stamp; concurrent maps.</div><div class="kx">§30, §29, §30</div></div></div>
 <div class="krow a-in" style="--d:1.20s"><span>{chip:D interning}</span><div class="kbox"><div class="kt">Interning and counters</div><div class="kd">One shared table so that equal types are one object; ids handed out in order.</div><div class="kx">Uniques, NamedTypeUniques, _nextSymId</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">A concurrent interner, an atomic counter.</div><div class="kx">§22c</div></div></div>
 <div class="krow a-in" style="--d:1.55s"><span>{chip:E trees}</span><div class="kbox"><div class="kt">Trees</div><div class="kd">The file's syntax trees: typed into new trees, their attachments consumed on the way.</div><div class="kx">SymOfTree, TypedAhead, ExpandedTree, the session's splice</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Skipped statements as facts, a persistent typed tree.</div><div class="kx">not built (step 5)</div></div></div>
 </figure>
@@ -536,11 +536,15 @@ stateDiagram-v2
 
 ---
 
-## Part VI — The races, before and after
+## Part VI — Sharing one symbol table: hazards and patterns
 
-### 27. A peek at another reader's completion (I41)
+Each card names a hazard that appears once several readers share one symbol table, the pattern that handles it, and the `Sharing` operation (§22a) the pattern lives behind. The bugs are cited as examples.
+
+### 27. Looking at another reader's work in progress
 
 <div class="chips">{chip:wait, don't peek}</div>
+
+**Hazard.** Some code asks whether a symbol is being completed and, if so, takes another path: an import being completed is not used to resolve a name, a parent being completed is skipped. With one reader "in progress" means "further up my own stack", so the answer is deterministic. With several it can mean another thread, and the answer depends on timing.
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 190" role="img" aria-label="Before: a peek sees another reader's completion and skips the import">
@@ -568,62 +572,58 @@ stateDiagram-v2
 <figcaption>Thirteen sites peek at <code>isCompleting</code> and take another path rather than force ([readers §4.1][M]). The two-reader suites found it ([readers §8][M], I41).</figcaption>
 </figure>
 
-### 28. Two readers waiting on each other is often not a real cycle (I54)
+**Pattern: wait, don't peek.** "In progress on another reader" is a state to wait for, never one to act on. `isCompleting` means "on this reader"; on a concurrent base, another reader's completion is waited for and the symbol looked at again (`awaitOtherReader`).
+
+- The design counted thirteen such sites ([readers §4.1][M]). The two-reader suites and the race hunt found more of the same shape: a constructor completion skipped (I72), an empty type-parameter list cached (I73, I75), a `LazyRef` being computed taken for a cycle (I57).
+
+### 28. Two readers waiting on each other
+
+<div class="chips">{chip:claim}</div>
+
+**Hazard.** Each reader holds a claim and waits for the other's. Roots are coarser than facts (a whole TASTy file; one key for every bring-forward), so most such cycles are two roots taken in different orders, not a dependency cycle. Raising `CyclicReference` there made a false error (I54); backing off a reader inside a Namer completion left that symbol unwound for the rest of the run, since a Namer completion cannot run twice (I74).
 
 <figure class="fig pair">
-<svg viewBox="0 0 340 190" role="img" aria-label="Before: two roots taken in different orders raise a false CyclicReference">
-  <text x="0" y="14" class="h">before: raise CyclicReference</text>
-  <rect x="20" y="40" width="110" height="30" rx="6" class="own"/><text x="75" y="60" text-anchor="middle">R1 holds X.tasty</text>
-  <rect x="210" y="40" width="110" height="30" rx="6" class="own"/><text x="265" y="60" text-anchor="middle">R2 holds Y.tasty</text>
-  <path d="M 130 50 C 170 40, 180 40, 208 50" class="s-wait"/><text x="170" y="34" text-anchor="middle" class="c-wait">waits</text>
-  <path d="M 210 64 C 170 76, 170 76, 132 64" class="s-wait"/><text x="170" y="92" text-anchor="middle" class="c-wait">waits</text>
-  <text x="0" y="124">roots are coarser than facts:</text>
-  <text x="0" y="142">two files taken in two orders,</text>
-  <text x="0" y="160">not a dependency cycle</text>
-  <text x="0" y="180" class="c-bad">a false "Cyclic reference"</text>
+<svg viewBox="0 0 340 200" role="img" aria-label="Before: a reader inside a Namer completion backs off and leaves it unwound for the rest of the run">
+  <text x="0" y="14" class="h">before: whoever closes the cycle</text>
+  <rect x="0" y="30" width="150" height="40" rx="6" class="own"/><text x="10" y="47">R1 inside a Namer</text><text x="10" y="62">completion of s</text>
+  <rect x="190" y="30" width="150" height="40" rx="6" class="own"/><text x="200" y="47">R2 typing</text><text x="200" y="62">a body</text>
+  <text x="0" y="96">R1 closes a wait-for cycle and backs off</text>
+  <rect x="0" y="108" width="320" height="26" rx="6" class="bad"/><text x="10" y="125">s: UnwoundCompletion (cannot run twice, I53)</text>
+  <text x="0" y="156">pre-empts every reader that reaches it</text>
+  <text x="0" y="172">until a fresh run: with every file in one</text>
+  <text x="0" y="188" class="c-bad">run, 4 of 20 cells at k=8 never recovered</text>
 </svg>
-<svg viewBox="0 0 340 190" role="img" aria-label="After: the reader that would close the cycle backs off and is retried">
-  <text x="0" y="14" class="h">after: back off and retry</text>
-  <rect x="20" y="40" width="110" height="30" rx="6" class="own"/><text x="75" y="60" text-anchor="middle">R1 holds X.tasty</text>
-  <rect x="210" y="40" width="110" height="30" rx="6" class="skip"/><text x="265" y="60" text-anchor="middle">R2 released Y</text>
-  <path d="M 130 50 C 170 40, 180 40, 208 50" class="s-typed"/><text x="170" y="34" text-anchor="middle" class="c-typed">takes Y, proceeds</text>
-  <text x="0" y="124">R2 is pre-empted, as by a writer:</text>
-  <text x="0" y="142">unwinds, releases its roots; the</text>
-  <text x="0" y="160">driver retries its request</text>
-  <text x="0" y="180" class="c-typed">counted; more than 20 fails a test</text>
+<svg viewBox="0 0 340 200" role="img" aria-label="After: the body-typing reader backs off; a reader inside a Namer completion never does">
+  <text x="0" y="14" class="h">after: a victim with no Namer completion</text>
+  <rect x="0" y="30" width="150" height="40" rx="6" class="typed"/><text x="10" y="47">R1 finishes s</text><text x="10" y="62">and publishes</text>
+  <rect x="190" y="30" width="150" height="40" rx="6" class="skip"/><text x="200" y="47">R2 backs off,</text><text x="200" y="62">its request restarts</text>
+  <text x="0" y="96">all parties inside Namer completions,</text>
+  <text x="0" y="112">every root a symbol: one raises</text>
+  <text x="0" y="128">CyclicReference, the single-reader answer;</text>
+  <text x="0" y="144">through a coarse root it waits, bounded</text>
+  <text x="0" y="172" class="m">a raised cycle no sequential order has:</text>
+  <text x="0" y="188" class="m">7 divergent files in 20 rounds (Setting)</text>
 </svg>
-<figcaption>A true dependency cycle then shows in the other reader alone, where a single reader would report it. The cross-thread cycle test gives the single-reader answer in all 30 rounds, backing off 19–25 times ([readers §8][M] step 4).</figcaption>
+<figcaption>[readers §8][M] step 4.</figcaption>
 </figure>
 
-### 30. A stamp published before its value (I36)
+**Pattern: detect before waiting, then choose a victim.** Before it waits, a reader follows owners from the root back to itself. On a cycle, a reader typing a body backs off and its request restarts; a reader inside a Namer completion never does; if every party is inside a Namer completion and every root is a symbol, one raises `CyclicReference`, the single-reader answer. Only a chain of live claims seen twice, a short wait apart, counts as a cycle (I87).
 
-<div class="chips">{chip:C cache} {chip:ordered stamp}</div>
+- **In the seam:** `Sharing.exclusive` and `Sharing.claimed` take the claim on a parallel base and pass `CompletionRoots.backOff` as what to do on a cycle; on a serialised base `exclusive` takes the one completion lock, and batch runs the code as it was.
+- The residue: two readers completing `Settings.Setting`'s members in opposite orders still raise a cycle no sequential order has (7 divergent files in 20 rounds of 484). Namer completions that can run again are the fix ([readers §8][M] step 4).
 
-<figure class="fig pair">
-<svg viewBox="0 0 340 180" role="img" aria-label="Before: the period is stored first; a reader sees a current period and a null symbol">
-  <text x="0" y="14" class="h">before</text>
-  <text x="0" y="40" class="mono">writer:  checkedPeriod = now</text>
-  <text x="59" y="58" class="mono">lastSymbol = sym</text>
-  <text x="0" y="90" class="mono">reader:  if checkedPeriod == now</text>
-  <text x="73" y="108" class="mono">use lastSymbol</text>
-  <rect x="0" y="124" width="320" height="26" rx="6" class="bad"/><text x="10" y="141">current period, null lastSymbol</text>
-  <text x="0" y="170" class="m">NamedType.stableInRunSymbol</text>
-</svg>
-<svg viewBox="0 0 340 180" role="img" aria-label="After: fields first, then the period with a release store, read with an acquire load">
-  <text x="0" y="14" class="h">after</text>
-  <text x="0" y="40" class="mono">writer:  lastSymbol = sym</text>
-  <text x="59" y="58" class="mono">setRelease(checkedPeriod, now)</text>
-  <text x="0" y="90" class="mono">reader:  if getAcquire(checkedPeriod)</text>
-  <text x="86" y="108" class="mono">== now: use lastSymbol</text>
-  <rect x="0" y="124" width="320" height="26" rx="6" class="typed"/><text x="10" y="141">the period publishes the fields</text>
-  <text x="0" y="170" class="m">util.Publish: static final VarHandles</text>
-</svg>
-<figcaption>The one cost that cannot be chosen per mode: a field is a field in batch too. Plain moves on x86, <code>stlr</code>/<code>ldar</code> on Apple silicon; measured with perflab in §47 ([readers §8][M], [PR][PR]).</figcaption>
-</figure>
+### 29. A cache published one field at a time
 
-### 30a. Publishing several fields as one immutable value
+<div class="chips">{chip:C cache} {chip:publish once} {chip:packed value}</div>
 
-<div class="chips">{chip:publish once} {chip:packed value}</div>
+**Hazard.** Types are hash-consed, and symbols, scopes, annotations and import infos are reached by every reader, so every lazily filled field on them is shared. The batch compiler fills them with idioms that are correct on one thread and race on two ([readers §4.4][M]):
+
+| idiom | what another reader sees | example |
+|---|---|---|
+| a cache in several fields, written one after another | one reader's key with another's value | `PreDenotation.asSeenFrom` (I78) |
+| a sentinel while the value is computed | the sentinel, as the answer or as a cycle | `packageObjsCache = Nil` (I79) |
+| a field read twice | a value another reader replaced in between | `ImportInfo.featureImported` (I80) |
+| a structure filled after it is published | the structure half filled | `MutableScope.toList` (I77) |
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 200" role="img" aria-label="Before: a cache in three fields, written one after the other; another reader pairs one reader's key with the other's result">
@@ -649,57 +649,76 @@ stateDiagram-v2
 <figcaption>[readers §4.4][M], shapes 1 and 4.</figcaption>
 </figure>
 
-- **Publish once:** whatever several readers will see, build in a local and store once: an import's selector facts (I60), `MutableScope.toList` (I77), `Definitions.PerRun`'s pair. A structure filled after it is published is seen half-filled.
-- **Packed value:** for a cache whose key is more than a stamp, or whose writers in one period may store different values: `asSeenFrom` (the prefix as well), `MatchType.reduced` (a reduction context per reader's constraint), `packageObjs` (under a claim besides). Where the key *is* the stamp and every writer stores the same value, the cheaper ordered stamp of §30 suffices (§33d).
-- Rule 2 of §21 at the level of one field: another reader sees "not computed" or the finished value.
+**Pattern: build in a local, publish one value, read it once.** Several fields become one immutable value in one `@volatile` field (packed); a structure is built in a local and stored once; a field is read once into a local and the local returned; a sentinel becomes a claim, as in §28.
 
-### 31. The typer state dropped with its variable (I62)
+- **In the seam:** each fix is taken under `ctx.base.concurrent` where it costs anything; most cost nothing on the batch path (a local instead of a field, the order of two stores). Maps and interners that readers share are chosen when the base is made (`Sharing.newEqHashMap`, `newMap`, `newUniques`; §22c).
 
-<div class="chips">{chip:private state}</div>
+### 30. A value and its stamp in two fields
+
+<div class="chips">{chip:C cache} {chip:ordered stamp}</div>
+
+**Hazard.** The commonest cache is a value and the period or run id it was computed in, in two plain fields. Plain stores are seen reordered on Apple silicon: a reader finds the new stamp and the old value, a null (I36's `lastSymbol`, I60's `underlyingNormalizable`), a `false`, or the previous run's value.
 
 <figure class="fig pair">
-<svg viewBox="0 0 340 180" role="img" aria-label="Before: a completion's own typer state is dropped with an uninstantiated type variable">
-  <text x="0" y="14" class="h">before</text>
-  <text x="0" y="38" class="mono">val retractedVars = Set.empty[A] …</text>
-  <rect x="0" y="50" width="200" height="40" rx="6" class="own"/><text x="10" y="67">completion's TyperState</text><text x="10" y="83" class="mono">A: uninstantiated</text>
-  <path d="M 200 70 L 240 70" class="s-bad"/><text x="246" y="74" class="c-bad">dropped</text>
-  <text x="0" y="116" class="mono">retractedVars: Set[A | TermRef]</text>
-  <text x="0" y="134">A belongs to no live state</text>
-  <text x="0" y="160" class="c-bad mono">Found: Set[A | TermRef]</text>
-  <text x="0" y="176" class="c-bad mono">Required: Set[TermRef]</text>
+<svg viewBox="0 0 340 190" role="img" aria-label="Before: a value and its stamp in two plain fields; a reader can see the new stamp and the old value">
+  <text x="0" y="14" class="h">before: two plain fields</text>
+  <text x="0" y="40" class="mono">if stamp != now then</text>
+  <text x="20" y="58" class="mono">value = compute</text>
+  <text x="20" y="76" class="mono">stamp = now</text>
+  <text x="0" y="94" class="mono">value</text>
+  <rect x="0" y="110" width="320" height="26" rx="6" class="bad"/><text x="10" y="127">new stamp, old value: null, false, last run's</text>
+  <text x="0" y="158">types alone had thirteen such pairs;</text>
+  <text x="0" y="176">plain stores are reordered on Apple silicon</text>
 </svg>
-<svg viewBox="0 0 340 180" role="img" aria-label="After: variables are instantiated when the completion ends, then made permanent">
-  <text x="0" y="14" class="h">after</text>
-  <text x="0" y="38" class="mono">val retractedVars = Set.empty[A] …</text>
-  <rect x="0" y="50" width="200" height="40" rx="6" class="typed"/><text x="10" y="67">completion ends:</text><text x="10" y="83">instantiate, then gc</text>
-  <text x="0" y="116" class="mono">retractedVars: Set[TermRef]</text>
-  <text x="0" y="134">as fullyDefinedType would</text>
-  <text x="0" y="160" class="c-typed">1,441 identifiers of Nullables.scala</text>
-  <text x="0" y="176" class="c-typed">match a whole-file run</text>
+<svg viewBox="0 0 340 190" role="img" aria-label="After: Caching.stamped reads the stamp then the value with acquire, stores the value then the stamp with release">
+  <text x="0" y="14" class="h">after: Caching.stamped</text>
+  <text x="0" y="40" class="mono">s = stamp; acquireFence</text>
+  <text x="0" y="58" class="mono">v = value; if s == now then v</text>
+  <text x="0" y="76" class="mono">else releaseFence; value = v1</text>
+  <text x="34" y="94" class="mono">releaseFence; stamp = now; v1</text>
+  <rect x="0" y="110" width="320" height="26" rx="6" class="typed"/><text x="10" y="127">a current stamp means a value for this period</text>
+  <text x="0" y="158">fences only on a concurrent base;</text>
+  <text x="0" y="176">the local returned, never the field again</text>
 </svg>
-<figcaption>In the serialised mode the variable stayed in the namer's state and the enclosing statement instantiated it. In a state of its own it was dropped ([readers §8][M] step 4).</figcaption>
+<figcaption>[readers §4.4.1][M], [`Caching.scala`][caching]. The two nulls found earlier were this shape: I36's <code>lastSymbol</code> and I60's <code>underlyingNormalizable</code>.</figcaption>
 </figure>
 
-### 33a. Four kinds of race in shared caches (I68)
+**Pattern: an ordered stamp.** The stamp is read first, with acquire; a writer stores the value, then the stamp, with release. It is correct because all readers of a run share one period, so two writers in that period store values equally valid for it.
 
-<div class="chips">{chip:C cache}</div>
+- Before `Caching`, 21 fields paired a value with a period or run-id stamp.¹ Six were protected, in three idioms: `util.Publish` (`Symbol`, `NamedType`), a packed `@volatile` value (`asSeenFrom`, package objects, `MatchType`'s reduction), `synchronized` (`InheritedCache`). Two were partly protected: `ClassDenotation`'s member and base-type caches, concurrent maps whose reference and period were plain. Thirteen were plain pairs, all in `Types.scala`: the signatures, `canDropAlias`, `AndType`'s and `OrType`'s base classes, `OrType`'s join, union, atoms and widening, `AppliedType`'s super type, stability, constant folding and normalizable underlying type.
+- One helper, `core.Caching`, now holds the thirteen and the two. Variants: `stampedIf` keeps only a value that is not provisional, `stampedWhen` takes its own hit test, `peek` reads without computing.
+- Each is an inline method: one copy of the code with the fences under a test of the base's final `concurrent` field, since two copies would double every site's bytecode, which the JIT's inlining budget counts. Fences rather than a `VarHandle` per field, so one helper serves any pair: free on x86, `dmb ishld` and `dmb ish` on AArch64, and only on a concurrent base.
+- The invariant it relies on: all readers of a run are in one period, and a writer in another run is cancelled before the run changes. Two writers in one period compute values equally valid for it, so pairing one's stamp with the other's value is still right.
+- Where the key is more than the stamp, a packed value instead: `PreDenotation.asSeenFrom` (the prefix too), `MatchType.reduced`, `packageObjs`.
+- `StampedCachesTest` is the lint: in `core`, a stamp field appears only in a `Caching` call or a reset, with the exceptions named. `CachingLincheckTest` checks the helper (§30a).
 
-Types are hash-consed, and symbols, denotations, scopes, annotations and import infos are reached by every reader, so every plain `var` that typing fills lazily is shared. The hunt for I68 found the same four shapes again and again ([readers §4.4][M]):
+<div class="fn">¹ A survey of #84 at 911b78d4f8, before <code>Caching</code>, over <code>compiler/src</code>; <code>Denotation.myValidFor</code> and <code>Phase.myPeriod</code> are not caches and are not counted.</div>
 
-| shape | where it was found | cure |
-|---|---|---|
-| a cache in several fields, written one after the other | `PreDenotation.asSeenFrom`, `NamedType.denot`, `AppliedType.superType`, `MatchType.reduced` | one immutable value, one release store; or the period read first with acquire |
-| a sentinel during a computation | `packageObjsCache = Nil`, a lazy annotation's `myTree = null`, `myTypeParams` set early | a claim keyed by the object, as `LazyRef` has since I57: the owner meets the sentinel, others wait |
-| a field read twice | `ImportInfo.featureImported`, `SourceFile.offsetToLine` | read once into a local, return what was computed |
-| a structure published while it is filled | `MutableScope.toList` (I77), `ImportInfo.SelectorInfo` (I60) | build in a local and publish once, or a synchronised map in a concurrent base |
+### 30a. Checking the stamped cache with Lincheck
 
-- Each fix is taken only on a concurrent base where it costs anything on the batch path; most cost nothing (a local instead of a field, the order of two stores).
-- The races hide in the 484-file loop, about one divergent file a round, and show in a small one: `ShownSoak` types conversions to the compiler's `Formatting.Shown` with eight readers every round, and diverged in ten of seventeen files a round before the fixes.
-- After them, 20 rounds of 484 files at k=8: no failed cell, 7 divergent files, all from §33c's raised cycles ([readers §8][M] step 4).
+[Lincheck][lincheck] is JetBrains' framework for testing concurrent JVM code. A test declares operations with `@Operation`; Lincheck generates concurrent scenarios of them and checks that every result is one some sequential order of the same operations could give (linearizability). It runs a scenario two ways: *model checking* explores the interleavings of the threads' reads and writes deterministically, and *stress* runs it on real threads.
 
-### 33b. A statement's typer state is private (I76)
+```scala
+class Cell:                      // starts with a pair from an earlier period
+  private var stamp: Int = 1
+  private var value: Int = 10
+
+  @Operation def get(): Int =               // every reader is in period 2, whose value is 20
+    Caching.cache(true, stamp, value, stamp = _, value = _, (s, _) => s == Now, Now, _ => true, 20)
+
+  @Operation def getProvisional(): Int =    // computes -1, which is not kept
+    Caching.cache(true, stamp, value, stamp = _, value = _, (s, _) => s == Now, Now, _ != -1, -1)
+```
+
+- In any sequential order `get` returns 20, and `getProvisional` returns -1 until some `get` has stored 20. A concurrent result outside that, such as 10 (the earlier period's value) for a current stamp, fails the test.
+- Three threads, three operations each. Model checking assumes sequential consistency, so it checks the order of the reads and stores, not the fences; the stress run, on real threads and on Apple silicon too, is the part that can exercise them.
+- `Broken`, the plain idiom `Caching` replaced (the value stored whether kept or not, then the field read again), must fail, so the test is known to catch the bug it is for ([`CachingLincheckTest.scala`][lincheckTest]).
+
+### 31. One reader's type variables reaching another
 
 <div class="chips">{chip:private state}</div>
+
+**Hazard.** A typer state holds type variables and constraints. Committing a completion's or a statement's state into a state that several readers share (the namer's, the run's) lets one reader's binding reach another's typing, or drops a variable another state still refers to.
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 200" role="img" aria-label="Before: readers commit statements into the run's shared typer state and fork from it">
@@ -726,135 +745,37 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 <figcaption>The rule I66 made for locals, applied to statements; lazy annotation arguments and inline bodies, typed by whichever reader forces them, get a private child state too ([readers §8][M] step 4). A change to how a session keeps constraints, not a race fix.</figcaption>
 </figure>
 
-### 33c. Which reader backs off from a wait-for cycle (I74)
+**Pattern: a private typer state, settled and dropped.** Each completion and each statement is typed in a state of its own; when it ends its variables are instantiated (as `fullyDefinedType` would) and the state is dropped, never committed. The run's state is read-only once the run opens, which an assertion in `commit` checks.
 
-<div class="chips">{chip:claim} {chip:wait, don't peek}</div>
+- **In the seam:** `Sharing.privately` runs code in a private child state on a parallel base, and as before otherwise; `Sharing.endState` settles and drops on a parallel base and commits under the completion lock on a serialised one.
+- Examples: a variable dropped with its state (I62, "Found: Set[A | TermRef], Required: Set[TermRef]"); constraints from one reader's commit met by another's typing, the conversions to `Formatting.Shown` rejected (I70, I76).
 
-<figure class="fig pair">
-<svg viewBox="0 0 340 200" role="img" aria-label="Before: a reader inside a Namer completion backs off and leaves it unwound for the rest of the run">
-  <text x="0" y="14" class="h">before: whoever closes the cycle</text>
-  <rect x="0" y="30" width="150" height="40" rx="6" class="own"/><text x="10" y="47">R1 inside a Namer</text><text x="10" y="62">completion of s</text>
-  <rect x="190" y="30" width="150" height="40" rx="6" class="own"/><text x="200" y="47">R2 typing</text><text x="200" y="62">a body</text>
-  <text x="0" y="96">R1 closes a wait-for cycle and backs off</text>
-  <rect x="0" y="108" width="320" height="26" rx="6" class="bad"/><text x="10" y="125">s: UnwoundCompletion (cannot run twice, I53)</text>
-  <text x="0" y="156">pre-empts every reader that reaches it</text>
-  <text x="0" y="172">until a fresh run: with every file in one</text>
-  <text x="0" y="188" class="c-bad">run, 4 of 20 cells at k=8 never recovered</text>
-</svg>
-<svg viewBox="0 0 340 200" role="img" aria-label="After: the body-typing reader backs off; a reader inside a Namer completion never does">
-  <text x="0" y="14" class="h">after: a victim with no Namer completion</text>
-  <rect x="0" y="30" width="150" height="40" rx="6" class="typed"/><text x="10" y="47">R1 finishes s</text><text x="10" y="62">and publishes</text>
-  <rect x="190" y="30" width="150" height="40" rx="6" class="skip"/><text x="200" y="47">R2 backs off,</text><text x="200" y="62">its request restarts</text>
-  <text x="0" y="96">all parties inside Namer completions,</text>
-  <text x="0" y="112">every root a symbol: one raises</text>
-  <text x="0" y="128">CyclicReference, the single-reader answer;</text>
-  <text x="0" y="144">through a coarse root it waits, bounded</text>
-  <text x="0" y="172" class="m">a raised cycle no sequential order has:</text>
-  <text x="0" y="188" class="m">7 divergent files in 20 rounds (Setting)</text>
-</svg>
-<figcaption>The backoff of §28, made to choose its victim ([readers §8][M] step 4). The remaining divergences are two readers completing <code>Settings.Setting</code>'s members in opposite orders. The fix is a Namer completion that can run again (non-destructive attachments, I8), out of scope here.</figcaption>
-</figure>
+### 32. The patterns, by mode of `Sharing`
 
-- **I87, a cycle raised from a stale chain.** A reader clears its `waitingOn` only after it wakes, so the wait-for chain could still run through a claim just released, and a `CyclicReference` was raised between two readers neither of which was waiting; it became the symbol's info, and every later answer reading it was wrong. `cycleChain` now stops at a released claim, and a cycle is raised only when the same chain of live claims is seen at two looks a slice apart ([#84][PR], 88d7abff96).
+| pattern | hazard | `Batch` | `Serialised` | `Parallel` |
+|---|---|---|---|---|
+| coarse lock | completions racing each other | the original code | one completion lock (`exclusive`, `serialised`)  | – |
+| claim and barrier | a completion's intermediate state seen by others (§24) | the original code  | – | a claim per root (`exclusive`, `claimed`) |
+| wait, don't peek | acting on another reader's work in progress (§27)  | – | wait on the lock, look again | `awaitOtherReader` |
+| a chosen victim | readers waiting on each other (§28)  | –  | – | `CompletionRoots.backOff` |
+| one published value | a cache in several fields (§29) | plain fields | packed value, publish once | packed value, publish once |
+| ordered stamp | a value and its stamp (§30) | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
+| private typer state | type variables crossing readers (§31) | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
+| concurrent structures | shared maps and interners | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
 
+- A guard has to say which mode it means: `concurrent` is true for serialised and parallel readers, `parallel` for parallel only. A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86).
 
-### 33d. Caches stamped with a period: one helper for all of them
-
-<div class="chips">{chip:C cache} {chip:ordered stamp}</div>
-
-<figure class="fig pair">
-<svg viewBox="0 0 340 190" role="img" aria-label="Before: a value and its stamp in two plain fields; a reader can see the new stamp and the old value">
-  <text x="0" y="14" class="h">before: two plain fields</text>
-  <text x="0" y="40" class="mono">if stamp != now then</text>
-  <text x="20" y="58" class="mono">value = compute</text>
-  <text x="20" y="76" class="mono">stamp = now</text>
-  <text x="0" y="94" class="mono">value</text>
-  <rect x="0" y="110" width="320" height="26" rx="6" class="bad"/><text x="10" y="127">new stamp, old value: null, false, last run's</text>
-  <text x="0" y="158">types alone had thirteen such pairs;</text>
-  <text x="0" y="176">plain stores are reordered on Apple silicon</text>
-</svg>
-<svg viewBox="0 0 340 190" role="img" aria-label="After: Caching.stamped reads the stamp then the value with acquire, stores the value then the stamp with release">
-  <text x="0" y="14" class="h">after: Caching.stamped</text>
-  <text x="0" y="40" class="mono">s = stamp; acquireFence</text>
-  <text x="0" y="58" class="mono">v = value; if s == now then v</text>
-  <text x="0" y="76" class="mono">else releaseFence; value = v1</text>
-  <text x="34" y="94" class="mono">releaseFence; stamp = now; v1</text>
-  <rect x="0" y="110" width="320" height="26" rx="6" class="typed"/><text x="10" y="127">a current stamp means a value for this period</text>
-  <text x="0" y="158">fences only on a concurrent base;</text>
-  <text x="0" y="176">the local returned, never the field again</text>
-</svg>
-<figcaption>[readers §4.4.1][M], [`Caching.scala`][caching]. The two nulls found earlier were this shape: I36's <code>lastSymbol</code> and I60's <code>underlyingNormalizable</code>.</figcaption>
-</figure>
-
-- Before `Caching`, 21 fields paired a value with a period or run-id stamp.¹ Six were protected, in three idioms: `util.Publish` (`Symbol`, `NamedType`), a packed `@volatile` value (`asSeenFrom`, package objects, `MatchType`'s reduction), `synchronized` (`InheritedCache`). Two were partly protected: `ClassDenotation`'s member and base-type caches, concurrent maps whose reference and period were plain. Thirteen were plain pairs, all in `Types.scala`: the signatures, `canDropAlias`, `AndType`'s and `OrType`'s base classes, `OrType`'s join, union, atoms and widening, `AppliedType`'s super type, stability, constant folding and normalizable underlying type.
-- One helper, `core.Caching`, now holds the thirteen and the two. Variants: `stampedIf` keeps only a value that is not provisional, `stampedWhen` takes its own hit test, `peek` reads without computing.
-- Each is an inline method: one copy of the code with the fences under a test of the base's final `concurrent` field, since two copies would double every site's bytecode, which the JIT's inlining budget counts. Fences rather than a `VarHandle` per field, so one helper serves any pair: free on x86, `dmb ishld` and `dmb ish` on AArch64, and only on a concurrent base.
-- The invariant it relies on: all readers of a run are in one period, and a writer in another run is cancelled before the run changes. Two writers in one period compute values equally valid for it, so pairing one's stamp with the other's value is still right.
-- Where the key is more than the stamp, a packed value instead: `PreDenotation.asSeenFrom` (the prefix too), `MatchType.reduced`, `packageObjs`.
-- `StampedCachesTest` is the lint: in `core`, a stamp field appears only in a `Caching` call or a reset, with the exceptions named. `CachingLincheckTest` checks the helper (§33h).
-
-<div class="fn">¹ A survey of #84 at 911b78d4f8, before <code>Caching</code>, over <code>compiler/src</code>; <code>Denotation.myValidFor</code> and <code>Phase.myPeriod</code> are not caches and are not counted.</div>
-
-### 33e. A fix guarded by the wrong mode flag (I86)
-
-<figure class="fig anim">
-<svg viewBox="0 0 720 190" role="img" aria-label="A fix for parallel readers, guarded by concurrent, also changed the serialised mode and broke a document-highlight test">
-  <defs><marker id="m33e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
-  <text x="0" y="14" class="h">extension [N &lt;: Name](name: N): one parameter clause, shared by every method</text>
-  <g class="a-in" style="--d:.1s"><rect x="0" y="30" width="220" height="44" rx="6" class="bad"/><text x="110" y="49" text-anchor="middle" class="b">race (parallel readers)</text><text x="110" y="65" text-anchor="middle">siblings consume each other's</text></g>
-  <path d="M 222 52 L 262 52" class="mut a-draw" pathLength="1" style="--d:.4s" marker-end="url(#m33e)"/>
-  <g class="a-in" style="--d:.5s"><rect x="266" y="30" width="200" height="44" rx="6" class="own"/><text x="366" y="49" text-anchor="middle" class="b">fix: copy the trees</text><text x="366" y="65" text-anchor="middle" class="mono">if concurrent</text></g>
-  <path d="M 468 52 L 508 52" class="mut a-draw" pathLength="1" style="--d:.8s" marker-end="url(#m33e)"/>
-  <g class="a-pop" style="--d:.9s"><rect x="512" y="30" width="208" height="44" rx="6" class="bad"/><text x="616" y="49" text-anchor="middle" class="b">serialised mode changed</text><text x="616" y="65" text-anchor="middle">a highlight of Int finds nothing</text></g>
-  <g class="a-in" style="--d:1.4s"><rect x="0" y="110" width="720" height="60" rx="6" class="typed"/>
-    <text x="14" y="132" class="b">kept: if parallel, the first method keeps the extension's own trees, the others get copies</text>
-    <text x="14" y="152">batch and serialised readers type one at a time and keep the shared trees</text></g>
-</svg>
-</figure>
-
-- `desugar.extMethod` prepends the same parameter clauses to every method of an extension. Two readers completing or typing sibling methods removed each other's `SymOfTree` and `TypedAhead`: "`N` does not have a symbol" at k=6 ([readers §8][M], I86).
-- The first fix copied the trees on any concurrent base, and `DocumentHighlightSuite.extension-with-type-param4` failed: the serialised mode had changed behaviour too. `concurrent` covers serialised and parallel readers; a guard has to name the mode it means.
-- `ExtensionParamsSuite`: 60 extension methods and 6 files calling them, 7 readers at once. Before, an assertion in round 1 of 3 runs out of 3; after, 30 rounds clean in 6 runs.
-
-### 33f. Patterns for publishing a value safely
-
-<div class="chips">{chip:publish once} {chip:packed value} {chip:ordered stamp}</div>
-
-| pattern | what it guarantees | where |
-|---|---|---|
-| publish once, one value | build in a local, store one immutable value; a reader sees none or all of it | `Definitions.PerRun`'s pair, an import's selector facts (I60), `MutableScope.toList` (I77) |
-| packed value | the key and the value in one `@volatile` object, for a cache whose key is more than a stamp | `asSeenFrom`, `MatchType.reduced` (I78) |
-| ordered two-field stamp | value then stamp with release, stamp then value with acquire; valid because readers share a period | `Caching` (§33d), `checkedPeriod` through `util.Publish` (I36) |
-| read once into a local | return what was computed, never the field read again | `featureImported`, `offsetToLine` (I80) |
-| concurrent structures chosen at construction | synchronised maps and interners, lock-free hits, only on a concurrent base | `Sharing.newEqHashMap`, `newUniques` (§22a) |
-
-All of these are rule 2 of §21 at the level of one field: another reader sees "not computed" or the finished value.
-
-### 33g. Patterns for locking and ownership
-
-<div class="chips">{chip:coarse lock} {chip:claim} {chip:private state} {chip:wait, don't peek}</div>
-
-| pattern | what it guarantees | where |
-|---|---|---|
-| coarse lock | one completion lock around every completion, bring-forward and lazy read; correct, serialises four fifths of a reader | `Sharing.Serialised` (§23) |
-| claim and barrier | one owner per root; `InProgress` seen through by the owner only; others wait on the latch; an unwind restores the lazy type | `Sharing.Parallel`, `CompletionRoots` (§24, §34, §35) |
-| private typer state | each completion and statement typed in a state of its own, settled (variables instantiated) and dropped, never committed into the shared one | `Sharing.privately` (I62, I66, I70, I76; §33b) |
-| wait, don't peek | "in progress on another reader" is waited for, then looked at again | `isCompleting` on this reader, `awaitOtherReader` (I41, I72, I73; §27) |
-| a chosen victim | a wait that would close a wait-for cycle backs off the reader that holds no Namer completion | I54, I74 (§28, §33c) |
-
-Coarse-grained against fine-grained is the step 3 / step 4 split. The fine-grained form's machinery is about 2 percent of the background pass's CPU ([readers §8][M] step 4), and keeps hovers at about 1 ms beside it (§44).
-
-### 33h. How the concurrency was tested
+### 33. How the concurrency was tested
 
 | layer | what it checks | found |
 |---|---|---|
-| Lincheck on `Caching` | the stamped cell under 3 threads of readers and writers: model checking of the interleavings, stress on real threads on Apple silicon; the old plain idiom must fail | the helper's ordering (§33d) |
+| Lincheck on `Caching` | the stamped cell from several threads against every sequential order (§30a) | the helper's ordering |
 | two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 (§23) |
-| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 (§33a) |
+| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 (§29) |
 | one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
-| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps §33d true |
+| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps §30 true |
 
-The soak flake that showed only in full-suite runs, `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log), has I87 as its likely cause (§33c): the symptom is the one I87's commit describes. With the build's JVM options the full suite failed 4 times in about 90 runs, against 0 in 180 runs of the test alone and 0 in 60 runs of the suite with default options. The fix is not yet confirmed: the soak runs with it have not reported.
+The soak flake that showed only in full-suite runs, `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log), has I87 as its likely cause (§28): the symptom is the one I87's commit describes. With the build's JVM options the full suite failed 4 times in about 90 runs, against 0 in 180 runs of the test alone and 0 in 60 runs of the suite with default options. The fix is not yet confirmed: the soak runs with it have not reported.
 
 A soak that hammers one pattern, written out longhand as well, separates "the search picked wrong" from "the answer it checked was wrong" ([readers §4.4][M]).
 
@@ -1145,7 +1066,7 @@ The verdict at the time: concurrency would overlap the fifth of a reader that is
 - With a claim per root, 412 hovers ran beside the passes and 3 of them waited on a root at all; the pass's diagnostics still equal a whole-file run's (§36).
 - So of the three, only step 4 gives the editor a millisecond hover while diagnostics are being computed.
 
-### 45. Replaying a recorded editing session: all three builds take the same time
+### 45. Replaying a recorded editing session: every build takes the same time
 
 **The experiment.** The x-ray replays part of a recorded VS Code session on the compiler's own sources (step 0's trace, §42): the stretch where `Typer.scala` is edited 15 times, 120 requests, sent with their original timing. It is replayed against a fresh driver in three builds, and each request is timed:
 
@@ -1213,7 +1134,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 
 - Eight readers are 2.7 times one and twice the batch typer. Batching files into islands, or warming shared roots first, changes nothing beyond round noise: contention on the symbol table is not the limit.
 - What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
-- Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§33a–§33c) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
+- Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§29–§28) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
 
 ### 46b. Why four threads are not four times faster
 
@@ -1329,7 +1250,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 
 ### 57. What is open
 
-- **I68's residue.** At k=8, 7 of 20 × 484 files diverge, all from cycles raised on `Setting`'s hierarchy: a wait-for chain through Namer roots that is a lock order, not a dependency cycle. The victim rule has to tell the two apart, probably by asking whether the waited-on completion's rule actually needs the waiter's symbol (§33c).
+- **I68's residue.** At k=8, 7 of 20 × 484 files diverge, all from cycles raised on `Setting`'s hierarchy: a wait-for chain through Namer roots that is a lock order, not a dependency cycle. The victim rule has to tell the two apart, probably by asking whether the waited-on completion's rule actually needs the waiter's symbol (§28).
 - **I74.** A Namer completion cannot run again after an unwind, so the reader that backs off must never be inside one. The long-term fix is re-runnable completions: I8's non-destructive attachments.
 - **The step 3 vs step 4 perflab campaign**, paused at 4 of 8 rounds, within 1–4 percent.
 - `testCompilation` not yet run on the provenance branch.
@@ -1337,7 +1258,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 ### 58. Lessons about measurement and correctness
 
 - **Measure the queue before building the concurrency.** Nine tenths of the queueing was behind whole-file work (§42); that set the order of everything after it.
-- **The barrier is the whole correctness argument.** With an owner and a barrier per root, every divergence found was a reader seeing state that was not yet published, not a scheduling problem (§24, §33a).
+- **The barrier is the whole correctness argument.** With an owner and a barrier per root, every divergence found was a reader seeing state that was not yet published, not a scheduling problem (§24, §29).
 - **Scala 3 has no "concurrency in body typing only".** Typing a body forces completions, and 65–79 percent of a reader's time is inside them; step 3 was a correct stepping stone and a wrong ship point (§23).
 - **The editor's cost is the whole-file askers.** Readers pay off once inlay hints and semantic tokens are ranges and the whole-file work is a background pass; for keystrokes, the win is keeping the run (§39, §40).
 
@@ -1355,9 +1276,9 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 </svg>
 </figure>
 
-- The design counted thirteen `isCompleting` sites; the hunt found seven more shapes of the same thing: `typeParams` caching an empty list, `ensureCompletions` skipping a constructor, a `LazyRef` in progress taken for a cycle (§27, §33).
-- **Roots coarser than facts turn lock orders into cycles.** Raising `CyclicReference` there made false errors (I54); backing off made I74. The `Setting` residue is the same tension one level down (§28, §33c).
-- **The hunt that worked:** the k=8 whole-set run in a loop, each file's diagnostics diffed against a single-reader run, the claim log around each divergence, one shape at a time, each added to a suite; and two review sweeps for the known shapes, which found eleven more instances before the loop would have (§33a).
+- The design counted thirteen `isCompleting` sites; the hunt found seven more shapes of the same thing: `typeParams` caching an empty list, `ensureCompletions` skipping a constructor, a `LazyRef` in progress taken for a cycle (§27).
+- **Roots coarser than facts turn lock orders into cycles.** Raising `CyclicReference` there made false errors (I54); backing off made I74. The `Setting` residue is the same tension one level down (§28).
+- **The hunt that worked:** the k=8 whole-set run in a loop, each file's diagnostics diffed against a single-reader run, the claim log around each divergence, one shape at a time, each added to a suite; and two review sweeps for the known shapes, which found eleven more instances before the loop would have (§29).
 
 ### 60. Lessons about shared typer state, batch cost and demos
 
@@ -1377,9 +1298,9 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 </svg>
 </figure>
 
-- The same channel, four times: I52, I62, I70 and the `Shown` mismatches; the same fix each time (§31, §33b).
+- The same channel, four times: I52, I62, I70 and the `Shown` mismatches; the same fix each time (§31, §31).
 - **Keep batch fast by paying at construction and along existing seams:** a `protected def` answered once per `ContextBase`, one virtual `reader`, the in-progress state as a lazy type on the slow path already there. The one per-access cost, release/acquire on `checkedPeriod`, is the one that still needs a paired A/B (§47).
-- **A guard must say which mode it means.** A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86, §33e).
+- **A guard must say which mode it means.** A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86, §32).
 - **Demo honesty costs a day and is worth it:** the baseline must go through `CachingDriver`, the driver must use the build's options, and a server that outlives its build misleads (I58, the `Shown` warnings, the wedged x-ray).
 
 ### 61. Next steps
@@ -1409,7 +1330,7 @@ Independent of the experiment's flags, each with a test on the branch:
 
 ## Overflow — detail moved out of the main sequence
 
-### 6. What scala/scala#11328 fixed: state that breaks at a safepoint
+### What scala/scala#11328 fixed: state that breaks at a safepoint
 
 | commit in [scala/scala#11328][11328] | state that is not a fact | broken at a safepoint |
 |---|---|---|
@@ -1422,14 +1343,14 @@ Independent of the experiment's flags, each with a test on the branch:
 - Each fix is local to one shape, and the harness is the only way to know there is no fifth. One remains: a nested `askType(source)` still diverges at 16 of 16 (findings I1 and I2, confirmed against the PR's branch).
 - Scala 3 under Metals diverges nowhere, because it never interrupts: a request waits, then pays a fresh whole-file run.
 
-### 9. Exceptions to the targeting rule
+### Exceptions to the targeting rule
 
 - **Never skipped:** imports and exports (they shape the context of what follows), nested package clauses, synthetic trees with no span of their own.
 - **A point between statements** types only the next one. Scala 2's rule types the whole list there; on `class JavaParser`'s header that was 10,000 trees for one hover.
 - **Blocks** are targeted too, but statements the target's statement names, transitively, are typed in order (200 dependent vals overflowed the stack through their completers), and a skipped local leaves a typed stub so the block's scope still has `x` in `locally { val x = 1; x@@ }`.
 - **Typed whole:** a tree that outlives the request as a value. A body typed ahead by an overload resolution (I21), a refinement's synthetic class (I25), an inline method's body (I28), and blocks under speculative typer states such as `tryEither` (I24) ([session §2][S]).
 
-### 13. Before moving to another file, complete the skipped symbols (I17)
+### Before moving to another file, complete the skipped symbols (I17)
 
 ```mermaid
 sequenceDiagram
@@ -1445,7 +1366,7 @@ sequenceDiagram
 - A whole-file run never exposed this: it completed every member while typing the bodies ([session §3][S]).
 - The rule, honestly stated: a run's lazy facts must be forced or discarded before the run is left, until completers become functions of node and owner (stage 3 of the cancellation design).
 
-### 15. How a cancellation reaches the typer
+### How a cancellation reaches the typer
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 150" role="img" aria-label="The cancellation token's path from the editor to the typer's checkpoint">
@@ -1467,7 +1388,7 @@ sequenceDiagram
 - `CompletionAbortSuite.abort-via-token` is this path without the editor: a token cancelled 20 ms after submission, the request answers its default, the driver is kept (the next run id is exactly one more) ([session §4][S]).
 - Not built on thread interrupts: the bit is unsticky and consumed, `ClosedByInterruptException` in a loader becomes a symbol marked absent, and catch-alls swallowed it.
 
-### 17. What is kept after a cancellation
+### What is kept after a cancellation
 
 | kind of state | after a cancellation ([session §4][S]) |
 |---|---|
@@ -1479,7 +1400,7 @@ sequenceDiagram
 
 The soak suite (`CompletionSoakSuite`) is a seeded random walk of 300 requests, cancellations at random checkpoints and edits on one driver: every completion must equal a fresh whole-file run's, and no symbol of the file may be left `Touched`. It found I14 on its first run.
 
-### 25. Two readers need the same inferred signature
+### Two readers need the same inferred signature
 
 ```mermaid
 sequenceDiagram
@@ -1517,7 +1438,7 @@ sequenceDiagram
 
 `def f = g + 1` and `def g = …`, both with inferred result types ([readers §3.1][M]). Part VII draws both branches as lanes.
 
-### 29. An in-progress mark in a shared cache, read as a cycle (I34)
+### An in-progress mark in a shared cache, read as a cycle (I34)
 
 <div class="chips">{chip:C cache} {chip:A scratch}</div>
 
@@ -1541,7 +1462,7 @@ sequenceDiagram
 <figcaption>A second black hole hiding in a cache ([readers §8][M] step 3). The cache version also leaked the mark on cancellation.</figcaption>
 </figure>
 
-### 32. A claim not released after an exception froze the x-ray (I61)
+### A claim not released after an exception froze the x-ray (I61)
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 180" role="img" aria-label="Before: a claim is released only on cancellation; another exception leaks it">
@@ -1565,7 +1486,7 @@ sequenceDiagram
 <figcaption>Any mode, not only with several readers ([readers §8][M] step 4). The x-ray now handles each request on a thread of its own and reports one that takes more than 30 s.</figcaption>
 </figure>
 
-### 33. Other races found and fixed
+### Other races found and fixed
 
 | | finding ([readers §8][M]) |
 |---|---|
@@ -1577,10 +1498,10 @@ sequenceDiagram
 | I52, I55, I57 | a read action in the run's root typer state; a shared implicit `SearchRoot`; a `LazyRef` in progress taken for a cycle |
 | I63–I67 | found by the throughput runs: a false self-type cycle, explicit nulls' flow facts, committed creation states, a class's caches read twice |
 | I60 | two-reader soak failures under heavy load, a different symptom each time: an import's selector facts, now published as one value |
-| I68 | with four or eight readers, now and then one file's errors differ from the whole-set run: the hunt in §33a–§33c |
+| I68 | with four or eight readers, now and then one file's errors differ from the whole-set run: the hunt in §29–§28 |
 | I70, I72, I73, I75 | found by that hunt: a completion typed in the run's shared state without the lock; three more peeks at another reader's `InProgress` (`ensureCompletions`, `typeParams`, the self type); a cached empty list computed while another reader's completion started |
 
-### 38. Moving every position after the edit
+### Moving every position after the edit
 
 <figure class="fig anim">
 <svg viewBox="0 0 740 230" role="img" aria-label="After an edit inside method10, spans after the edit move by delta; spans containing it grow; method10 is re-indexed and skipped">
@@ -1604,7 +1525,7 @@ sequenceDiagram
 <figcaption>Eager, in place: every tree the session holds, every symbol's coordinate, the diagnostics, and the <code>SourceFile</code> itself, so identity checks need no rewriting. A copying <code>TreeMap</code> would leave <code>defTree</code>, root trees and caches in the old frame ([session §12][S]).</figcaption>
 </figure>
 
-### 46a. The same on the x-ray: 1 to 6 threads, and the serial open
+### The same on the x-ray: 1 to 6 threads, and the serial open
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 300" role="img" aria-label="Speed-up against one reader for N=1 to 6 readers, two builds, with linear speed-up for reference">
@@ -1633,6 +1554,26 @@ sequenceDiagram
 - Run 1: worker CPU grows only 18 percent from one reader to six, root waits are at most 15 per cell and under 1 ms, no file's diagnostics differ, and the batch typer on the same files takes 5.42 s. What stops the curve is the time outside the workers, about 0.57 s at every N (derived as above, not measured): opening the set is serial.
 - Run 2 parses in parallel and hands out the largest files first: the open is 0.31 s (measured), the tail of the timeline 0 to 7 ms, and four readers are 2.98 times one (wall 4.93, 2.80, 2.08, 1.65 s; worker CPU 1.00, 1.07, 1.14, 1.15 of N=1's). Its batch reference moved to 6.41 s without an explanation, so it is not used here.
 
+### A fix guarded by the wrong mode flag (I86)
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 190" role="img" aria-label="A fix for parallel readers, guarded by concurrent, also changed the serialised mode and broke a document-highlight test">
+  <defs><marker id="m33e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <text x="0" y="14" class="h">extension [N &lt;: Name](name: N): one parameter clause, shared by every method</text>
+  <g class="a-in" style="--d:.1s"><rect x="0" y="30" width="220" height="44" rx="6" class="bad"/><text x="110" y="49" text-anchor="middle" class="b">race (parallel readers)</text><text x="110" y="65" text-anchor="middle">siblings consume each other's</text></g>
+  <path d="M 222 52 L 262 52" class="mut a-draw" pathLength="1" style="--d:.4s" marker-end="url(#m33e)"/>
+  <g class="a-in" style="--d:.5s"><rect x="266" y="30" width="200" height="44" rx="6" class="own"/><text x="366" y="49" text-anchor="middle" class="b">fix: copy the trees</text><text x="366" y="65" text-anchor="middle" class="mono">if concurrent</text></g>
+  <path d="M 468 52 L 508 52" class="mut a-draw" pathLength="1" style="--d:.8s" marker-end="url(#m33e)"/>
+  <g class="a-pop" style="--d:.9s"><rect x="512" y="30" width="208" height="44" rx="6" class="bad"/><text x="616" y="49" text-anchor="middle" class="b">serialised mode changed</text><text x="616" y="65" text-anchor="middle">a highlight of Int finds nothing</text></g>
+  <g class="a-in" style="--d:1.4s"><rect x="0" y="110" width="720" height="60" rx="6" class="typed"/>
+    <text x="14" y="132" class="b">kept: if parallel, the first method keeps the extension's own trees, the others get copies</text>
+    <text x="14" y="152">batch and serialised readers type one at a time and keep the shared trees</text></g>
+</svg>
+</figure>
+
+- `desugar.extMethod` prepends the same parameter clauses to every method of an extension. Two readers completing or typing sibling methods removed each other's `SymOfTree` and `TypedAhead`: "`N` does not have a symbol" at k=6 ([readers §8][M], I86).
+- The first fix copied the trees on any concurrent base, and `DocumentHighlightSuite.extension-with-type-param4` failed: the serialised mode had changed behaviour too. `concurrent` covers serialised and parallel readers; a guard has to name the mode it means.
+- `ExtensionParamsSuite`: 60 extension methods and 6 files calling them, 7 readers at once. Before, an assertion in round 1 of 3 runs out of 3; after, 30 rounds clean in 6 runs.
 
 [PR]: https://github.com/retronym/scala3/pull/84
 [PR68]: https://github.com/retronym/scala3/pull/68
@@ -1647,6 +1588,8 @@ sequenceDiagram
 [pike]: https://go.dev/blog/waza-talk
 [kt200]: https://github.com/JetBrains/kotlin/blob/v2.0.0/ChangeLog.md
 [caching]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/src/dotty/tools/dotc/core/Caching.scala
+[lincheck]: https://github.com/JetBrains/lincheck
+[lincheckTest]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/test/dotty/tools/dotc/core/CachingLincheckTest.scala
 [llfir]: https://github.com/JetBrains/kotlin/blob/master/analysis/low-level-api-fir/README.md
 [firstate]: https://github.com/JetBrains/kotlin/blob/master/compiler/fir/tree/src/org/jetbrains/kotlin/fir/declarations/FirResolveState.kt
 [lllock]: https://github.com/JetBrains/kotlin/blob/master/analysis/low-level-api-fir/src/org/jetbrains/kotlin/analysis/low/level/api/fir/file/builder/LLFirLockProvider.kt
