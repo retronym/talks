@@ -561,7 +561,7 @@ Every fix that followed is one of these treatments. The classification was worth
 </svg>
 </figure>
 
-One seam decides, when a symbol table is made, whether readers are absent, serialised or parallel. Batch call sites compile to the original code and allocate nothing; the concurrent branches live elsewhere ([full talk §22a](../dotc-interactive/index.html#s22a)).
+One class, `Sharing`, decides when a symbol table is made whether readers are absent, serialised or parallel. Batch call sites compile to the original code and allocate nothing; the concurrent branches live elsewhere ([full talk §22a](../dotc-interactive/index.html#s22a)).
 
 ### 11. Claims: one thread completes a symbol, the others wait
 

@@ -609,7 +609,7 @@ Each card names a hazard that appears once several readers share one symbol tabl
 
 **Pattern: detect before waiting, then choose a victim.** Before it waits, a reader follows owners from the root back to itself. On a cycle, a reader typing a body backs off and its request restarts; a reader inside a Namer completion never does; if every party is inside a Namer completion and every root is a symbol, one raises `CyclicReference`, the single-reader answer. Only a chain of live claims seen twice, a short wait apart, counts as a cycle (I87).
 
-- **In the seam:** `Sharing.exclusive` and `Sharing.claimed` take the claim on a parallel base and pass `CompletionRoots.backOff` as what to do on a cycle; on a serialised base `exclusive` takes the one completion lock, and batch runs the code as it was.
+- **Where it lives:** `Sharing.exclusive` and `Sharing.claimed` take the claim on a parallel base and pass `CompletionRoots.backOff` as what to do on a cycle; on a serialised base `exclusive` takes the one completion lock, and batch runs the code as it was.
 - The residue: two readers completing `Settings.Setting`'s members in opposite orders still raise a cycle no sequential order has (7 divergent files in 20 rounds of 484). Namer completions that can run again are the fix ([readers §8][M] step 4).
 
 ### 29. A cache published one field at a time
@@ -651,7 +651,7 @@ Each card names a hazard that appears once several readers share one symbol tabl
 
 **Pattern: build in a local, publish one value, read it once.** Several fields become one immutable value in one `@volatile` field (packed); a structure is built in a local and stored once; a field is read once into a local and the local returned; a sentinel becomes a claim, as in §28.
 
-- **In the seam:** each fix is taken under `ctx.base.concurrent` where it costs anything; most cost nothing on the batch path (a local instead of a field, the order of two stores). Maps and interners that readers share are chosen when the base is made (`Sharing.newEqHashMap`, `newMap`, `newUniques`; §22c).
+- **Where it lives:** each fix is taken under `ctx.base.concurrent` where it costs anything; most cost nothing on the batch path (a local instead of a field, the order of two stores). Maps and interners that readers share are chosen when the base is made (`Sharing.newEqHashMap`, `newMap`, `newUniques`; §22c).
 
 ### 29a. Alternatives to a packed value
 
@@ -763,7 +763,7 @@ class Cell:                      // starts with a pair from an earlier period
 
 **Pattern: a private typer state, settled and dropped.** Each completion and each statement is typed in a state of its own; when it ends its variables are instantiated (as `fullyDefinedType` would) and the state is dropped, never committed. The run's state is read-only once the run opens, which an assertion in `commit` checks.
 
-- **In the seam:** `Sharing.privately` runs code in a private child state on a parallel base, and as before otherwise; `Sharing.endState` settles and drops on a parallel base and commits under the completion lock on a serialised one.
+- **Where it lives:** `Sharing.privately` runs code in a private child state on a parallel base, and as before otherwise; `Sharing.endState` settles and drops on a parallel base and commits under the completion lock on a serialised one.
 - Examples: a variable dropped with its state (I62, "Found: Set[A | TermRef], Required: Set[TermRef]"); constraints from one reader's commit met by another's typing, the conversions to `Formatting.Shown` rejected (I70, I76).
 
 ### 32. The patterns, by mode of `Sharing`
@@ -1183,7 +1183,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 | re2s | step 2 | 237.5 | −1.2% | 4.711G | −1.7% |
 | re2s | step 3 | 237.6 | −1.2% | 4.744G | −1.0% |
 
-- The pattern: pay at construction and along existing seams. A `ContextBase` decides once whether it is concurrent; batch answers false and the concurrent classes are never loaded. The reader is a field read in batch, a `ThreadLocal` in the interactive subclass. `InProgress` lives on the existing slow path ([PR][PR]).
+- The pattern: pay when the symbol table is made, or on slow paths that already exist, never per access on a hot path. A `ContextBase` decides once whether it is concurrent; batch answers false and the concurrent classes are never loaded. The reader is a field read in batch, a `ThreadLocal` in the interactive subclass. `InProgress` lives on the existing slow path ([PR][PR]).
 - The round-to-round spread of one build is 1–2 percent, as large as the differences: nothing above about 2 percent is paid, nothing below it is resolved ([readers §5][M]).
 
 ---
@@ -1315,7 +1315,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 </figure>
 
 - The same channel, four times: I52, I62, I70 and the `Shown` mismatches; the same fix each time (§31, §31).
-- **Keep batch fast by paying at construction and along existing seams:** a `protected def` answered once per `ContextBase`, one virtual `reader`, the in-progress state as a lazy type on the slow path already there. The one per-access cost, release/acquire on `checkedPeriod`, is the one that still needs a paired A/B (§47).
+- **Keep batch fast by paying when the symbol table is made, or on slow paths that already exist:** a `protected def` answered once per `ContextBase`, one virtual `reader`, the in-progress state as a lazy type on the slow path already there. The one per-access cost, release/acquire on `checkedPeriod`, is the one that still needs a paired A/B (§47).
 - **A guard must say which mode it means.** A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86, §32).
 - **Demo honesty costs a day and is worth it:** the baseline must go through `CachingDriver`, the driver must use the build's options, and a server that outlives its build misleads (I58, the `Shown` warnings, the wedged x-ray).
 
