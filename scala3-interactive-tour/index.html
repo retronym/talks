@@ -501,7 +501,7 @@ Inlay hints and semantic tokens over the visible range type a small fraction of 
   <line x1="341" y1="30" x2="341" y2="150" class="ln"/><text x="341" y="166" text-anchor="middle" class="m">10</text>
   <line x1="510" y1="30" x2="510" y2="150" class="ln"/><text x="510" y="166" text-anchor="middle" class="m">100</text>
   <line x1="680" y1="30" x2="680" y2="150" class="ln"/><text x="680" y="166" text-anchor="middle" class="m">1,000</text>
-  <text x="0" y="52" class="b">no coordination</text><text x="0" y="66" class="m">hovers read freely</text>
+  <text x="0" y="52" class="b">reads unlocked</text><text x="0" y="66" class="m">completions locked</text>
   <path d="M 171 56 L 323 56" class="s-bad a-draw" pathLength="1" style="--d:.3s" stroke-width="2"/><circle cx="171" cy="56" r="6" class="f-bad a-pop" style="--d:.2s"/><text x="330" y="60" class="c-bad a-in" style="--d:.6s">1.0 / 7.9, sometimes wrong</text>
   <text x="0" y="92" class="b">taking turns</text><text x="0" y="106" class="m">one lock for everything</text>
   <path d="M 536 96 L 622 96" class="s-own a-draw" pathLength="1" style="--d:.6s" stroke-width="2"/><circle cx="536" cy="96" r="6" class="f-own a-pop" style="--d:.5s"/><text x="530" y="82" class="c-own a-in" style="--d:.9s">141 / 457</text>
@@ -511,7 +511,7 @@ Inlay hints and semantic tokens over the visible range type a small fraction of 
 <figcaption>Dot: median hover; line to the 90th percentile. <code>Typer.scala</code> gives the same picture ([readers §8][M]).</figcaption>
 </figure>
 
-- **No coordination:** a hover takes 1 ms, but can read a signature the other thread is halfway through computing, and answer wrongly.
+- **Completions locked, hovers' reads not:** a hover takes 1 ms, but can take a signature the other thread is halfway through computing as finished. It computes from it and caches the result, so the wrong answer reaches later requests too; other runs ended in an exception from a typer state the other thread had committed into. The suites failed 4 runs in 50 this way (I48).
 - **Taking turns,** with one lock for everything: always correct, but a hover waits for whatever the background thread is typing, 141 ms at the median.
 - **Waiting only for the one signature it needs,** when another thread is computing it (slides 11 and 12): about 1 ms and correct, and the errors found in the background equal those of a normal whole-file run.
 
