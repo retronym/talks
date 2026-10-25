@@ -690,7 +690,7 @@ Kotlin's low-level FIR resolves declarations in place under these rules (§48). 
 </figure>
 
 - Scala 3 had no precedent for concurrent readers of symbols or types ([readers §3][M]).
-- Before a reader runs a completion it takes exclusive ownership of the completion's *root*; that is a *claim*. While it holds the claim, any other reader that needs one of the root's symbols waits. The root is the group of symbols the completion fills in together: a symbol loader completes a class and its module at once, so the pair is one root; the TASTy completers of one file share the unpickler's address maps, so the file is one root ([readers §3.1][M]). §24 lists the roots.
+- Before a reader runs a completion it takes exclusive ownership of the completion's *root*; that is a *claim*, and the reader is the root's *owner*. While it holds the claim, any other reader that needs one of the root's symbols waits at the root's *barrier*, a latch the owner opens when it finishes or unwinds. The root is the group of symbols the completion fills in together: a symbol loader completes a class and its module at once, so the pair is one root; the TASTy completers of one file share the unpickler's address maps, so the file is one root ([readers §3.1][M]). §24 lists the roots.
 
 ### 22a. `Sharing`: batch, serialised or parallel, chosen per symbol table
 
@@ -779,7 +779,7 @@ private def lockAndComplete(completer: LazyType)(using Context): Unit =
 
 The premise did not hold: body typing reads what completions are in the middle of writing. A serialised hover waits for whatever statement the pass is typing, and the statement's size does not predict it: a 95-character statement held the lock for 368 ms through the completions it forced.
 
-### 24. A completion has an owner; other readers wait for it
+### 24. One reader claims a completion's root; the others wait for it
 
 <div class="chips">{chip:B lazy fact} {chip:claim}</div>
 
