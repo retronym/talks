@@ -209,35 +209,21 @@ Options: a fresh run per edit, re-typing one body when its signature is unchange
 
 Inlay hints and semantic tokens over the visible range type a small fraction of the file. The compiler half works; the editor sees the benefit only once Metals asks for ranges instead of whole files ([full talk §40](../dotc-interactive/index.html#s40)).
 
-### 9. Computing diagnostics while answering hovers
+### 9. A hover stays fast while another thread types the whole file
 
-**The need.** To show errors and highlighting, the editor needs the whole file typed. Meanwhile the user keeps hovering, and each hover should answer in milliseconds. That means two threads using the compiler at once: one typing the whole file in the background, one answering hovers.
-
-**The experiment.** One thread types all of `Types.scala` (7,000 lines); a second sends hovers at random identifiers, back to back, and each is timed. Three ways for the two threads to share the compiler:
+The editor needs the whole file typed for its diagnostics, and needs hovers answered meanwhile. In the PoC one thread typed all of `Types.scala` while another answered hovers.
 
 <figure class="fig anim">
-<svg viewBox="0 0 720 190" role="img" aria-label="Hover wall time beside a background pass on Types.scala, median and p90, log scale">
-  <text x="0" y="14" class="h">hover time while another thread types Types.scala, ms (log scale)</text>
-  <line x1="171" y1="150" x2="680" y2="150" class="ln"/>
-  <line x1="171" y1="30" x2="171" y2="150" class="ln"/><text x="171" y="166" text-anchor="middle" class="m">1</text>
-  <line x1="341" y1="30" x2="341" y2="150" class="ln"/><text x="341" y="166" text-anchor="middle" class="m">10</text>
-  <line x1="510" y1="30" x2="510" y2="150" class="ln"/><text x="510" y="166" text-anchor="middle" class="m">100</text>
-  <line x1="680" y1="30" x2="680" y2="150" class="ln"/><text x="680" y="166" text-anchor="middle" class="m">1,000</text>
-  <text x="0" y="52" class="b">reads unlocked</text><text x="0" y="66" class="m">completions locked</text>
-  <path d="M 171 56 L 323 56" class="s-bad a-draw" pathLength="1" style="--d:.3s" stroke-width="2"/><circle cx="171" cy="56" r="6" class="f-bad a-pop" style="--d:.2s"/><text x="330" y="60" class="c-bad a-in" style="--d:.6s">1.0 / 7.9, sometimes wrong</text>
-  <text x="0" y="92" class="b">taking turns</text><text x="0" y="106" class="m">one lock for everything</text>
-  <path d="M 536 96 L 622 96" class="s-own a-draw" pathLength="1" style="--d:.6s" stroke-width="2"/><circle cx="536" cy="96" r="6" class="f-own a-pop" style="--d:.5s"/><text x="530" y="82" class="c-own a-in" style="--d:.9s">141 / 457</text>
-  <text x="0" y="132" class="b">wait per signature</text><text x="0" y="146" class="m">slides 11 and 12</text>
-  <path d="M 184 136 L 328 136" class="s-typed a-draw" pathLength="1" style="--d:.9s" stroke-width="2"/><circle cx="184" cy="136" r="6" class="f-typed a-pop" style="--d:.8s"/><text x="336" y="140" class="c-typed b a-in" style="--d:1.2s">1.2 / 8.4, correct</text>
+<svg viewBox="0 0 720 130" role="img" aria-label="Median hover: 141 ms with one lock for everything, 1.2 ms when a thread waits only for the signature it needs">
+  <text x="0" y="14" class="h">median hover while the whole file is being typed, ms</text>
+  <text x="0" y="48" class="b">one lock for everything</text>
+  <rect x="230" y="34" width="423" height="20" rx="3" class="own a-grow-x" style="--d:.1s"/><text x="660" y="49" class="a-in" style="--d:.7s">141</text>
+  <text x="0" y="98" class="b">wait only for the signature needed</text>
+  <rect x="230" y="84" width="4" height="20" rx="2" class="typed a-grow-x" style="--d:.4s"/><text x="242" y="99" class="c-typed b a-in" style="--d:.8s">1.2, same diagnostics as a normal run</text>
 </svg>
-<figcaption>Dot: median hover; line to the 90th percentile. <code>Typer.scala</code> gives the same picture ([readers §8][M]).</figcaption>
 </figure>
 
-- **Completions locked, hovers' reads not:** a hover takes 1 ms, but can take a signature the other thread is halfway through computing as finished. It computes from it and caches the result, so the wrong answer reaches later requests too; other runs ended in an exception from a typer state the other thread had committed into. The suites failed 4 runs in 50 this way (I48).
-- **Taking turns,** with one lock for everything: always correct, but a hover waits for whatever the background thread is typing, 141 ms at the median.
-- **Waiting only for the one signature it needs,** when another thread is computing it (slides 11 and 12): about 1 ms and correct, and the errors found in the background equal those of a normal whole-file run.
-
-A second thread helps an editor only in this situation. With one request at a time, as in today's Metals queue (slide 2), there is nothing to run beside it ([full talk §44](../dotc-interactive/index.html#s44)).
+That is the one case a second thread is for: background work beside interactive requests ([full talk §44](../dotc-interactive/index.html#s44)).
 
 ---
 
