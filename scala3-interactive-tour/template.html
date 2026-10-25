@@ -457,23 +457,28 @@ body.focus .focus-counter { display: block; }
   if (motion) document.documentElement.classList.add('motion');
   function rewind(c) { c.querySelectorAll('figure.anim').forEach(f => { f._step = undefined; }); c.classList.remove('play'); c.classList.add('rewind'); void c.offsetWidth; c.classList.remove('rewind'); }
   function play(c) { rewind(c); c.classList.add('play'); }
-  // A figure's steps: its animations grouped by start time, a start within 250 ms of the previous one joining its group.
+  // A figure's steps: its animations grouped by start time, a start within 150 ms of the previous one joining
+  // its group. A sweep or a blink runs alongside and does not delimit steps.
   function stepsOf(f) {
-    const anims = f.getAnimations({ subtree: true });
-    const spans = anims.map(a => { const st = a.effect.getTiming().delay || 0; return { st, end: st + (a.effect.getComputedTiming().activeDuration || 0) }; }).sort((x, y) => x.st - y.st);
+    const all = f.getAnimations({ subtree: true });
+    const side = a => { const el = a.effect.target; return !!(el && el.classList && (el.classList.contains('a-sweep') || el.classList.contains('a-blink'))); };
+    const timed = all.filter(a => !side(a)).map(a => { const st = a.effect.getTiming().delay || 0; return { a, st, end: st + (a.effect.getComputedTiming().activeDuration || 0) }; }).sort((x, y) => x.st - y.st);
     const steps = []; let prev = -Infinity;
-    spans.forEach(s => { const last = steps[steps.length - 1]; if (last && s.st - prev < 250) last.end = Math.max(last.end, s.end); else steps.push({ st: s.st, end: s.end }); prev = s.st; });
-    return { anims, steps };
+    timed.forEach(s => { const last = steps[steps.length - 1]; if (last && s.st - prev < 150) { last.end = Math.max(last.end, s.end); last.members.push(s); } else steps.push({ st: s.st, end: s.end, members: [s] }); prev = s.st; });
+    return { all, side, steps };
   }
+  // Step k shows every animation of steps 0..k finished and every later one not yet started.
   function step(f, dir) {
     const c = f.closest('.card');
     if (!c.classList.contains('play')) play(c);
-    const { anims, steps } = stepsOf(f);
+    const { all, side, steps } = stepsOf(f);
     if (!steps.length) return;
     const k = f._step === undefined ? (dir > 0 ? 0 : steps.length - 1) : Math.max(-1, Math.min(steps.length - 1, f._step + dir));
     f._step = k;
+    all.forEach(a => a.pause());
+    steps.forEach((s, i) => s.members.forEach(m => { m.a.currentTime = i <= k ? m.end : 0; }));
     const tm = k < 0 ? 0 : steps[k].end;
-    anims.forEach(a => { a.pause(); a.currentTime = tm; });
+    all.filter(side).forEach(a => { a.currentTime = tm; });
   }
   const animated = cards.filter(c => c.querySelector('figure.anim'));
   // Watch the figures, not the cards: a card can be taller than the window, a figure is not.

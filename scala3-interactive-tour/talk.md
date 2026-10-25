@@ -188,9 +188,9 @@ Options: thread interrupts (consumed by the first check, swallowed by catch-alls
   <text x="40" y="106" xml:space="preserve" style="white-space:pre" class="mono">    s.width * s.height</text>
   <g class="a-slide" style="--dx:-26.5px;--d:1.0s"><rect x="212.1" y="95" width="1.5" height="14" class="f-ink a-blink" style="--d:.3s;--n:1"/></g>
   <text x="185.6" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.00s"> </text>
-  <text x="192.3" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.18s">/</text>
-  <text x="198.9" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.36s"> </text>
-  <text x="205.5" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.54s"><tspan class="tn">2</tspan></text>
+  <text x="192.3" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.12s">/</text>
+  <text x="198.9" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.24s"> </text>
+  <text x="205.5" y="106" xml:space="preserve" class="mono a-in" style="white-space:pre;--d:1.36s"><tspan class="tn">2</tspan></text>
   <text x="40" y="127" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> scale(s: <tspan class="tt">Shape</tspan>, k: <tspan class="tt">Int</tspan>): <tspan class="tt">Shape</tspan> =</text>
   <text x="40" y="148" xml:space="preserve" style="white-space:pre" class="mono">    <tspan class="tt">Shape</tspan>(s.width * k, s.height * k)</text>
   <text x="40" y="169" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">val</tspan> unit: <tspan class="tt">Shape</tspan> = scale(<tspan class="tt">Shape</tspan>(<tspan class="tn">1</tspan>, <tspan class="tn">1</tspan>), <tspan class="tn">1</tspan>)</text>
