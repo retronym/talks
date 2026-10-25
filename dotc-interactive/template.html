@@ -201,7 +201,10 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
   position: absolute; top: -4px; right: 0; font: 11.5px Inter, system-ui, sans-serif; color: var(--muted);
   background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 2px 10px; cursor: pointer; opacity: .75;
 }
-.fig .replay:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.fig .replay { display: flex; gap: 2px; padding: 1px 4px; }
+.fig .replay button { font: inherit; color: inherit; background: none; border: 0; padding: 1px 6px; cursor: pointer; border-radius: 999px; }
+.fig .replay button:hover { color: var(--accent); background: var(--accent-soft); }
+.fig .replay:hover { opacity: 1; border-color: var(--accent); }
 .motion .card:not(.play) .fig.anim * { animation-play-state: paused !important; }
 .motion .card.rewind .fig.anim * { animation: none !important; }
 @media print { .motion .fig.anim * { animation: none !important; } }
@@ -269,7 +272,7 @@ body.focus .focus-counter { display: block; }
 <div class="layout">
   <nav class="toc" aria-label="Contents">
     <div class="title">A more interactive Scala 3</div>
-    <div class="hint">j / k or ← / → to move · f focus mode · t theme</div>
+    <div class="hint">j / k or ← / → to move · , / . to step a figure · f focus mode · t theme</div>
     <div class="controls">
       <button id="btn-focus" type="button">Focus mode</button>
       <button id="btn-theme" type="button">Theme</button>
@@ -452,8 +455,26 @@ body.focus .focus-counter { display: block; }
   // Without reduced motion, an animated figure waits at its first frame until its card plays.
   const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (motion) document.documentElement.classList.add('motion');
-  function rewind(c) { c.classList.remove('play'); c.classList.add('rewind'); void c.offsetWidth; c.classList.remove('rewind'); }
+  function rewind(c) { c.querySelectorAll('figure.anim').forEach(f => { f._step = undefined; }); c.classList.remove('play'); c.classList.add('rewind'); void c.offsetWidth; c.classList.remove('rewind'); }
   function play(c) { rewind(c); c.classList.add('play'); }
+  // A figure's steps: its animations grouped by start time, a start within 250 ms of the previous one joining its group.
+  function stepsOf(f) {
+    const anims = f.getAnimations({ subtree: true });
+    const spans = anims.map(a => { const st = a.effect.getTiming().delay || 0; return { st, end: st + (a.effect.getComputedTiming().activeDuration || 0) }; }).sort((x, y) => x.st - y.st);
+    const steps = []; let prev = -Infinity;
+    spans.forEach(s => { const last = steps[steps.length - 1]; if (last && s.st - prev < 250) last.end = Math.max(last.end, s.end); else steps.push({ st: s.st, end: s.end }); prev = s.st; });
+    return { anims, steps };
+  }
+  function step(f, dir) {
+    const c = f.closest('.card');
+    if (!c.classList.contains('play')) play(c);
+    const { anims, steps } = stepsOf(f);
+    if (!steps.length) return;
+    const k = f._step === undefined ? (dir > 0 ? 0 : steps.length - 1) : Math.max(-1, Math.min(steps.length - 1, f._step + dir));
+    f._step = k;
+    const tm = k < 0 ? 0 : steps[k].end;
+    anims.forEach(a => { a.pause(); a.currentTime = tm; });
+  }
   const animated = cards.filter(c => c.querySelector('figure.anim'));
   // Watch the figures, not the cards: a card can be taller than the window, a figure is not.
   // A figure half in view plays its card; a card whose figures have all left the view rewinds.
@@ -469,8 +490,12 @@ body.focus .focus-counter { display: block; }
   animated.forEach(c => {
     c.querySelectorAll('figure.anim').forEach(f => playObs.observe(f));
     c.querySelectorAll('figure.anim').forEach(f => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'replay'; b.textContent = '↻ replay';
-      b.onclick = () => play(c); f.appendChild(b);
+      const bar = document.createElement('div'); bar.className = 'replay';
+      const mk = (label, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.onclick = fn; bar.appendChild(b); };
+      mk('◀', 'step back', () => step(f, -1));
+      mk('▶', 'step forward', () => step(f, +1));
+      mk('↻', 'replay', () => play(c));
+      f.appendChild(bar);
     });
   });
   const baseSetCurrent = setCurrent;
@@ -495,6 +520,7 @@ body.focus .focus-counter { display: block; }
     else if (e.key === 'f') toggleFocus();
     else if (e.key === 't') toggleTheme();
     else if (e.key === 'Escape') document.body.classList.remove('focus');
+    else if (e.key === '.' || e.key === ',') { const c = cards[current]; if (c && c.querySelector('figure.anim')) step(c.querySelector('figure.anim'), e.key === '.' ? 1 : -1); }
   });
   toc.addEventListener('click', e => {
     const a = e.target.closest('a'); if (!a) return;
