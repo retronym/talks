@@ -1,6 +1,6 @@
 # dotc, from batch to interactive
 
-A visual guide to a stream of work on Scala 3's presentation compiler ([retronym/scala3#84](https://github.com/retronym/scala3/pull/84), on top of [retronym/scala3#68](https://github.com/retronym/scala3/pull/68)): targeting, a session that serves many requests from one run, cancellation that unwinds, and several readers over one symbol table modelled on Kotlin K2's lazy resolve and IntelliJ's read and write actions. Numbers are from the design notes (`interactive-session.md`, `interactive-multi-reader.md`) and Track I in `retronym/jvm-lang-models`, cited by section.
+A visual guide to a stream of work on Scala 3's presentation compiler ([retronym/scala3#84](https://github.com/retronym/scala3/pull/84), on top of [retronym/scala3#68](https://github.com/retronym/scala3/pull/68)): targeting, a session that serves many requests from one run, cancellable typechecking, and several readers over one symbol table modelled on Kotlin K2's lazy resolve and IntelliJ's read and write actions. Numbers are from the design notes (`interactive-session.md`, `interactive-multi-reader.md`) and Track I in `retronym/jvm-lang-models`, cited by section.
 
 - `talk.md` is the source. Edit this.
 - `make` builds `index.html` (needs only `python3`). `make watch` rebuilds on change.

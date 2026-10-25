@@ -1,4 +1,4 @@
-# dotc, from batch to interactive: targeting, a session, cancellation that unwinds, and several readers over one symbol table
+# dotc, from batch to interactive: targeting, a session, cancellable typechecking, and several readers over one symbol table
 
 **Audience:** people who work on scalac, dotc, Metals, the IntelliJ Scala plugin or another compiler that also has to serve an editor.
 
@@ -11,7 +11,7 @@
 1. The batch compiler as it was, and why scalac's presentation compiler was hard to get right.
 2. Targeting: type only the path to the request.
 3. The session: one run serves many requests.
-4. Cancellation that unwinds.
+4. Cancellable typechecking.
 5. Several readers: K2's rules, and completion as lazy resolve.
 6. The races the suites found, each as a before and after.
 7. Readers side by side, as lanes over one symbol table.
@@ -295,7 +295,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 
 ---
 
-## Part IV — Cancellation that unwinds
+## Part IV — Cancellable typechecking
 
 ### 14. Stock cancellation never stops the typer
 
