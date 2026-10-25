@@ -318,16 +318,16 @@ One lock around every completion is correct and serialises most of a reader's ti
 
 ### 12. Hazards and their patterns
 
-| pattern | hazard | `Batch` | `Serialised` | `Parallel` |
+| hazard | pattern | `Batch` | `Serialised` | `Parallel` |
 |---|---|---|---|---|
-| coarse lock | completions racing each other | the original code | one completion lock (`exclusive`, `serialised`)  | – |
-| claim and barrier | a completion's intermediate state seen by others ([§24](../dotc-interactive/index.html#s24)) | the original code  | – | a claim per root (`exclusive`, `claimed`) |
-| wait, don't peek | acting on another reader's work in progress ([§27](../dotc-interactive/index.html#s27))  | – | wait on the lock, look again | `awaitOtherReader` |
-| a chosen victim | readers waiting on each other ([§28](../dotc-interactive/index.html#s28))  | –  | – | `CompletionRoots.backOff` |
-| one published value | a cache in several fields ([§29](../dotc-interactive/index.html#s29)) | plain fields | packed value, publish once | packed value, publish once |
-| ordered stamp | a value and its stamp ([§30](../dotc-interactive/index.html#s30)) | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
-| private typer state | type variables crossing readers ([§31](../dotc-interactive/index.html#s31)) | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
-| concurrent structures | shared maps and interners | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
+| completions racing each other | coarse lock | the original code | one completion lock (`exclusive`, `serialised`)  | – |
+| a completion's intermediate state seen by others ([§24](../dotc-interactive/index.html#s24)) | claim and barrier | the original code  | – | a claim per root (`exclusive`, `claimed`) |
+| acting on another reader's work in progress ([§27](../dotc-interactive/index.html#s27))  | wait, don't peek | – | wait on the lock, look again | `awaitOtherReader` |
+| readers waiting on each other ([§28](../dotc-interactive/index.html#s28))  | a chosen victim | –  | – | `CompletionRoots.backOff` |
+| a cache in several fields ([§29](../dotc-interactive/index.html#s29)) | one published value | plain fields | packed value, publish once | packed value, publish once |
+| a value and its stamp ([§30](../dotc-interactive/index.html#s30)) | ordered stamp | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
+| type variables crossing readers ([§31](../dotc-interactive/index.html#s31)) | private typer state | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
+| shared maps and interners | concurrent structures | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
 
 These hold beyond this code: anything that shares lazily computed state between readers meets them ([full talk §32](../dotc-interactive/index.html#s32)).
 

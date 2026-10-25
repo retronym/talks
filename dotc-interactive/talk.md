@@ -768,16 +768,16 @@ class Cell:                      // starts with a pair from an earlier period
 
 ### 32. The patterns, by mode of `Sharing`
 
-| pattern | hazard | `Batch` | `Serialised` | `Parallel` |
+| hazard | pattern | `Batch` | `Serialised` | `Parallel` |
 |---|---|---|---|---|
-| coarse lock | completions racing each other | the original code | one completion lock (`exclusive`, `serialised`)  | – |
-| claim and barrier | a completion's intermediate state seen by others (§24) | the original code  | – | a claim per root (`exclusive`, `claimed`) |
-| wait, don't peek | acting on another reader's work in progress (§27)  | – | wait on the lock, look again | `awaitOtherReader` |
-| a chosen victim | readers waiting on each other (§28)  | –  | – | `CompletionRoots.backOff` |
-| one published value | a cache in several fields (§29) | plain fields | packed value, publish once | packed value, publish once |
-| ordered stamp | a value and its stamp (§30) | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
-| private typer state | type variables crossing readers (§31) | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
-| concurrent structures | shared maps and interners | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
+| completions racing each other | coarse lock | the original code | one completion lock (`exclusive`, `serialised`)  | – |
+| a completion's intermediate state seen by others (§24) | claim and barrier | the original code  | – | a claim per root (`exclusive`, `claimed`) |
+| acting on another reader's work in progress (§27)  | wait, don't peek | – | wait on the lock, look again | `awaitOtherReader` |
+| readers waiting on each other (§28)  | a chosen victim | –  | – | `CompletionRoots.backOff` |
+| a cache in several fields (§29) | one published value | plain fields | packed value, publish once | packed value, publish once |
+| a value and its stamp (§30) | ordered stamp | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
+| type variables crossing readers (§31) | private typer state | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
+| shared maps and interners | concurrent structures | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
 
 - A guard has to say which mode it means: `concurrent` is true for serialised and parallel readers, `parallel` for parallel only. A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86).
 
