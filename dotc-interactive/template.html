@@ -206,6 +206,16 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 }
 @media print { .fig .replay { display: none; } }
 
+/* Chips: {chip:B lazy fact} names a kind of mutable state (A–E), {chip:claim} a concurrency pattern. */
+:root { --chip-kind: #1f6f78; --chip-kind-bg: #dcf0f1; --chip-pat: #8a5a00; --chip-pat-bg: #f8edd6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chip-kind: #7fd3dc; --chip-kind-bg: #18343a; --chip-pat: #f0c060; --chip-pat-bg: #3a2e14; } }
+:root[data-theme="dark"] { --chip-kind: #7fd3dc; --chip-kind-bg: #18343a; --chip-pat: #f0c060; --chip-pat-bg: #3a2e14; }
+.chip { display: inline-block; padding: .05em .55em; border-radius: 999px; font-size: .74em; font-weight: 600; line-height: 1.5; white-space: nowrap; vertical-align: .08em; border: 1px solid; }
+.chip.kind { color: var(--chip-kind); background: var(--chip-kind-bg); border-color: color-mix(in srgb, var(--chip-kind) 35%, transparent); }
+.chip.pat { color: var(--chip-pat); background: var(--chip-pat-bg); border-color: color-mix(in srgb, var(--chip-pat) 35%, transparent); }
+.chips { margin: -6px 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.card.part .chip { filter: none; }
+
 /* Focus mode: one card at a time, bigger type, for presenting */
 body.focus nav.toc { display: none; }
 body.focus .layout { grid-template-columns: 1fr; }
@@ -296,6 +306,12 @@ body.focus .focus-counter { display: block; }
     catch (e) { return '<code>' + md.utils.escapeHtml(m.tex) + '</code>'; }
   });
 
+  // Chips: {chip:B lazy fact} is a kind of mutable state (a letter A–E first), anything else a pattern.
+  html = html.replace(/\{chip:([^}<>]+)\}/g, (_, label) => {
+    const l = label.trim(); const kind = /^[A-E]\s/.test(l);
+    return '<span class="chip ' + (kind ? 'kind' : 'pat') + '">' + md.utils.escapeHtml(l) + '</span>';
+  });
+
   // 3. Chunk into cards at h1/h2/h3/h4 and at <!-- break --> comments; drop <hr>.
   const scratch = document.createElement('div');
   scratch.innerHTML = html;
@@ -336,7 +352,7 @@ body.focus .focus-counter { display: block; }
   });
   const textNodes = []; while (walker.nextNode()) textNodes.push(walker.currentNode);
   textNodes.forEach(n => {
-    const re = /§(\d+[a-c]?)((?:[–-]\d+)?)|Notes (N\d)/g;
+    const re = /§(\d+[a-h]?)((?:[–-]\d+[a-h]?)?)|Notes (N\d)/g;
     if (!re.test(n.nodeValue)) return;
     const frag = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
     while ((m = re.exec(n.nodeValue))) {
