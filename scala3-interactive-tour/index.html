@@ -287,7 +287,7 @@ body.focus .focus-counter { display: block; }
 
 <p class="sub">What a proof of concept showed about targeted, cancellable, incremental and concurrent typechecking in Scala 3's presentation compiler, and how it could land</p>
 
-**What this is:** a short version of [A more interactive Scala 3](../dotc-interactive/index.html), for people who want the concepts, the mechanisms, the tools and a landing order without the detail. The proof of concept is [retronym/scala3#84][PR]. It is evidence for what is feasible and what it costs, not a design to adopt as is; each slide says what was tried and what it showed.
+**What this is:** the concepts, the mechanisms, the tools and a landing order. The proof of concept is [retronym/scala3#84][PR]. It is evidence for what is feasible and what it costs, not a design to adopt as is; each slide says what was tried and what it showed.
 
 ---
 
@@ -323,7 +323,7 @@ Scala 3's presentation compiler did one whole-file typecheck per request, on one
 <figcaption>814 events of a recorded VS Code session on the compiler's own sources, replayed four ways ([readers §0][M]). Hover wait median 6–7 ms in the burst, jars and Metals replays, p90 142–533 ms; the hover's own driver time 0.1 ms.</figcaption>
 </figure>
 
-Measured before anything was built: in a recorded editing session, almost all of the waiting was behind whole-file work, not behind other targeted requests. That decided the order of everything after it ([full talk §42](../dotc-interactive/index.html#s42)).
+Measured before anything was built: in a recorded editing session, almost all of the waiting was behind whole-file work, not behind other targeted requests. That decided the order of everything after it.
 
 ### 3. Assumptions of the batch compiler
 
@@ -344,7 +344,7 @@ stateDiagram-v2
 - Signatures are lazy: a completer computes one on first use, guarded by a one-bit `Touched` flag that was left set if the completer threw.
 - Typing consumes the untyped tree, so a statement cannot be typed twice.
 
-Each assumption breaks somewhere below ([full talk §1](../dotc-interactive/index.html#s1)–[full talk §3](../dotc-interactive/index.html#s3)).
+Each assumption breaks somewhere below.
 
 ---
 
@@ -382,12 +382,12 @@ Each assumption breaks somewhere below ([full talk §1](../dotc-interactive/inde
   </g>
 </svg>
 <div class="legend"><span><i class="typed"></i>typed</span><span><i class="skip"></i>skipped, context recorded</span></div>
-<figcaption>The x-ray's 60-object file ([session][S] summary, [§2](../dotc-interactive/index.html#s2), [§3](../dotc-interactive/index.html#s3)).</figcaption>
+<figcaption>The x-ray's 60-object file ([session][S] summary).</figcaption>
 </figure>
 
-Options: the whole file (Scala 3 today), a prefix up to the target (Scala 2), or only the statements on the path. The PoC typed the path and recorded every skipped statement with the context it would have been typed in ([full talk §8](../dotc-interactive/index.html#s8)).
+Options: the whole file (Scala 3 today), a prefix up to the target (Scala 2), or only the statements on the path. The PoC typed the path and recorded every skipped statement with the context it would have been typed in.
 
-The target can also be a range. Inlay hints and semantic tokens ask about the visible lines, and the same rule types the statements that touch them: a 60-line window of `Types.scala` is 637–969 trees in 26–38 ms, the whole file 41,123 trees in 307–328 ms. The editor gains only once Metals asks for ranges instead of whole files ([full talk §40](../dotc-interactive/index.html#s40)).
+The target can also be a range. Inlay hints and semantic tokens ask about the visible lines, and the same rule types the statements that touch them: a 60-line window of `Types.scala` is 637–969 trees in 26–38 ms, the whole file 41,123 trees in 307–328 ms. The editor gains only once Metals asks for ranges instead of whole files.
 
 ### 5. One run serving many requests
 
@@ -416,7 +416,7 @@ The target can also be a range. Inlay hints and semantic tokens ask about the vi
 <figcaption>Statements can be typed in any order: object 200 after object 10, then object 5 ([session §3][S]).</figcaption>
 </figure>
 
-A request on unchanged text is served from what is typed, or types one skipped statement in its recorded context and splices it in. What broke on the way: a statement whose typing was cancelled cannot be typed again (its untyped tree is consumed), and a skipped statement's completers refuse to run in a later run ([full talk §10](../dotc-interactive/index.html#s10), [full talk §11](../dotc-interactive/index.html#s11)).
+A request on unchanged text is served from what is typed, or types one skipped statement in its recorded context and splices it in. What broke on the way: a statement whose typing was cancelled cannot be typed again (its untyped tree is consumed), and a skipped statement's completers refuse to run in a later run.
 
 ### 6. Cancellation that reaches the typer
 
@@ -445,7 +445,7 @@ A request on unchanged text is served from what is typed, or types one skipped s
 <figcaption>Each frame restores what it set on the way out: <code>completeFrom</code> clears <code>Touched</code>, a <code>LazyAnnotation</code> keeps its thunk, a <code>SymbolLoader</code> leaves its root loadable ([session §4][S]).</figcaption>
 </figure>
 
-Options: thread interrupts (consumed by the first check, swallowed by catch-alls), servicing requests inside the background check (Scala 2: every invariant must hold at every safepoint), or a sticky flag the typer polls and unwinds on. The PoC unwinds, each frame restoring what it set ([full talk §16](../dotc-interactive/index.html#s16)).
+Options: thread interrupts (consumed by the first check, swallowed by catch-alls), servicing requests inside the background check (Scala 2: every invariant must hold at every safepoint), or a sticky flag the typer polls and unwinds on. The PoC unwinds, each frame restoring what it set.
 
 ### 7. Keeping the run across an edit inside a body
 
@@ -506,7 +506,7 @@ Options: thread interrupts (consumed by the first check, swallowed by catch-alls
 <figcaption>45 rounds per file: a digit added inside a method body, a hover elsewhere, then a whole-file run as document highlight or semantic tokens ask; first five rounds dropped ([session §12][S], Measured). The hover right after the edit is unchanged (31.5 / 32.4 ms on Types.scala): it pays the edit itself, mostly the shift.</figcaption>
 </figure>
 
-Options: a fresh run per edit, re-typing one body when its signature is unchanged (IntelliJ's block rule), or facts with revisions (Salsa). The PoC tried the second: re-parse, compare with the previous parse, shift every position, re-index one definition ([full talk §37](../dotc-interactive/index.html#s37), [full talk §39](../dotc-interactive/index.html#s39)).
+Options: a fresh run per edit, re-typing one body when its signature is unchanged (IntelliJ's block rule), or facts with revisions (Salsa). The PoC tried the second: re-parse, compare with the previous parse, shift every position, re-index one definition.
 
 ### 8. A hover stays fast while another thread types the whole file
 
@@ -522,7 +522,7 @@ The editor needs the whole file typed for its diagnostics, and needs hovers answ
 </svg>
 </figure>
 
-Running requests on several threads helps an editor only when there is background work like this to run beside them ([full talk §44](../dotc-interactive/index.html#s44)).
+Running requests on several threads helps an editor only when there is background work like this to run beside them.
 
 ---
 
@@ -532,14 +532,14 @@ Running requests on several threads helps an editor only when there is backgroun
 
 <figure class="fig anim kinds">
 <div class="krow khead"><span></span><span>kind</span><span></span><span>treatment</span></div>
-<div class="krow a-in" style="--d:0.15s"><span>{chip:A scratch}</span><div class="kbox"><div class="kt">Per-request scratch</div><div class="kd">State one request uses while it runs and then throws away.</div><div class="kx">comparers, context pools, targeting slots, the cancel checker</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Move to a per-thread <code>Reader</code>.</div><div class="kx"><a href="../dotc-interactive/index.html#s22b">§22b</a></div></div></div>
-<div class="krow a-in" style="--d:0.50s"><span>{chip:B lazy fact}</span><div class="kbox"><div class="kt">Lazy facts</div><div class="kd">Computed once, on first use, and marked in progress while that runs (a black hole).</div><div class="kx">completeFrom's Touched, InheritedCache.locked, symbol loaders</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">An owner and a barrier per root.</div><div class="kx"><a href="../dotc-interactive/index.html#s24">§24</a></div></div></div>
-<div class="krow a-in" style="--d:0.85s"><span>{chip:C cache}</span><div class="kbox"><div class="kt">Caches</div><div class="kd">Derived values kept to avoid recomputing them; any reader would compute the same value.</div><div class="kx">lastDenot and checkedPeriod, member and base-type caches</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">One published value, or an ordered stamp; concurrent maps.</div><div class="kx"><a href="../dotc-interactive/index.html#s30">§30</a>, <a href="../dotc-interactive/index.html#s29">§29</a>, <a href="../dotc-interactive/index.html#s30">§30</a></div></div></div>
-<div class="krow a-in" style="--d:1.20s"><span>{chip:D interning}</span><div class="kbox"><div class="kt">Interning and counters</div><div class="kd">One shared table so that equal types are one object; ids handed out in order.</div><div class="kx">Uniques, NamedTypeUniques, _nextSymId</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">A concurrent interner, an atomic counter.</div><div class="kx"><a href="../dotc-interactive/index.html#s22c">§22c</a></div></div></div>
+<div class="krow a-in" style="--d:0.15s"><span>{chip:A scratch}</span><div class="kbox"><div class="kt">Per-request scratch</div><div class="kd">State one request uses while it runs and then throws away.</div><div class="kx">comparers, context pools, targeting slots, the cancel checker</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Move to a per-thread <code>Reader</code>.</div><div class="kx"></div></div></div>
+<div class="krow a-in" style="--d:0.50s"><span>{chip:B lazy fact}</span><div class="kbox"><div class="kt">Lazy facts</div><div class="kd">Computed once, on first use, and marked in progress while that runs (a black hole).</div><div class="kx">completeFrom's Touched, InheritedCache.locked, symbol loaders</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">An owner and a barrier per root.</div><div class="kx"></div></div></div>
+<div class="krow a-in" style="--d:0.85s"><span>{chip:C cache}</span><div class="kbox"><div class="kt">Caches</div><div class="kd">Derived values kept to avoid recomputing them; any reader would compute the same value.</div><div class="kx">lastDenot and checkedPeriod, member and base-type caches</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">One published value, or an ordered stamp; concurrent maps.</div><div class="kx"></div></div></div>
+<div class="krow a-in" style="--d:1.20s"><span>{chip:D interning}</span><div class="kbox"><div class="kt">Interning and counters</div><div class="kd">One shared table so that equal types are one object; ids handed out in order.</div><div class="kx">Uniques, NamedTypeUniques, _nextSymId</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">A concurrent interner, an atomic counter.</div><div class="kx"></div></div></div>
 <div class="krow a-in" style="--d:1.55s"><span>{chip:E trees}</span><div class="kbox"><div class="kt">Trees</div><div class="kd">The file's syntax trees: typed into new trees, their attachments consumed on the way.</div><div class="kx">SymOfTree, TypedAhead, ExpandedTree, the session's splice</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Skipped statements as facts, a persistent typed tree.</div><div class="kx">not built (step 5)</div></div></div>
 </figure>
 
-Every fix that followed is one of these treatments. The classification was worth more than any single fix ([full talk §22](../dotc-interactive/index.html#s22)).
+Every fix that followed is one of these treatments. The classification was worth more than any single fix.
 
 ### 10. Choose concurrency per symbol table; keep the batch code as it was
 
@@ -561,7 +561,7 @@ Every fix that followed is one of these treatments. The classification was worth
 </svg>
 </figure>
 
-One class, `Sharing`, decides when a symbol table is made whether readers are absent, serialised or parallel. Batch call sites compile to the original code and allocate nothing; the concurrent branches live elsewhere ([full talk §22a](../dotc-interactive/index.html#s22a)).
+One class, `Sharing`, decides when a symbol table is made whether readers are absent, serialised or parallel. Batch call sites compile to the original code and allocate nothing; the concurrent branches live elsewhere.
 
 ### 11. Claims: one thread completes a symbol, the others wait
 
@@ -599,22 +599,22 @@ Both requests need `g`'s signature at the same moment. One thread should compute
 <figcaption>Rule 2 is the barrier: nobody but the owner sees <code>f</code> or <code>g</code> half-completed. Rule 3: whoever completes <code>g</code> writes the same <code>T_g</code> ([readers §3.1][M]).</figcaption>
 </figure>
 
-One lock around every completion is correct and serialises most of a reader's time. A claim per root lets readers run in parallel: the owner alone sees the completion in progress, others wait at the barrier, and a cancelled owner hands over. K2 moved the same way, from a global resolve lock to per-declaration locks ([full talk §23](../dotc-interactive/index.html#s23), [full talk §24](../dotc-interactive/index.html#s24), [full talk §34](../dotc-interactive/index.html#s34)).
+One lock around every completion is correct and serialises most of a reader's time. A claim per root lets readers run in parallel: the owner alone sees the completion in progress, others wait at the barrier, and a cancelled owner hands over. K2 moved the same way, from a global resolve lock to per-declaration locks.
 
 ### 12. Hazards and their patterns
 
 | hazard | pattern | `Batch` | `Serialised` | `Parallel` |
 |---|---|---|---|---|
 | completions racing each other | coarse lock | the original code | one completion lock (`exclusive`, `serialised`)  | – |
-| a completion's intermediate state seen by others ([§24](../dotc-interactive/index.html#s24)) | claim and barrier | the original code  | – | a claim per root (`exclusive`, `claimed`) |
-| acting on another reader's work in progress ([§27](../dotc-interactive/index.html#s27))  | wait, don't peek | – | wait on the lock, look again | `awaitOtherReader` |
-| readers waiting on each other ([§28](../dotc-interactive/index.html#s28))  | a chosen victim | –  | – | `CompletionRoots.backOff` |
-| a cache in several fields ([§29](../dotc-interactive/index.html#s29)) | one published value | plain fields | packed value, publish once | packed value, publish once |
-| a value and its stamp ([§30](../dotc-interactive/index.html#s30)) | ordered stamp | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
-| type variables crossing readers ([§31](../dotc-interactive/index.html#s31)) | private typer state | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
+| a completion's intermediate state seen by others | claim and barrier | the original code  | – | a claim per root (`exclusive`, `claimed`) |
+| acting on another reader's work in progress  | wait, don't peek | – | wait on the lock, look again | `awaitOtherReader` |
+| readers waiting on each other  | a chosen victim | –  | – | `CompletionRoots.backOff` |
+| a cache in several fields | one published value | plain fields | packed value, publish once | packed value, publish once |
+| a value and its stamp | ordered stamp | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
+| type variables crossing readers | private typer state | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
 | shared maps and interners | concurrent structures | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
 
-These hold beyond this code: anything that shares lazily computed state between readers meets them ([full talk §32](../dotc-interactive/index.html#s32)).
+These hold beyond this code: anything that shares lazily computed state between readers meets them.
 
 ### 13. Publishing caches safely
 
@@ -624,7 +624,7 @@ These hold beyond this code: anything that shares lazily computed state between 
 | seqlock (`StampedLock`'s optimistic read) | the writer makes a version odd, writes the fields, makes it even with release; a reader rereads the version after its reads and retries if it changed | always | writers exclude each other; every read rereads and may retry |
 | release and acquire on a last field | the fields stored plainly, one designated field last with release; readers load it first with acquire | every writer in a period stores the same values | a fence per read on ARM, no allocation |
 
-Within one run every writer of a stamped cache computes the same value, so the cheapest form suffices there; caches whose writers disagree need a packed value ([full talk §29a](../dotc-interactive/index.html#s29a), [full talk §30](../dotc-interactive/index.html#s30)).
+Within one run every writer of a stamped cache computes the same value, so the cheapest form suffices there; caches whose writers disagree need a packed value.
 
 ---
 
@@ -662,19 +662,19 @@ Within one run every writer of a stamped cache computes the same value, so the c
 <figcaption>The x-ray's background pass. On a quiet machine with <code>-Yinteractive-parallel</code>, the pass types <code>Types.scala</code> in 560–850 ms with 27–53 hovers served beside it at about 1 ms median; serialised, 3–6 hovers at 17–490 ms median. Its diagnostics equal a whole-file run's ([readers §8][M] step 4).</figcaption>
 </figure>
 
-The x-ray drives the driver directly: a background pass beside hovers, a recorded editor session replayed against each build, a throughput demo over the compiler's own sources. Its main value was exposing mistakes in the PoC itself: a whole-file run that left no session (I58), the wrong compiler options, a server that outlived its build ([full talk §36](../dotc-interactive/index.html#s36), [full talk §45](../dotc-interactive/index.html#s45)).
+The x-ray drives the driver directly: a background pass beside hovers, a recorded editor session replayed against each build, a throughput demo over the compiler's own sources. Its main value was exposing mistakes in the PoC itself: a whole-file run that left no session (I58), the wrong compiler options, a server that outlived its build.
 
 ### 15. Finding races
 
 | layer | what it checks | found |
 |---|---|---|
-| Lincheck on `Caching` | the stamped cell from several threads against every sequential order ([§30a](../dotc-interactive/index.html#s30a)) | the helper's ordering |
-| two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 ([§23](../dotc-interactive/index.html#s23)) |
-| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 ([§29](../dotc-interactive/index.html#s29)) |
+| Lincheck on `Caching` | the stamped cell from several threads against every sequential order | the helper's ordering |
+| two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 |
+| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 |
 | one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
-| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps [§30](../dotc-interactive/index.html#s30) true |
+| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps  true |
 
-Every answer is compared with a single-reader whole-file run; a divergence is a race until shown otherwise ([full talk §33](../dotc-interactive/index.html#s33)).
+Every answer is compared with a single-reader whole-file run; a divergence is a race until shown otherwise.
 
 ### 16. Batch compilation: no measurable cost
 
@@ -687,7 +687,7 @@ Every answer is compared with a single-reader whole-file run; a divergence is a 
 | re2s | step 2 | 237.5 | −1.2% | 4.711G | −1.7% |
 | re2s | step 3 | 237.6 | −1.2% | 4.744G | −1.0% |
 
-Nothing above about 2 percent, which is the spread between rounds of one build. Resolving below that needs the costs behind a switch, so that paired variants run in one process ([full talk §47](../dotc-interactive/index.html#s47)).
+Nothing above about 2 percent, which is the spread between rounds of one build. Resolving below that needs the costs behind a switch, so that paired variants run in one process.
 
 ---
 
@@ -700,11 +700,11 @@ Nothing above about 2 percent, which is the spread between rounds of one build. 
 | I50 | after a request timeout, mtags' queue reset leaves the old executor's backlog running beside the new queue on one driver (`denotation … invalid in run`); the presentation-compiler side holds the driver's monitor per job, the mtags side needs an issue |
 | I15 | an empty completion prefix bypasses `CachingDriver`, so the commonest member completion never benefits from it |
 | I10 | the 16-bit run id is unguarded; a long-lived driver overflows it into the phase bits |
-| I11, cancellation | `isCancelled` consumes the interrupt bit and nothing in the typer polls it, so Metals' token cancels the future, not the work; the sticky flag and the typer checkpoints are separable from targeting ([§14](../dotc-interactive/index.html#s14)) |
+| I11, cancellation | `isCancelled` consumes the interrupt bit and nothing in the typer polls it, so Metals' token cancels the future, not the work; the sticky flag and the typer checkpoints are separable from targeting |
 | I49 | after a stock reproduction: a scaladoc comment cooked under a discarded typer state is cached without its warning |
 | the `Reader` | kind A out of `ContextBase` and `Run`: hygiene the batch compiler could take with a paired A/B, since it names every piece of per-request state in one place |
 
-Each has a test and is independent of the PoC's flags ([full talk §62](../dotc-interactive/index.html#s62)).
+Each has a test and is independent of the PoC's flags.
 
 ### 18. Increments, each useful on its own
 
@@ -722,7 +722,7 @@ An order to discuss, not a plan. Each step is flag-gated and can stop without th
 ### 19. Open problems and comparable designs
 
 - **Open in the PoC:** Namer completions that can run again (two readers completing in opposite orders still raise a cycle no sequential order has); facts that outlive a run, which snapshot readers across an edit would need; the shared state a sweep listed and no test has hit yet.
-- **Designs to weigh it against:** Kotlin K2's lazy resolve and analysis sessions, IntelliJ's read and write actions, Roslyn's immutable compilations, Salsa's revisions and cancellation ([full talk §48](../dotc-interactive/index.html#s48)–[full talk §51](../dotc-interactive/index.html#s51)).
+- **Designs to weigh it against:** Kotlin K2's lazy resolve and analysis sessions, IntelliJ's read and write actions, Roslyn's immutable compilations, Salsa's revisions and cancellation.
 
 [PR]: https://github.com/retronym/scala3/pull/84
 [PR68]: https://github.com/retronym/scala3/pull/68
