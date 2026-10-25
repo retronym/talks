@@ -445,8 +445,8 @@ Options: thread interrupts (consumed by the first check, swallowed by catch-alls
 ### 7. Keeping the run across an edit inside a body
 
 <figure class="fig anim">
-<svg viewBox="0 0 720 250" role="img" aria-label="Source being edited. Left: an edit inside area's body invalidates only that body, which is typed again when a request needs it. Right: an edit to scale's parameter type invalidates the whole file">
-  <text x="0" y="14" class="h">an edit inside a body</text>
+<svg viewBox="0 0 340 250" style="max-width:560px" role="img" aria-label="Source being edited: an edit inside area's body invalidates only that body, which is typed again when a request needs it">
+  <text x="0" y="14" class="h">an edit inside a method body</text>
   <rect x="0" y="24" width="336" height="162" rx="6" class="editor"/>
   <rect x="8" y="28" width="96" height="20" rx="4" class="tab"/><text x="18" y="42" class="mono" style="font-size:10.5px">Shapes.scala</text>
   <text x="22" y="64" text-anchor="end" class="mono m">1</text>
@@ -478,44 +478,6 @@ Options: thread interrupts (consumed by the first check, swallowed by catch-alls
   <text x="0" y="206" class="a-in" style="--d:2.1s">only <tspan class="mono">area</tspan>'s body is invalidated; its</text>
   <text x="0" y="222" class="a-in" style="--d:2.1s">declared type, every other member and the run are kept</text>
   <text x="0" y="242" class="c-typed b a-in" style="--d:5.4s;--t:.8s">typed again when a request needs it</text>
-  <text x="384" y="14" class="h">an edit to a signature</text>
-  <rect x="384" y="24" width="336" height="162" rx="6" class="editor"/>
-  <rect x="392" y="28" width="96" height="20" rx="4" class="tab"/><text x="402" y="42" class="mono" style="font-size:10.5px">Shapes.scala</text>
-  <text x="406" y="64" text-anchor="end" class="mono m">1</text>
-  <rect x="411" y="50" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
-  <rect x="411" y="50" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
-  <text x="406" y="85" text-anchor="end" class="mono m">2</text>
-  <rect x="411" y="71" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
-  <rect x="411" y="71" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
-  <text x="406" y="106" text-anchor="end" class="mono m">3</text>
-  <rect x="411" y="92" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
-  <rect x="411" y="92" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
-  <text x="406" y="127" text-anchor="end" class="mono m">4</text>
-  <rect x="411" y="113" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
-  <rect x="411" y="113" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
-  <text x="406" y="148" text-anchor="end" class="mono m">5</text>
-  <rect x="411" y="134" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
-  <rect x="411" y="134" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
-  <text x="406" y="169" text-anchor="end" class="mono m">6</text>
-  <rect x="411" y="155" width="4" height="19" rx="1" class="f-typed a-in" style="--d:.2s"/>
-  <rect x="411" y="155" width="4" height="19" rx="1" class="f-bad a-in" style="--d:2.0s"/>
-  <text x="424" y="64" xml:space="preserve" style="white-space:pre" class="mono"><tspan class="tk">class</tspan> <tspan class="tt">Shapes</tspan>:</text>
-  <text x="424" y="85" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> area(s: <tspan class="tt">Shape</tspan>): <tspan class="tt">Double</tspan> =</text>
-  <text x="424" y="106" xml:space="preserve" style="white-space:pre" class="mono">    s.width * s.height</text>
-  <text x="424" y="127" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">def</tspan> scale(s: <tspan class="tt">Shape</tspan>, k: </text>
-  <text x="589.5" y="127" xml:space="preserve" class="mono tt a-out" style="white-space:pre;--d:1.14s;--o:0">I</text>
-  <text x="596.1" y="127" xml:space="preserve" class="mono tt a-out" style="white-space:pre;--d:1.02s;--o:0">n</text>
-  <text x="602.7" y="127" xml:space="preserve" class="mono tt a-out" style="white-space:pre;--d:0.90s;--o:0">t</text>
-  <text x="589.5" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.30s">L</text><g class="a-slide" style="--dx:-26.5px;--d:1.3s"><rect x="616.0" y="116" width="1.5" height="14" class="f-ink a-blink" style="--d:.5s;--n:1"/></g>
-  <text x="596.1" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.46s">o</text>
-  <text x="602.7" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.62s">n</text>
-  <text x="609.4" y="127" xml:space="preserve" class="mono tt a-in" style="white-space:pre;--d:1.78s">g</text>
-  <g class="a-slide" style="--dx:-6.6px;--d:1.3s"><text x="616.0" y="127" xml:space="preserve" style="white-space:pre" class="mono">): <tspan class="tt">Shape</tspan> =</text></g>
-  <text x="424" y="148" xml:space="preserve" style="white-space:pre" class="mono">    <tspan class="tt">Shape</tspan>(s.width * k, s.height * k)</text>
-  <text x="424" y="169" xml:space="preserve" style="white-space:pre" class="mono">  <tspan class="tk">val</tspan> unit: <tspan class="tt">Shape</tspan> = scale(<tspan class="tt">Shape</tspan>(<tspan class="tn">1</tspan>, <tspan class="tn">1</tspan>), <tspan class="tn">1</tspan>)</text>
-  <text x="384" y="206" class="a-in" style="--d:2.1s">a signature changed, and <tspan class="mono">unit</tspan> was typed</text>
-  <text x="384" y="222" class="a-in" style="--d:2.1s">against the old one</text>
-  <text x="384" y="242" class="c-bad b a-in" style="--d:2.5s">a fresh run: the whole file typed again</text>
 </svg>
 <div class="legend"><span><i class="typed"></i>gutter: typed, kept</span><span><i class="bad"></i>gutter: invalidated</span></div>
 </figure>
