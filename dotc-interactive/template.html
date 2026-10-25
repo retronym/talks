@@ -206,6 +206,9 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 }
 @media print { .fig .replay { display: none; } }
 
+.card .fn { margin-top: 1.2em; padding-top: .5em; border-top: 1px solid var(--rule); font-size: .78em; color: var(--muted); }
+.card .fn p { margin: .2em 0; }
+
 /* Chips: {chip:B lazy fact} names a kind of mutable state (A–E), {chip:claim} a concurrency pattern. */
 :root { --chip-kind: #1f6f78; --chip-kind-bg: #dcf0f1; --chip-pat: #8a5a00; --chip-pat-bg: #f8edd6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chip-kind: #7fd3dc; --chip-kind-bg: #18343a; --chip-pat: #f0c060; --chip-pat-bg: #3a2e14; } }

@@ -508,7 +508,7 @@ private def lockAndComplete(completer: LazyType)(using Context): Unit =
   else lockAndComplete0(completer, ctx.mode.is(Mode.Interactive))
 ```
 
-- *Concurrent* means several readers share the base; *parallel* means they run at once. Serialised is K2's starting point, a global resolve lock; Parallel is IntelliJ's parallel read actions and K2's per-declaration locks.
+- *Concurrent* means several readers share the base; *parallel* means they run at once: the distinction of Marlow ([*Parallel and Concurrent Programming in Haskell*][marlowbook], chapter 1) and Pike ("Concurrency is not parallelism", Waza 2012, [go.dev blog][pike]). Serialised is coarse-grained, as K2's global phase resolve lock was before Kotlin 2.0 dropped the option to enable it (KT-66306) beside "LL FIR: Implement multi-threaded resolve" (KT-55750; both in the [2.0.0 ChangeLog][kt200]). Parallel is fine-grained: a claim per root, as K2's per-declaration locks and IntelliJ's read actions, where "multiple threads can read data at the same time" ([threading model][ijthread]).
 - Construction-time choices are plain methods called once per base or cache: `newEqHashMap`, `newMap`, `newUniques`. Operations that take code (`exclusive`, `claimed`, `privately`, `serialised`) are inline methods whose batch branch is the code as it was before concurrency: a batch call site compiles to a test of a final field and the original expression, and allocates nothing. The concurrent branches live in `interactive.SharingImpl` ([`Sharing.scala`][sharing]).
 
 ### 23. Step 3: one coarse lock, and why it was not enough
@@ -878,11 +878,14 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 <figcaption>[readers §4.4.1][M], [`Caching.scala`][caching]. The two nulls found earlier were this shape: I36's <code>lastSymbol</code> and I60's <code>underlyingNormalizable</code>.</figcaption>
 </figure>
 
-- One helper, `core.Caching`, holds every such cache: thirteen on types (signatures, `canDropAlias`, `AndType`'s and `OrType`'s base classes and joins, `AppliedType`'s super type, stability, constant folding, normalizable underlying type) and two on `ClassDenotation`. Variants: `stampedIf` keeps only a value that is not provisional, `stampedWhen` takes its own hit test, `peek` reads without computing.
+- Before `Caching`, 21 fields paired a value with a period or run-id stamp.¹ Six were protected, in three idioms: `util.Publish` (`Symbol`, `NamedType`), a packed `@volatile` value (`asSeenFrom`, package objects, `MatchType`'s reduction), `synchronized` (`InheritedCache`). Two were partly protected: `ClassDenotation`'s member and base-type caches, concurrent maps whose reference and period were plain. Thirteen were plain pairs, all in `Types.scala`: the signatures, `canDropAlias`, `AndType`'s and `OrType`'s base classes, `OrType`'s join, union, atoms and widening, `AppliedType`'s super type, stability, constant folding and normalizable underlying type.
+- One helper, `core.Caching`, now holds the thirteen and the two. Variants: `stampedIf` keeps only a value that is not provisional, `stampedWhen` takes its own hit test, `peek` reads without computing.
 - Each is an inline method: one copy of the code with the fences under a test of the base's final `concurrent` field, since two copies would double every site's bytecode, which the JIT's inlining budget counts. Fences rather than a `VarHandle` per field, so one helper serves any pair: free on x86, `dmb ishld` and `dmb ish` on AArch64, and only on a concurrent base.
 - The invariant it relies on: all readers of a run are in one period, and a writer in another run is cancelled before the run changes. Two writers in one period compute values equally valid for it, so pairing one's stamp with the other's value is still right.
 - Where the key is more than the stamp, a packed value instead: `PreDenotation.asSeenFrom` (the prefix too), `MatchType.reduced`, `packageObjs`.
 - `StampedCachesTest` is the lint: in `core`, a stamp field appears only in a `Caching` call or a reset, with the exceptions named. `CachingLincheckTest` checks the helper (§33h).
+
+<div class="fn">¹ A survey of #84 at 911b78d4f8, before <code>Caching</code>, over <code>compiler/src</code>; <code>Denotation.myValidFor</code> and <code>Phase.myPeriod</code> are not caches and are not counted.</div>
 
 ### 33e. A guard must say which mode it means (I86)
 
@@ -943,6 +946,8 @@ Coarse-grained against fine-grained is the step 3 / step 4 split. The fine-grain
 | the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 (§33a) |
 | one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
 | lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps §33d true |
+
+Not yet explained: `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log) failed in 1 of 4 full-suite runs and in one more, 0 of 180 runs of the test alone, 0 of 60 full-suite runs without the build's `.jvmopts`. The candidates are state left by earlier tests in the same JVM, or JIT and timing (runs of 25 October).
 
 A soak that hammers one pattern, written out longhand as well, separates "the search picked wrong" from "the answer it checked was wrong" ([readers §4.4][M]).
 
@@ -1297,6 +1302,35 @@ The modes tie because the first request after each edit types the whole file. Wh
 - What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
 - Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§33a–§33c) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
 
+### 46b. The x-ray's throughput demo
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 300" role="img" aria-label="Speed-up against one reader for N=1 to 6 readers, two builds, with linear speed-up for reference">
+  <text x="0" y="14" class="h">487 files, speed-up against N=1</text>
+  <line x1="60" y1="260" x2="680" y2="260" class="ln"/><line x1="60" y1="30" x2="60" y2="260" class="ln"/>
+  <text x="52" y="264" text-anchor="end" class="m">0</text><line x1="56" y1="184" x2="680" y2="184" class="ln dash"/><text x="52" y="188" text-anchor="end" class="m">2</text><line x1="56" y1="108" x2="680" y2="108" class="ln dash"/><text x="52" y="112" text-anchor="end" class="m">4</text><line x1="56" y1="32" x2="680" y2="32" class="ln dash"/><text x="52" y="36" text-anchor="end" class="m">6</text>
+  <text x="60" y="280" text-anchor="middle">N = 1</text><text x="180" y="280" text-anchor="middle">2</text><text x="300" y="280" text-anchor="middle">3</text><text x="420" y="280" text-anchor="middle">4</text><text x="540" y="280" text-anchor="middle">5</text><text x="660" y="280" text-anchor="middle">6</text>
+  <path d="M 60 222 L 660 32" class="mut dash a-draw" pathLength="1" style="--d:.2s"/><text x="600" y="44" class="m a-in" style="--d:.8s">linear</text>
+  <path d="M 60 222 L 180 195 L 300 173 L 420 157 L 540 140 L 660 129" class="s-typed a-draw" pathLength="1" style="--d:.5s" stroke-width="2.5"/>
+  <circle cx="60" cy="222" r="4" class="f-typed a-pop" style="--d:.5s"/><circle cx="180" cy="195" r="4" class="f-typed a-pop" style="--d:.7s"/><circle cx="300" cy="173" r="4" class="f-typed a-pop" style="--d:.9s"/><circle cx="420" cy="157" r="4" class="f-typed a-pop" style="--d:1.1s"/><circle cx="540" cy="140" r="4" class="f-typed a-pop" style="--d:1.3s"/><circle cx="660" cy="129" r="5" class="f-typed a-pop" style="--d:1.5s"/>
+  <text x="660" y="150" text-anchor="middle" class="c-typed b a-in" style="--d:1.6s">3.43×</text>
+  <path d="M 60 222 L 180 193 L 300 170 L 420 146" class="s-own a-draw" pathLength="1" style="--d:1.8s" stroke-width="2.5"/>
+  <circle cx="180" cy="193" r="4" class="f-own a-pop" style="--d:2s"/><circle cx="300" cy="170" r="4" class="f-own a-pop" style="--d:2.1s"/><circle cx="420" cy="146" r="5" class="f-own a-pop" style="--d:2.2s"/>
+  <text x="420" y="134" text-anchor="middle" class="c-own b a-in" style="--d:2.3s">2.98×</text>
+</svg>
+<div class="legend"><span><i class="typed"></i>run 1, 9b10b11ad3: serial open</span><span><i class="own"></i>run 2, 8a76f6a5c9: parallel parse, largest files first</span></div>
+<figcaption>x-ray throughput demo, 25 October; N readers with <code>-Yinteractive-parallel</code> over every file of the source set, with work stealing. The demo is described in #84's x-ray commit and README.</figcaption>
+</figure>
+
+| run 1, build 9b10b11ad3 | N=1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| wall | 5.30 s | 3.09 | 2.32 | 1.96 | 1.67 | 1.54 |
+| worker CPU | 4.73 s | 5.02 | 5.34 | 5.50 | 5.43 | 5.57 |
+| outside the workers (wall − CPU/N) | 0.57 s | 0.58 | 0.54 | 0.59 | 0.59 | 0.62 |
+
+- Run 1: worker CPU grows only 18 percent from one reader to six, root waits are at most 15 per cell and under 1 ms, no file's diagnostics differ, and the batch typer on the same files takes 5.42 s. What stops the curve is the time outside the workers, about 0.57 s at every N (derived as above, not measured): opening the set is serial.
+- Run 2 parses in parallel and hands out the largest files first: the open is 0.31 s (measured), the tail of the timeline 0 to 7 ms, and four readers are 2.98 times one (wall 4.93, 2.80, 2.08, 1.65 s; worker CPU 1.00, 1.07, 1.14, 1.15 of N=1's). Its batch reference moved to 6.41 s without an explanation, so it is not used here.
+
 ### 46a. What four readers cost per file
 
 <figure class="fig anim">
@@ -1496,6 +1530,9 @@ Independent of the experiment's flags, each with a test on the branch:
 [11328]: https://github.com/scala/scala/pull/11328
 [periods]: https://github.com/scala/scala3/blob/main/docs/_docs/internals/periods.md
 [sharing]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/src/dotty/tools/dotc/core/Sharing.scala
+[marlowbook]: https://www.oreilly.com/library/view/parallel-and-concurrent/9781449335939/ch01.html
+[pike]: https://go.dev/blog/waza-talk
+[kt200]: https://github.com/JetBrains/kotlin/blob/v2.0.0/ChangeLog.md
 [caching]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/src/dotty/tools/dotc/core/Caching.scala
 [llfir]: https://github.com/JetBrains/kotlin/blob/master/analysis/low-level-api-fir/README.md
 [firstate]: https://github.com/JetBrains/kotlin/blob/master/compiler/fir/tree/src/org/jetbrains/kotlin/fir/declarations/FirResolveState.kt
