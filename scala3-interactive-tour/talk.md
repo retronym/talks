@@ -223,7 +223,7 @@ The editor needs the whole file typed for its diagnostics, and needs hovers answ
 </svg>
 </figure>
 
-That is the one case a second thread is for: background work beside interactive requests ([full talk §44](../dotc-interactive/index.html#s44)).
+Running requests on several threads helps an editor only when there is background work like this to run beside them ([full talk §44](../dotc-interactive/index.html#s44)).
 
 ---
 
