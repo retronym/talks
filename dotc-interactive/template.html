@@ -210,6 +210,19 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 .card .fn { margin-top: 1.2em; padding-top: .5em; border-top: 1px solid var(--rule); font-size: .78em; color: var(--muted); }
 .card .fn p { margin: .2em 0; }
 
+/* Card 22's table of the five kinds: a chip, what it is, its treatment */
+.fig.kinds { display: grid; gap: 8px; }
+.krow { display: grid; grid-template-columns: 112px minmax(0, 1fr) 22px minmax(0, 1fr); gap: 10px; align-items: center; }
+.krow.khead { font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.kbox { border: 1px solid var(--rule); border-radius: 8px; padding: 7px 11px; background: var(--card); font-size: 14px; line-height: 1.4; }
+.kbox .kt { font-weight: 650; font-size: 14.5px; }
+.kbox .kd { font-size: 13.5px; margin-top: 1px; }
+.kbox .kx { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.kbox.ktreat .kx { font-family: inherit; font-size: 12px; }
+.kbox.ktreat { background: var(--typed-bg); border-color: var(--typed); }
+.karrow { color: var(--muted); text-align: center; }
+@media (max-width: 640px) { .krow { grid-template-columns: 1fr; } .krow.khead, .karrow { display: none; } }
+
 /* Chips: {chip:B lazy fact} names a kind of mutable state (A–E), {chip:claim} a concurrency pattern. */
 :root { --chip-kind: #1f6f78; --chip-kind-bg: #dcf0f1; --chip-pat: #8a5a00; --chip-pat-bg: #f8edd6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chip-kind: #7fd3dc; --chip-kind-bg: #18343a; --chip-pat: #f0c060; --chip-pat-bg: #3a2e14; } }
@@ -218,6 +231,10 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 .chip.kind { color: var(--chip-kind); background: var(--chip-kind-bg); border-color: color-mix(in srgb, var(--chip-kind) 35%, transparent); }
 .chip.pat { color: var(--chip-pat); background: var(--chip-pat-bg); border-color: color-mix(in srgb, var(--chip-pat) 35%, transparent); }
 .chips { margin: -6px 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px 16px; margin: 0 0 14px; }
+.card-head > h3, .card-head > h4 { margin: 0; flex: 1 1 auto; min-width: 0; }
+.card-head > .chips { margin: .35em 0 0; flex: 0 0 auto; justify-content: flex-end; max-width: 45%; }
+@media (max-width: 640px) { .card-head { flex-wrap: wrap; } .card-head > .chips { max-width: none; margin-left: auto; } }
 .card.part .chip { filter: none; }
 
 /* Focus mode: one card at a time, bigger type, for presenting */
@@ -350,6 +367,13 @@ body.focus .focus-counter { display: block; }
     card.appendChild(node);
   });
 
+  // A row of chips right under a card's heading sits in the heading row, right-aligned.
+  main.querySelectorAll('.card > h3 + .chips, .card > h4 + .chips').forEach(chips => {
+    const h = chips.previousElementSibling;
+    const row = document.createElement('div'); row.className = 'card-head';
+    h.parentNode.insertBefore(row, h); row.appendChild(h); row.appendChild(chips);
+  });
+
   // 4. Link § references and "Notes N1" to their cards.
   const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
     acceptNode: n => n.parentElement.closest('code, pre, a, .katex, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
@@ -373,7 +397,7 @@ body.focus .focus-counter { display: block; }
   const toc = document.getElementById('toc');
   const cards = Array.from(main.querySelectorAll('.card'));
   cards.forEach(c => {
-    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4');
+    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4, :scope > .card-head > h3, :scope > .card-head > h4');
     if (!h || !c.id) return;
     const li = document.createElement('li'); li.className = h.tagName.toLowerCase();
     const num = h.querySelector('.num');

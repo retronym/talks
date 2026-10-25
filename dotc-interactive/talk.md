@@ -22,7 +22,7 @@
 10. Prior art.
 11. Checkpoint: where it stands, what is open, the lessons, what can go upstream now.
 
-Every number is from the design notes, cited by section: [session §n][S] is `interactive-session.md`, [readers §n][M] is `interactive-multi-reader.md`, [Track I §n][TI] is the model. `§n` alone is a card of this talk.
+Every number is from the design notes, cited by section: [session §n][S] is `interactive-session.md`, [readers §n][M] is `interactive-multi-reader.md`, [Track I §n][TI] is the earlier comparison of the Scala 2, Scala 3 and IntelliJ presentation compilers. `§n` alone is a card of this talk.
 
 ### How the labels work
 
@@ -346,7 +346,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
   <path d="M 462 42 C 482 42, 482 298, 462 298" class="s-bad a-draw" pathLength="1" style="--d:1.1s"/>
   <text x="0" y="340" class="m a-in" style="--d:3.6s">kept: every statement typed before the abort, the run's facts that completed, the aborted run's context (I14)</text>
 </svg>
-<figcaption>Each frame restores what it set on the way out: <code>completeFrom</code> clears <code>Touched</code>, a <code>LazyAnnotation</code> keeps its thunk, a <code>SymbolLoader</code> leaves its root loadable ([session §4][S]). The Lean model's <code>forceA_unlock_touched</code> against <code>touched_stays_cyclic</code> is this difference ([Track I §5][TI]).</figcaption>
+<figcaption>Each frame restores what it set on the way out: <code>completeFrom</code> clears <code>Touched</code>, a <code>LazyAnnotation</code> keeps its thunk, a <code>SymbolLoader</code> leaves its root loadable ([session §4][S]).</figcaption>
 </figure>
 
 ### 18. A cycle or a crash costs one symbol, not the request
@@ -402,20 +402,17 @@ Kotlin's low-level FIR resolves declarations in place under these rules (§48). 
 
 ### 22. Five kinds of mutable state a request writes
 
-<div class="chips">{chip:A scratch} {chip:B lazy fact} {chip:C cache} {chip:D interning} {chip:E trees}</div>
-
-```mermaid
-flowchart LR
-  A["A · per-request scratch<br/>comparers, context pools,<br/>targeting slots, cancel checker"] -->|"move to a<br/>thread-confined Reader"| A2["one per thread"]
-  B["B · lazy facts with a black hole<br/>completeFrom's Touched,<br/>InheritedCache.locked, loaders"] -->|"owner + barrier<br/>per root"| B2["lazy resolve"]
-  C["C · pure caches<br/>lastDenot/checkedPeriod,<br/>member and base-type caches"] -->|"one-field publication,<br/>concurrent maps"| C2["safe publication"]
-  D["D · interning, counters<br/>Uniques, _nextSymId"] -->|"concurrent interner,<br/>atomic counter"| D2["linearizable"]
-  E["E · trees<br/>consumed attachments,<br/>the session's splice"] -->|"skipped statements as facts,<br/>a persistent typed tree"| E2["step 5, not built"]
-```
+<figure class="fig anim kinds">
+<div class="krow khead"><span></span><span>kind</span><span></span><span>treatment</span></div>
+<div class="krow a-in" style="--d:0.15s"><span>{chip:A scratch}</span><div class="kbox"><div class="kt">Per-request scratch</div><div class="kd">State one request uses while it runs and then throws away.</div><div class="kx">comparers, context pools, targeting slots, the cancel checker</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Move to a per-thread <code>Reader</code>.</div><div class="kx">§22b</div></div></div>
+<div class="krow a-in" style="--d:0.50s"><span>{chip:B lazy fact}</span><div class="kbox"><div class="kt">Lazy facts</div><div class="kd">Computed once, on first use, and marked in progress while that runs (a black hole).</div><div class="kx">completeFrom's Touched, InheritedCache.locked, symbol loaders</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">An owner and a barrier per root.</div><div class="kx">§24</div></div></div>
+<div class="krow a-in" style="--d:0.85s"><span>{chip:C cache}</span><div class="kbox"><div class="kt">Caches</div><div class="kd">Derived values kept to avoid recomputing them; any reader would compute the same value.</div><div class="kx">lastDenot and checkedPeriod, member and base-type caches</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">One published value, or an ordered stamp; concurrent maps.</div><div class="kx">§30, §30a, §33d</div></div></div>
+<div class="krow a-in" style="--d:1.20s"><span>{chip:D interning}</span><div class="kbox"><div class="kt">Interning and counters</div><div class="kd">One shared table so that equal types are one object; ids handed out in order.</div><div class="kx">Uniques, NamedTypeUniques, _nextSymId</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">A concurrent interner, an atomic counter.</div><div class="kx">§22c</div></div></div>
+<div class="krow a-in" style="--d:1.55s"><span>{chip:E trees}</span><div class="kbox"><div class="kt">Trees</div><div class="kd">The file's syntax trees: typed into new trees, their attachments consumed on the way.</div><div class="kx">SymOfTree, TypedAhead, ExpandedTree, the session's splice</div></div><div class="karrow">→</div><div class="kbox ktreat"><div class="kd">Skipped statements as facts, a persistent typed tree.</div><div class="kx">not built (step 5)</div></div></div>
+</figure>
 
 - Scala 3 had no precedent for concurrent readers of symbols or types ([readers §3][M]).
 - A *root* is the unit a completion is claimed by: whatever one completion writes together. A symbol loader completes a class and its module at once, and the TASTy completers of one file share one unpickler's address maps, so the claim is per pair or per file, not per symbol ([readers §3.1][M]). §24 lists the roots.
-- The `Reader` (kind A) found its own bug: it cannot be a field of the context, because contexts are captured (completer creation contexts, import contexts, skipped statements' contexts) and run later under another request. It is bound to the thread ([readers §8][M] step 2).
 
 ### 22a. `Sharing`: batch, serialised or parallel, chosen per symbol table
 
@@ -526,19 +523,6 @@ stateDiagram-v2
 - A Namer completion runs in a committable typer state of its own and reports to the namer's reporter, so a hover that forces a signature does not swallow its diagnostics.
 - Behind `-Yinteractive-parallel`; batch never allocates an `InProgress`.
 
-### 26. What the Lean model proves
-
-Before the compiler work, two forcers over one lazy store in Lean (`Query/Concurrent.lean`) and a two-reader kernel in the Java toy ([Track I, two readers][TC], [readers §7][M]):
-
-| statement | theorem | consequence |
-|---|---|---|
-| with holes owned and a barrier, every value either forcer stores or answers is the fixed point's, under every schedule | `run_agree` | the barrier is the whole correctness argument; no ranking, no fairness needed |
-| under a ranked fixed point no schedule reports a cycle | `run_ranked_no_cyc` | a wait that closes a wait-for cycle reports a real cycle; which reader names it varies (15 of 81 interleavings in the toy) |
-| a peek at the other forcer's hole races; at one's own, it does not | `peek_any_races`, `peek_own_agrees` | `isCompleting` must mean "on this reader" (toy: 24 of 63 interleavings race) |
-| an aborted owner's waiter takes over if the hole is released; stuck if `Touched` stays | `abort_waiter_takes_over`, `abort_keep_hole_waiter_stuck` | the reset belongs in the owner's unwind path |
-
-Left to `decide` rather than proved: progress.
-
 ---
 
 ## Part VI — The races, before and after
@@ -570,7 +554,7 @@ Left to `decide` rather than proved: progress.
   <text x="290" y="154" text-anchor="end">no: wait, look again</text>
   <text x="290" y="172" text-anchor="end" class="c-typed">foo found through Ops</text>
 </svg>
-<figcaption>Thirteen sites peek at <code>isCompleting</code> and take another path rather than force ([readers §4.1][M]). The model predicted it (<code>peek_any_races</code>); the two-reader suites found it ([readers §8][M], I41).</figcaption>
+<figcaption>Thirteen sites peek at <code>isCompleting</code> and take another path rather than force ([readers §4.1][M]). The two-reader suites found it ([readers §8][M], I41).</figcaption>
 </figure>
 
 ### 28. Two readers waiting on each other is often not a real cycle (I54)
@@ -853,7 +837,6 @@ Coarse-grained against fine-grained is the step 3 / step 4 split. The fine-grain
 
 | layer | what it checks | found |
 |---|---|---|
-| Lean model, Java toy | owners and a barrier linearize every schedule; a peek at another reader's hole races (24 of 63 toy interleavings) | the rules before the code (§26) |
 | Lincheck on `Caching` | the stamped cell under 3 threads of readers and writers: model checking of the interleavings, stress on real threads on Apple silicon; the old plain idiom must fail | the helper's ordering (§33d) |
 | two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 (§23) |
 | the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 (§33a) |
@@ -925,7 +908,7 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
   <rect x="30" y="284" width="140" height="30" rx="4" class="typed a-grow-d" style="--d:3.7s"/><text x="40" y="304" class="a-in" style="--d:3.8s">goes on with T_g</text>
   <line x1="20" y1="40" x2="700" y2="40" class="mut dash a-sweep" style="--ty:296px;--t:4.6s"/>
 </svg>
-<figcaption>Rule 4, and the model's <code>abort_waiter_takes_over</code>. With Scala 3's old discipline (<code>Touched</code> left set) the barrier is owned by a reader that no longer exists and R1 waits for the rest of the run (<code>abort_keep_hole_waiter_stuck</code>). So the owner resets the root in its own unwind path, before releasing it ([Track I, two readers][TC]). A waiter cancelled by a writer is cancelled too; hand-over is for an owner's own failure ([readers §9][M]).</figcaption>
+<figcaption>Rule 4 of §21. If the owner left <code>Touched</code> set when it unwound, as Scala 3's completers used to (§3), the barrier would belong to a reader that no longer exists and R1 would wait for the rest of the run. So the owner resets the root in its own unwind path, before releasing it ([Track I, two readers][TC]). A waiter cancelled by a writer is cancelled too; hand-over is for an owner's own failure ([readers §9][M]).</figcaption>
 </figure>
 
 ### 36. Lanes: hovers while another thread types the whole file
@@ -980,7 +963,7 @@ flowchart TB
 
 - IntelliJ's `BlockModificationTracker` is the rule: an edit inside a body whose definition has a declared type bumps that body's count only ([session §12][S]).
 - The comparison is with a pristine parse kept on the session, not the unit's tree: the Namer mutates the trees it indexes (`setMods`), and comparing against those would take false fresh runs.
-- The re-index refines D's old symbols (same identity, so every typed reference stays valid) and checks that the new info is `=:=` the old: the Lean toy's backdating (`tier1_body_edit`). Behind `-Yinteractive-body-edits`.
+- The re-index refines D's old symbols (same identity, so every typed reference stays valid) and checks that the new info is `=:=` the old; if it is not, the next request starts fresh. Behind `-Yinteractive-body-edits`.
 
 ### 39. The whole-file run after a keystroke: 382 ms to 6 ms
 
@@ -1282,7 +1265,7 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 ### 51. Salsa and rust-analyzer
 
 - A change bumps a global revision and waits for other threads; a thread that sees the bump unwinds with `Cancelled`, which the IDE layer catches ([rust-analyzer architecture][raarch], [Salsa book][salsart]).
-- When one thread needs a query another is computing, it blocks; before adding the edge it checks for a path back, and a cycle runs the configured strategy ([Salsa, cycles][salsacyc]). The Lean model's `closesCycle` is this check for two forcers.
+- When one thread needs a query another is computing, it blocks; before adding the edge it checks for a path back, and a cycle runs the configured strategy ([Salsa, cycles][salsacyc]). Scala 3's claims make the same check before a reader waits (§28).
 - Track I's reading: Scala 3 under Metals approximated this with a fresh run per request; the session's writer raising the sticky flag is the revision bump.
 
 ### 52. Lazy evaluation and build systems
@@ -1343,7 +1326,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 ### 58. Lessons about measurement and correctness
 
 - **Measure the queue before building the concurrency.** Nine tenths of the queueing was behind whole-file work (§42); that set the order of everything after it.
-- **The barrier is the whole correctness argument.** `run_agree` said so, and every divergence found since was a reader seeing unpublished state, not a scheduling problem (§26).
+- **The barrier is the whole correctness argument.** With an owner and a barrier per root, every divergence found was a reader seeing state that was not yet published, not a scheduling problem (§24, §33a).
 - **Scala 3 has no "concurrency in body typing only".** Typing a body forces completions, and 65–79 percent of a reader's time is inside them; step 3 was a correct stepping stone and a wrong ship point (§23).
 - **The editor's cost is the whole-file askers.** Readers pay off once inlay hints and semantic tokens are ranges and the whole-file work is a background pass; for keystrokes, the win is keeping the run (§39, §40).
 
