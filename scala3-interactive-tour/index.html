@@ -347,7 +347,7 @@ Each assumption breaks somewhere below ([full talk §1](../dotc-interactive/inde
 
 ## Techniques the proof of concept tried
 
-### 4. Typing only the path to a request
+### 4. Typing only what a request needs
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 300" role="img" aria-label="A targeted run types the statements on the path to the request and records the others with their contexts">
@@ -383,6 +383,8 @@ Each assumption breaks somewhere below ([full talk §1](../dotc-interactive/inde
 </figure>
 
 Options: the whole file (Scala 3 today), a prefix up to the target (Scala 2), or only the statements on the path. The PoC typed the path and recorded every skipped statement with the context it would have been typed in ([full talk §8](../dotc-interactive/index.html#s8)).
+
+The target can also be a range. Inlay hints and semantic tokens ask about the visible lines, and the same rule types the statements that touch them: a 60-line window of `Types.scala` is 637–969 trees in 26–38 ms, the whole file 41,123 trees in 307–328 ms. The editor gains only once Metals asks for ranges instead of whole files ([full talk §40](../dotc-interactive/index.html#s40)).
 
 ### 5. One run serving many requests
 
@@ -503,35 +505,7 @@ Options: thread interrupts (consumed by the first check, swallowed by catch-alls
 
 Options: a fresh run per edit, re-typing one body when its signature is unchanged (IntelliJ's block rule), or facts with revisions (Salsa). The PoC tried the second: re-parse, compare with the previous parse, shift every position, re-index one definition ([full talk §37](../dotc-interactive/index.html#s37), [full talk §39](../dotc-interactive/index.html#s39)).
 
-### 8. Typing only the visible lines
-
-<figure class="fig anim">
-<svg viewBox="0 0 720 210" role="img" aria-label="A range target types the statements that touch the visible window and skips the rest">
-  <text x="0" y="14" class="h">Types.scala, 7,000 lines</text>
-  <rect x="0" y="24" width="40" height="176" rx="4" class="skip"/>
-  <rect x="0" y="94" width="40" height="22" rx="2" class="own a-pop" style="--d:.2s"/>
-  <text x="50" y="110" class="c-own b a-in" style="--d:.3s">the visible 60 lines</text>
-  <g class="a-in" style="--d:.7s">
-    <rect x="200" y="24" width="200" height="20" rx="4" class="skip"/><text x="208" y="38" class="mono">statements before</text>
-    <rect x="200" y="86" width="200" height="20" rx="4" class="typed"/><text x="208" y="100" class="mono">touches the window</text>
-    <rect x="200" y="110" width="200" height="20" rx="4" class="typed"/><text x="208" y="124" class="mono">touches the window</text>
-    <rect x="200" y="172" width="200" height="20" rx="4" class="skip"/><text x="208" y="186" class="mono">statements after</text>
-  </g>
-  <g class="a-in" style="--d:1.2s">
-    <text x="430" y="70" class="b">a 60-line window</text>
-    <text x="430" y="90" class="c-typed b">637–969 trees, 26–38 ms</text>
-    <text x="430" y="122" class="b">the whole file</text>
-    <text x="430" y="142">41,123 trees, 307–328 ms</text>
-    <text x="430" y="174" class="m">semantic tokens for the window</text>
-    <text x="430" y="192" class="m">after the hints: 0–1 ms (vs 68–72 ms)</text>
-  </g>
-</svg>
-<figcaption><code>Run.typingTarget</code> may be a range: at each statement list, a statement is typed if its span touches it ([session §7][S], Range requests).</figcaption>
-</figure>
-
-Inlay hints and semantic tokens over the visible range type a small fraction of the file. The compiler half works; the editor sees the benefit only once Metals asks for ranges instead of whole files ([full talk §40](../dotc-interactive/index.html#s40)).
-
-### 9. A hover stays fast while another thread types the whole file
+### 8. A hover stays fast while another thread types the whole file
 
 The editor needs the whole file typed for its diagnostics, and needs hovers answered meanwhile. In the PoC one thread typed all of `Types.scala` while another answered hovers.
 
@@ -551,7 +525,7 @@ Running requests on several threads helps an editor only when there is backgroun
 
 ## Lessons for sharing a symbol table
 
-### 10. Classify the shared state before fixing any of it
+### 9. Classify the shared state before fixing any of it
 
 <figure class="fig anim kinds">
 <div class="krow khead"><span></span><span>kind</span><span></span><span>treatment</span></div>
@@ -564,7 +538,7 @@ Running requests on several threads helps an editor only when there is backgroun
 
 Every fix that followed is one of these treatments. The classification was worth more than any single fix ([full talk §22](../dotc-interactive/index.html#s22)).
 
-### 11. Choose concurrency per symbol table; keep the batch code as it was
+### 10. Choose concurrency per symbol table; keep the batch code as it was
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="Three instances of Sharing, chosen per ContextBase: Batch, Serialised, Parallel">
@@ -586,7 +560,7 @@ Every fix that followed is one of these treatments. The classification was worth
 
 One seam decides, when a symbol table is made, whether readers are absent, serialised or parallel. Batch call sites compile to the original code and allocate nothing; the concurrent branches live elsewhere ([full talk §22a](../dotc-interactive/index.html#s22a)).
 
-### 12. Claims: one thread completes a symbol, the others wait
+### 11. Claims: one thread completes a symbol, the others wait
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 360" role="img" aria-label="R2 owns g; R1 owns f and waits on g's barrier; R2 publishes g; R1 completes f and answers">
@@ -617,7 +591,7 @@ One seam decides, when a symbol table is made, whether readers are absent, seria
 
 One lock around every completion is correct and serialises most of a reader's time. A claim per root lets readers run in parallel: the owner alone sees the completion in progress, others wait at the barrier, and a cancelled owner hands over. K2 moved the same way, from a global resolve lock to per-declaration locks ([full talk §23](../dotc-interactive/index.html#s23), [full talk §24](../dotc-interactive/index.html#s24), [full talk §34](../dotc-interactive/index.html#s34)).
 
-### 13. Hazards and their patterns
+### 12. Hazards and their patterns
 
 | pattern | hazard | `Batch` | `Serialised` | `Parallel` |
 |---|---|---|---|---|
@@ -632,7 +606,7 @@ One lock around every completion is correct and serialises most of a reader's ti
 
 These hold beyond this code: anything that shares lazily computed state between readers meets them ([full talk §32](../dotc-interactive/index.html#s32)).
 
-### 14. Publishing caches safely
+### 13. Publishing caches safely
 
 | | how | correct when | cost |
 |---|---|---|---|
@@ -646,7 +620,7 @@ Within one run every writer of a stamped cache computes the same value, so the c
 
 ## Testing and measurement
 
-### 15. The x-ray harness
+### 14. The x-ray harness
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 380" role="img" aria-label="A background pass claims and types one skipped statement at a time; hovers on another reader are served, wait for the claimed statement, or claim one the pass has not reached">
@@ -680,7 +654,7 @@ Within one run every writer of a stamped cache computes the same value, so the c
 
 The x-ray drives the driver directly: a background pass beside hovers, a recorded editor session replayed against each build, a throughput demo over the compiler's own sources. Its main value was exposing mistakes in the PoC itself: a whole-file run that left no session (I58), the wrong compiler options, a server that outlived its build ([full talk §36](../dotc-interactive/index.html#s36), [full talk §45](../dotc-interactive/index.html#s45)).
 
-### 16. Finding races
+### 15. Finding races
 
 | layer | what it checks | found |
 |---|---|---|
@@ -692,7 +666,7 @@ The x-ray drives the driver directly: a background pass beside hovers, a recorde
 
 Every answer is compared with a single-reader whole-file run; a divergence is a race until shown otherwise ([full talk §33](../dotc-interactive/index.html#s33)).
 
-### 17. Batch compilation: no measurable cost
+### 16. Batch compilation: no measurable cost
 
 | corpus | build | ms/op, median of 5 rounds | Δ | instructions/op | Δ |
 |---|---|---|---|---|---|
@@ -709,7 +683,7 @@ Nothing above about 2 percent, which is the spread between rounds of one build. 
 
 ## A landing order
 
-### 18. Fixes that need no flag
+### 17. Fixes that need no flag
 
 | | stock compiler or Metals |
 |---|---|
@@ -722,7 +696,7 @@ Nothing above about 2 percent, which is the spread between rounds of one build. 
 
 Each has a test and is independent of the PoC's flags ([full talk §62](../dotc-interactive/index.html#s62)).
 
-### 19. Increments, each useful on its own
+### 18. Increments, each useful on its own
 
 ```mermaid
 flowchart TB
@@ -735,7 +709,7 @@ flowchart TB
 
 An order to discuss, not a plan. Each step is flag-gated and can stop without the next. Concurrent readers come last because the measurements say they pay off only once whole-file work is no longer what the editor waits for (slide 2).
 
-### 20. Open problems and comparable designs
+### 19. Open problems and comparable designs
 
 - **Open in the PoC:** Namer completions that can run again (two readers completing in opposite orders still raise a cycle no sequential order has); facts that outlive a run, which snapshot readers across an edit would need; the shared state a sweep listed and no test has hit yet.
 - **Designs to weigh it against:** Kotlin K2's lazy resolve and analysis sessions, IntelliJ's read and write actions, Roslyn's immutable compilations, Salsa's revisions and cancellation ([full talk §48](../dotc-interactive/index.html#s48)–[full talk §51](../dotc-interactive/index.html#s51)).
