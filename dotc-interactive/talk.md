@@ -22,7 +22,7 @@
 
 Every number is from the design notes, cited by section: [session §n][S] is `interactive-session.md`, [readers §n][M] is `interactive-multi-reader.md`, [Track I §n][TI] is the model. `§n` alone is a card of this talk.
 
-### Reading the chips
+### How the labels work
 
 Small labels mark the cards whose subject is a kind of mutable state (teal) or a concurrency pattern (amber), and appear only there. The five kinds are introduced together in §22; each has a card that explains it.
 
@@ -41,7 +41,7 @@ The patterns are summarised in §33f and §33g.
 
 ## Part I — The batch compiler as it was
 
-### 1. One thread, one run
+### 1. The batch compiler runs on one thread
 
 ```mermaid
 flowchart TB
@@ -57,7 +57,7 @@ flowchart TB
 - `ContextBase.checkSingleThreaded`, asserted at the start of a run, records the assumption. Parallel pickling and `-Ybackend-parallelism` keep every symbol-table access on the main thread and hand workers only context-free work ([readers §3][M]).
 - Nothing in the typer polled for cancellation. The check was at unit and subphase boundaries, and the presentation compiler's callback consumed the interrupt bit ([Track I §2][TI]).
 
-### 2. Trees: typed values, untyped trees consumed
+### 2. Typing consumes the untyped tree
 
 <div class="chips">{chip:E trees}</div>
 
@@ -71,7 +71,7 @@ flowchart LR
 - The untyped tree is consumed. `retrieveSym` takes `SymOfTree`, `typedUnadapted` takes `TypedAhead`, `traverse` takes `ExpandedTree`, the Namer's `setMods` rewrites modifiers ([readers §3][M], kind E).
 - In batch that is free: each tree is typed once. For an editor it is finding I8, and it comes back in §11.
 
-### 3. Completers: lazy facts with a one-bit black hole
+### 3. Completers and the `Touched` flag
 
 <div class="chips">{chip:B lazy fact}</div>
 
@@ -128,7 +128,7 @@ stateDiagram-v2
 - Reading a denotation in a later run is a write: `Denotation.current` validates it, or brings it forward and links it into the ring ([readers §3][M], kind B).
 - The run id is 16 bits, and nothing guarded it: a long-lived driver overflows it into the phase bits (I10, [session §9][S]). A livelock later ran it past 65,535 to 0 (I43).
 
-### 5. scalac's presentation compiler: requests nested inside the type check
+### 5. scalac's presentation compiler runs requests inside the background type check
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="scalac services a request at a safepoint inside the background type check">
@@ -158,7 +158,7 @@ stateDiagram-v2
 - The typer calls `signalDone` after each tree; there `pollForWork` runs the requests that arrived, inside the type check, on the same thread.
 - The property needed is not thread safety (nothing runs at the same time, and a lock is either reentrant and lets the request in, or deadlocks). It is the discipline of async-signal safety ([Track I][TI] summary).
 
-### 6. The bugs that discipline produces: scala/scala#11328
+### 6. What scala/scala#11328 fixed: state that breaks at a safepoint
 
 | commit in [scala/scala#11328][11328] | state that is not a fact | broken at a safepoint |
 |---|---|---|
@@ -171,7 +171,7 @@ stateDiagram-v2
 - Each fix is local to one shape, and the harness is the only way to know there is no fifth. One remains: a nested `askType(source)` still diverges at 16 of 16 (findings I1 and I2, confirmed against the PR's branch).
 - dotc under Metals diverges nowhere, because it never interrupts: a request waits, then pays a fresh whole-file run.
 
-### 7. dotc under Metals, before this work
+### 7. dotc under Metals: a whole-file run per request
 
 ```mermaid
 flowchart TB
@@ -191,7 +191,7 @@ flowchart TB
 
 ## Part II — Targeting
 
-### 8. Type only the path
+### 8. A request types only the statements on the path to it
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 300" role="img" aria-label="A targeted run types the statements on the path to the request and records the others with their contexts">
@@ -230,7 +230,7 @@ flowchart TB
 - A skipped statement's symbols are as usable as a typed one's: the Namer entered them before any statement was typed, with completers that compute signatures on demand. What it lacks is its typed tree.
 - The first version typed a *prefix*, everything up to the target. The x-ray showed `method1`…`method6` typed for a completion in object 7. The prefix was never the point; the typed *set* is ([session §2][S]).
 
-### 9. Where the rule bends
+### 9. Exceptions to the targeting rule
 
 - **Never skipped:** imports and exports (they shape the context of what follows), nested package clauses, synthetic trees with no span of their own.
 - **A point between statements** types only the next one. scalac's rule types the whole list there; on `class JavaParser`'s header that was 10,000 trees for one hover.
@@ -241,7 +241,7 @@ flowchart TB
 
 ## Part III — The session
 
-### 10. One run, many requests
+### 10. One run serves many requests on the same text
 
 ```mermaid
 flowchart TB
@@ -261,7 +261,7 @@ flowchart TB
 
 The run's denotations, completers and caches stay valid throughout: it is the same `Run`. An edit starts a fresh run, which is now cheap.
 
-### 11. Resume and splice
+### 11. Typing a skipped statement later, and splicing it in
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 230" role="img" aria-label="A skipped statement is typed in its recorded context and spliced into the typed tree">
@@ -291,7 +291,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 - Why the recorded context is enough: a statement's context in `typedStats` is the template's plus the imports before it, and nothing typing an earlier sibling adds.
 - A whole-file request on the same content completes the session instead of replacing it: every still-skipped statement typed and spliced in one pass. Document highlight asks for one on every cursor move; in one VS Code session 136 of 142 whole-file runs came from it ([session §7][S]).
 
-### 12. Poisoned statements (I8)
+### 12. A statement whose typing was cancelled cannot be typed again (I8)
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 150" role="img" aria-label="Before: a statement whose typing was cancelled cannot be typed again">
@@ -313,7 +313,7 @@ The run's denotations, completers and caches stay valid throughout: it is the sa
 <figcaption>Only definitions are replaceable. An aborted expression statement or a companion pair (I22: a case class's synthetics live in its object's tree) poisons the session, and every later request starts fresh (I23) ([session §3][S]).</figcaption>
 </figure>
 
-### 13. Leaving a file (I17)
+### 13. Before moving to another file, complete the skipped symbols (I17)
 
 ```mermaid
 sequenceDiagram
@@ -333,7 +333,7 @@ sequenceDiagram
 
 ## Part IV — Cancellation that unwinds
 
-### 14. Cancelling the future, not the work
+### 14. Stock cancellation never stops the typer
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 170" role="img" aria-label="Before: the cancel token cancels the future; the typer runs on">
@@ -356,7 +356,7 @@ sequenceDiagram
 <figcaption>[session §4][S]. The exception's cause is a <code>CancellationException</code>, so mtags classifies it as a cancellation and keeps the driver.</figcaption>
 </figure>
 
-### 15. The token path
+### 15. How a cancellation reaches the typer
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 150" role="img" aria-label="The cancellation token's path from the editor to the typer's checkpoint">
@@ -378,7 +378,7 @@ sequenceDiagram
 - `CompletionAbortSuite.abort-via-token` is this path without the editor: a token cancelled 20 ms after submission, the request answers its default, the driver is kept (the next run id is exactly one more) ([session §4][S]).
 - Not built on thread interrupts: the bit is unsticky and consumed, `ClosedByInterruptException` in a loader becomes a symbol marked absent, and catch-alls swallowed it.
 
-### 16. The unwind, frame by frame
+### 16. A cancellation unwinding the stack
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 360" role="img" aria-label="A cancellation unwinds the stack; each completeFrom frame clears Touched on its way out">
@@ -405,7 +405,7 @@ sequenceDiagram
 <figcaption>Each frame restores what it set on the way out: <code>completeFrom</code> clears <code>Touched</code>, a <code>LazyAnnotation</code> keeps its thunk, a <code>SymbolLoader</code> leaves its root loadable ([session §4][S]). The Lean model's <code>forceA_unlock_touched</code> against <code>touched_stays_cyclic</code> is this difference ([Track I §5][TI]).</figcaption>
 </figure>
 
-### 17. What survives an abort
+### 17. What is kept after a cancellation
 
 | kind of state | after a cancellation ([session §4][S]) |
 |---|---|
@@ -417,7 +417,7 @@ sequenceDiagram
 
 The soak suite (`CompletionSoakSuite`) is a seeded random walk of 300 requests, cancellations at random checkpoints and edits on one driver: every completion must equal a fresh whole-file run's, and no symbol of the file may be left `Touched`. It found I14 on its first run.
 
-### 18. Degrade instead of failing
+### 18. A cycle or a crash costs one symbol, not the request
 
 - `Touched` is cleared on every unwinding exception in interactive mode, not only cancellation; a flag found set on a symbol not in this reader's `completing` set is healed, not reported as a cycle.
 - A cycle costs one symbol for one request. Only an exception of unknown effect taints the run (the next request starts fresh). That is IntelliJ's `RecursionManager` discipline mapped onto `completeFrom` ([session §6][S]).
@@ -428,13 +428,13 @@ The soak suite (`CompletionSoakSuite`) is a seeded random walk of 300 requests, 
 
 ## Part V — Several readers: K2's rules
 
-### 19. What a second reader is for
+### 19. Why run a second request concurrently
 
 - With targeting, a hover queued behind a hover waits milliseconds. Step 0 replayed a recorded VS Code session (814 presentation-compiler events) with Metals' job queue instrumented: 89 to 93 percent of all queueing was behind whole-file work, the first `run` after an edit and the providers that walk the whole typed tree ([readers §0][M], §42).
 - So what a second reader buys is a *background pass* (diagnostics, semantic tokens, the session completed) beside foreground hovers that stay fast, and later several open files over one classpath symbol table ([readers §1][M]).
 - The measurement also warned: a targeted reader spends 65 to 79 percent of its CPU inside completers, 5 to 20 percent typing bodies (§43). A lock around completions would serialise most of it.
 
-### 20. Read actions and write actions
+### 20. Requests read concurrently; new text is written alone
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 190" role="img" aria-label="Readers run together; a writer raises the sticky flag, waits for readers to unwind, and runs alone">
@@ -457,7 +457,7 @@ The soak suite (`CompletionSoakSuite`) is a seeded random walk of 300 requests, 
 
 - Not snapshots. Roslyn's compilations are immutable, so an old reader finishes against the old world. dotc cannot do that while a run brings shared classpath denotations forward to its own run id: two runs cannot be read at once (I14). Snapshot readers need facts that outlive a run (stage 3) ([readers §2][M]).
 
-### 21. What a reader may write: K2's four rules
+### 21. What a concurrent request may write: K2's four rules
 
 | rule | stated for dotc ([readers §3][M]) |
 |---|---|
@@ -468,7 +468,7 @@ The soak suite (`CompletionSoakSuite`) is a seeded random walk of 300 requests, 
 
 Kotlin's low-level FIR resolves declarations in place under these rules (§48). dotc's typer broke all four: trees mutated in place, nothing published a completion, nothing recorded what content a type was computed against, and a cancelled typer left half-typed trees ([PR][PR]).
 
-### 22. Five kinds of state
+### 22. Five kinds of mutable state a request writes
 
 <div class="chips">{chip:A scratch} {chip:B lazy fact} {chip:C cache} {chip:D interning} {chip:E trees}</div>
 
@@ -485,7 +485,7 @@ flowchart LR
 - A *root* is the unit a completion is claimed by: whatever one completion writes together. A symbol loader completes a class and its module at once, and the TASTy completers of one file share one unpickler's address maps, so the claim is per pair or per file, not per symbol ([readers §3.1][M]). §24 lists the roots.
 - The `Reader` (kind A) found its own bug: it cannot be a field of the context, because contexts are captured (completer creation contexts, import contexts, skipped statements' contexts) and run later under another request. It is bound to the thread ([readers §8][M] step 2).
 
-### 22a. One seam: `Sharing`
+### 22a. `Sharing`: batch, serialised or parallel, chosen per symbol table
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="Three instances of Sharing, chosen per ContextBase: Batch, Serialised, Parallel">
@@ -516,7 +516,7 @@ private def lockAndComplete(completer: LazyType)(using Context): Unit =
 - *Concurrent* means several readers share the base; *parallel* means they run at once: the distinction of Marlow ([*Parallel and Concurrent Programming in Haskell*][marlowbook], chapter 1) and Pike ("Concurrency is not parallelism", Waza 2012, [go.dev blog][pike]). Serialised is coarse-grained, as K2's global phase resolve lock was before Kotlin 2.0 dropped the option to enable it (KT-66306) beside "LL FIR: Implement multi-threaded resolve" (KT-55750; both in the [2.0.0 ChangeLog][kt200]). Parallel is fine-grained: a claim per root, as K2's per-declaration locks and IntelliJ's read actions, where "multiple threads can read data at the same time" ([threading model][ijthread]).
 - Construction-time choices are plain methods called once per base or cache: `newEqHashMap`, `newMap`, `newUniques`. Operations that take code (`exclusive`, `claimed`, `privately`, `serialised`) are inline methods whose batch branch is the code as it was before concurrency: a batch call site compiles to a test of a final field and the original expression, and allocates nothing. The concurrent branches live in `interactive.SharingImpl` ([`Sharing.scala`][sharing]).
 
-### 22b. The `Reader`: scratch per thread
+### 22b. Per-request state moves to a per-thread `Reader`
 
 <div class="chips">{chip:A scratch}</div>
 
@@ -548,17 +548,17 @@ private def lockAndComplete(completer: LazyType)(using Context): Unit =
 - Batch pays one more dependent load on `comparer` and `handleRecursive` (§47).
 - A thread-local reaches the base that owns it, so a pool thread kept a replaced driver's whole symbol table alive (I83). The outermost cancel-checker scope now unbinds the thread when it ends; `DriverThreadLocalLeakSuite` checks through a `WeakReference` that the base is collected.
 
-### 22c. Interning and counters
+### 22c. Interning types from several threads
 
 <div class="chips">{chip:D interning}</div>
 
 - Types are hash-consed: `Uniques`, `NamedTypeUniques` and `AppliedUniques` are unsynchronised weak hash sets on the hottest path of type creation, and `_nextSymId += 1` allocates symbol ids. Names were already safe ([readers §3][M], kind D).
 - On a concurrent base `Sharing` chooses concurrent interners and an atomic counter at construction (§22a); batch keeps its own.
 - The first concurrent interners took one monitor each, hits included. With four readers they were contended: `ObjectMonitor::TrySpin` under `unique`; with the interners' own work and `SyncEqHashMap`'s lookups, about a quarter of what sharing cost per file. Spinning won before a reader parked, so none of it showed as a wait ([readers §8][M], shared against independent).
-- Now a hit takes no lock: a bucket's head is loaded with acquire, a new entry stored with release, a resize publishes the new table only once it is complete; a miss is looked up again under the monitor before it inserts, so equal types still intern to one object. With the same change to `SyncEqHashMap` and a fast path in `isCurrent`, this took shared k=4 from 12.7 to 11.1 ms per file (§46a).
+- Now a hit takes no lock: a bucket's head is loaded with acquire, a new entry stored with release, a resize publishes the new table only once it is complete; a miss is looked up again under the monitor before it inserts, so equal types still intern to one object. With the same change to `SyncEqHashMap` and a fast path in `isCurrent`, this took shared k=4 from 12.7 to 11.1 ms per file (§46b).
 - Interning order, and so symbol ids and fresh names, now depends on the schedule. Nothing may depend on it; the oracles compare up to fresh-name numbers ([readers §4.3][M]).
 
-### 23. Step 3: one coarse lock, and why it was not enough
+### 23. Step 3: one lock around all completions is correct but too slow
 
 <div class="chips">{chip:coarse lock}</div>
 
@@ -572,7 +572,7 @@ private def lockAndComplete(completer: LazyType)(using Context): Unit =
 
 The premise did not hold: body typing reads what completions are in the middle of writing. A serialised hover waits for whatever statement the pass is typing, and the statement's size does not predict it: a 95-character statement held the lock for 368 ms through the completions it forced.
 
-### 24. Completion as lazy resolve
+### 24. A completion has an owner; other readers wait for it
 
 <div class="chips">{chip:B lazy fact} {chip:claim}</div>
 
@@ -594,7 +594,7 @@ stateDiagram-v2
 - A Namer completion runs in a committable typer state of its own and reports to the namer's reporter, so a hover that forces a signature does not swallow its diagnostics.
 - Behind `-Yinteractive-parallel`; batch never allocates an `InProgress`.
 
-### 25. Two readers, one inferred signature
+### 25. Two readers need the same inferred signature
 
 ```mermaid
 sequenceDiagram
@@ -632,7 +632,7 @@ sequenceDiagram
 
 `def f = g + 1` and `def g = …`, both with inferred result types ([readers §3.1][M]). Part VII draws both branches as lanes.
 
-### 26. What the model says
+### 26. What the Lean model proves
 
 Before the compiler work, two forcers over one lazy store in Lean (`Query/Concurrent.lean`) and a two-reader kernel in the Java toy ([Track I, two readers][TC], [readers §7][M]):
 
@@ -679,7 +679,7 @@ Left to `decide` rather than proved: progress.
 <figcaption>Thirteen sites peek at <code>isCompleting</code> and take another path rather than force ([readers §4.1][M]). The model predicted it (<code>peek_any_races</code>); the two-reader suites found it ([readers §8][M], I41).</figcaption>
 </figure>
 
-### 28. A wait-for cycle, or a lock order (I54)
+### 28. Two readers waiting on each other is often not a real cycle (I54)
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 190" role="img" aria-label="Before: two roots taken in different orders raise a false CyclicReference">
@@ -706,7 +706,7 @@ Left to `decide` rather than proved: progress.
 <figcaption>A true dependency cycle then shows in the other reader alone, where a single reader would report it. The cross-thread cycle test gives the single-reader answer in all 30 rounds, backing off 19–25 times ([readers §8][M] step 4).</figcaption>
 </figure>
 
-### 29. The base-type cache's sentinel (I34)
+### 29. An in-progress mark in a shared cache, read as a cycle (I34)
 
 <div class="chips">{chip:C cache} {chip:A scratch}</div>
 
@@ -730,7 +730,7 @@ Left to `decide` rather than proved: progress.
 <figcaption>A second black hole hiding in a cache ([readers §8][M] step 3). The cache version also leaked the mark on cancellation.</figcaption>
 </figure>
 
-### 30. The period published before the denotation (I36)
+### 30. A stamp published before its value (I36)
 
 <div class="chips">{chip:C cache} {chip:ordered stamp}</div>
 
@@ -756,7 +756,7 @@ Left to `decide` rather than proved: progress.
 <figcaption>The one cost that cannot be chosen per mode: a field is a field in batch too. Plain moves on x86, <code>stlr</code>/<code>ldar</code> on Apple silicon; measured with perflab in §47 ([readers §8][M], [PR][PR]).</figcaption>
 </figure>
 
-### 30a. One immutable value: publish once, or packed
+### 30a. Publishing several fields as one immutable value
 
 <div class="chips">{chip:publish once} {chip:packed value}</div>
 
@@ -815,7 +815,7 @@ Left to `decide` rather than proved: progress.
 <figcaption>In the serialised mode the variable stayed in the namer's state and the enclosing statement instantiated it. In a state of its own it was dropped ([readers §8][M] step 4).</figcaption>
 </figure>
 
-### 32. The leaked claim that wedged the x-ray (I61)
+### 32. A claim not released after an exception froze the x-ray (I61)
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 180" role="img" aria-label="Before: a claim is released only on cancellation; another exception leaks it">
@@ -839,7 +839,7 @@ Left to `decide` rather than proved: progress.
 <figcaption>Any mode, not only with several readers ([readers §8][M] step 4). The x-ray now handles each request on a thread of its own and reports one that takes more than 30 s.</figcaption>
 </figure>
 
-### 33. The rest of the register
+### 33. Other races found and fixed
 
 | | finding ([readers §8][M]) |
 |---|---|
@@ -855,7 +855,7 @@ Left to `decide` rather than proved: progress.
 | I70, I72, I73, I75 | found by that hunt: a completion typed in the run's shared state without the lock; three more peeks at another reader's `InProgress` (`ensureCompletions`, `typeParams`, the self type); a cached empty list computed while another reader's completion started |
 
 
-### 33a. The shapes of race in shared caches (I68)
+### 33a. Four kinds of race in shared caches (I68)
 
 <div class="chips">{chip:C cache}</div>
 
@@ -901,7 +901,7 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 <figcaption>The rule I66 made for locals, applied to statements; lazy annotation arguments and inline bodies, typed by whichever reader forces them, get a private child state too ([readers §8][M] step 4). A change to how a session keeps constraints, not a race fix.</figcaption>
 </figure>
 
-### 33c. Who backs off: victim selection (I74)
+### 33c. Which reader backs off from a wait-for cycle (I74)
 
 <div class="chips">{chip:claim} {chip:wait, don't peek}</div>
 
@@ -933,7 +933,7 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 - **I87, a cycle raised from a stale chain.** A reader clears its `waitingOn` only after it wakes, so the wait-for chain could still run through a claim just released, and a `CyclicReference` was raised between two readers neither of which was waiting; it became the symbol's info, and every later answer reading it was wrong. `cycleChain` now stops at a released claim, and a cycle is raised only when the same chain of live claims is seen at two looks a slice apart ([#84][PR], 88d7abff96).
 
 
-### 33d. Stamped caches: one idiom
+### 33d. Caches stamped with a period: one helper for all of them
 
 <div class="chips">{chip:C cache} {chip:ordered stamp}</div>
 
@@ -970,7 +970,7 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 
 <div class="fn">¹ A survey of #84 at 911b78d4f8, before <code>Caching</code>, over <code>compiler/src</code>; <code>Denotation.myValidFor</code> and <code>Phase.myPeriod</code> are not caches and are not counted.</div>
 
-### 33e. A guard must say which mode it means (I86)
+### 33e. A fix guarded by the wrong mode flag (I86)
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 190" role="img" aria-label="A fix for parallel readers, guarded by concurrent, also changed the serialised mode and broke a document-highlight test">
@@ -991,7 +991,7 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 - The first fix copied the trees on any concurrent base, and `DocumentHighlightSuite.extension-with-type-param4` failed: the serialised mode had changed behaviour too. `concurrent` covers serialised and parallel readers; a guard has to name the mode it means.
 - `ExtensionParamsSuite`: 60 extension methods and 6 files calling them, 7 readers at once. Before, an assertion in round 1 of 3 runs out of 3; after, 30 rounds clean in 6 runs.
 
-### 33f. Patterns: safe publication
+### 33f. Patterns for publishing a value safely
 
 <div class="chips">{chip:publish once} {chip:packed value} {chip:ordered stamp}</div>
 
@@ -1005,7 +1005,7 @@ Types are hash-consed, and symbols, denotations, scopes, annotations and import 
 
 All of these are rule 2 of §21 at the level of one field: another reader sees "not computed" or the finished value.
 
-### 33g. Patterns: locking and ownership
+### 33g. Patterns for locking and ownership
 
 <div class="chips">{chip:coarse lock} {chip:claim} {chip:private state} {chip:wait, don't peek}</div>
 
@@ -1019,7 +1019,7 @@ All of these are rule 2 of §21 at the level of one field: another reader sees "
 
 Coarse-grained against fine-grained is the step 3 / step 4 split. The fine-grained form's machinery is about 2 percent of the background pass's CPU ([readers §8][M] step 4), and keeps hovers at about 1 ms beside it (§44).
 
-### 33h. Testing concurrency
+### 33h. How the concurrency was tested
 
 | layer | what it checks | found |
 |---|---|---|
@@ -1036,13 +1036,13 @@ A soak that hammers one pattern, written out longhand as well, separates "the se
 
 ---
 
-## Part VII — Readers side by side
+## Part VII — Several readers drawn as lanes over time
 
 Each panel is lanes over time, running down: readers at the edges, the roots they claim in the middle. A root's lane shows its state: idle, in progress with an owner, done.
 
 <div class="legend"><span><i class="own"></i>in progress, owned (and the owner's work)</span><span><i class="wait"></i>waiting on a barrier</span><span><i class="typed"></i>published, done</span><span><i class="skip"></i>idle: a lazy type</span><span><i class="bad"></i>cancelled</span></div>
 
-### 34. A claim, a wait, a publication
+### 34. Lanes: one reader completes g, another waits for it
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 360" role="img" aria-label="R2 owns g; R1 owns f and waits on g's barrier; R2 publishes g; R1 completes f and answers">
@@ -1071,7 +1071,7 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 <figcaption>Rule 2 is the barrier: nobody but the owner sees <code>f</code> or <code>g</code> half-completed. Rule 3: whoever completes <code>g</code> writes the same <code>T_g</code> ([readers §3.1][M]).</figcaption>
 </figure>
 
-### 35. A cancelled owner hands over
+### 35. Lanes: the owner is cancelled, the waiter takes over
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 360" role="img" aria-label="R2 owns g and is cancelled; it unwinds, restores the lazy type and opens the latch; R1 takes over and completes g">
@@ -1098,7 +1098,7 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 <figcaption>Rule 4, and the model's <code>abort_waiter_takes_over</code>. With dotc's old discipline (<code>Touched</code> left set) the barrier is owned by a reader that no longer exists and R1 waits for the rest of the run (<code>abort_keep_hole_waiter_stuck</code>). So the owner resets the root in its own unwind path, before releasing it ([Track I, two readers][TC]). A waiter cancelled by a writer is cancelled too; hand-over is for an owner's own failure ([readers §9][M]).</figcaption>
 </figure>
 
-### 36. A background pass beside hovers
+### 36. Lanes: hovers while another thread types the whole file
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 380" role="img" aria-label="A background pass claims and types one skipped statement at a time; hovers on another reader are served, wait for the claimed statement, or claim one the pass has not reached">
@@ -1134,7 +1134,7 @@ Each panel is lanes over time, running down: readers at the edges, the roots the
 
 ## Part VIII — Edits that keep the run, ranges, diagnostics
 
-### 37. Classifying an edit
+### 37. After an edit: keep the run, or start a new one?
 
 ```mermaid
 flowchart TB
@@ -1152,7 +1152,7 @@ flowchart TB
 - The comparison is with a pristine parse kept on the session, not the unit's tree: the Namer mutates the trees it indexes (`setMods`), and comparing against those would take false fresh runs.
 - The re-index refines D's old symbols (same identity, so every typed reference stays valid) and checks that the new info is `=:=` the old: the Lean toy's backdating (`tier1_body_edit`). Behind `-Yinteractive-body-edits`.
 
-### 38. Shifting the spans
+### 38. Moving every position after the edit
 
 <figure class="fig anim">
 <svg viewBox="0 0 740 230" role="img" aria-label="After an edit inside method10, spans after the edit move by delta; spans containing it grow; method10 is re-indexed and skipped">
@@ -1176,7 +1176,7 @@ flowchart TB
 <figcaption>Eager, in place: every tree the session holds, every symbol's coordinate, the diagnostics, and the <code>SourceFile</code> itself, so identity checks need no rewriting. A copying <code>TreeMap</code> would leave <code>defTree</code>, root trees and caches in the old frame ([session §12][S]).</figcaption>
 </figure>
 
-### 39. 382 ms to 6 ms
+### 39. The whole-file run after a keystroke: 382 ms to 6 ms
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="The whole-file run after a keystroke, with and without body edits, median ms">
@@ -1197,7 +1197,7 @@ flowchart TB
 
 Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a method with an inferred result type) took a fresh run, as designed. Step 0 found about 90 percent of the queueing behind exactly this whole-file request (§42).
 
-### 40. Range requests
+### 40. Typing only the visible lines
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 210" role="img" aria-label="A range target types the statements that touch the visible window and skips the rest">
@@ -1264,9 +1264,11 @@ Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a me
 
 ---
 
-## Part IX — The measurements
+## Part IX — Measurements
 
-### 42. Where the queueing went
+### 42. What a hover waits behind in Metals' queue
+
+**The experiment** (step 0). A VS Code session on the compiler's own sources was recorded (814 presentation-compiler requests) and replayed against Metals' real job queue, which runs one request at a time. For every request that had to wait, the chart shows what the requests that ran ahead of it were doing.
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 200" role="img" aria-label="Share of queueing delay by what ran in between, four replays">
@@ -1289,7 +1291,9 @@ Of the 45 edits, 43, 40 and 39 were body edits; the rest (an inline method, a me
 
 The verdict at the time: concurrency would overlap the fifth of a reader that is body typing; the cheaper moves (a session that survives an edit, range requests) come first. That is the order the work then took.
 
-### 43. Where a reader's CPU goes
+### 43. How much of a request's CPU is spent completing symbols
+
+**The experiment** (step 0). CPU profiles of the replays above, each sample classified by its stack: inside a completion (computing a symbol's signature, loading a class, reading TASTy), typing a body, or anything else.
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 170" role="img" aria-label="Share of a reader's CPU inside completers, body typing and other work">
@@ -1309,36 +1313,56 @@ The verdict at the time: concurrency would overlap the fifth of a reader that is
 <figcaption>[readers §0][M]. A coarse completion lock would serialise four fifths of a reader. Step 3's lock did; step 4 replaced it with a claim per root (§24).</figcaption>
 </figure>
 
-### 44. Hovers beside a background pass
+### 44. A hover while another thread types the whole file
+
+**The experiment** (the x-ray, `core/Types.scala`, warm JVM). One thread does what Metals' diagnostics and semantic tokens need: it types the whole file, the visible lines first and then every statement still skipped. That is the *background pass*. Meanwhile a second thread sends hovers at random identifiers, back to back, and each hover is timed. The same experiment is run on three builds of the driver:
+
+| build | how the hover relates to the pass | expected |
+|---|---|---|
+| step 3, hover outside the lock | completions under one lock, the hover's own reads not | fast, but can read a completion the pass has half finished (I48) |
+| step 3, hover under the lock | the hover's whole read under the same lock | correct, but waits for whatever statement the pass is typing |
+| step 4, a claim per root | the hover waits only for a symbol the pass is completing at that moment | fast and correct |
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 190" role="img" aria-label="Hover wall time beside a background pass on Types.scala, median and p90, log scale">
-  <text x="0" y="14" class="h">hover beside a pass, Types.scala, ms (log scale)</text>
+  <text x="0" y="14" class="h">hover time while the pass runs, Types.scala, ms (log scale)</text>
   <line x1="171" y1="150" x2="680" y2="150" class="ln"/>
   <line x1="171" y1="30" x2="171" y2="150" class="ln"/><text x="171" y="166" text-anchor="middle" class="m">1</text>
   <line x1="341" y1="30" x2="341" y2="150" class="ln"/><text x="341" y="166" text-anchor="middle" class="m">10</text>
   <line x1="510" y1="30" x2="510" y2="150" class="ln"/><text x="510" y="166" text-anchor="middle" class="m">100</text>
   <line x1="680" y1="30" x2="680" y2="150" class="ln"/><text x="680" y="166" text-anchor="middle" class="m">1,000</text>
-  <text x="0" y="52" class="b">coarse lock</text><text x="0" y="66" class="m">reads outside</text>
+  <text x="0" y="52" class="b">step 3</text><text x="0" y="66" class="m">hover outside the lock</text>
   <path d="M 171 56 L 323 56" class="s-bad a-draw" pathLength="1" style="--d:.3s" stroke-width="2"/><circle cx="171" cy="56" r="6" class="f-bad a-pop" style="--d:.2s"/><text x="330" y="60" class="c-bad a-in" style="--d:.6s">1.0 / 7.9, wrong answers (I48)</text>
-  <text x="0" y="92" class="b">serialised</text><text x="0" y="106" class="m">reads under it</text>
+  <text x="0" y="92" class="b">step 3</text><text x="0" y="106" class="m">hover under the lock</text>
   <path d="M 536 96 L 622 96" class="s-own a-draw" pathLength="1" style="--d:.6s" stroke-width="2"/><circle cx="536" cy="96" r="6" class="f-own a-pop" style="--d:.5s"/><text x="530" y="82" class="c-own a-in" style="--d:.9s">141 / 457</text>
-  <text x="0" y="132" class="b">lazy resolve</text><text x="0" y="146" class="m">-Yinteractive-parallel</text>
+  <text x="0" y="132" class="b">step 4</text><text x="0" y="146" class="m">a claim per root</text>
   <path d="M 184 136 L 328 136" class="s-typed a-draw" pathLength="1" style="--d:.9s" stroke-width="2"/><circle cx="184" cy="136" r="6" class="f-typed a-pop" style="--d:.8s"/><text x="336" y="140" class="c-typed b a-in" style="--d:1.2s">1.2 / 8.4, right answers</text>
 </svg>
-<figcaption>Dot: median; line to the p90. <code>Typer.scala</code>: 0.7 / 11.5, 158 / 279 and 0.7 / 15.5 ms. In the lazy-resolve runs 3 of 412 hovers waited on a root ([readers §8][M], steps 3 and 4).</figcaption>
+<figcaption>Dot: median hover; line to the p90. <code>Typer.scala</code> gives the same picture: 0.7 / 11.5, 158 / 279 and 0.7 / 15.5 ms ([readers §8][M], steps 3 and 4).</figcaption>
 </figure>
 
-### 45. The replay ties, and why
+- Under the lock a hover waits for the pass: a median of 141 ms, and only 20 hovers got in during a pass. The statement's size does not predict the wait; the completions it forces do (§23).
+- With a claim per root, 412 hovers ran beside the passes and 3 of them waited on a root at all; the pass's diagnostics still equal a whole-file run's (§36).
+- So of the three, only step 4 gives the editor a millisecond hover while diagnostics are being computed.
+
+### 45. Replaying a recorded editing session: all three builds take the same time
+
+**The experiment.** The x-ray replays part of a recorded VS Code session on the compiler's own sources (step 0's trace, §42): the stretch where `Typer.scala` is edited 15 times, 120 requests, sent with their original timing. It is replayed against a fresh driver in three builds, and each request is timed:
+
+- **Metals today:** no targeting; `CachingDriver` reuses the last whole-file run if the text is unchanged.
+- **The targeted session** (step 3, the default).
+- **Step 4**, a claim per root (`-Yinteractive-parallel`).
+
+**The result:** the three take the same time, request for request, and give the same answers.
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 170" role="img" aria-label="Replay latency median and p90 for three modes: they tie">
-  <text x="0" y="14" class="h">120 requests, Typer.scala edited 15 times, ms</text>
+  <text x="0" y="14" class="h">latency of 120 replayed requests, ms</text>
   <text x="0" y="48" class="b">Metals today</text><text x="0" y="62" class="m">no targeting + CachingDriver</text>
   <rect x="200" y="36" width="25" height="12" rx="2" class="skip a-grow-x" style="--d:.1s"/><rect x="200" y="50" width="403" height="12" rx="2" class="pub a-grow-x" style="--d:.2s"/><text x="610" y="60" class="a-in" style="--d:.7s">10.0 / 161</text>
-  <text x="0" y="96" class="b">targeted session</text><text x="0" y="110" class="m">default</text>
+  <text x="0" y="96" class="b">targeted session</text><text x="0" y="110" class="m">step 3, the default</text>
   <rect x="200" y="84" width="28" height="12" rx="2" class="skip a-grow-x" style="--d:.2s"/><rect x="200" y="98" width="403" height="12" rx="2" class="pub a-grow-x" style="--d:.3s"/><text x="610" y="108" class="a-in" style="--d:.8s">11.0 / 161</text>
-  <text x="0" y="144" class="b">lazy resolve</text><text x="0" y="158" class="m">-Yinteractive-parallel</text>
+  <text x="0" y="144" class="b">step 4</text><text x="0" y="158" class="m">a claim per root</text>
   <rect x="200" y="132" width="26" height="12" rx="2" class="skip a-grow-x" style="--d:.3s"/><rect x="200" y="146" width="405" height="12" rx="2" class="pub a-grow-x" style="--d:.4s"/><text x="610" y="156" class="a-in" style="--d:.9s">10.4 / 162</text>
 </svg>
 <div class="legend"><span><i class="skip"></i>median</span><span><i class="pub"></i>p90</span></div>
@@ -1356,9 +1380,15 @@ sequenceDiagram
   Note over D: all served: nothing left to skip,<br/>and one request at a time leaves<br/>nothing for a second reader to overlap
 ```
 
-The modes tie because the first request after each edit types the whole file. What changes an editing session is the body-edit flag (§39) and range requests on the Metals side (§40); what the readers buy is the background pass beside hovers (§36, §44). An earlier table had the targeted modes at 231–296 ms median: I58, a whole-file run that left no session, hidden in the baseline by `CachingDriver`.
+**Why.** After each edit, the first request Metals sends is inlay hints, and Metals asks for them over the whole file, so the first thing every build does is type the whole file. After that every hover and highlight is served from what is typed: there is nothing left for targeting to skip, and since the replay sends one request at a time there is nothing for a second reader to do alongside.
 
-### 46. Several readers over one run
+What would change this session is keeping the run across an edit (§39), and Metals asking for inlay hints and semantic tokens over the visible range only (§40). A second reader helps only when there is background work to run beside the hovers (§44).
+
+An earlier run had the targeted builds at 231–296 ms median, against 8 ms. That was a bug, I58: a whole-file run left no session, so every next request typed the file again. `CachingDriver` had been hiding it in the baseline.
+
+### 46. Typing all 484 compiler files with 1 to 8 threads
+
+**The experiment.** One run opens every file of `compiler/src/dotty/tools/dotc` with every top-level statement skipped; then k threads type the files between them, each file as the background pass does (visible lines first, then the rest). The wall time is compared with the batch compiler up to the typer on the same files.
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 336" role="img" aria-label="Wall time and worker CPU typing 484 compiler files with 1, 2, 4 and 8 readers">
@@ -1385,7 +1415,7 @@ The modes tie because the first request after each edit types the whole file. Wh
 - What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
 - Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§33a–§33c) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
 
-### 46b. The x-ray's throughput demo
+### 46a. The same on the x-ray: 1 to 6 threads, and the serial open
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 300" role="img" aria-label="Speed-up against one reader for N=1 to 6 readers, two builds, with linear speed-up for reference">
@@ -1414,7 +1444,7 @@ The modes tie because the first request after each edit types the whole file. Wh
 - Run 1: worker CPU grows only 18 percent from one reader to six, root waits are at most 15 per cell and under 1 ms, no file's diagnostics differ, and the batch typer on the same files takes 5.42 s. What stops the curve is the time outside the workers, about 0.57 s at every N (derived as above, not measured): opening the set is serial.
 - Run 2 parses in parallel and hands out the largest files first: the open is 0.31 s (measured), the tail of the timeline 0 to 7 ms, and four readers are 2.98 times one (wall 4.93, 2.80, 2.08, 1.65 s; worker CPU 1.00, 1.07, 1.14, 1.15 of N=1's). Its batch reference moved to 6.41 s without an explanation, so it is not used here.
 
-### 46a. What four readers cost per file
+### 46b. Why four threads are not four times faster
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 180" role="img" aria-label="Worker CPU per file: shared k=1 9.06 ms, independent k=4 10.57 ms, shared k=4 11.08 ms">
@@ -1434,7 +1464,7 @@ The modes tie because the first request after each edit types the whole file. Wh
 - Getting there: interner and table hits without the monitor (`ConcurrentWeakHashSet`, `SyncEqHashMap`), and `isCurrent` deciding a completed denotation without the in-progress view. Shared k=4 went from 12.7 to 11.1 ms per file with instructions unchanged: they removed stalls and spinning, not work.
 - What is left of sharing's cost is a few percent and spread (`ownView` on flags paths, tree copying); the growth at N=4–6 is mostly the machine.
 
-### 47. The batch compiler pays nothing it can measure
+### 47. Batch compilation: no measurable cost
 
 | corpus | build | ms/op, median of 5 rounds | Δ | instructions/op | Δ |
 |---|---|---|---|---|---|
@@ -1533,14 +1563,14 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 - **The step 3 vs step 4 perflab campaign**, paused at 4 of 8 rounds, within 1–4 percent.
 - `testCompilation` not yet run on the provenance branch.
 
-### 58. Lessons: what to measure, and what the proof is
+### 58. Lessons about measurement and correctness
 
 - **Measure the queue before building the concurrency.** Nine tenths of the queueing was behind whole-file work (§42); that set the order of everything after it.
 - **The barrier is the whole correctness argument.** `run_agree` said so, and every divergence found since was a reader seeing unpublished state, not a scheduling problem (§26).
 - **dotc has no "concurrency in body typing only".** Typing a body forces completions, and 65–79 percent of a reader's time is inside them; step 3 was a correct stepping stone and a wrong ship point (§23).
 - **The editor's cost is the whole-file askers.** Readers pay off once inlay hints and semantic tokens are ranges and the whole-file work is a background pass; for keystrokes, the win is keeping the run (§39, §40).
 
-### 59. Lessons: every peek is a race
+### 59. Lessons about races
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 150" role="img" aria-label="A completion in progress on another reader is a state to wait for, never one to act on">
@@ -1558,7 +1588,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 - **Roots coarser than facts turn lock orders into cycles.** Raising `CyclicReference` there made false errors (I54); backing off made I74. The `Setting` residue is the same tension one level down (§28, §33c).
 - **The hunt that worked:** the k=8 whole-set run in a loop, each file's diagnostics diffed against a single-reader run, the claim log around each divergence, one shape at a time, each added to a suite; and two review sweeps for the known shapes, which found eleven more instances before the loop would have (§33a).
 
-### 60. Lessons: a shared typer state is a channel
+### 60. Lessons about shared typer state, batch cost and demos
 
 <figure class="fig anim">
 <svg viewBox="0 0 720 170" role="img" aria-label="Committing into a shared typer state lets one reader's binding reach another's typing; a private state, settled and dropped, closes the channel">
@@ -1591,7 +1621,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 - Stage 3: facts that outlive a run (completers as functions of node and owner, re-validation by trace), for snapshot readers across an edit.
 - The same inventory for Scala 2 runtime reflection: one composite scratch object behind a single override, then per-root barriers in place of the global lock (in progress on a branch of scala/scala).
 
-### 62. Upstreamable now
+### 62. Fixes that can go upstream now
 
 Independent of the experiment's flags, each with a test on the branch:
 
