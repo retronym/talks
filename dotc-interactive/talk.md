@@ -518,7 +518,18 @@ stateDiagram-v2
   Done --> [*]
 ```
 
-- The roots (§22): a loader's class and module together, a TASTy file, a Namer symbol by itself, and as roots of their own the inherited caches (base data, member names), the lazy TASTy reads, `LazyRef` computations and, under one key, every bring-forward to a new run ([readers §8][M] step 4).
+- What a reader claims before a completion (§22 defines claim and root; [readers §3.1, §8][M] step 4):
+
+| root | what one completion fills in | why it is claimed as one |
+|---|---|---|
+| a classpath class and its companion | the class and its module, read from one class or TASTy file | one loader enters both at once |
+| a TASTy file | every symbol whose definition the file holds | its completers share the unpickler's tables from file offsets to symbols and trees |
+| a symbol of the file being edited | that symbol's signature, typed by the Namer | nothing else is written with it |
+| a class's inherited data | its base classes and the names of its members, computed once per class | it had an in-progress mark of its own, a second black hole |
+| a tree read from TASTy on demand | that tree | it reads the same shared tables as the file's completers (I35) |
+| a `LazyRef`, a type computed on first use | that type | another reader took one in progress for a cycle (I57) |
+| bringing a denotation forward to a new run (§4) | the denotation's validity and its place in the ring | one key covers every bring-forward |
+
 - While it runs, the symbol's info is an `InProgress`, a lazy type only the owner sees through. Every other reader meets a lazy type and takes the existing slow path of `Denotation.info`, which waits on the root. The hot test, `myInfo.isInstanceOf[LazyType]`, is unchanged.
 - A Namer completion runs in a committable typer state of its own and reports to the namer's reporter, so a hover that forces a signature does not swallow its diagnostics.
 - Behind `-Yinteractive-parallel`; batch never allocates an `InProgress`.
