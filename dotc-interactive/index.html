@@ -690,7 +690,7 @@ Kotlin's low-level FIR resolves declarations in place under these rules (§48). 
 </figure>
 
 - Scala 3 had no precedent for concurrent readers of symbols or types ([readers §3][M]).
-- A *root* is the unit a completion is claimed by: whatever one completion writes together. A symbol loader completes a class and its module at once, and the TASTy completers of one file share one unpickler's address maps, so the claim is per pair or per file, not per symbol ([readers §3.1][M]). §24 lists the roots.
+- Before a reader runs a completion it takes exclusive ownership of the completion's *root*; that is a *claim*. While it holds the claim, any other reader that needs one of the root's symbols waits. The root is the group of symbols the completion fills in together: a symbol loader completes a class and its module at once, so the pair is one root; the TASTy completers of one file share the unpickler's address maps, so the file is one root ([readers §3.1][M]). §24 lists the roots.
 
 ### 22a. `Sharing`: batch, serialised or parallel, chosen per symbol table
 
@@ -796,7 +796,7 @@ stateDiagram-v2
   Done --> [*]
 ```
 
-- One claim per root (§22): a loader's class and module together, a TASTy file, a Namer symbol by itself, and as roots of their own the inherited caches (base data, member names), the lazy TASTy reads, `LazyRef` computations and, under one key, every bring-forward to a new run ([readers §8][M] step 4).
+- The roots (§22): a loader's class and module together, a TASTy file, a Namer symbol by itself, and as roots of their own the inherited caches (base data, member names), the lazy TASTy reads, `LazyRef` computations and, under one key, every bring-forward to a new run ([readers §8][M] step 4).
 - While it runs, the symbol's info is an `InProgress`, a lazy type only the owner sees through. Every other reader meets a lazy type and takes the existing slow path of `Denotation.info`, which waits on the root. The hot test, `myInfo.isInstanceOf[LazyType]`, is unchanged.
 - A Namer completion runs in a committable typer state of its own and reports to the namer's reporter, so a hover that forces a signature does not swallow its diagnostics.
 - Behind `-Yinteractive-parallel`; batch never allocates an `InProgress`.
