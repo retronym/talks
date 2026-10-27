@@ -275,7 +275,8 @@ main { max-width: 1260px; }
 .cog { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
 .scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
-.ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; }
+.ed-tabs { border-radius: 10px 10px 0 0; overflow: hidden; }
 .ed-tabs { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
 .ed-tab { background: var(--card); padding: 6px 14px; border-right: 1px solid var(--rule); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
 .ed-run { color: var(--muted); padding: 0 12px; font-size: 12px; }
@@ -300,6 +301,20 @@ main { max-width: 1260px; }
 .sym.tick { outline: 2px solid var(--tk); outline-offset: 2px; }
 .sym.tk-T1 { --tk: var(--t1); } .sym.tk-T2 { --tk: var(--t2); } .sym.tk-T3 { --tk: var(--t3); }
 .sym.pulse { outline-style: dashed; }
+/* Cards: a completion with no claim, a false error, the fields a step is about */
+.sym.s-busy.o-T1 { box-shadow: inset 0 0 0 1.5px var(--t1); background: repeating-linear-gradient(135deg, var(--t1-bg) 0 4px, transparent 4px 8px); }
+.sym.s-busy.o-T2 { box-shadow: inset 0 0 0 1.5px var(--t2); background: repeating-linear-gradient(135deg, var(--t2-bg) 0 4px, transparent 4px 8px); }
+.badge.b-busy { border-style: dashed; }
+.badge.b-busy.o-T1 { color: var(--t1); } .badge.b-busy.o-T2 { color: var(--t2); }
+.sym.squig { text-decoration: underline wavy var(--bad); text-underline-offset: 4px; }
+.ed-pop.bad { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
+.st-stuck, .st-failed { color: var(--bad); }
+table.heap td { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; }
+table.heap td.c-bad { color: var(--bad); font-weight: 600; } table.heap td.c-good { color: var(--typed); } table.heap td.c-mut { color: var(--muted); }
+a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: var(--chip-pat); }
+.dgroup.g-problem .dot.on { background: var(--bad); border-color: var(--bad); }
+.dgroup.g-fixed .dot.on { background: var(--typed); border-color: var(--typed); }
+.card .scenario + blockquote { margin-top: 14px; }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background .45s, box-shadow .45s, text-decoration-color .45s, outline-color .3s; }
 .badge { transition: background .45s, color .45s, border-color .45s; }
@@ -523,8 +538,21 @@ body.focus .scn-cap { font-size: 18px; }
   });
 
   // 5b. The scenario player: the editor in the middle, symbol states on the code, threads and symbols beside it.
-  // frames.json holds deltas; a frame's state is the fold of the frames before it (or from frame `reset`).
-  const scenario = JSON.parse(document.getElementById('frames-src').textContent);
+  // frames.json holds the scenario and the cogs' cards, each a list of frames. A frame is a delta; its state is the
+  // fold of the frames before it (or from frame `reset`). A card takes the scenario's file, symbols and threads, and
+  // may show only some lines (`lines`), some threads and some symbols.
+  const data = JSON.parse(document.getElementById('frames-src').textContent);
+  const scenario = data.scenario;
+  const cardScenarios = {};
+  Object.entries(data.cards).forEach(([id, c]) => {
+    cardScenarios[id] = Object.assign({ file: scenario.file, code: scenario.code, edit: scenario.edit, units: scenario.units, cogs: scenario.cogs }, c, {
+      id,
+      symbols: scenario.symbols.filter(x => !c.symbols || c.symbols.includes(x.id)),
+      threads: scenario.threads.filter(t => !c.threads || c.threads.includes(t.id)),
+      allSymbols: scenario.symbols
+    });
+  });
+  scenario.allSymbols = scenario.symbols;
   const players = [];
   function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def']);
@@ -546,42 +574,55 @@ body.focus .scn-cap { font-size: 18px; }
     const m = /^(\w+)(?::(\w+))?(?:\|([\w,]+))?$/.exec(v || 'lazy');
     return { st: m[1], owner: m[2] || null, waiters: m[3] ? m[3].split(',') : [] };
   }
-  function stateAt(k) {
-    const fr = scenario.frames;
-    const f = fr[k];
-    let s = k === 0 ? { units: {}, syms: {}, lanes: {}, run: '', edited: false }
-      : f.reset != null ? stateAt(f.reset) : stateAt(k - 1);
+  function stateAt(sc, k) {
+    const f = sc.frames[k];
+    let s = k === 0 ? { units: {}, syms: {}, lanes: {}, run: '', edited: false, heap: null }
+      : f.reset != null ? stateAt(sc, f.reset) : stateAt(sc, k - 1);
     s = JSON.parse(JSON.stringify(s));
     if (f.run) s.run = f.run;
     if (f.edited != null) s.edited = f.edited;
+    if (f.heap !== undefined) s.heap = f.heap;
     Object.entries(f.units || {}).forEach(([u, v]) => { if (v == null) delete s.units[u]; else s.units[u] = v; });
-    if (f.syms && f.syms['*']) scenario.symbols.forEach(x => { s.syms[x.id] = f.syms['*']; });
+    if (f.syms && f.syms['*']) sc.allSymbols.forEach(x => { s.syms[x.id] = f.syms['*']; });
     Object.entries(f.syms || {}).forEach(([x, v]) => { if (x !== '*') s.syms[x] = v; });
     Object.assign(s.lanes, f.lanes || {});
     return s;
   }
-  const STATUS = { typing: 'typing', waiting: 'waiting', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled' };
+  const STATUS = { typing: 'typing', waiting: 'waiting', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled', stuck: 'waits forever', failed: 'failed' };
   function threadChip(t) { return '<span class="th th-' + t + '">' + t + '</span>'; }
   function badgeText(p) {
     if (p.st === 'prog') return 'InProgress · ' + p.owner;
+    if (p.st === 'busy') return 'completing · ' + p.owner;
     if (p.st === 'unwound') return 'unwound' + (p.owner ? ' · ' + p.owner : '');
     return p.st;
+  }
+  // A cell of a fields table: a leading "!" marks a wrong value, "+" a right one, "~" one not yet visible.
+  function cell(v) {
+    const c = { '!': 'c-bad', '+': 'c-good', '~': 'c-mut' }[v[0]];
+    return c ? '<td class="' + c + '">' + esc(v.slice(1)) + '</td>' : '<td>' + esc(v) + '</td>';
+  }
+  // The card a cog of the scenario opens: its own, or the card that explains it alongside another.
+  const CARD_OF = { wait: 'claim', cancel: 'write', bodyedit: 'write' };
+  function cardLink(cog) {
+    const host = main.querySelector('.scenario[data-card="' + (CARD_OF[cog] || cog) + '"]');
+    return host ? host.closest('.card') : null;
   }
   // The player builds the editor, panel and lanes once and then updates them in place, so that a step forward is
   // a transition from the previous state. Within a step the changes play in the order the frame lists its symbols
   // (the order of the trace): each symbol has a slot, a thread's tick and its lane change share the slot of the
   // symbol it touches, and the hover popup comes last. A step back, a jump or a reset shows the state at once.
   const SLOT = 420, FIRST = 250;
-  function buildPlayer(host) {
-    const sc = scenario;
+  function buildPlayer(host, sc) {
     const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
+    const [from, to] = sc.lines || [1, sc.code.length];
     host.innerHTML =
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
         '<div class="side">' +
           '<div class="side-h">Threads</div><div class="lanes"></div>' +
-          '<div class="side-h">Symbols</div><table class="symtab"><thead><tr><th>symbol</th><th>state</th><th>owner</th><th>waiting</th></tr></thead><tbody></tbody></table>' +
+          '<div class="heap-wrap" hidden><div class="side-h heap-h"></div><table class="symtab heap"><thead></thead><tbody></tbody></table></div>' +
+          (sc.symbols.length ? '<div class="side-h">Symbols</div><table class="symtab syms"><thead><tr><th>symbol</th><th>state</th><th>owner</th><th>waiting</th></tr></thead><tbody></tbody></table>' : '') +
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
@@ -590,27 +631,32 @@ body.focus .scn-cap { font-size: 18px; }
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
     let group = null;
     sc.frames.forEach((f, i) => {
-      const g = f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass';
-      if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup'; d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
+      const g = f.group || (f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass');
+      if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup g-' + g.toLowerCase().replace(/\W+/g, '-'); d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
       const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = f.beat; b.title = f.title;
       b.onclick = () => { stop(); show(i); };
       dots.lastChild.querySelector('.drow').appendChild(b);
     });
 
     // Built once.
-    const lines = sc.code.map((text, j) => {
-      const n = j + 1, sy = symByLine[n];
+    const lines = [];
+    sc.code.forEach((text, j) => {
+      const n = j + 1;
+      if (n < from || n > to) return;
+      const sy = symByLine[n];
       const l = document.createElement('div'); l.className = 'l';
       l.innerHTML = '<span class="gb"></span><span class="no">' + n + '</span><span class="code"></span><span class="ov">' + (sy ? '<span class="badge"></span>' : '') + '</span>';
       linesEl.appendChild(l);
-      return { l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null };
+      lines.push({ n, l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null });
     });
     const lanes = {};
     $('.lanes').innerHTML = sc.threads.map(t => '<div class="lane" data-t="' + t.id + '">' + threadChip(t.id) + '<span class="role">' + esc(t.role) + '</span><span class="st"></span><span class="act"></span></div>').join('');
     host.querySelectorAll('.lane').forEach(el => { lanes[el.dataset.t] = { el, st: el.querySelector('.st'), act: el.querySelector('.act') }; });
     const rows = {};
-    $('.symtab tbody').innerHTML = sc.symbols.map(x => '<tr data-s="' + x.id + '"><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge"></span></td><td class="own"></td><td class="wt"></td></tr>').join('');
-    host.querySelectorAll('.symtab tr[data-s]').forEach(tr => { rows[tr.dataset.s] = { tr, badge: tr.querySelector('.badge'), own: tr.querySelector('.own'), wt: tr.querySelector('.wt') }; });
+    if (sc.symbols.length) {
+      $('.syms tbody').innerHTML = sc.symbols.map(x => '<tr data-s="' + x.id + '"><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge"></span></td><td class="own"></td><td class="wt"></td></tr>').join('');
+      host.querySelectorAll('.syms tr[data-s]').forEach(tr => { rows[tr.dataset.s] = { tr, badge: tr.querySelector('.badge'), own: tr.querySelector('.own'), wt: tr.querySelector('.wt') }; });
+    }
 
     function unitFor(line, s) {
       let best = null;
@@ -628,17 +674,20 @@ body.focus .scn-cap { font-size: 18px; }
     function later(d, fn) { timers.push(setTimeout(fn, d)); }
     function show(i, animate) {
       i = Math.max(0, Math.min(sc.frames.length - 1, i));
-      const f = sc.frames[i], s = stateAt(i);
+      const f = sc.frames[i], s = stateAt(sc, i);
       animate = !!animate && prev && motionOn() && f.reset == null;
       timers.forEach(clearTimeout); timers = [];
       host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
       host.classList.toggle('instant', !animate);
       if (!animate && prev && motionOn()) kick($('.ed'), 'blink', 0);
-      const was = prev || { units: {}, syms: {}, lanes: {}, run: '', edited: null };
+      const was = prev || { units: {}, syms: {}, lanes: {}, run: '', edited: null, heap: null };
       k = i; prev = s;
 
       $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
-      $('.scn-cogs').innerHTML = (f.cogs || []).map(c => '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>').join('');
+      $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
+        const linked = !sc.id && cardLink(c);
+        return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
+      }).join('');
       $('.scn-cap').textContent = f.caption;
       $('.ed-run').textContent = s.run + (s.edited ? ' · edited' : '');
       if (animate) { kick($('.scn-cap'), 'fade', 0); host.querySelectorAll('.cog').forEach((c, j) => kick(c, 'pop', 80 * j)); }
@@ -647,13 +696,13 @@ body.focus .scn-cap { font-size: 18px; }
       const order = Object.keys(f.syms || {}).filter(x => x !== '*');
       sc.symbols.forEach(x => { if (!order.includes(x.id) && (s.syms[x.id] || 'lazy') !== (was.syms[x.id] || 'lazy')) order.push(x.id); });
       (f.ticks || []).forEach(t => { if (!order.includes(t.sym)) order.push(t.sym); });
-      const slot = id => animate ? FIRST + SLOT * order.indexOf(id) : 0;
-      const end = animate ? FIRST + SLOT * order.length : 0;
+      const slot = id => animate ? FIRST + SLOT * Math.max(0, order.indexOf(id)) : 0;
+      let end = animate ? FIRST + SLOT * order.length : 0;
 
       // Text: the edit is typed in at the start of the step.
-      lines.forEach((ln, j) => {
-        let text = sc.code[j];
-        if (s.edited && j === sc.edit.line - 1) text = text.replace(sc.edit.from, sc.edit.to);
+      lines.forEach(ln => {
+        let text = sc.code[ln.n - 1];
+        if (s.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
         if (text !== ln.text) {
           ln.code.innerHTML = highlight(text, ln.sy) || ' ';
           ln.sym = ln.code.querySelector('.sym');
@@ -662,8 +711,8 @@ body.focus .scn-cap { font-size: 18px; }
         }
       });
       const ticks = {}; (f.ticks || []).forEach(t => { ticks[t.sym] = t; });
-      lines.forEach((ln, j) => {
-        const u = unitFor(j + 1, s) || '';
+      lines.forEach(ln => {
+        const u = unitFor(ln.n, s) || '';
         if (ln.gb.dataset.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.dataset.u = u; ln.gb.title = u; at(ln.gb, 0); }
         ln.l.classList.toggle('held', !!(ln.sy && ln.sy.id === 'hold' && /^prog/.test(s.syms.hold || '')));
         if (!ln.sy) return;
@@ -674,13 +723,15 @@ body.focus .scn-cap { font-size: 18px; }
         at(ln.sym, d);
         const t = ticks[id];
         if (t) { ln.sym.classList.add('tick', 'tk-' + t.t); if (t.pulse) ln.sym.classList.add('pulse'); if (animate) kick(ln.sym, 'ring', d); }
+        if (f.squiggle && f.squiggle.sym === id) ln.sym.classList.add('squig');
         ln.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
         if (changed && animate) { later(d, () => { ln.badge.textContent = badgeText(p); }); kick(ln.badge, 'pop', d); }
         else ln.badge.textContent = badgeText(p);
         const r = rows[id];
+        if (!r) return;
         r.tr.classList.toggle('hot', !!t);
         r.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
-        const fill = () => { r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st; r.own.innerHTML = p.owner ? threadChip(p.owner) : ''; r.wt.innerHTML = p.waiters.map(threadChip).join(' '); };
+        const fill = () => { r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st === 'busy' ? 'completing' : p.st; r.own.innerHTML = p.owner ? threadChip(p.owner) : ''; r.wt.innerHTML = p.waiters.map(threadChip).join(' '); };
         if (changed && animate) { later(d, fill); kick(r.tr, 'flash', d); } else fill();
       });
 
@@ -692,6 +743,23 @@ body.focus .scn-cap { font-size: 18px; }
         const fill = () => { el.el.classList.toggle('idle', l[0] === 'idle'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1]; };
         if (animate && (l[0] !== o[0] || l[1] !== o[1])) { later(d, fill); kick(el.el, 'flash', d); } else fill();
       });
+
+      // Fields: a table of the memory the step is about; its rows change one slot each, after the symbols.
+      const hw = $('.heap-wrap'), hp = s.heap, hwas = was.heap;
+      hw.hidden = !hp;
+      if (hp) {
+        $('.heap-h').textContent = hp.title;
+        $('.heap thead').innerHTML = '<tr>' + hp.cols.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr>';
+        const tb = $('.heap tbody');
+        if (tb.children.length !== hp.rows.length || !hwas || hwas.title !== hp.title) tb.innerHTML = hp.rows.map(() => '<tr></tr>').join('');
+        let n = 0;
+        hp.rows.forEach((r, j) => {
+          const tr = tb.children[j], html = r.map(cell).join(''), old = hwas && hwas.title === hp.title ? JSON.stringify(hwas.rows[j]) : null;
+          if (animate && old !== null && old !== JSON.stringify(r)) { const d = end + SLOT * n++; later(d, () => { tr.innerHTML = html; }); kick(tr, 'flash', d); }
+          else tr.innerHTML = html;
+        });
+        end += SLOT * n;
+      }
 
       // The hover popup answers last.
       pop.hidden = true; pop.classList.remove('pop');
@@ -711,9 +779,10 @@ body.focus .scn-cap { font-size: 18px; }
         r = ln.getBoundingClientRect(); left = codeEl.getBoundingClientRect().left + col * cw;
       }
       pop.hidden = false; pop.textContent = pp.text;
+      pop.classList.toggle('bad', !!pp.bad);
       const ed = $('.ed').getBoundingClientRect();
       pop.style.top = (r.bottom - ed.top + 4) + 'px';
-      pop.style.left = Math.max(8, Math.min(ed.width - 260, left - ed.left)) + 'px';
+      pop.style.left = Math.max(8, Math.min(ed.width - 280, left - ed.left)) + 'px';
       if (animate) kick(pop, 'pop', 0);
     }
 
@@ -734,13 +803,17 @@ body.focus .scn-cap { font-size: 18px; }
     };
     $('.prev').onclick = () => { stop(); show(k - 1); };
     $('.next').onclick = () => { stop(); show(k + 1, true); };
+    host.addEventListener('click', e => {
+      const a = e.target.closest('a.cog[data-cog]'); if (!a) return;
+      e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
+    });
     const p = { host, show: i => { stop(); show(i); }, step: d => { stop(); show(k + d, d > 0); }, relayout: () => show(k), get k() { return k; } };
     players.push(p);
     show(0);
     return p;
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
-  main.querySelectorAll('.scenario').forEach(buildPlayer);
+  main.querySelectorAll('.scenario').forEach(h => buildPlayer(h, h.dataset.card ? cardScenarios[h.dataset.card] : scenario));
   window.addEventListener('resize', () => players.forEach(p => p.relayout()));
   // The cogs: what each one is for, and the steps of the scenario where it fires.
   const GEARS = [
@@ -753,7 +826,7 @@ body.focus .scn-cap { font-size: 18px; }
     ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
     ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
-    [null, 'Stamped cells: a cache value and the period it is valid for, read and written as one.'],
+    ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
     [null, 'Epoch invalidation: a change to a published scope bumps an epoch, and dependent caches notice on their next read.'],
     [null, 'Result stamps: a result read after the lock is released is re-served if a write landed in between.'],
     [null, 'Wait-for cycles: two readers taking two roots in opposite orders; the one typing a body backs off.']
@@ -762,9 +835,12 @@ body.focus .scn-cap { font-size: 18px; }
     host.innerHTML = GEARS.map(([id, text]) => {
       if (!id) { const [name, rest] = text.split(': '); return '<div class="gear off"><div class="gn">⚙ ' + esc(name) + '</div><div class="gd">' + esc(rest) + '</div></div>'; }
       const at = scenario.frames.map((f, i) => (f.cogs || []).includes(id) ? '<a href="#" data-frame="' + i + '">' + f.beat + '</a>' : null).filter(Boolean).join(' ');
-      return '<div class="gear"><div class="gn">⚙ ' + esc(scenario.cogs[id]) + '</div><div class="gd">' + esc(text) + '</div><div class="ga">fires at ' + at + '</div></div>';
+      const card = cardLink(id) ? ' <a href="#" class="to-card" data-cog="' + id + '">card →</a>' : '';
+      return '<div class="gear"><div class="gn">⚙ ' + esc(scenario.cogs[id]) + '</div><div class="gd">' + esc(text) + '</div><div class="ga">' + (at ? 'fires at ' + at : 'no moment of its own in the scenario') + card + '</div></div>';
     }).join('');
     host.addEventListener('click', e => {
+      const c = e.target.closest('a.to-card');
+      if (c) { e.preventDefault(); const i = cards.indexOf(cardLink(c.dataset.cog)); if (i >= 0) setCurrent(i, true, true); return; }
       const a = e.target.closest('a[data-frame]'); if (!a || !players.length) return;
       e.preventDefault(); const p = players[0]; p.show(+a.dataset.frame);
       const i = cards.indexOf(p.host.closest('.card')); if (i >= 0) setCurrent(i, true, true);

@@ -275,7 +275,8 @@ main { max-width: 1260px; }
 .cog { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
 .scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
-.ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; }
+.ed-tabs { border-radius: 10px 10px 0 0; overflow: hidden; }
 .ed-tabs { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
 .ed-tab { background: var(--card); padding: 6px 14px; border-right: 1px solid var(--rule); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
 .ed-run { color: var(--muted); padding: 0 12px; font-size: 12px; }
@@ -300,6 +301,20 @@ main { max-width: 1260px; }
 .sym.tick { outline: 2px solid var(--tk); outline-offset: 2px; }
 .sym.tk-T1 { --tk: var(--t1); } .sym.tk-T2 { --tk: var(--t2); } .sym.tk-T3 { --tk: var(--t3); }
 .sym.pulse { outline-style: dashed; }
+/* Cards: a completion with no claim, a false error, the fields a step is about */
+.sym.s-busy.o-T1 { box-shadow: inset 0 0 0 1.5px var(--t1); background: repeating-linear-gradient(135deg, var(--t1-bg) 0 4px, transparent 4px 8px); }
+.sym.s-busy.o-T2 { box-shadow: inset 0 0 0 1.5px var(--t2); background: repeating-linear-gradient(135deg, var(--t2-bg) 0 4px, transparent 4px 8px); }
+.badge.b-busy { border-style: dashed; }
+.badge.b-busy.o-T1 { color: var(--t1); } .badge.b-busy.o-T2 { color: var(--t2); }
+.sym.squig { text-decoration: underline wavy var(--bad); text-underline-offset: 4px; }
+.ed-pop.bad { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
+.st-stuck, .st-failed { color: var(--bad); }
+table.heap td { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; }
+table.heap td.c-bad { color: var(--bad); font-weight: 600; } table.heap td.c-good { color: var(--typed); } table.heap td.c-mut { color: var(--muted); }
+a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: var(--chip-pat); }
+.dgroup.g-problem .dot.on { background: var(--bad); border-color: var(--bad); }
+.dgroup.g-fixed .dot.on { background: var(--typed); border-color: var(--typed); }
+.card .scenario + blockquote { margin-top: 14px; }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background .45s, box-shadow .45s, text-decoration-color .45s, outline-color .3s; }
 .badge { transition: background .45s, color .45s, border-color .45s; }
@@ -397,7 +412,7 @@ body.focus .scn-cap { font-size: 18px; }
 
 Interactive mode serves several requests at once against one symbol table. Each request reads through a `Reader` of its own; edits arrive as write actions that run alone. Symbols still complete lazily, and a completion may be needed by a reader other than the one running it.
 
-What follows is one IDE scenario, run for real on the compiler, with the code in the middle. Step through it with `,` and `.` or the buttons. Each cog lights up at the moment it does its job.
+What follows is one IDE scenario, run for real on the compiler, with the code in the middle. Step through it with `,` and `.` or the buttons. Each cog lights up at the moment it does its job; a cog with a card links to it, where the cog is taken out to show what goes wrong without it.
 
 ## The scenario
 
@@ -407,194 +422,1544 @@ What follows is one IDE scenario, run for real on the compiler, with the code in
 
 ### The cogs
 
-Each cog fired in the scenario above. The ones in grey are part of the model but have no moment of their own in this scenario.
+What each cog is for, and the steps of the scenario where it fires. The ones in grey are part of the model but have no moment of their own in this scenario.
 
 <div class="gears"></div>
 
 Batch compilation picks the single-reader mode once per `ContextBase` and runs the code it always ran: under 2% overhead. Interactively the overhead is minor, and the work scales well to four threads and more.
+
+## The cogs, one at a time
+
+Each card starts from the same file and takes one cog away: first the problem, then the mechanism, then the same moment with the cog in place.
+
+### Claim on a completion root
+
+<div class="scenario" data-card="claim"></div>
+
+> A reader sees a symbol's info either finished, or as a lazy type it can wait on. It never sees another reader's half-built info, and never takes another reader's completion for a cycle.
+
+### Publish, then release
+
+<div class="scenario" data-card="publish"></div>
+
+> A reader that finds a cached period current sees everything stored before it.
+
+### Stamped cells
+
+<div class="scenario" data-card="stamped"></div>
+
+> A cache hit returns a value computed at the stamp it was read with.
+
+### Write action and cancel
+
+<div class="scenario" data-card="write"></div>
+
+> Readers never see a write half done, and a writer waits only until each reader's next checkpoint.
+
+### Owner cancelled mid-completion
+
+<div class="scenario" data-card="unwound"></div>
+
+> A released claim leaves its symbol finished, or marked so that the next reader to reach it starts over. No reader waits on work that nobody is doing.
 </script>
 <script type="application/json" id="frames-src">{
+ "scenario": {
   "file": "Basket.scala",
   "code": [
-    "import tests.macros.Latch",
-    "",
-    "case class Item(name: String, price: BigDecimal, qty: Int)",
-    "",
-    "object Basket:",
-    "  val items = List(Item(\"tea\", 4.5, 2), Item(\"milk\", 1.2, 1))",
-    "",
-    "  def subtotal =",
-    "    val hold = Latch.await",
-    "    items.map(i => i.price * i.qty).sum + hold",
-    "",
-    "  def tax = subtotal * 0.2",
-    "",
-    "object Checkout:",
-    "  import Basket.*",
-    "",
-    "  def total = subtotal + tax",
-    "",
-    "  def receipt: String =",
-    "    val lines = items.map(i => s\"${i.name} x${i.qty}\")",
-    "    lines.mkString(\"\\n\") + s\"\\ntotal $total\""
+   "import tests.macros.Latch",
+   "",
+   "case class Item(name: String, price: BigDecimal, qty: Int)",
+   "",
+   "object Basket:",
+   "  val items = List(Item(\"tea\", 4.5, 2), Item(\"milk\", 1.2, 1))",
+   "",
+   "  def subtotal =",
+   "    val hold = Latch.await",
+   "    items.map(i => i.price * i.qty).sum + hold",
+   "",
+   "  def tax = subtotal * 0.2",
+   "",
+   "object Checkout:",
+   "  import Basket.*",
+   "",
+   "  def total = subtotal + tax",
+   "",
+   "  def receipt: String =",
+   "    val lines = items.map(i => s\"${i.name} x${i.qty}\")",
+   "    lines.mkString(\"\\n\") + s\"\\ntotal $total\""
   ],
-  "edit": { "line": 20, "from": "x${i.qty}", "to": "x ${i.qty}" },
+  "edit": {
+   "line": 20,
+   "from": "x${i.qty}",
+   "to": "x ${i.qty}"
+  },
   "units": [
-    { "id": "s3", "lines": [3, 3] },
-    { "id": "s5", "lines": [5, 12] },
-    { "id": "s14", "lines": [14, 21] },
-    { "id": "total", "lines": [17, 17], "in": "s14" },
-    { "id": "receipt", "lines": [19, 21], "in": "s14" }
+   {
+    "id": "s3",
+    "lines": [
+     3,
+     3
+    ]
+   },
+   {
+    "id": "s5",
+    "lines": [
+     5,
+     12
+    ]
+   },
+   {
+    "id": "s14",
+    "lines": [
+     14,
+     21
+    ]
+   },
+   {
+    "id": "total",
+    "lines": [
+     17,
+     17
+    ],
+    "in": "s14"
+   },
+   {
+    "id": "receipt",
+    "lines": [
+     19,
+     21
+    ],
+    "in": "s14"
+   }
   ],
   "symbols": [
-    { "id": "Item", "line": 3, "tok": "Item" },
-    { "id": "Basket", "line": 5, "tok": "Basket" },
-    { "id": "items", "line": 6, "tok": "items" },
-    { "id": "subtotal", "line": 8, "tok": "subtotal" },
-    { "id": "hold", "label": "subtotal.hold", "line": 9, "tok": "hold" },
-    { "id": "tax", "line": 12, "tok": "tax" },
-    { "id": "Checkout", "line": 14, "tok": "Checkout" },
-    { "id": "total", "line": 17, "tok": "total" },
-    { "id": "receipt", "line": 19, "tok": "receipt" },
-    { "id": "lines", "label": "receipt.lines", "line": 20, "tok": "lines" }
+   {
+    "id": "Item",
+    "line": 3,
+    "tok": "Item"
+   },
+   {
+    "id": "Basket",
+    "line": 5,
+    "tok": "Basket"
+   },
+   {
+    "id": "items",
+    "line": 6,
+    "tok": "items"
+   },
+   {
+    "id": "subtotal",
+    "line": 8,
+    "tok": "subtotal"
+   },
+   {
+    "id": "hold",
+    "label": "subtotal.hold",
+    "line": 9,
+    "tok": "hold"
+   },
+   {
+    "id": "tax",
+    "line": 12,
+    "tok": "tax"
+   },
+   {
+    "id": "Checkout",
+    "line": 14,
+    "tok": "Checkout"
+   },
+   {
+    "id": "total",
+    "line": 17,
+    "tok": "total"
+   },
+   {
+    "id": "receipt",
+    "line": 19,
+    "tok": "receipt"
+   },
+   {
+    "id": "lines",
+    "label": "receipt.lines",
+    "line": 20,
+    "tok": "lines"
+   }
   ],
   "threads": [
-    { "id": "T1", "name": "T1", "role": "hover" },
-    { "id": "T2", "name": "T2", "role": "background pass" },
-    { "id": "T3", "name": "T3", "role": "editor" }
+   {
+    "id": "T1",
+    "name": "T1",
+    "role": "hover"
+   },
+   {
+    "id": "T2",
+    "name": "T2",
+    "role": "background pass"
+   },
+   {
+    "id": "T3",
+    "name": "T3",
+    "role": "editor"
+   }
   ],
   "cogs": {
-    "write": "Write action",
-    "reader": "A Reader per request",
-    "claim": "Claim on a completion root",
-    "wait": "Wait, don't peek",
-    "publish": "Publish, then release",
-    "target": "Targeting",
-    "bodyedit": "Body edit keeps the run",
-    "cancel": "Sticky cancel",
-    "unwound": "Owner cancelled mid-completion"
+   "write": "Write action",
+   "reader": "A Reader per request",
+   "claim": "Claim on a completion root",
+   "wait": "Wait, don't peek",
+   "publish": "Publish, then release",
+   "target": "Targeting",
+   "bodyedit": "Body edit keeps the run",
+   "cancel": "Sticky cancel",
+   "unwound": "Owner cancelled mid-completion",
+   "stamped": "Stamped cells"
   },
   "frames": [
-    {
-      "beat": "1", "title": "Open the file",
-      "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
-      "cogs": ["write"],
-      "run": "run 1 · write 2",
-      "units": { "s3": "skip", "s5": "skip", "s14": "skip" },
-      "syms": { "*": "lazy" },
-      "lanes": { "T3": ["writer", "write action: enter the new text, skip every statement"] },
-      "ticks": []
+   {
+    "beat": "1",
+    "title": "Open the file",
+    "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
+    "cogs": [
+     "write"
+    ],
+    "run": "run 1 · write 2",
+    "units": {
+     "s3": "skip",
+     "s5": "skip",
+     "s14": "skip"
     },
-    {
-      "beat": "2", "title": "The background pass starts",
-      "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
-      "cogs": ["reader", "claim"],
-      "units": { "s3": "typed", "s5": "T2" },
-      "syms": { "Item": "done", "Basket": "done", "items": "done", "subtotal": "prog:T2", "hold": "prog:T2" },
-      "lanes": { "T3": ["idle", ""], "T2": ["typing", "completing subtotal, held on line 9"] },
-      "ticks": [{ "sym": "subtotal", "t": "T2" }],
-      "note": { "line": 9, "text": "holds the typer here, so every run interleaves the same way" }
+    "syms": {
+     "*": "lazy"
     },
-    {
-      "beat": "3", "title": "Hover on total",
-      "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
-      "cogs": ["reader", "claim", "wait"],
-      "units": { "s14": "T1", "total": "T1" },
-      "syms": { "Checkout": "done", "total": "prog:T1", "subtotal": "prog:T2|T1" },
-      "lanes": { "T1": ["waiting", "needs subtotal: waits on T2's claim"] },
-      "ticks": [{ "sym": "total", "t": "T1" }, { "sym": "subtotal", "t": "T1", "pulse": true }]
+    "lanes": {
+     "T3": [
+      "writer",
+      "write action: enter the new text, skip every statement"
+     ]
     },
-    {
-      "beat": "4", "title": "T2 publishes subtotal",
-      "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
-      "cogs": ["publish", "wait"],
-      "syms": { "subtotal": "done", "hold": "done", "tax": "prog:T2|T1" },
-      "lanes": { "T2": ["typing", "completing tax"], "T1": ["waiting", "needs tax: waits on T2's claim"] },
-      "ticks": [{ "sym": "subtotal", "t": "T1" }, { "sym": "tax", "t": "T1", "pulse": true }],
-      "note": null
+    "ticks": []
+   },
+   {
+    "beat": "2",
+    "title": "The background pass starts",
+    "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
+    "cogs": [
+     "reader",
+     "claim"
+    ],
+    "units": {
+     "s3": "typed",
+     "s5": "T2"
     },
-    {
-      "beat": "5", "title": "The hover answers",
-      "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
-      "cogs": ["publish", "target"],
-      "units": { "total": "typed", "receipt": "skip", "s5": "typed" },
-      "syms": { "tax": "done", "total": "done" },
-      "lanes": { "T1": ["done", "hover: BigDecimal"], "T2": ["typing", "next: object Checkout"] },
-      "ticks": [{ "sym": "tax", "t": "T1" }],
-      "popup": { "sym": "total", "text": "def total: BigDecimal" }
+    "syms": {
+     "Item": "done",
+     "Basket": "done",
+     "items": "done",
+     "subtotal": "prog:T2",
+     "hold": "prog:T2"
     },
-    {
-      "beat": "6", "title": "The background pass finishes",
-      "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
-      "cogs": ["target"],
-      "units": { "s14": "typed", "receipt": "typed", "total": null },
-      "syms": { "receipt": "done", "lines": "done" },
-      "lanes": { "T1": ["idle", ""], "T2": ["done", "0 problems"] },
-      "ticks": [{ "sym": "total", "t": "T2" }, { "sym": "receipt", "t": "T2" }],
-      "popup": null
+    "lanes": {
+     "T3": [
+      "idle",
+      ""
+     ],
+     "T2": [
+      "typing",
+      "completing subtotal, held on line 9"
+     ]
     },
-    {
-      "beat": "7a", "title": "A keystroke in receipt, nothing in flight",
-      "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
-      "cogs": ["write", "bodyedit"],
-      "edited": true,
-      "run": "run 1 · write 3",
-      "units": { "receipt": "skip", "s14": "typed" },
-      "syms": { "receipt": "lazy", "lines": "lazy" },
-      "lanes": { "T2": ["idle", ""], "T3": ["writer", "write action: re-index receipt"] },
-      "ticks": []
-    },
-    {
-      "beat": "7b", "title": "The hover after the edit",
-      "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
-      "cogs": ["reader", "target"],
-      "units": { "receipt": "T3" },
-      "syms": { "receipt": "done", "lines": "done" },
-      "lanes": { "T3": ["done", "hover: (\" x \" : String)"] },
-      "ticks": [{ "sym": "lines", "t": "T3" }, { "sym": "total", "t": "T3" }],
-      "popup": { "sym": "lines", "text": "(\" x \" : String)", "at": "x ${i.qty}" }
-    },
-    {
-      "reset": 2,
-      "beat": "8", "title": "The same keystroke, while T2 is held",
-      "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
-      "cogs": ["write", "cancel"],
-      "edited": true,
-      "lanes": { "T3": ["writer", "write pending: waits for the readers to leave"], "T1": ["cancelled", "waits on T2's claim"], "T2": ["cancelled", "held on line 9 in subtotal"] },
-      "ticks": [{ "sym": "subtotal", "t": "T1", "pulse": true }]
-    },
-    {
-      "beat": "9", "title": "T2 unwinds",
-      "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
-      "cogs": ["cancel", "unwound"],
-      "syms": { "subtotal": "unwound:T1", "hold": "lazy" },
-      "lanes": { "T2": ["unwound", "cancelled: reset subtotal, released the claim"], "T1": ["cancelled", "takes over subtotal's claim"] },
-      "ticks": []
-    },
-    {
-      "beat": "10", "title": "The waiter takes over, and is pre-empted",
-      "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
-      "cogs": ["claim", "unwound"],
-      "run": "run 1 · tainted",
-      "units": { "s14": "skip", "total": null, "s5": "skip" },
-      "syms": { "subtotal": "unwound", "total": "lazy" },
-      "lanes": { "T1": ["unwound", "pre-empted"] },
-      "ticks": [{ "sym": "subtotal", "t": "T1" }]
-    },
-    {
-      "beat": "11", "title": "A fresh run for the new text",
-      "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
-      "cogs": ["write", "reader", "claim"],
-      "run": "run 2 · write 6",
-      "units": { "s3": "skip", "s5": "skip", "s14": "T3", "total": "skip", "receipt": "T3" },
-      "syms": { "*": "lazy", "Checkout": "done", "receipt": "done", "lines": "done", "total": "done", "subtotal": "done", "hold": "done", "tax": "done", "items": "done", "Basket": "done", "Item": "done" },
-      "lanes": { "T1": ["idle", ""], "T2": ["idle", ""], "T3": ["done", "hover: (\" x \" : String)"] },
-      "ticks": [{ "sym": "total", "t": "T3" }, { "sym": "subtotal", "t": "T3" }],
-      "popup": { "sym": "lines", "text": "(\" x \" : String)", "at": "x ${i.qty}" }
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T2"
+     }
+    ],
+    "note": {
+     "line": 9,
+     "text": "holds the typer here, so every run interleaves the same way"
     }
+   },
+   {
+    "beat": "3",
+    "title": "Hover on total",
+    "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
+    "cogs": [
+     "reader",
+     "claim",
+     "wait"
+    ],
+    "units": {
+     "s14": "T1",
+     "total": "T1"
+    },
+    "syms": {
+     "Checkout": "done",
+     "total": "prog:T1",
+     "subtotal": "prog:T2|T1"
+    },
+    "lanes": {
+     "T1": [
+      "waiting",
+      "needs subtotal: waits on T2's claim"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "total",
+      "t": "T1"
+     },
+     {
+      "sym": "subtotal",
+      "t": "T1",
+      "pulse": true
+     }
+    ]
+   },
+   {
+    "beat": "4",
+    "title": "T2 publishes subtotal",
+    "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
+    "cogs": [
+     "publish",
+     "wait"
+    ],
+    "syms": {
+     "subtotal": "done",
+     "hold": "done",
+     "tax": "prog:T2|T1"
+    },
+    "lanes": {
+     "T2": [
+      "typing",
+      "completing tax"
+     ],
+     "T1": [
+      "waiting",
+      "needs tax: waits on T2's claim"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T1"
+     },
+     {
+      "sym": "tax",
+      "t": "T1",
+      "pulse": true
+     }
+    ],
+    "note": null
+   },
+   {
+    "beat": "5",
+    "title": "The hover answers",
+    "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
+    "cogs": [
+     "publish",
+     "target"
+    ],
+    "units": {
+     "total": "typed",
+     "receipt": "skip",
+     "s5": "typed"
+    },
+    "syms": {
+     "tax": "done",
+     "total": "done"
+    },
+    "lanes": {
+     "T1": [
+      "done",
+      "hover: BigDecimal"
+     ],
+     "T2": [
+      "typing",
+      "next: object Checkout"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "tax",
+      "t": "T1"
+     }
+    ],
+    "popup": {
+     "sym": "total",
+     "text": "def total: BigDecimal"
+    }
+   },
+   {
+    "beat": "6",
+    "title": "The background pass finishes",
+    "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
+    "cogs": [
+     "target"
+    ],
+    "units": {
+     "s14": "typed",
+     "receipt": "typed",
+     "total": null
+    },
+    "syms": {
+     "receipt": "done",
+     "lines": "done"
+    },
+    "lanes": {
+     "T1": [
+      "idle",
+      ""
+     ],
+     "T2": [
+      "done",
+      "0 problems"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "total",
+      "t": "T2"
+     },
+     {
+      "sym": "receipt",
+      "t": "T2"
+     }
+    ],
+    "popup": null
+   },
+   {
+    "beat": "7a",
+    "title": "A keystroke in receipt, nothing in flight",
+    "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
+    "cogs": [
+     "write",
+     "bodyedit"
+    ],
+    "edited": true,
+    "run": "run 1 · write 3",
+    "units": {
+     "receipt": "skip",
+     "s14": "typed"
+    },
+    "syms": {
+     "receipt": "lazy",
+     "lines": "lazy"
+    },
+    "lanes": {
+     "T2": [
+      "idle",
+      ""
+     ],
+     "T3": [
+      "writer",
+      "write action: re-index receipt"
+     ]
+    },
+    "ticks": []
+   },
+   {
+    "beat": "7b",
+    "title": "The hover after the edit",
+    "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
+    "cogs": [
+     "reader",
+     "target"
+    ],
+    "units": {
+     "receipt": "T3"
+    },
+    "syms": {
+     "receipt": "done",
+     "lines": "done"
+    },
+    "lanes": {
+     "T3": [
+      "done",
+      "hover: (\" x \" : String)"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "lines",
+      "t": "T3"
+     },
+     {
+      "sym": "total",
+      "t": "T3"
+     }
+    ],
+    "popup": {
+     "sym": "lines",
+     "text": "(\" x \" : String)",
+     "at": "x ${i.qty}"
+    }
+   },
+   {
+    "reset": 2,
+    "beat": "8",
+    "title": "The same keystroke, while T2 is held",
+    "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
+    "cogs": [
+     "write",
+     "cancel"
+    ],
+    "edited": true,
+    "lanes": {
+     "T3": [
+      "writer",
+      "write pending: waits for the readers to leave"
+     ],
+     "T1": [
+      "cancelled",
+      "waits on T2's claim"
+     ],
+     "T2": [
+      "cancelled",
+      "held on line 9 in subtotal"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T1",
+      "pulse": true
+     }
+    ]
+   },
+   {
+    "beat": "9",
+    "title": "T2 unwinds",
+    "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
+    "cogs": [
+     "cancel",
+     "unwound"
+    ],
+    "syms": {
+     "subtotal": "unwound:T1",
+     "hold": "lazy"
+    },
+    "lanes": {
+     "T2": [
+      "unwound",
+      "cancelled: reset subtotal, released the claim"
+     ],
+     "T1": [
+      "cancelled",
+      "takes over subtotal's claim"
+     ]
+    },
+    "ticks": []
+   },
+   {
+    "beat": "10",
+    "title": "The waiter takes over, and is pre-empted",
+    "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
+    "cogs": [
+     "claim",
+     "unwound"
+    ],
+    "run": "run 1 · tainted",
+    "units": {
+     "s14": "skip",
+     "total": null,
+     "s5": "skip"
+    },
+    "syms": {
+     "subtotal": "unwound",
+     "total": "lazy"
+    },
+    "lanes": {
+     "T1": [
+      "unwound",
+      "pre-empted"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T1"
+     }
+    ]
+   },
+   {
+    "beat": "11",
+    "title": "A fresh run for the new text",
+    "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
+    "cogs": [
+     "write",
+     "reader",
+     "claim"
+    ],
+    "run": "run 2 · write 6",
+    "units": {
+     "s3": "skip",
+     "s5": "skip",
+     "s14": "T3",
+     "total": "skip",
+     "receipt": "T3"
+    },
+    "syms": {
+     "*": "lazy",
+     "Checkout": "done",
+     "receipt": "done",
+     "lines": "done",
+     "total": "done",
+     "subtotal": "done",
+     "hold": "done",
+     "tax": "done",
+     "items": "done",
+     "Basket": "done",
+     "Item": "done"
+    },
+    "lanes": {
+     "T1": [
+      "idle",
+      ""
+     ],
+     "T2": [
+      "idle",
+      ""
+     ],
+     "T3": [
+      "done",
+      "hover: (\" x \" : String)"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "total",
+      "t": "T3"
+     },
+     {
+      "sym": "subtotal",
+      "t": "T3"
+     }
+    ],
+    "popup": {
+     "sym": "lines",
+     "text": "(\" x \" : String)",
+     "at": "x ${i.qty}"
+    }
+   }
   ]
-}
-</script>
+ },
+ "cards": {
+  "claim": {
+   "lines": [
+    8,
+    17
+   ],
+   "symbols": [
+    "subtotal",
+    "hold",
+    "tax",
+    "total"
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "Two readers, one lazy symbol",
+     "caption": "Take away the claims. T2 is completing subtotal, whose inferred type needs its body typed. In a compiler with one thread, a symbol whose completion has started and not finished is somewhere on the current call stack.",
+     "run": "run 1",
+     "units": {
+      "s5": "T2",
+      "s14": "T1"
+     },
+     "syms": {
+      "subtotal": "busy:T2",
+      "hold": "busy:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "completing subtotal"
+      ],
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "The other reader concludes there is a cycle",
+     "caption": "T1 needs subtotal's type and finds its completion under way. With one thread that can only mean a cycle, so T1 reports one: a false error in the editor. Had it looked through the completer instead, it would have read T2's half-built state.",
+     "syms": {
+      "total": "busy:T1"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "failed",
+       "reports a cycle that is not there"
+      ]
+     },
+     "squiggle": {
+      "sym": "total"
+     },
+     "popup": {
+      "sym": "total",
+      "at": "subtotal + tax",
+      "bad": true,
+      "text": "Overloaded or recursive method subtotal needs return type"
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Claim the root",
+     "caption": "Before completing, T2 claims subtotal's completion root and sets its info to an InProgress: a lazy type that records T2 as its owner. Only T2 sees through it, to the info it is building.",
+     "syms": {
+      "subtotal": "prog:T2",
+      "hold": "prog:T2",
+      "total": "lazy"
+     },
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "InProgress, owner T2"
+       ],
+       [
+        "claim",
+        "held by T2"
+       ],
+       [
+        "waiting",
+        "~nobody"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "4",
+     "title": "Wait, don't peek",
+     "caption": "To T1 the InProgress is a lazy type like any other, so it takes the slow path every unforced symbol already takes. There it finds the root claimed by another reader and waits on the claim. Asking whether subtotal is completing waits in the same way, instead of answering from a glimpse.",
+     "syms": {
+      "total": "prog:T1",
+      "subtotal": "prog:T2|T1"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1",
+       "pulse": true
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "waiting",
+       "waits on T2's claim"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "InProgress, owner T2"
+       ],
+       [
+        "claim",
+        "held by T2"
+       ],
+       [
+        "waiting",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "5",
+     "title": "Publish, release, wake",
+     "caption": "T2 publishes the info, then releases the claim. T1 wakes, reads the finished type and answers BigDecimal, as one reader would.",
+     "syms": {
+      "subtotal": "done",
+      "hold": "done",
+      "tax": "done",
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1"
+      }
+     ],
+     "units": {
+      "total": "typed"
+     },
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ],
+      "T2": [
+       "typing",
+       "next: tax"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "+=> BigDecimal"
+       ],
+       [
+        "claim",
+        "released"
+       ],
+       [
+        "waiting",
+        "~nobody"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  },
+  "publish": {
+   "lines": [
+    14,
+    17
+   ],
+   "symbols": [
+    "total"
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A shared reference caches what it resolved to",
+     "caption": "Types are shared by all readers, and a reference such as subtotal in total's body caches what it resolved to: a denotation, a symbol, and the period they were checked in. T2 resolves it and stores the three, in that order, with plain stores.",
+     "run": "run 1",
+     "units": {
+      "s14": "T2"
+     },
+     "syms": {
+      "total": "prog:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "resolves subtotal in total"
+      ],
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "+subtotal's",
+        "~"
+       ],
+       [
+        "lastSymbol",
+        "+subtotal",
+        "~"
+       ],
+       [
+        "checkedPeriod",
+        "+run 1, typer",
+        "~"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "Seen in another order",
+     "caption": "On Apple silicon, plain stores can become visible to another thread in a different order. T1 finds the period current, trusts the cached fields, and gets a null symbol. This was seen in testing.",
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "failed",
+       "a null symbol"
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "+subtotal's",
+        "!not yet"
+       ],
+       [
+        "lastSymbol",
+        "+subtotal",
+        "!null"
+       ],
+       [
+        "checkedPeriod",
+        "+run 1, typer",
+        "+run 1, typer"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "at": "subtotal + tax",
+      "bad": true,
+      "text": "request failed: NullPointerException"
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "The period publishes the fields",
+     "caption": "The period is the flag that publishes the other fields. T2 stores the denotation and the symbol, then the period with a release store. T1 loads the period with an acquire load.",
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 loads"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "1. plain",
+        "~"
+       ],
+       [
+        "lastSymbol",
+        "2. plain",
+        "~"
+       ],
+       [
+        "checkedPeriod",
+        "3. release",
+        "acquire"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Current means complete",
+     "caption": "If T1 finds the period current, it sees everything stored before it; if not, it resolves the reference itself. Either way the symbol is never null. On x86 an acquire load is a plain load.",
+     "syms": {
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ],
+      "T2": [
+       "done",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "+subtotal's",
+        "+subtotal's"
+       ],
+       [
+        "lastSymbol",
+        "+subtotal",
+        "+subtotal"
+       ],
+       [
+        "checkedPeriod",
+        "+run 1, typer",
+        "+run 1, typer"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  },
+  "stamped": {
+   "lines": [
+    3,
+    6
+   ],
+   "symbols": [
+    "Item",
+    "items"
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A value and its stamp, in two fields",
+     "caption": "Many caches keep a value and the period it was computed in, as two plain fields: here, the supertype of List[Item]. The previous run left both behind. In run 2, T2 computes the value again and stores the value, then the period.",
+     "run": "run 2",
+     "units": {
+      "s5": "T2"
+     },
+     "syms": {
+      "items": "prog:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "List[Item]'s supertype, again"
+      ],
+      "T1": [
+       "typing",
+       "hover on items"
+      ]
+     },
+     "heap": {
+      "title": "List[Item]: a cache in two fields",
+      "cols": [
+       "field",
+       "memory",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "value",
+        "run 1's supertype",
+        "~"
+       ],
+       [
+        "period",
+        "run 1",
+        "~"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "A torn pair",
+     "caption": "T1 sees the new period beside the old value, so the hit hands it a type built in the previous run. Two writers in one period can also leave one's stamp beside the other's value. Seen in testing: a null, a false, the previous run's value.",
+     "ticks": [
+      {
+       "sym": "items",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "failed",
+       "uses the previous run's value"
+      ]
+     },
+     "heap": {
+      "title": "List[Item]: a cache in two fields",
+      "cols": [
+       "field",
+       "memory",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "value",
+        "+run 2's supertype",
+        "!run 1's supertype"
+       ],
+       [
+        "period",
+        "+run 2",
+        "+run 2"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "One field, one immutable pair",
+     "caption": "The cache becomes one field holding a Stamped: the stamp and the value together, in an immutable object whose fields are final. A miss computes the value and replaces the whole pair.",
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on items"
+      ]
+     },
+     "heap": {
+      "title": "List[Item]: a stamped cache",
+      "cols": [
+       "field",
+       "memory"
+      ],
+      "rows": [
+       [
+        "cache",
+        "Stamped(run 1, run 1's supertype)"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Old or new, never mixed",
+     "caption": "T1 loads the reference once and sees one pair whole: the new one, a hit, or the old one, a miss it computes again. No fences, and the same code with one thread or several. The price is an allocation per miss.",
+     "syms": {
+      "items": "done"
+     },
+     "ticks": [
+      {
+       "sym": "items",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: List[Item]"
+      ],
+      "T2": [
+       "done",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "What T1 can load",
+      "cols": [
+       "T1 loads",
+       "outcome"
+      ],
+      "rows": [
+       [
+        "Stamped(run 2, …)",
+        "+a hit: run 2's supertype"
+       ],
+       [
+        "Stamped(run 1, …)",
+        "+a miss: computed again"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "items",
+      "text": "val items: List[Item]"
+     }
+    }
+   ]
+  },
+  "write": {
+   "lines": [
+    8,
+    21
+   ],
+   "symbols": [
+    "receipt"
+   ],
+   "threads": [
+    "T2",
+    "T3"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A keystroke behind a long pass",
+     "caption": "T2's background pass holds a read lock while it types. The user types in receipt. With a plain read/write lock the writer waits for the whole pass, which on a large file takes seconds, and every keystroke after it waits too.",
+     "run": "run 1 · write 2",
+     "edited": true,
+     "units": {
+      "s5": "T2",
+      "s14": "skip"
+     },
+     "syms": {
+      "receipt": "lazy"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "typing a long file"
+      ],
+      "T3": [
+       "writer",
+       "waits for the pass to end"
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "2",
+     "title": "The writer is pending",
+     "caption": "Instead, the writer raises a pending flag and queues for the lock; readers that start now queue behind it. T2 polls the flag at its typer checkpoints, unwinds at the next one, and releases the read lock.",
+     "lanes": {
+      "T2": [
+       "cancelled",
+       "unwinds at its next checkpoint"
+      ],
+      "T3": [
+       "writer",
+       "pending: waits for readers to leave"
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "The writer runs alone",
+     "caption": "With no reader left, the writer takes the lock and applies the edit: the change is inside receipt's body, so it re-indexes receipt and keeps the run.",
+     "run": "run 1 · write 3",
+     "units": {
+      "s5": "skip",
+      "receipt": "skip"
+     },
+     "lanes": {
+      "T2": [
+       "idle",
+       "pre-empted: waits to retry"
+      ],
+      "T3": [
+       "writer",
+       "write action: re-index receipt"
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Readers are retried",
+     "caption": "The writer releases the lock. T2's request is retried on the new text, and its caller never sees the cancellation. A writer waits only until each reader reaches its next checkpoint, and no reader sees a write half done.",
+     "units": {
+      "receipt": "typed",
+      "s5": "typed"
+     },
+     "syms": {
+      "receipt": "done"
+     },
+     "ticks": [
+      {
+       "sym": "receipt",
+       "t": "T2"
+      }
+     ],
+     "lanes": {
+      "T2": [
+       "typing",
+       "retried on the new text"
+      ],
+      "T3": [
+       "done",
+       ""
+      ]
+     }
+    }
+   ]
+  },
+  "unwound": {
+   "lines": [
+    8,
+    17
+   ],
+   "symbols": [
+    "subtotal",
+    "hold",
+    "total"
+   ],
+   "threads": [
+    "T1",
+    "T2",
+    "T3"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "The owner is cancelled",
+     "caption": "T2 is completing subtotal, and T1 waits on its claim. The user types, and T2 is cancelled in the middle of the completion.",
+     "run": "run 1",
+     "units": {
+      "s5": "T2",
+      "s14": "T1"
+     },
+     "syms": {
+      "subtotal": "prog:T2|T1",
+      "hold": "prog:T2",
+      "total": "prog:T1"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1",
+       "pulse": true
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "waiting",
+       "waits on T2's claim"
+      ],
+      "T2": [
+       "cancelled",
+       "completing subtotal"
+      ],
+      "T3": [
+       "writer",
+       "pending"
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "What a careless unwind leaves",
+     "caption": "If T2 simply unwound, subtotal would keep an InProgress that nobody is completing, or the half-built info T2 had set. T1 would wait forever, or read the half-built info.",
+     "lanes": {
+      "T2": [
+       "unwound",
+       "gone"
+      ],
+      "T1": [
+       "stuck",
+       "on a claim nobody will finish"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1",
+       "pulse": true
+      }
+     ],
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "!InProgress, owner T2"
+       ],
+       [
+        "owner",
+        "!T2: unwound"
+       ],
+       [
+        "waiting",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Reset, then release",
+     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice, because it changes the trees it types, so subtotal is left marked as an unwound completion rather than as lazy.",
+     "syms": {
+      "subtotal": "unwound",
+      "hold": "lazy"
+     },
+     "lanes": {
+      "T2": [
+       "unwound",
+       "reset subtotal, released the claim"
+      ],
+      "T1": [
+       "waiting",
+       "wakes"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "+unwound completion"
+       ],
+       [
+        "owner",
+        "+none: released"
+       ],
+       [
+        "waiting",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "4",
+     "title": "The waiter takes over, and is pre-empted",
+     "caption": "T1 takes the claim over and meets the unwound completion. It cannot finish it, so it is pre-empted too: it resets total, unwinds, and the run is marked tainted.",
+     "syms": {
+      "subtotal": "unwound:T1",
+      "total": "lazy"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1"
+      }
+     ],
+     "run": "run 1 · tainted",
+     "lanes": {
+      "T1": [
+       "unwound",
+       "pre-empted"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "unwound completion"
+       ],
+       [
+        "owner",
+        "T1, pre-empted"
+       ],
+       [
+        "waiting",
+        "~nobody"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "5",
+     "title": "A fresh run",
+     "caption": "The writer gives the new text a fresh run, and the next request completes subtotal from scratch. No reader waits on work that nobody is doing, and none reads a half-built info. What it costs is the run.",
+     "run": "run 2",
+     "units": {
+      "s5": "skip",
+      "s14": "T3"
+     },
+     "syms": {
+      "subtotal": "done",
+      "hold": "done",
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T3"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "idle",
+       ""
+      ],
+      "T2": [
+       "idle",
+       ""
+      ],
+      "T3": [
+       "done",
+       "hover: BigDecimal"
+      ]
+     },
+     "heap": null,
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  }
+ }
+}</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -725,8 +2090,21 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
   });
 
   // 5b. The scenario player: the editor in the middle, symbol states on the code, threads and symbols beside it.
-  // frames.json holds deltas; a frame's state is the fold of the frames before it (or from frame `reset`).
-  const scenario = JSON.parse(document.getElementById('frames-src').textContent);
+  // frames.json holds the scenario and the cogs' cards, each a list of frames. A frame is a delta; its state is the
+  // fold of the frames before it (or from frame `reset`). A card takes the scenario's file, symbols and threads, and
+  // may show only some lines (`lines`), some threads and some symbols.
+  const data = JSON.parse(document.getElementById('frames-src').textContent);
+  const scenario = data.scenario;
+  const cardScenarios = {};
+  Object.entries(data.cards).forEach(([id, c]) => {
+    cardScenarios[id] = Object.assign({ file: scenario.file, code: scenario.code, edit: scenario.edit, units: scenario.units, cogs: scenario.cogs }, c, {
+      id,
+      symbols: scenario.symbols.filter(x => !c.symbols || c.symbols.includes(x.id)),
+      threads: scenario.threads.filter(t => !c.threads || c.threads.includes(t.id)),
+      allSymbols: scenario.symbols
+    });
+  });
+  scenario.allSymbols = scenario.symbols;
   const players = [];
   function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def']);
@@ -748,42 +2126,55 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
     const m = /^(\w+)(?::(\w+))?(?:\|([\w,]+))?$/.exec(v || 'lazy');
     return { st: m[1], owner: m[2] || null, waiters: m[3] ? m[3].split(',') : [] };
   }
-  function stateAt(k) {
-    const fr = scenario.frames;
-    const f = fr[k];
-    let s = k === 0 ? { units: {}, syms: {}, lanes: {}, run: '', edited: false }
-      : f.reset != null ? stateAt(f.reset) : stateAt(k - 1);
+  function stateAt(sc, k) {
+    const f = sc.frames[k];
+    let s = k === 0 ? { units: {}, syms: {}, lanes: {}, run: '', edited: false, heap: null }
+      : f.reset != null ? stateAt(sc, f.reset) : stateAt(sc, k - 1);
     s = JSON.parse(JSON.stringify(s));
     if (f.run) s.run = f.run;
     if (f.edited != null) s.edited = f.edited;
+    if (f.heap !== undefined) s.heap = f.heap;
     Object.entries(f.units || {}).forEach(([u, v]) => { if (v == null) delete s.units[u]; else s.units[u] = v; });
-    if (f.syms && f.syms['*']) scenario.symbols.forEach(x => { s.syms[x.id] = f.syms['*']; });
+    if (f.syms && f.syms['*']) sc.allSymbols.forEach(x => { s.syms[x.id] = f.syms['*']; });
     Object.entries(f.syms || {}).forEach(([x, v]) => { if (x !== '*') s.syms[x] = v; });
     Object.assign(s.lanes, f.lanes || {});
     return s;
   }
-  const STATUS = { typing: 'typing', waiting: 'waiting', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled' };
+  const STATUS = { typing: 'typing', waiting: 'waiting', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled', stuck: 'waits forever', failed: 'failed' };
   function threadChip(t) { return '<span class="th th-' + t + '">' + t + '</span>'; }
   function badgeText(p) {
     if (p.st === 'prog') return 'InProgress · ' + p.owner;
+    if (p.st === 'busy') return 'completing · ' + p.owner;
     if (p.st === 'unwound') return 'unwound' + (p.owner ? ' · ' + p.owner : '');
     return p.st;
+  }
+  // A cell of a fields table: a leading "!" marks a wrong value, "+" a right one, "~" one not yet visible.
+  function cell(v) {
+    const c = { '!': 'c-bad', '+': 'c-good', '~': 'c-mut' }[v[0]];
+    return c ? '<td class="' + c + '">' + esc(v.slice(1)) + '</td>' : '<td>' + esc(v) + '</td>';
+  }
+  // The card a cog of the scenario opens: its own, or the card that explains it alongside another.
+  const CARD_OF = { wait: 'claim', cancel: 'write', bodyedit: 'write' };
+  function cardLink(cog) {
+    const host = main.querySelector('.scenario[data-card="' + (CARD_OF[cog] || cog) + '"]');
+    return host ? host.closest('.card') : null;
   }
   // The player builds the editor, panel and lanes once and then updates them in place, so that a step forward is
   // a transition from the previous state. Within a step the changes play in the order the frame lists its symbols
   // (the order of the trace): each symbol has a slot, a thread's tick and its lane change share the slot of the
   // symbol it touches, and the hover popup comes last. A step back, a jump or a reset shows the state at once.
   const SLOT = 420, FIRST = 250;
-  function buildPlayer(host) {
-    const sc = scenario;
+  function buildPlayer(host, sc) {
     const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
+    const [from, to] = sc.lines || [1, sc.code.length];
     host.innerHTML =
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
         '<div class="side">' +
           '<div class="side-h">Threads</div><div class="lanes"></div>' +
-          '<div class="side-h">Symbols</div><table class="symtab"><thead><tr><th>symbol</th><th>state</th><th>owner</th><th>waiting</th></tr></thead><tbody></tbody></table>' +
+          '<div class="heap-wrap" hidden><div class="side-h heap-h"></div><table class="symtab heap"><thead></thead><tbody></tbody></table></div>' +
+          (sc.symbols.length ? '<div class="side-h">Symbols</div><table class="symtab syms"><thead><tr><th>symbol</th><th>state</th><th>owner</th><th>waiting</th></tr></thead><tbody></tbody></table>' : '') +
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
@@ -792,27 +2183,32 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
     let group = null;
     sc.frames.forEach((f, i) => {
-      const g = f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass';
-      if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup'; d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
+      const g = f.group || (f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass');
+      if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup g-' + g.toLowerCase().replace(/\W+/g, '-'); d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
       const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = f.beat; b.title = f.title;
       b.onclick = () => { stop(); show(i); };
       dots.lastChild.querySelector('.drow').appendChild(b);
     });
 
     // Built once.
-    const lines = sc.code.map((text, j) => {
-      const n = j + 1, sy = symByLine[n];
+    const lines = [];
+    sc.code.forEach((text, j) => {
+      const n = j + 1;
+      if (n < from || n > to) return;
+      const sy = symByLine[n];
       const l = document.createElement('div'); l.className = 'l';
       l.innerHTML = '<span class="gb"></span><span class="no">' + n + '</span><span class="code"></span><span class="ov">' + (sy ? '<span class="badge"></span>' : '') + '</span>';
       linesEl.appendChild(l);
-      return { l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null };
+      lines.push({ n, l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null });
     });
     const lanes = {};
     $('.lanes').innerHTML = sc.threads.map(t => '<div class="lane" data-t="' + t.id + '">' + threadChip(t.id) + '<span class="role">' + esc(t.role) + '</span><span class="st"></span><span class="act"></span></div>').join('');
     host.querySelectorAll('.lane').forEach(el => { lanes[el.dataset.t] = { el, st: el.querySelector('.st'), act: el.querySelector('.act') }; });
     const rows = {};
-    $('.symtab tbody').innerHTML = sc.symbols.map(x => '<tr data-s="' + x.id + '"><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge"></span></td><td class="own"></td><td class="wt"></td></tr>').join('');
-    host.querySelectorAll('.symtab tr[data-s]').forEach(tr => { rows[tr.dataset.s] = { tr, badge: tr.querySelector('.badge'), own: tr.querySelector('.own'), wt: tr.querySelector('.wt') }; });
+    if (sc.symbols.length) {
+      $('.syms tbody').innerHTML = sc.symbols.map(x => '<tr data-s="' + x.id + '"><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge"></span></td><td class="own"></td><td class="wt"></td></tr>').join('');
+      host.querySelectorAll('.syms tr[data-s]').forEach(tr => { rows[tr.dataset.s] = { tr, badge: tr.querySelector('.badge'), own: tr.querySelector('.own'), wt: tr.querySelector('.wt') }; });
+    }
 
     function unitFor(line, s) {
       let best = null;
@@ -830,17 +2226,20 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
     function later(d, fn) { timers.push(setTimeout(fn, d)); }
     function show(i, animate) {
       i = Math.max(0, Math.min(sc.frames.length - 1, i));
-      const f = sc.frames[i], s = stateAt(i);
+      const f = sc.frames[i], s = stateAt(sc, i);
       animate = !!animate && prev && motionOn() && f.reset == null;
       timers.forEach(clearTimeout); timers = [];
       host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
       host.classList.toggle('instant', !animate);
       if (!animate && prev && motionOn()) kick($('.ed'), 'blink', 0);
-      const was = prev || { units: {}, syms: {}, lanes: {}, run: '', edited: null };
+      const was = prev || { units: {}, syms: {}, lanes: {}, run: '', edited: null, heap: null };
       k = i; prev = s;
 
       $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
-      $('.scn-cogs').innerHTML = (f.cogs || []).map(c => '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>').join('');
+      $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
+        const linked = !sc.id && cardLink(c);
+        return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
+      }).join('');
       $('.scn-cap').textContent = f.caption;
       $('.ed-run').textContent = s.run + (s.edited ? ' · edited' : '');
       if (animate) { kick($('.scn-cap'), 'fade', 0); host.querySelectorAll('.cog').forEach((c, j) => kick(c, 'pop', 80 * j)); }
@@ -849,13 +2248,13 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
       const order = Object.keys(f.syms || {}).filter(x => x !== '*');
       sc.symbols.forEach(x => { if (!order.includes(x.id) && (s.syms[x.id] || 'lazy') !== (was.syms[x.id] || 'lazy')) order.push(x.id); });
       (f.ticks || []).forEach(t => { if (!order.includes(t.sym)) order.push(t.sym); });
-      const slot = id => animate ? FIRST + SLOT * order.indexOf(id) : 0;
-      const end = animate ? FIRST + SLOT * order.length : 0;
+      const slot = id => animate ? FIRST + SLOT * Math.max(0, order.indexOf(id)) : 0;
+      let end = animate ? FIRST + SLOT * order.length : 0;
 
       // Text: the edit is typed in at the start of the step.
-      lines.forEach((ln, j) => {
-        let text = sc.code[j];
-        if (s.edited && j === sc.edit.line - 1) text = text.replace(sc.edit.from, sc.edit.to);
+      lines.forEach(ln => {
+        let text = sc.code[ln.n - 1];
+        if (s.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
         if (text !== ln.text) {
           ln.code.innerHTML = highlight(text, ln.sy) || ' ';
           ln.sym = ln.code.querySelector('.sym');
@@ -864,8 +2263,8 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
         }
       });
       const ticks = {}; (f.ticks || []).forEach(t => { ticks[t.sym] = t; });
-      lines.forEach((ln, j) => {
-        const u = unitFor(j + 1, s) || '';
+      lines.forEach(ln => {
+        const u = unitFor(ln.n, s) || '';
         if (ln.gb.dataset.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.dataset.u = u; ln.gb.title = u; at(ln.gb, 0); }
         ln.l.classList.toggle('held', !!(ln.sy && ln.sy.id === 'hold' && /^prog/.test(s.syms.hold || '')));
         if (!ln.sy) return;
@@ -876,13 +2275,15 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
         at(ln.sym, d);
         const t = ticks[id];
         if (t) { ln.sym.classList.add('tick', 'tk-' + t.t); if (t.pulse) ln.sym.classList.add('pulse'); if (animate) kick(ln.sym, 'ring', d); }
+        if (f.squiggle && f.squiggle.sym === id) ln.sym.classList.add('squig');
         ln.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
         if (changed && animate) { later(d, () => { ln.badge.textContent = badgeText(p); }); kick(ln.badge, 'pop', d); }
         else ln.badge.textContent = badgeText(p);
         const r = rows[id];
+        if (!r) return;
         r.tr.classList.toggle('hot', !!t);
         r.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
-        const fill = () => { r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st; r.own.innerHTML = p.owner ? threadChip(p.owner) : ''; r.wt.innerHTML = p.waiters.map(threadChip).join(' '); };
+        const fill = () => { r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st === 'busy' ? 'completing' : p.st; r.own.innerHTML = p.owner ? threadChip(p.owner) : ''; r.wt.innerHTML = p.waiters.map(threadChip).join(' '); };
         if (changed && animate) { later(d, fill); kick(r.tr, 'flash', d); } else fill();
       });
 
@@ -894,6 +2295,23 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
         const fill = () => { el.el.classList.toggle('idle', l[0] === 'idle'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1]; };
         if (animate && (l[0] !== o[0] || l[1] !== o[1])) { later(d, fill); kick(el.el, 'flash', d); } else fill();
       });
+
+      // Fields: a table of the memory the step is about; its rows change one slot each, after the symbols.
+      const hw = $('.heap-wrap'), hp = s.heap, hwas = was.heap;
+      hw.hidden = !hp;
+      if (hp) {
+        $('.heap-h').textContent = hp.title;
+        $('.heap thead').innerHTML = '<tr>' + hp.cols.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr>';
+        const tb = $('.heap tbody');
+        if (tb.children.length !== hp.rows.length || !hwas || hwas.title !== hp.title) tb.innerHTML = hp.rows.map(() => '<tr></tr>').join('');
+        let n = 0;
+        hp.rows.forEach((r, j) => {
+          const tr = tb.children[j], html = r.map(cell).join(''), old = hwas && hwas.title === hp.title ? JSON.stringify(hwas.rows[j]) : null;
+          if (animate && old !== null && old !== JSON.stringify(r)) { const d = end + SLOT * n++; later(d, () => { tr.innerHTML = html; }); kick(tr, 'flash', d); }
+          else tr.innerHTML = html;
+        });
+        end += SLOT * n;
+      }
 
       // The hover popup answers last.
       pop.hidden = true; pop.classList.remove('pop');
@@ -913,9 +2331,10 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
         r = ln.getBoundingClientRect(); left = codeEl.getBoundingClientRect().left + col * cw;
       }
       pop.hidden = false; pop.textContent = pp.text;
+      pop.classList.toggle('bad', !!pp.bad);
       const ed = $('.ed').getBoundingClientRect();
       pop.style.top = (r.bottom - ed.top + 4) + 'px';
-      pop.style.left = Math.max(8, Math.min(ed.width - 260, left - ed.left)) + 'px';
+      pop.style.left = Math.max(8, Math.min(ed.width - 280, left - ed.left)) + 'px';
       if (animate) kick(pop, 'pop', 0);
     }
 
@@ -936,13 +2355,17 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
     };
     $('.prev').onclick = () => { stop(); show(k - 1); };
     $('.next').onclick = () => { stop(); show(k + 1, true); };
+    host.addEventListener('click', e => {
+      const a = e.target.closest('a.cog[data-cog]'); if (!a) return;
+      e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
+    });
     const p = { host, show: i => { stop(); show(i); }, step: d => { stop(); show(k + d, d > 0); }, relayout: () => show(k), get k() { return k; } };
     players.push(p);
     show(0);
     return p;
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
-  main.querySelectorAll('.scenario').forEach(buildPlayer);
+  main.querySelectorAll('.scenario').forEach(h => buildPlayer(h, h.dataset.card ? cardScenarios[h.dataset.card] : scenario));
   window.addEventListener('resize', () => players.forEach(p => p.relayout()));
   // The cogs: what each one is for, and the steps of the scenario where it fires.
   const GEARS = [
@@ -955,7 +2378,7 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
     ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
     ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
-    [null, 'Stamped cells: a cache value and the period it is valid for, read and written as one.'],
+    ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
     [null, 'Epoch invalidation: a change to a published scope bumps an epoch, and dependent caches notice on their next read.'],
     [null, 'Result stamps: a result read after the lock is released is re-served if a write landed in between.'],
     [null, 'Wait-for cycles: two readers taking two roots in opposite orders; the one typing a body backs off.']
@@ -964,9 +2387,12 @@ Batch compilation picks the single-reader mode once per `ContextBase` and runs t
     host.innerHTML = GEARS.map(([id, text]) => {
       if (!id) { const [name, rest] = text.split(': '); return '<div class="gear off"><div class="gn">⚙ ' + esc(name) + '</div><div class="gd">' + esc(rest) + '</div></div>'; }
       const at = scenario.frames.map((f, i) => (f.cogs || []).includes(id) ? '<a href="#" data-frame="' + i + '">' + f.beat + '</a>' : null).filter(Boolean).join(' ');
-      return '<div class="gear"><div class="gn">⚙ ' + esc(scenario.cogs[id]) + '</div><div class="gd">' + esc(text) + '</div><div class="ga">fires at ' + at + '</div></div>';
+      const card = cardLink(id) ? ' <a href="#" class="to-card" data-cog="' + id + '">card →</a>' : '';
+      return '<div class="gear"><div class="gn">⚙ ' + esc(scenario.cogs[id]) + '</div><div class="gd">' + esc(text) + '</div><div class="ga">' + (at ? 'fires at ' + at : 'no moment of its own in the scenario') + card + '</div></div>';
     }).join('');
     host.addEventListener('click', e => {
+      const c = e.target.closest('a.to-card');
+      if (c) { e.preventDefault(); const i = cards.indexOf(cardLink(c.dataset.cog)); if (i >= 0) setCurrent(i, true, true); return; }
       const a = e.target.closest('a[data-frame]'); if (!a || !players.length) return;
       e.preventDefault(); const p = players[0]; p.show(+a.dataset.frame);
       const i = cards.indexOf(p.host.closest('.card')); if (i >= 0) setCurrent(i, true, true);

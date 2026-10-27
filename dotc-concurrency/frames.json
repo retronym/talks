@@ -1,181 +1,1498 @@
 {
+ "scenario": {
   "file": "Basket.scala",
   "code": [
-    "import tests.macros.Latch",
-    "",
-    "case class Item(name: String, price: BigDecimal, qty: Int)",
-    "",
-    "object Basket:",
-    "  val items = List(Item(\"tea\", 4.5, 2), Item(\"milk\", 1.2, 1))",
-    "",
-    "  def subtotal =",
-    "    val hold = Latch.await",
-    "    items.map(i => i.price * i.qty).sum + hold",
-    "",
-    "  def tax = subtotal * 0.2",
-    "",
-    "object Checkout:",
-    "  import Basket.*",
-    "",
-    "  def total = subtotal + tax",
-    "",
-    "  def receipt: String =",
-    "    val lines = items.map(i => s\"${i.name} x${i.qty}\")",
-    "    lines.mkString(\"\\n\") + s\"\\ntotal $total\""
+   "import tests.macros.Latch",
+   "",
+   "case class Item(name: String, price: BigDecimal, qty: Int)",
+   "",
+   "object Basket:",
+   "  val items = List(Item(\"tea\", 4.5, 2), Item(\"milk\", 1.2, 1))",
+   "",
+   "  def subtotal =",
+   "    val hold = Latch.await",
+   "    items.map(i => i.price * i.qty).sum + hold",
+   "",
+   "  def tax = subtotal * 0.2",
+   "",
+   "object Checkout:",
+   "  import Basket.*",
+   "",
+   "  def total = subtotal + tax",
+   "",
+   "  def receipt: String =",
+   "    val lines = items.map(i => s\"${i.name} x${i.qty}\")",
+   "    lines.mkString(\"\\n\") + s\"\\ntotal $total\""
   ],
-  "edit": { "line": 20, "from": "x${i.qty}", "to": "x ${i.qty}" },
+  "edit": {
+   "line": 20,
+   "from": "x${i.qty}",
+   "to": "x ${i.qty}"
+  },
   "units": [
-    { "id": "s3", "lines": [3, 3] },
-    { "id": "s5", "lines": [5, 12] },
-    { "id": "s14", "lines": [14, 21] },
-    { "id": "total", "lines": [17, 17], "in": "s14" },
-    { "id": "receipt", "lines": [19, 21], "in": "s14" }
+   {
+    "id": "s3",
+    "lines": [
+     3,
+     3
+    ]
+   },
+   {
+    "id": "s5",
+    "lines": [
+     5,
+     12
+    ]
+   },
+   {
+    "id": "s14",
+    "lines": [
+     14,
+     21
+    ]
+   },
+   {
+    "id": "total",
+    "lines": [
+     17,
+     17
+    ],
+    "in": "s14"
+   },
+   {
+    "id": "receipt",
+    "lines": [
+     19,
+     21
+    ],
+    "in": "s14"
+   }
   ],
   "symbols": [
-    { "id": "Item", "line": 3, "tok": "Item" },
-    { "id": "Basket", "line": 5, "tok": "Basket" },
-    { "id": "items", "line": 6, "tok": "items" },
-    { "id": "subtotal", "line": 8, "tok": "subtotal" },
-    { "id": "hold", "label": "subtotal.hold", "line": 9, "tok": "hold" },
-    { "id": "tax", "line": 12, "tok": "tax" },
-    { "id": "Checkout", "line": 14, "tok": "Checkout" },
-    { "id": "total", "line": 17, "tok": "total" },
-    { "id": "receipt", "line": 19, "tok": "receipt" },
-    { "id": "lines", "label": "receipt.lines", "line": 20, "tok": "lines" }
+   {
+    "id": "Item",
+    "line": 3,
+    "tok": "Item"
+   },
+   {
+    "id": "Basket",
+    "line": 5,
+    "tok": "Basket"
+   },
+   {
+    "id": "items",
+    "line": 6,
+    "tok": "items"
+   },
+   {
+    "id": "subtotal",
+    "line": 8,
+    "tok": "subtotal"
+   },
+   {
+    "id": "hold",
+    "label": "subtotal.hold",
+    "line": 9,
+    "tok": "hold"
+   },
+   {
+    "id": "tax",
+    "line": 12,
+    "tok": "tax"
+   },
+   {
+    "id": "Checkout",
+    "line": 14,
+    "tok": "Checkout"
+   },
+   {
+    "id": "total",
+    "line": 17,
+    "tok": "total"
+   },
+   {
+    "id": "receipt",
+    "line": 19,
+    "tok": "receipt"
+   },
+   {
+    "id": "lines",
+    "label": "receipt.lines",
+    "line": 20,
+    "tok": "lines"
+   }
   ],
   "threads": [
-    { "id": "T1", "name": "T1", "role": "hover" },
-    { "id": "T2", "name": "T2", "role": "background pass" },
-    { "id": "T3", "name": "T3", "role": "editor" }
+   {
+    "id": "T1",
+    "name": "T1",
+    "role": "hover"
+   },
+   {
+    "id": "T2",
+    "name": "T2",
+    "role": "background pass"
+   },
+   {
+    "id": "T3",
+    "name": "T3",
+    "role": "editor"
+   }
   ],
   "cogs": {
-    "write": "Write action",
-    "reader": "A Reader per request",
-    "claim": "Claim on a completion root",
-    "wait": "Wait, don't peek",
-    "publish": "Publish, then release",
-    "target": "Targeting",
-    "bodyedit": "Body edit keeps the run",
-    "cancel": "Sticky cancel",
-    "unwound": "Owner cancelled mid-completion"
+   "write": "Write action",
+   "reader": "A Reader per request",
+   "claim": "Claim on a completion root",
+   "wait": "Wait, don't peek",
+   "publish": "Publish, then release",
+   "target": "Targeting",
+   "bodyedit": "Body edit keeps the run",
+   "cancel": "Sticky cancel",
+   "unwound": "Owner cancelled mid-completion",
+   "stamped": "Stamped cells"
   },
   "frames": [
-    {
-      "beat": "1", "title": "Open the file",
-      "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
-      "cogs": ["write"],
-      "run": "run 1 · write 2",
-      "units": { "s3": "skip", "s5": "skip", "s14": "skip" },
-      "syms": { "*": "lazy" },
-      "lanes": { "T3": ["writer", "write action: enter the new text, skip every statement"] },
-      "ticks": []
+   {
+    "beat": "1",
+    "title": "Open the file",
+    "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
+    "cogs": [
+     "write"
+    ],
+    "run": "run 1 · write 2",
+    "units": {
+     "s3": "skip",
+     "s5": "skip",
+     "s14": "skip"
     },
-    {
-      "beat": "2", "title": "The background pass starts",
-      "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
-      "cogs": ["reader", "claim"],
-      "units": { "s3": "typed", "s5": "T2" },
-      "syms": { "Item": "done", "Basket": "done", "items": "done", "subtotal": "prog:T2", "hold": "prog:T2" },
-      "lanes": { "T3": ["idle", ""], "T2": ["typing", "completing subtotal, held on line 9"] },
-      "ticks": [{ "sym": "subtotal", "t": "T2" }],
-      "note": { "line": 9, "text": "holds the typer here, so every run interleaves the same way" }
+    "syms": {
+     "*": "lazy"
     },
-    {
-      "beat": "3", "title": "Hover on total",
-      "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
-      "cogs": ["reader", "claim", "wait"],
-      "units": { "s14": "T1", "total": "T1" },
-      "syms": { "Checkout": "done", "total": "prog:T1", "subtotal": "prog:T2|T1" },
-      "lanes": { "T1": ["waiting", "needs subtotal: waits on T2's claim"] },
-      "ticks": [{ "sym": "total", "t": "T1" }, { "sym": "subtotal", "t": "T1", "pulse": true }]
+    "lanes": {
+     "T3": [
+      "writer",
+      "write action: enter the new text, skip every statement"
+     ]
     },
-    {
-      "beat": "4", "title": "T2 publishes subtotal",
-      "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
-      "cogs": ["publish", "wait"],
-      "syms": { "subtotal": "done", "hold": "done", "tax": "prog:T2|T1" },
-      "lanes": { "T2": ["typing", "completing tax"], "T1": ["waiting", "needs tax: waits on T2's claim"] },
-      "ticks": [{ "sym": "subtotal", "t": "T1" }, { "sym": "tax", "t": "T1", "pulse": true }],
-      "note": null
+    "ticks": []
+   },
+   {
+    "beat": "2",
+    "title": "The background pass starts",
+    "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
+    "cogs": [
+     "reader",
+     "claim"
+    ],
+    "units": {
+     "s3": "typed",
+     "s5": "T2"
     },
-    {
-      "beat": "5", "title": "The hover answers",
-      "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
-      "cogs": ["publish", "target"],
-      "units": { "total": "typed", "receipt": "skip", "s5": "typed" },
-      "syms": { "tax": "done", "total": "done" },
-      "lanes": { "T1": ["done", "hover: BigDecimal"], "T2": ["typing", "next: object Checkout"] },
-      "ticks": [{ "sym": "tax", "t": "T1" }],
-      "popup": { "sym": "total", "text": "def total: BigDecimal" }
+    "syms": {
+     "Item": "done",
+     "Basket": "done",
+     "items": "done",
+     "subtotal": "prog:T2",
+     "hold": "prog:T2"
     },
-    {
-      "beat": "6", "title": "The background pass finishes",
-      "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
-      "cogs": ["target"],
-      "units": { "s14": "typed", "receipt": "typed", "total": null },
-      "syms": { "receipt": "done", "lines": "done" },
-      "lanes": { "T1": ["idle", ""], "T2": ["done", "0 problems"] },
-      "ticks": [{ "sym": "total", "t": "T2" }, { "sym": "receipt", "t": "T2" }],
-      "popup": null
+    "lanes": {
+     "T3": [
+      "idle",
+      ""
+     ],
+     "T2": [
+      "typing",
+      "completing subtotal, held on line 9"
+     ]
     },
-    {
-      "beat": "7a", "title": "A keystroke in receipt, nothing in flight",
-      "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
-      "cogs": ["write", "bodyedit"],
-      "edited": true,
-      "run": "run 1 · write 3",
-      "units": { "receipt": "skip", "s14": "typed" },
-      "syms": { "receipt": "lazy", "lines": "lazy" },
-      "lanes": { "T2": ["idle", ""], "T3": ["writer", "write action: re-index receipt"] },
-      "ticks": []
-    },
-    {
-      "beat": "7b", "title": "The hover after the edit",
-      "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
-      "cogs": ["reader", "target"],
-      "units": { "receipt": "T3" },
-      "syms": { "receipt": "done", "lines": "done" },
-      "lanes": { "T3": ["done", "hover: (\" x \" : String)"] },
-      "ticks": [{ "sym": "lines", "t": "T3" }, { "sym": "total", "t": "T3" }],
-      "popup": { "sym": "lines", "text": "(\" x \" : String)", "at": "x ${i.qty}" }
-    },
-    {
-      "reset": 2,
-      "beat": "8", "title": "The same keystroke, while T2 is held",
-      "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
-      "cogs": ["write", "cancel"],
-      "edited": true,
-      "lanes": { "T3": ["writer", "write pending: waits for the readers to leave"], "T1": ["cancelled", "waits on T2's claim"], "T2": ["cancelled", "held on line 9 in subtotal"] },
-      "ticks": [{ "sym": "subtotal", "t": "T1", "pulse": true }]
-    },
-    {
-      "beat": "9", "title": "T2 unwinds",
-      "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
-      "cogs": ["cancel", "unwound"],
-      "syms": { "subtotal": "unwound:T1", "hold": "lazy" },
-      "lanes": { "T2": ["unwound", "cancelled: reset subtotal, released the claim"], "T1": ["cancelled", "takes over subtotal's claim"] },
-      "ticks": []
-    },
-    {
-      "beat": "10", "title": "The waiter takes over, and is pre-empted",
-      "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
-      "cogs": ["claim", "unwound"],
-      "run": "run 1 · tainted",
-      "units": { "s14": "skip", "total": null, "s5": "skip" },
-      "syms": { "subtotal": "unwound", "total": "lazy" },
-      "lanes": { "T1": ["unwound", "pre-empted"] },
-      "ticks": [{ "sym": "subtotal", "t": "T1" }]
-    },
-    {
-      "beat": "11", "title": "A fresh run for the new text",
-      "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
-      "cogs": ["write", "reader", "claim"],
-      "run": "run 2 · write 6",
-      "units": { "s3": "skip", "s5": "skip", "s14": "T3", "total": "skip", "receipt": "T3" },
-      "syms": { "*": "lazy", "Checkout": "done", "receipt": "done", "lines": "done", "total": "done", "subtotal": "done", "hold": "done", "tax": "done", "items": "done", "Basket": "done", "Item": "done" },
-      "lanes": { "T1": ["idle", ""], "T2": ["idle", ""], "T3": ["done", "hover: (\" x \" : String)"] },
-      "ticks": [{ "sym": "total", "t": "T3" }, { "sym": "subtotal", "t": "T3" }],
-      "popup": { "sym": "lines", "text": "(\" x \" : String)", "at": "x ${i.qty}" }
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T2"
+     }
+    ],
+    "note": {
+     "line": 9,
+     "text": "holds the typer here, so every run interleaves the same way"
     }
+   },
+   {
+    "beat": "3",
+    "title": "Hover on total",
+    "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
+    "cogs": [
+     "reader",
+     "claim",
+     "wait"
+    ],
+    "units": {
+     "s14": "T1",
+     "total": "T1"
+    },
+    "syms": {
+     "Checkout": "done",
+     "total": "prog:T1",
+     "subtotal": "prog:T2|T1"
+    },
+    "lanes": {
+     "T1": [
+      "waiting",
+      "needs subtotal: waits on T2's claim"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "total",
+      "t": "T1"
+     },
+     {
+      "sym": "subtotal",
+      "t": "T1",
+      "pulse": true
+     }
+    ]
+   },
+   {
+    "beat": "4",
+    "title": "T2 publishes subtotal",
+    "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
+    "cogs": [
+     "publish",
+     "wait"
+    ],
+    "syms": {
+     "subtotal": "done",
+     "hold": "done",
+     "tax": "prog:T2|T1"
+    },
+    "lanes": {
+     "T2": [
+      "typing",
+      "completing tax"
+     ],
+     "T1": [
+      "waiting",
+      "needs tax: waits on T2's claim"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T1"
+     },
+     {
+      "sym": "tax",
+      "t": "T1",
+      "pulse": true
+     }
+    ],
+    "note": null
+   },
+   {
+    "beat": "5",
+    "title": "The hover answers",
+    "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
+    "cogs": [
+     "publish",
+     "target"
+    ],
+    "units": {
+     "total": "typed",
+     "receipt": "skip",
+     "s5": "typed"
+    },
+    "syms": {
+     "tax": "done",
+     "total": "done"
+    },
+    "lanes": {
+     "T1": [
+      "done",
+      "hover: BigDecimal"
+     ],
+     "T2": [
+      "typing",
+      "next: object Checkout"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "tax",
+      "t": "T1"
+     }
+    ],
+    "popup": {
+     "sym": "total",
+     "text": "def total: BigDecimal"
+    }
+   },
+   {
+    "beat": "6",
+    "title": "The background pass finishes",
+    "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
+    "cogs": [
+     "target"
+    ],
+    "units": {
+     "s14": "typed",
+     "receipt": "typed",
+     "total": null
+    },
+    "syms": {
+     "receipt": "done",
+     "lines": "done"
+    },
+    "lanes": {
+     "T1": [
+      "idle",
+      ""
+     ],
+     "T2": [
+      "done",
+      "0 problems"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "total",
+      "t": "T2"
+     },
+     {
+      "sym": "receipt",
+      "t": "T2"
+     }
+    ],
+    "popup": null
+   },
+   {
+    "beat": "7a",
+    "title": "A keystroke in receipt, nothing in flight",
+    "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
+    "cogs": [
+     "write",
+     "bodyedit"
+    ],
+    "edited": true,
+    "run": "run 1 · write 3",
+    "units": {
+     "receipt": "skip",
+     "s14": "typed"
+    },
+    "syms": {
+     "receipt": "lazy",
+     "lines": "lazy"
+    },
+    "lanes": {
+     "T2": [
+      "idle",
+      ""
+     ],
+     "T3": [
+      "writer",
+      "write action: re-index receipt"
+     ]
+    },
+    "ticks": []
+   },
+   {
+    "beat": "7b",
+    "title": "The hover after the edit",
+    "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
+    "cogs": [
+     "reader",
+     "target"
+    ],
+    "units": {
+     "receipt": "T3"
+    },
+    "syms": {
+     "receipt": "done",
+     "lines": "done"
+    },
+    "lanes": {
+     "T3": [
+      "done",
+      "hover: (\" x \" : String)"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "lines",
+      "t": "T3"
+     },
+     {
+      "sym": "total",
+      "t": "T3"
+     }
+    ],
+    "popup": {
+     "sym": "lines",
+     "text": "(\" x \" : String)",
+     "at": "x ${i.qty}"
+    }
+   },
+   {
+    "reset": 2,
+    "beat": "8",
+    "title": "The same keystroke, while T2 is held",
+    "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
+    "cogs": [
+     "write",
+     "cancel"
+    ],
+    "edited": true,
+    "lanes": {
+     "T3": [
+      "writer",
+      "write pending: waits for the readers to leave"
+     ],
+     "T1": [
+      "cancelled",
+      "waits on T2's claim"
+     ],
+     "T2": [
+      "cancelled",
+      "held on line 9 in subtotal"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T1",
+      "pulse": true
+     }
+    ]
+   },
+   {
+    "beat": "9",
+    "title": "T2 unwinds",
+    "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
+    "cogs": [
+     "cancel",
+     "unwound"
+    ],
+    "syms": {
+     "subtotal": "unwound:T1",
+     "hold": "lazy"
+    },
+    "lanes": {
+     "T2": [
+      "unwound",
+      "cancelled: reset subtotal, released the claim"
+     ],
+     "T1": [
+      "cancelled",
+      "takes over subtotal's claim"
+     ]
+    },
+    "ticks": []
+   },
+   {
+    "beat": "10",
+    "title": "The waiter takes over, and is pre-empted",
+    "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
+    "cogs": [
+     "claim",
+     "unwound"
+    ],
+    "run": "run 1 · tainted",
+    "units": {
+     "s14": "skip",
+     "total": null,
+     "s5": "skip"
+    },
+    "syms": {
+     "subtotal": "unwound",
+     "total": "lazy"
+    },
+    "lanes": {
+     "T1": [
+      "unwound",
+      "pre-empted"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "subtotal",
+      "t": "T1"
+     }
+    ]
+   },
+   {
+    "beat": "11",
+    "title": "A fresh run for the new text",
+    "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
+    "cogs": [
+     "write",
+     "reader",
+     "claim"
+    ],
+    "run": "run 2 · write 6",
+    "units": {
+     "s3": "skip",
+     "s5": "skip",
+     "s14": "T3",
+     "total": "skip",
+     "receipt": "T3"
+    },
+    "syms": {
+     "*": "lazy",
+     "Checkout": "done",
+     "receipt": "done",
+     "lines": "done",
+     "total": "done",
+     "subtotal": "done",
+     "hold": "done",
+     "tax": "done",
+     "items": "done",
+     "Basket": "done",
+     "Item": "done"
+    },
+    "lanes": {
+     "T1": [
+      "idle",
+      ""
+     ],
+     "T2": [
+      "idle",
+      ""
+     ],
+     "T3": [
+      "done",
+      "hover: (\" x \" : String)"
+     ]
+    },
+    "ticks": [
+     {
+      "sym": "total",
+      "t": "T3"
+     },
+     {
+      "sym": "subtotal",
+      "t": "T3"
+     }
+    ],
+    "popup": {
+     "sym": "lines",
+     "text": "(\" x \" : String)",
+     "at": "x ${i.qty}"
+    }
+   }
   ]
+ },
+ "cards": {
+  "claim": {
+   "lines": [
+    8,
+    17
+   ],
+   "symbols": [
+    "subtotal",
+    "hold",
+    "tax",
+    "total"
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "Two readers, one lazy symbol",
+     "caption": "Take away the claims. T2 is completing subtotal, whose inferred type needs its body typed. In a compiler with one thread, a symbol whose completion has started and not finished is somewhere on the current call stack.",
+     "run": "run 1",
+     "units": {
+      "s5": "T2",
+      "s14": "T1"
+     },
+     "syms": {
+      "subtotal": "busy:T2",
+      "hold": "busy:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "completing subtotal"
+      ],
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "The other reader concludes there is a cycle",
+     "caption": "T1 needs subtotal's type and finds its completion under way. With one thread that can only mean a cycle, so T1 reports one: a false error in the editor. Had it looked through the completer instead, it would have read T2's half-built state.",
+     "syms": {
+      "total": "busy:T1"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "failed",
+       "reports a cycle that is not there"
+      ]
+     },
+     "squiggle": {
+      "sym": "total"
+     },
+     "popup": {
+      "sym": "total",
+      "at": "subtotal + tax",
+      "bad": true,
+      "text": "Overloaded or recursive method subtotal needs return type"
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Claim the root",
+     "caption": "Before completing, T2 claims subtotal's completion root and sets its info to an InProgress: a lazy type that records T2 as its owner. Only T2 sees through it, to the info it is building.",
+     "syms": {
+      "subtotal": "prog:T2",
+      "hold": "prog:T2",
+      "total": "lazy"
+     },
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "InProgress, owner T2"
+       ],
+       [
+        "claim",
+        "held by T2"
+       ],
+       [
+        "waiting",
+        "~nobody"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "4",
+     "title": "Wait, don't peek",
+     "caption": "To T1 the InProgress is a lazy type like any other, so it takes the slow path every unforced symbol already takes. There it finds the root claimed by another reader and waits on the claim. Asking whether subtotal is completing waits in the same way, instead of answering from a glimpse.",
+     "syms": {
+      "total": "prog:T1",
+      "subtotal": "prog:T2|T1"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1",
+       "pulse": true
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "waiting",
+       "waits on T2's claim"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "InProgress, owner T2"
+       ],
+       [
+        "claim",
+        "held by T2"
+       ],
+       [
+        "waiting",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "5",
+     "title": "Publish, release, wake",
+     "caption": "T2 publishes the info, then releases the claim. T1 wakes, reads the finished type and answers BigDecimal, as one reader would.",
+     "syms": {
+      "subtotal": "done",
+      "hold": "done",
+      "tax": "done",
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1"
+      }
+     ],
+     "units": {
+      "total": "typed"
+     },
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ],
+      "T2": [
+       "typing",
+       "next: tax"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "+=> BigDecimal"
+       ],
+       [
+        "claim",
+        "released"
+       ],
+       [
+        "waiting",
+        "~nobody"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  },
+  "publish": {
+   "lines": [
+    14,
+    17
+   ],
+   "symbols": [
+    "total"
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A shared reference caches what it resolved to",
+     "caption": "Types are shared by all readers, and a reference such as subtotal in total's body caches what it resolved to: a denotation, a symbol, and the period they were checked in. T2 resolves it and stores the three, in that order, with plain stores.",
+     "run": "run 1",
+     "units": {
+      "s14": "T2"
+     },
+     "syms": {
+      "total": "prog:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "resolves subtotal in total"
+      ],
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "+subtotal's",
+        "~"
+       ],
+       [
+        "lastSymbol",
+        "+subtotal",
+        "~"
+       ],
+       [
+        "checkedPeriod",
+        "+run 1, typer",
+        "~"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "Seen in another order",
+     "caption": "On Apple silicon, plain stores can become visible to another thread in a different order. T1 finds the period current, trusts the cached fields, and gets a null symbol. This was seen in testing.",
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "failed",
+       "a null symbol"
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "+subtotal's",
+        "!not yet"
+       ],
+       [
+        "lastSymbol",
+        "+subtotal",
+        "!null"
+       ],
+       [
+        "checkedPeriod",
+        "+run 1, typer",
+        "+run 1, typer"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "at": "subtotal + tax",
+      "bad": true,
+      "text": "request failed: NullPointerException"
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "The period publishes the fields",
+     "caption": "The period is the flag that publishes the other fields. T2 stores the denotation and the symbol, then the period with a release store. T1 loads the period with an acquire load.",
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 loads"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "1. plain",
+        "~"
+       ],
+       [
+        "lastSymbol",
+        "2. plain",
+        "~"
+       ],
+       [
+        "checkedPeriod",
+        "3. release",
+        "acquire"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Current means complete",
+     "caption": "If T1 finds the period current, it sees everything stored before it; if not, it resolves the reference itself. Either way the symbol is never null. On x86 an acquire load is a plain load.",
+     "syms": {
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ],
+      "T2": [
+       "done",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "the reference Basket.subtotal (shared)",
+      "cols": [
+       "field",
+       "T2 stores",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "lastDenotation",
+        "+subtotal's",
+        "+subtotal's"
+       ],
+       [
+        "lastSymbol",
+        "+subtotal",
+        "+subtotal"
+       ],
+       [
+        "checkedPeriod",
+        "+run 1, typer",
+        "+run 1, typer"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  },
+  "stamped": {
+   "lines": [
+    3,
+    6
+   ],
+   "symbols": [
+    "Item",
+    "items"
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A value and its stamp, in two fields",
+     "caption": "Many caches keep a value and the period it was computed in, as two plain fields: here, the supertype of List[Item]. The previous run left both behind. In run 2, T2 computes the value again and stores the value, then the period.",
+     "run": "run 2",
+     "units": {
+      "s5": "T2"
+     },
+     "syms": {
+      "items": "prog:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "List[Item]'s supertype, again"
+      ],
+      "T1": [
+       "typing",
+       "hover on items"
+      ]
+     },
+     "heap": {
+      "title": "List[Item]: a cache in two fields",
+      "cols": [
+       "field",
+       "memory",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "value",
+        "run 1's supertype",
+        "~"
+       ],
+       [
+        "period",
+        "run 1",
+        "~"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "A torn pair",
+     "caption": "T1 sees the new period beside the old value, so the hit hands it a type built in the previous run. Two writers in one period can also leave one's stamp beside the other's value. Seen in testing: a null, a false, the previous run's value.",
+     "ticks": [
+      {
+       "sym": "items",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "failed",
+       "uses the previous run's value"
+      ]
+     },
+     "heap": {
+      "title": "List[Item]: a cache in two fields",
+      "cols": [
+       "field",
+       "memory",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "value",
+        "+run 2's supertype",
+        "!run 1's supertype"
+       ],
+       [
+        "period",
+        "+run 2",
+        "+run 2"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "One field, one immutable pair",
+     "caption": "The cache becomes one field holding a Stamped: the stamp and the value together, in an immutable object whose fields are final. A miss computes the value and replaces the whole pair.",
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on items"
+      ]
+     },
+     "heap": {
+      "title": "List[Item]: a stamped cache",
+      "cols": [
+       "field",
+       "memory"
+      ],
+      "rows": [
+       [
+        "cache",
+        "Stamped(run 1, run 1's supertype)"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Old or new, never mixed",
+     "caption": "T1 loads the reference once and sees one pair whole: the new one, a hit, or the old one, a miss it computes again. No fences, and the same code with one thread or several. The price is an allocation per miss.",
+     "syms": {
+      "items": "done"
+     },
+     "ticks": [
+      {
+       "sym": "items",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: List[Item]"
+      ],
+      "T2": [
+       "done",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "What T1 can load",
+      "cols": [
+       "T1 loads",
+       "outcome"
+      ],
+      "rows": [
+       [
+        "Stamped(run 2, …)",
+        "+a hit: run 2's supertype"
+       ],
+       [
+        "Stamped(run 1, …)",
+        "+a miss: computed again"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "items",
+      "text": "val items: List[Item]"
+     }
+    }
+   ]
+  },
+  "write": {
+   "lines": [
+    8,
+    21
+   ],
+   "symbols": [
+    "receipt"
+   ],
+   "threads": [
+    "T2",
+    "T3"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A keystroke behind a long pass",
+     "caption": "T2's background pass holds a read lock while it types. The user types in receipt. With a plain read/write lock the writer waits for the whole pass, which on a large file takes seconds, and every keystroke after it waits too.",
+     "run": "run 1 · write 2",
+     "edited": true,
+     "units": {
+      "s5": "T2",
+      "s14": "skip"
+     },
+     "syms": {
+      "receipt": "lazy"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "typing a long file"
+      ],
+      "T3": [
+       "writer",
+       "waits for the pass to end"
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "2",
+     "title": "The writer is pending",
+     "caption": "Instead, the writer raises a pending flag and queues for the lock; readers that start now queue behind it. T2 polls the flag at its typer checkpoints, unwinds at the next one, and releases the read lock.",
+     "lanes": {
+      "T2": [
+       "cancelled",
+       "unwinds at its next checkpoint"
+      ],
+      "T3": [
+       "writer",
+       "pending: waits for readers to leave"
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "The writer runs alone",
+     "caption": "With no reader left, the writer takes the lock and applies the edit: the change is inside receipt's body, so it re-indexes receipt and keeps the run.",
+     "run": "run 1 · write 3",
+     "units": {
+      "s5": "skip",
+      "receipt": "skip"
+     },
+     "lanes": {
+      "T2": [
+       "idle",
+       "pre-empted: waits to retry"
+      ],
+      "T3": [
+       "writer",
+       "write action: re-index receipt"
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Readers are retried",
+     "caption": "The writer releases the lock. T2's request is retried on the new text, and its caller never sees the cancellation. A writer waits only until each reader reaches its next checkpoint, and no reader sees a write half done.",
+     "units": {
+      "receipt": "typed",
+      "s5": "typed"
+     },
+     "syms": {
+      "receipt": "done"
+     },
+     "ticks": [
+      {
+       "sym": "receipt",
+       "t": "T2"
+      }
+     ],
+     "lanes": {
+      "T2": [
+       "typing",
+       "retried on the new text"
+      ],
+      "T3": [
+       "done",
+       ""
+      ]
+     }
+    }
+   ]
+  },
+  "unwound": {
+   "lines": [
+    8,
+    17
+   ],
+   "symbols": [
+    "subtotal",
+    "hold",
+    "total"
+   ],
+   "threads": [
+    "T1",
+    "T2",
+    "T3"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "The owner is cancelled",
+     "caption": "T2 is completing subtotal, and T1 waits on its claim. The user types, and T2 is cancelled in the middle of the completion.",
+     "run": "run 1",
+     "units": {
+      "s5": "T2",
+      "s14": "T1"
+     },
+     "syms": {
+      "subtotal": "prog:T2|T1",
+      "hold": "prog:T2",
+      "total": "prog:T1"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1",
+       "pulse": true
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "waiting",
+       "waits on T2's claim"
+      ],
+      "T2": [
+       "cancelled",
+       "completing subtotal"
+      ],
+      "T3": [
+       "writer",
+       "pending"
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "What a careless unwind leaves",
+     "caption": "If T2 simply unwound, subtotal would keep an InProgress that nobody is completing, or the half-built info T2 had set. T1 would wait forever, or read the half-built info.",
+     "lanes": {
+      "T2": [
+       "unwound",
+       "gone"
+      ],
+      "T1": [
+       "stuck",
+       "on a claim nobody will finish"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1",
+       "pulse": true
+      }
+     ],
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "!InProgress, owner T2"
+       ],
+       [
+        "owner",
+        "!T2: unwound"
+       ],
+       [
+        "waiting",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Reset, then release",
+     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice, because it changes the trees it types, so subtotal is left marked as an unwound completion rather than as lazy.",
+     "syms": {
+      "subtotal": "unwound",
+      "hold": "lazy"
+     },
+     "lanes": {
+      "T2": [
+       "unwound",
+       "reset subtotal, released the claim"
+      ],
+      "T1": [
+       "waiting",
+       "wakes"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "+unwound completion"
+       ],
+       [
+        "owner",
+        "+none: released"
+       ],
+       [
+        "waiting",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "4",
+     "title": "The waiter takes over, and is pre-empted",
+     "caption": "T1 takes the claim over and meets the unwound completion. It cannot finish it, so it is pre-empted too: it resets total, unwinds, and the run is marked tainted.",
+     "syms": {
+      "subtotal": "unwound:T1",
+      "total": "lazy"
+     },
+     "ticks": [
+      {
+       "sym": "subtotal",
+       "t": "T1"
+      }
+     ],
+     "run": "run 1 · tainted",
+     "lanes": {
+      "T1": [
+       "unwound",
+       "pre-empted"
+      ]
+     },
+     "heap": {
+      "title": "subtotal's denotation",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "info",
+        "unwound completion"
+       ],
+       [
+        "owner",
+        "T1, pre-empted"
+       ],
+       [
+        "waiting",
+        "~nobody"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "5",
+     "title": "A fresh run",
+     "caption": "The writer gives the new text a fresh run, and the next request completes subtotal from scratch. No reader waits on work that nobody is doing, and none reads a half-built info. What it costs is the run.",
+     "run": "run 2",
+     "units": {
+      "s5": "skip",
+      "s14": "T3"
+     },
+     "syms": {
+      "subtotal": "done",
+      "hold": "done",
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T3"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "idle",
+       ""
+      ],
+      "T2": [
+       "idle",
+       ""
+      ],
+      "T3": [
+       "done",
+       "hover: BigDecimal"
+      ]
+     },
+     "heap": null,
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  }
+ }
 }
