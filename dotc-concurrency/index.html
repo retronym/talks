@@ -1154,7 +1154,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
      "group": "Problem",
      "beat": "2",
      "title": "The other reader concludes there is a cycle",
-     "caption": "T1 needs subtotal's type and finds it marked as being completed. With one thread, that mark can only mean that subtotal's own completion asked for subtotal's type: its type depends on itself, and the compiler reports a cycle. T1 applies the same rule to T2's mark and reports a recursion that is not there. Had it looked through the completer instead, it would have read T2's half-built state.",
+     "caption": "T1 needs subtotal's type and finds it marked as being completed. A single-threaded compiler takes this as evidence of a cycle, but no cycle exists and T1 is wrong to report one. Had it looked through the completer instead, it would have read T2's half-built state.",
      "syms": {
       "total": "busy:T1"
      },
