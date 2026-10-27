@@ -246,7 +246,7 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 
 /* Focus mode: one card at a time, bigger type, for presenting */
 body.focus nav.toc { display: none; }
-body.focus .layout { grid-template-columns: 1fr; }
+body.focus .layout { grid-template-columns: minmax(0, 1fr); }
 body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
 body.focus .card { display: none; min-height: 80vh; }
 body.focus .card.current { display: block; outline: none; }
@@ -273,7 +273,7 @@ main { max-width: 1260px; }
 .scn-beat .bn { color: var(--accent); margin-right: .5em; font-variant-numeric: tabular-nums; }
 .scn-cogs { display: flex; flex-wrap: wrap; gap: 6px; }
 .cog { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
-.scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; align-content: start; }
 @media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
 .ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; }
 .ed-tabs { border-radius: 10px 10px 0 0; overflow: hidden; }
@@ -316,7 +316,8 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .dgroup.g-fixed .dot.on { background: var(--typed); border-color: var(--typed); }
 .card .scenario + blockquote { margin-top: 14px; }
 /* The scrubber and the speed control */
-.scrub { position: relative; height: 22px; margin: 4px 0 10px; cursor: ew-resize; touch-action: none; user-select: none; }
+.transport { margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); }
+.scrub { position: relative; height: 22px; margin: 0 0 8px; cursor: ew-resize; touch-action: none; user-select: none; }
 .scrub-track { position: absolute; left: 0; right: 0; top: 9px; height: 4px; display: flex; gap: 3px; }
 .scrub-track .seg { position: relative; flex: 1; background: var(--rule); border-radius: 2px; }
 .scrub-track .seg i { position: absolute; top: -2px; width: 1px; height: 8px; background: var(--muted); opacity: .6; }
@@ -330,7 +331,8 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 details.l3 { margin: 12px 0 0; }
 details.l3 > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); padding: 4px 0; }
 details.l3 > summary:hover { color: var(--accent); }
-.l3-body { display: grid; gap: 10px; margin-top: 8px; }
+.l3-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+.l3-body .ed { min-width: 0; }
 .xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 50px max-content; }
 .xl { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; transition: opacity calc(.3s / var(--spd, 1)), background calc(.3s / var(--spd, 1)); }
 .xl .no { color: var(--muted); text-align: right; padding-right: 12px; font-size: 11px; user-select: none; }
@@ -405,6 +407,7 @@ table.symtab tr.hot td { background: var(--accent-soft); }
 .gear.off { opacity: .55; }
 .gear.off .gn { color: var(--muted); }
 body.focus main { max-width: 1400px; }
+body.shot .focus-counter { display: none; } body.shot main { padding-top: 16px; } body.shot .card.current { min-height: 0; }
 body.focus .scn-cap { font-size: 18px; }
 
 @media print {
@@ -473,6 +476,12 @@ Each card starts from the same file and takes one cog away: first the problem, t
 <div class="scenario" data-card="stamped"></div>
 
 > A cache hit returns a value computed at the stamp it was read with.
+
+### Publish once
+
+<div class="scenario" data-card="once"></div>
+
+> A structure that readers share is seen either not at all or whole, never while it is being filled.
 
 ### Write action and cancel
 
@@ -658,7 +667,8 @@ Each card starts from the same file and takes one cog away: first the problem, t
    "stamped": "Stamped cells",
    "cycles": "Wait-for cycles",
    "epoch": "Epoch invalidation",
-   "resultstamp": "Result stamps"
+   "resultstamp": "Result stamps",
+   "once": "Publish once"
   },
   "frames": [
    {
@@ -2670,6 +2680,220 @@ Each card starts from the same file and takes one cog away: first the problem, t
      }
     }
    ]
+  },
+  "once": {
+   "lines": [
+    14,
+    17
+   ],
+   "symbolDefs": [
+    {
+     "id": "Checkout",
+     "line": 14,
+     "tok": "Checkout"
+    },
+    {
+     "id": "imp",
+     "label": "import Basket.*",
+     "line": 15,
+     "tok": "Basket"
+    },
+    {
+     "id": "total",
+     "line": 17,
+     "tok": "total"
+    }
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "Fields filled one by one",
+     "caption": "Every reader resolves names in Checkout through the same import, and the import caches what its selectors say. With one thread it sets a marker field first and then fills in the mappings. T2 has stored the marker and is still building the mappings.",
+     "run": "run 1",
+     "units": {
+      "s14": "T2"
+     },
+     "syms": {
+      "Checkout": "done",
+      "imp": "prog:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "fills the import's selector info"
+      ],
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "T2 has stored",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "excluded (the marker)",
+        "+Set()",
+        "~"
+       ],
+       [
+        "forwardMapping",
+        "~being built",
+        "~"
+       ],
+       [
+        "reverseMapping",
+        "~being built",
+        "~"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "Seen half filled",
+     "caption": "T1 resolves subtotal through the same import, finds the marker set and skips the work, then reads a mapping that is still null. The request fails with a null where the type system promised none. This was seen in testing.",
+     "ticks": [
+      {
+       "sym": "imp",
+       "t": "T1"
+      }
+     ],
+     "syms": {
+      "total": "prog:T1"
+     },
+     "lanes": {
+      "T1": [
+       "failed",
+       "a null mapping"
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "T2 has stored",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "excluded (the marker)",
+        "+Set()",
+        "+Set()"
+       ],
+       [
+        "forwardMapping",
+        "~being built",
+        "!null"
+       ],
+       [
+        "reverseMapping",
+        "~being built",
+        "!null"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "at": "subtotal + tax",
+      "bad": true,
+      "text": "request failed: tried to cast away nullability"
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Build in a local, store once",
+     "caption": "Instead, a reader builds everything in locals, then stores one immutable value whose fields are final, in one field. Nothing is visible until all of it is.",
+     "syms": {
+      "total": "lazy"
+     },
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on total"
+      ],
+      "T2": [
+       "typing",
+       "builds the selector info in locals"
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "selectorInfo",
+        "~null"
+       ],
+       [
+        "T2's locals",
+        "excluded, forward, reverse, wildcard"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Nothing, or all of it",
+     "caption": "T1 finds either nothing, and builds an equal value itself, or the whole value. Two readers may both build it; each stores an equal value, and either is whole. A scope's list of members is published the same way.",
+     "syms": {
+      "imp": "done",
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "imp",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ],
+      "T2": [
+       "done",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "selectorInfo",
+        "+SelectorInfo(excluded, forward, reverse, …)"
+       ],
+       [
+        "T2's locals",
+        "~gone"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
   }
  }
 }</script>
@@ -3879,6 +4103,203 @@ Each card starts from the same file and takes one cog away: first the problem, t
      ]
     }
    }
+  ],
+  "once": [
+   {
+    "file": "ImportInfo.scala",
+    "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "lines": [
+     {
+      "n": 92,
+      "text": "private final class SelectorInfo(val excluded: Set[TermName], val forwardMapping: SimpleIdentityMap[TermName, TermName],"
+     },
+     {
+      "n": 93,
+      "text": "    val reverseMapping: SimpleIdentityMap[TermName, TermName], val wildcardImport: Boolean, val givenImport: Boolean)"
+     },
+     {
+      "n": 94,
+      "text": "@cache @benignRace(\"recomputed from `selectors`; an immutable value of final fields, seen whole (I60)\") private var mySelectorInfo: SelectorInfo | Null = null"
+     }
+    ],
+    "hl": {
+     "3": [
+      0,
+      1
+     ]
+    }
+   },
+   {
+    "file": "ImportInfo.scala",
+    "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "lines": [
+     {
+      "n": 100,
+      "text": "private def selectorInfo: SelectorInfo ="
+     },
+     {
+      "n": 101,
+      "text": "  val known = mySelectorInfo"
+     },
+     {
+      "n": 102,
+      "text": "  if known != null then known"
+     },
+     {
+      "n": 103,
+      "text": "  else"
+     },
+     {
+      "n": 104,
+      "text": "    var excluded: Set[TermName] = Set()"
+     },
+     {
+      "n": 105,
+      "text": "    var wildcardImport = false"
+     },
+     {
+      "n": 106,
+      "text": "    var givenImport = false"
+     },
+     {
+      "n": 107,
+      "text": "    var forwardMapping: SimpleIdentityMap[TermName, TermName] = SimpleIdentityMap.empty"
+     },
+     {
+      "n": 108,
+      "text": "    var reverseMapping: SimpleIdentityMap[TermName, TermName] = SimpleIdentityMap.empty"
+     },
+     {
+      "n": 109,
+      "text": "    for sel <- selectors do"
+     },
+     {
+      "n": 110,
+      "text": "      if sel.isWildcard then"
+     },
+     {
+      "n": 111,
+      "text": "        wildcardImport = true"
+     },
+     {
+      "n": 112,
+      "text": "        if sel.isGiven then givenImport = true"
+     },
+     {
+      "n": 113,
+      "text": "      else"
+     },
+     {
+      "n": 114,
+      "text": "        if sel.rename != sel.name then"
+     },
+     {
+      "n": 115,
+      "text": "          excluded = excluded + sel.name"
+     },
+     {
+      "n": 116,
+      "text": "        if !sel.isUnimport then"
+     },
+     {
+      "n": 117,
+      "text": "          forwardMapping = forwardMapping.updated(sel.name, sel.rename)"
+     },
+     {
+      "n": 118,
+      "text": "          reverseMapping = reverseMapping.updated(sel.rename, sel.name)"
+     },
+     {
+      "n": 119,
+      "text": "    val info = SelectorInfo(excluded, forwardMapping, reverseMapping, wildcardImport, givenImport)"
+     },
+     {
+      "n": 120,
+      "text": "    mySelectorInfo = info"
+     },
+     {
+      "n": 121,
+      "text": "    info"
+     }
+    ],
+    "hl": {
+     "3": [
+      4,
+      7,
+      8,
+      19,
+      20
+     ],
+     "4": [
+      1,
+      2
+     ]
+    }
+   },
+   {
+    "file": "Scopes.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "lines": [
+     {
+      "n": 559,
+      "text": "override final def toList(using Context): List[Symbol] = {"
+     },
+     {
+      "n": 563,
+      "text": "  val known = elemsCache"
+     },
+     {
+      "n": 564,
+      "text": "  if (known != null) known"
+     },
+     {
+      "n": 565,
+      "text": "  else {"
+     },
+     {
+      "n": 566,
+      "text": "    ensureComplete()"
+     },
+     {
+      "n": 567,
+      "text": "    var elems: List[Symbol] = Nil"
+     },
+     {
+      "n": 568,
+      "text": "    var e = lastEntry"
+     },
+     {
+      "n": 569,
+      "text": "    while ((e != null) && e.owner == this) {"
+     },
+     {
+      "n": 570,
+      "text": "      elems = e.sym :: elems"
+     },
+     {
+      "n": 571,
+      "text": "      e = e.prev"
+     },
+     {
+      "n": 572,
+      "text": "    }"
+     },
+     {
+      "n": 573,
+      "text": "    elemsCache = elems"
+     },
+     {
+      "n": 574,
+      "text": "    elems"
+     }
+    ],
+    "hl": {
+     "4": [
+      5,
+      11
+     ]
+    }
+   }
   ]
  }
 }
@@ -4109,6 +4530,10 @@ Each card starts from the same file and takes one cog away: first the problem, t
     const N = sc.frames.length;
     host.innerHTML =
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
+      '<div class="transport">' +
+      '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
+      '</div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
         '<div class="side">' +
@@ -4118,8 +4543,6 @@ Each card starts from the same file and takes one cog away: first the problem, t
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
-      '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
       (sc.id && excerpts[sc.id] ? '<details class="l3"><summary>The code</summary><div class="l3-body">' + excerpts[sc.id].map(ex =>
         '<div class="ed xc"><div class="ed-tabs"><span class="ed-tab">' + esc(ex.file) + '</span></div><div class="xc-lines">' +
         ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '"><span class="no">' + (x.n || '') + '</span><span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
@@ -4192,6 +4615,25 @@ Each card starts from the same file and takes one cog away: first the problem, t
     // Restart a keyframe animation on `el`.
     function kick(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
     let painted = { i: -1, key: null, heapTitle: null };
+    // The controls stay put while a sequence plays: the regions above them (the cogs, the editor and side panel,
+    // the caption) keep the height of their tallest step, measured once per width.
+    let measuring = false;
+    const STABLE = ['.scn-head', '.scn-body', '.scn-cap'];
+    function reserveHeights() {
+      measuring = true;
+      const keep = { i: pos.i, t: pos.t };
+      STABLE.forEach(q => { $(q).style.minHeight = ''; });
+      const most = STABLE.map(() => 0);
+      for (let j = 0; j < N; j++) {
+        painted.key = null;
+        paint(j, timeline(j).end, false);
+        STABLE.forEach((q, n) => { most[n] = Math.max(most[n], $(q).offsetHeight); });
+      }
+      STABLE.forEach((q, n) => { $(q).style.minHeight = most[n] + 'px'; });
+      painted.key = null; painted.i = -1;
+      paint(keep.i, keep.t, false);
+      measuring = false;
+    }
     function paint(i, t, animate) {
       const tl = timeline(i), f = tl.f;
       const key = i + ':' + tl.marks.filter(x => x <= t).length;
@@ -4200,7 +4642,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
       host.classList.toggle('instant', !animate);
       if (i !== painted.i) {
         host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
-        if (!animate && painted.i >= 0 && motionOn()) kick($('.ed'), 'blink');
+        if (!animate && painted.i >= 0 && motionOn() && !measuring) kick($('.ed'), 'blink');
         $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
         $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
           const linked = !sc.id && cardLink(c);
@@ -4404,14 +4846,17 @@ Each card starts from the same file and takes one cog away: first the problem, t
       e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
     });
     const p = { host, show: i => { stop(); go(i, Infinity, false); }, next: () => { stop(); next(); }, prev, sub, toggle,
-      relayout: () => { painted.key = null; paint(pos.i, pos.t, false); placeThumb(); }, get k() { return pos.i; } };
+      relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; } };
     players.push(p);
     go(0, Infinity, false);
+    reserveHeights();
+    if (document.fonts) document.fonts.ready.then(() => { reserveHeights(); placeThumb(); });
     return p;
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
   main.querySelectorAll('.scenario').forEach(h => buildPlayer(h, h.dataset.card ? cardScenarios[h.dataset.card] : scenario));
-  window.addEventListener('resize', () => players.forEach(p => p.relayout()));
+  let lastW = innerWidth;
+  window.addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; players.forEach(p => p.relayout()); });
   window.scenarioPlayers = players; // for checks from the console
   setSpeed(speed);
   document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
@@ -4426,6 +4871,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
     ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
     ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
+    ['once', 'A structure that readers share is built in locals and stored once, as one immutable value: seen as nothing or as all of it.'],
     ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
     ['epoch', 'A change to a published scope moves one epoch; a cache records the epoch it was made at and is valid while it has not moved.'],
     ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
@@ -4578,6 +5024,20 @@ Each card starts from the same file and takes one cog away: first the problem, t
   const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
   setCurrent(start < 0 ? 0 : start, start > 0);
   firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+  // For screenshots: ?shot=<card>:<step>[&theme=dark][&code=1] shows that card alone, at that step.
+  const shotQ = new URLSearchParams(location.search);
+  if (shotQ.get('shot')) {
+    const [cardId, stepNo] = shotQ.get('shot').split(':');
+    const p = players.find(q => (q.host.dataset.card || 'l1') === cardId);
+    if (shotQ.get('theme')) document.documentElement.dataset.theme = shotQ.get('theme');
+    document.documentElement.classList.remove('motion');
+    if (p) {
+      document.body.classList.add('focus', 'shot');
+      setCurrent(cards.indexOf(p.host.closest('.card')), false);
+      if (shotQ.get('code')) p.host.querySelectorAll('details.l3').forEach(d => { d.open = true; });
+      p.show(+stepNo);
+    }
+  }
 })();
 </script>
 </body>

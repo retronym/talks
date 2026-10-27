@@ -1204,6 +1204,203 @@
      ]
     }
    }
+  ],
+  "once": [
+   {
+    "file": "ImportInfo.scala",
+    "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "lines": [
+     {
+      "n": 92,
+      "text": "private final class SelectorInfo(val excluded: Set[TermName], val forwardMapping: SimpleIdentityMap[TermName, TermName],"
+     },
+     {
+      "n": 93,
+      "text": "    val reverseMapping: SimpleIdentityMap[TermName, TermName], val wildcardImport: Boolean, val givenImport: Boolean)"
+     },
+     {
+      "n": 94,
+      "text": "@cache @benignRace(\"recomputed from `selectors`; an immutable value of final fields, seen whole (I60)\") private var mySelectorInfo: SelectorInfo | Null = null"
+     }
+    ],
+    "hl": {
+     "3": [
+      0,
+      1
+     ]
+    }
+   },
+   {
+    "file": "ImportInfo.scala",
+    "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "lines": [
+     {
+      "n": 100,
+      "text": "private def selectorInfo: SelectorInfo ="
+     },
+     {
+      "n": 101,
+      "text": "  val known = mySelectorInfo"
+     },
+     {
+      "n": 102,
+      "text": "  if known != null then known"
+     },
+     {
+      "n": 103,
+      "text": "  else"
+     },
+     {
+      "n": 104,
+      "text": "    var excluded: Set[TermName] = Set()"
+     },
+     {
+      "n": 105,
+      "text": "    var wildcardImport = false"
+     },
+     {
+      "n": 106,
+      "text": "    var givenImport = false"
+     },
+     {
+      "n": 107,
+      "text": "    var forwardMapping: SimpleIdentityMap[TermName, TermName] = SimpleIdentityMap.empty"
+     },
+     {
+      "n": 108,
+      "text": "    var reverseMapping: SimpleIdentityMap[TermName, TermName] = SimpleIdentityMap.empty"
+     },
+     {
+      "n": 109,
+      "text": "    for sel <- selectors do"
+     },
+     {
+      "n": 110,
+      "text": "      if sel.isWildcard then"
+     },
+     {
+      "n": 111,
+      "text": "        wildcardImport = true"
+     },
+     {
+      "n": 112,
+      "text": "        if sel.isGiven then givenImport = true"
+     },
+     {
+      "n": 113,
+      "text": "      else"
+     },
+     {
+      "n": 114,
+      "text": "        if sel.rename != sel.name then"
+     },
+     {
+      "n": 115,
+      "text": "          excluded = excluded + sel.name"
+     },
+     {
+      "n": 116,
+      "text": "        if !sel.isUnimport then"
+     },
+     {
+      "n": 117,
+      "text": "          forwardMapping = forwardMapping.updated(sel.name, sel.rename)"
+     },
+     {
+      "n": 118,
+      "text": "          reverseMapping = reverseMapping.updated(sel.rename, sel.name)"
+     },
+     {
+      "n": 119,
+      "text": "    val info = SelectorInfo(excluded, forwardMapping, reverseMapping, wildcardImport, givenImport)"
+     },
+     {
+      "n": 120,
+      "text": "    mySelectorInfo = info"
+     },
+     {
+      "n": 121,
+      "text": "    info"
+     }
+    ],
+    "hl": {
+     "3": [
+      4,
+      7,
+      8,
+      19,
+      20
+     ],
+     "4": [
+      1,
+      2
+     ]
+    }
+   },
+   {
+    "file": "Scopes.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "lines": [
+     {
+      "n": 559,
+      "text": "override final def toList(using Context): List[Symbol] = {"
+     },
+     {
+      "n": 563,
+      "text": "  val known = elemsCache"
+     },
+     {
+      "n": 564,
+      "text": "  if (known != null) known"
+     },
+     {
+      "n": 565,
+      "text": "  else {"
+     },
+     {
+      "n": 566,
+      "text": "    ensureComplete()"
+     },
+     {
+      "n": 567,
+      "text": "    var elems: List[Symbol] = Nil"
+     },
+     {
+      "n": 568,
+      "text": "    var e = lastEntry"
+     },
+     {
+      "n": 569,
+      "text": "    while ((e != null) && e.owner == this) {"
+     },
+     {
+      "n": 570,
+      "text": "      elems = e.sym :: elems"
+     },
+     {
+      "n": 571,
+      "text": "      e = e.prev"
+     },
+     {
+      "n": 572,
+      "text": "    }"
+     },
+     {
+      "n": 573,
+      "text": "    elemsCache = elems"
+     },
+     {
+      "n": 574,
+      "text": "    elems"
+     }
+    ],
+    "hl": {
+     "4": [
+      5,
+      11
+     ]
+    }
+   }
   ]
  }
 }

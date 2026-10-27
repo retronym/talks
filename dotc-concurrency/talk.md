@@ -42,6 +42,12 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 > A cache hit returns a value computed at the stamp it was read with.
 
+### Publish once
+
+<div class="scenario" data-card="once"></div>
+
+> A structure that readers share is seen either not at all or whole, never while it is being filled.
+
 ### Write action and cancel
 
 <div class="scenario" data-card="write"></div>

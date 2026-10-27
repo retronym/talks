@@ -246,7 +246,7 @@ figure.fig.pair figcaption { grid-column: 1 / -1; }
 
 /* Focus mode: one card at a time, bigger type, for presenting */
 body.focus nav.toc { display: none; }
-body.focus .layout { grid-template-columns: 1fr; }
+body.focus .layout { grid-template-columns: minmax(0, 1fr); }
 body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
 body.focus .card { display: none; min-height: 80vh; }
 body.focus .card.current { display: block; outline: none; }
@@ -273,7 +273,7 @@ main { max-width: 1260px; }
 .scn-beat .bn { color: var(--accent); margin-right: .5em; font-variant-numeric: tabular-nums; }
 .scn-cogs { display: flex; flex-wrap: wrap; gap: 6px; }
 .cog { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
-.scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; align-content: start; }
 @media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
 .ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; }
 .ed-tabs { border-radius: 10px 10px 0 0; overflow: hidden; }
@@ -316,7 +316,8 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .dgroup.g-fixed .dot.on { background: var(--typed); border-color: var(--typed); }
 .card .scenario + blockquote { margin-top: 14px; }
 /* The scrubber and the speed control */
-.scrub { position: relative; height: 22px; margin: 4px 0 10px; cursor: ew-resize; touch-action: none; user-select: none; }
+.transport { margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); }
+.scrub { position: relative; height: 22px; margin: 0 0 8px; cursor: ew-resize; touch-action: none; user-select: none; }
 .scrub-track { position: absolute; left: 0; right: 0; top: 9px; height: 4px; display: flex; gap: 3px; }
 .scrub-track .seg { position: relative; flex: 1; background: var(--rule); border-radius: 2px; }
 .scrub-track .seg i { position: absolute; top: -2px; width: 1px; height: 8px; background: var(--muted); opacity: .6; }
@@ -330,7 +331,8 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 details.l3 { margin: 12px 0 0; }
 details.l3 > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); padding: 4px 0; }
 details.l3 > summary:hover { color: var(--accent); }
-.l3-body { display: grid; gap: 10px; margin-top: 8px; }
+.l3-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+.l3-body .ed { min-width: 0; }
 .xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 50px max-content; }
 .xl { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; transition: opacity calc(.3s / var(--spd, 1)), background calc(.3s / var(--spd, 1)); }
 .xl .no { color: var(--muted); text-align: right; padding-right: 12px; font-size: 11px; user-select: none; }
@@ -405,6 +407,7 @@ table.symtab tr.hot td { background: var(--accent-soft); }
 .gear.off { opacity: .55; }
 .gear.off .gn { color: var(--muted); }
 body.focus main { max-width: 1400px; }
+body.shot .focus-counter { display: none; } body.shot main { padding-top: 16px; } body.shot .card.current { min-height: 0; }
 body.focus .scn-cap { font-size: 18px; }
 
 @media print {
@@ -659,6 +662,10 @@ body.focus .scn-cap { font-size: 18px; }
     const N = sc.frames.length;
     host.innerHTML =
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
+      '<div class="transport">' +
+      '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
+      '</div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
         '<div class="side">' +
@@ -668,8 +675,6 @@ body.focus .scn-cap { font-size: 18px; }
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
-      '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
       (sc.id && excerpts[sc.id] ? '<details class="l3"><summary>The code</summary><div class="l3-body">' + excerpts[sc.id].map(ex =>
         '<div class="ed xc"><div class="ed-tabs"><span class="ed-tab">' + esc(ex.file) + '</span></div><div class="xc-lines">' +
         ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '"><span class="no">' + (x.n || '') + '</span><span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
@@ -742,6 +747,25 @@ body.focus .scn-cap { font-size: 18px; }
     // Restart a keyframe animation on `el`.
     function kick(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
     let painted = { i: -1, key: null, heapTitle: null };
+    // The controls stay put while a sequence plays: the regions above them (the cogs, the editor and side panel,
+    // the caption) keep the height of their tallest step, measured once per width.
+    let measuring = false;
+    const STABLE = ['.scn-head', '.scn-body', '.scn-cap'];
+    function reserveHeights() {
+      measuring = true;
+      const keep = { i: pos.i, t: pos.t };
+      STABLE.forEach(q => { $(q).style.minHeight = ''; });
+      const most = STABLE.map(() => 0);
+      for (let j = 0; j < N; j++) {
+        painted.key = null;
+        paint(j, timeline(j).end, false);
+        STABLE.forEach((q, n) => { most[n] = Math.max(most[n], $(q).offsetHeight); });
+      }
+      STABLE.forEach((q, n) => { $(q).style.minHeight = most[n] + 'px'; });
+      painted.key = null; painted.i = -1;
+      paint(keep.i, keep.t, false);
+      measuring = false;
+    }
     function paint(i, t, animate) {
       const tl = timeline(i), f = tl.f;
       const key = i + ':' + tl.marks.filter(x => x <= t).length;
@@ -750,7 +774,7 @@ body.focus .scn-cap { font-size: 18px; }
       host.classList.toggle('instant', !animate);
       if (i !== painted.i) {
         host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
-        if (!animate && painted.i >= 0 && motionOn()) kick($('.ed'), 'blink');
+        if (!animate && painted.i >= 0 && motionOn() && !measuring) kick($('.ed'), 'blink');
         $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
         $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
           const linked = !sc.id && cardLink(c);
@@ -954,14 +978,17 @@ body.focus .scn-cap { font-size: 18px; }
       e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
     });
     const p = { host, show: i => { stop(); go(i, Infinity, false); }, next: () => { stop(); next(); }, prev, sub, toggle,
-      relayout: () => { painted.key = null; paint(pos.i, pos.t, false); placeThumb(); }, get k() { return pos.i; } };
+      relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; } };
     players.push(p);
     go(0, Infinity, false);
+    reserveHeights();
+    if (document.fonts) document.fonts.ready.then(() => { reserveHeights(); placeThumb(); });
     return p;
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
   main.querySelectorAll('.scenario').forEach(h => buildPlayer(h, h.dataset.card ? cardScenarios[h.dataset.card] : scenario));
-  window.addEventListener('resize', () => players.forEach(p => p.relayout()));
+  let lastW = innerWidth;
+  window.addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; players.forEach(p => p.relayout()); });
   window.scenarioPlayers = players; // for checks from the console
   setSpeed(speed);
   document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
@@ -976,6 +1003,7 @@ body.focus .scn-cap { font-size: 18px; }
     ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
     ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
+    ['once', 'A structure that readers share is built in locals and stored once, as one immutable value: seen as nothing or as all of it.'],
     ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
     ['epoch', 'A change to a published scope moves one epoch; a cache records the epoch it was made at and is valid while it has not moved.'],
     ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
@@ -1128,6 +1156,20 @@ body.focus .scn-cap { font-size: 18px; }
   const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
   setCurrent(start < 0 ? 0 : start, start > 0);
   firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+  // For screenshots: ?shot=<card>:<step>[&theme=dark][&code=1] shows that card alone, at that step.
+  const shotQ = new URLSearchParams(location.search);
+  if (shotQ.get('shot')) {
+    const [cardId, stepNo] = shotQ.get('shot').split(':');
+    const p = players.find(q => (q.host.dataset.card || 'l1') === cardId);
+    if (shotQ.get('theme')) document.documentElement.dataset.theme = shotQ.get('theme');
+    document.documentElement.classList.remove('motion');
+    if (p) {
+      document.body.classList.add('focus', 'shot');
+      setCurrent(cards.indexOf(p.host.closest('.card')), false);
+      if (shotQ.get('code')) p.host.querySelectorAll('details.l3').forEach(d => { d.open = true; });
+      p.show(+stepNo);
+    }
+  }
 })();
 </script>
 </body>

@@ -152,7 +152,8 @@
    "stamped": "Stamped cells",
    "cycles": "Wait-for cycles",
    "epoch": "Epoch invalidation",
-   "resultstamp": "Result stamps"
+   "resultstamp": "Result stamps",
+   "once": "Publish once"
   },
   "frames": [
    {
@@ -2155,6 +2156,220 @@
        [
         "T1's result stamp",
         "+4"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  },
+  "once": {
+   "lines": [
+    14,
+    17
+   ],
+   "symbolDefs": [
+    {
+     "id": "Checkout",
+     "line": 14,
+     "tok": "Checkout"
+    },
+    {
+     "id": "imp",
+     "label": "import Basket.*",
+     "line": 15,
+     "tok": "Basket"
+    },
+    {
+     "id": "total",
+     "line": 17,
+     "tok": "total"
+    }
+   ],
+   "threads": [
+    "T1",
+    "T2"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "Fields filled one by one",
+     "caption": "Every reader resolves names in Checkout through the same import, and the import caches what its selectors say. With one thread it sets a marker field first and then fills in the mappings. T2 has stored the marker and is still building the mappings.",
+     "run": "run 1",
+     "units": {
+      "s14": "T2"
+     },
+     "syms": {
+      "Checkout": "done",
+      "imp": "prog:T2"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "fills the import's selector info"
+      ],
+      "T1": [
+       "typing",
+       "hover on total"
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "T2 has stored",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "excluded (the marker)",
+        "+Set()",
+        "~"
+       ],
+       [
+        "forwardMapping",
+        "~being built",
+        "~"
+       ],
+       [
+        "reverseMapping",
+        "~being built",
+        "~"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "Seen half filled",
+     "caption": "T1 resolves subtotal through the same import, finds the marker set and skips the work, then reads a mapping that is still null. The request fails with a null where the type system promised none. This was seen in testing.",
+     "ticks": [
+      {
+       "sym": "imp",
+       "t": "T1"
+      }
+     ],
+     "syms": {
+      "total": "prog:T1"
+     },
+     "lanes": {
+      "T1": [
+       "failed",
+       "a null mapping"
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "T2 has stored",
+       "T1 sees"
+      ],
+      "rows": [
+       [
+        "excluded (the marker)",
+        "+Set()",
+        "+Set()"
+       ],
+       [
+        "forwardMapping",
+        "~being built",
+        "!null"
+       ],
+       [
+        "reverseMapping",
+        "~being built",
+        "!null"
+       ]
+      ]
+     },
+     "popup": {
+      "sym": "total",
+      "at": "subtotal + tax",
+      "bad": true,
+      "text": "request failed: tried to cast away nullability"
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Build in a local, store once",
+     "caption": "Instead, a reader builds everything in locals, then stores one immutable value whose fields are final, in one field. Nothing is visible until all of it is.",
+     "syms": {
+      "total": "lazy"
+     },
+     "lanes": {
+      "T1": [
+       "typing",
+       "hover on total"
+      ],
+      "T2": [
+       "typing",
+       "builds the selector info in locals"
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "selectorInfo",
+        "~null"
+       ],
+       [
+        "T2's locals",
+        "excluded, forward, reverse, wildcard"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Nothing, or all of it",
+     "caption": "T1 finds either nothing, and builds an equal value itself, or the whole value. Two readers may both build it; each stores an equal value, and either is whole. A scope's list of members is published the same way.",
+     "syms": {
+      "imp": "done",
+      "total": "done"
+     },
+     "ticks": [
+      {
+       "sym": "imp",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ],
+      "T2": [
+       "done",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "the import's selector info (shared)",
+      "cols": [
+       "field",
+       "value"
+      ],
+      "rows": [
+       [
+        "selectorInfo",
+        "+SelectorInfo(excluded, forward, reverse, …)"
+       ],
+       [
+        "T2's locals",
+        "~gone"
        ]
       ]
      },
