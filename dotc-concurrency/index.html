@@ -505,13 +505,13 @@ body.focus .scn-cap { font-size: 18px; }
 
 <script type="text/markdown" id="talk-src"># Several readers, one symbol table
 
-<p class="sub">How dotc's presentation compiler lets a hover, a background pass and the editor share one run, and the parts that keep it safe.</p>
+<p class="sub">Concurrent requests in dotc's presentation compiler, and how they share one symbol table safely.</p>
 
-Interactive mode serves several requests at once against one symbol table. Each request reads through a `Reader` of its own; edits arrive as write actions that run alone. Symbols still complete lazily, and a completion may be needed by a reader other than the one running it.
+Interactive mode serves several requests at once against one symbol table. Each request has its own `Reader`; edits run alone, as write actions. Symbols still complete lazily, so one reader may need a completion that another is running.
 
-The work is [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*.
+The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*.
 
-What follows is one IDE scenario, run for real on the compiler, with the code in the middle. Step through it with `,` and `.` or the buttons. Each cog lights up at the moment it does its job; a cog with a card links to it, where the cog is taken out to show what goes wrong without it.
+Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each cog lights up when it acts; its card shows what breaks without it.
 
 ## The scenario
 
@@ -521,35 +521,35 @@ What follows is one IDE scenario, run for real on the compiler, with the code in
 
 ### The cogs
 
-What each cog is for, the steps of the scenario where it fires, and its card.
+What each cog does, where it fires in the scenario, and its card.
 
 <div class="gears"></div>
 
-Batch compilation picks the single-reader mode once per `ContextBase` and runs the code it always ran: under 2% overhead. Interactively the overhead is minor, and the work scales well to four threads and more.
+Batch compilation chooses the single-reader mode once per `ContextBase` and runs the original code: under 2% overhead. Interactive overhead is minor, and typing scales to four threads and more.
 
 ## The cogs, one at a time
 
-Each card starts from the same file and takes one cog away: first the problem, then the mechanism, then the same moment with the cog in place.
+Each card removes one cog: the problem, the mechanism, then the same moment with the cog in place.
 
 ### Claim on a completion root
 
-<p class="lede">In code, a claim is a capability: <code>Sharing.claim(key)</code> hands its body evidence of type <code>Holds[key.type]</code>, and a completer's <code>complete</code> asks for that evidence, so a completion run without its claim does not compile. Every such operation is an inline method whose batch branch is the original code, so the batch compiler pays a test of a final field and nothing else.</p>
+<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
 
 <div class="scenario" data-card="claim"></div>
 
-> A reader sees a symbol's info either finished, or as a lazy type it can wait on. It never sees another reader's half-built info, and never takes another reader's completion for a cycle.
+> A reader sees a symbol's info finished, or as a lazy type to wait on: never half-built, never mistaken for a cycle.
 
 ### Publish, then release
 
-<p class="lede"><code>Published</code> and <code>Payload</code> are opaque types over the plain fields, and their operations are macros. A payload store needs a <code>Publishing</code> capability that only the <code>publishing</code> block provides, and a payload read needs the <code>Acquired</code> evidence of the period: the order is checked at compile time and costs a release store and an acquire load at run time, nothing more.</p>
+<p class="lede"><code>Published</code> and <code>Payload</code> are opaque types with macro operations. A store needs the <code>Publishing</code> capability of a <code>publishing</code> block; a read needs the period's <code>Acquired</code> evidence. The order is checked at compile time and costs one release store and one acquire load at run time.</p>
 
 <div class="scenario" data-card="publish"></div>
 
-> A reader that finds a cached period current sees everything stored before it.
+> A reader that finds the period current sees everything stored before it.
 
 ### Stamped cells
 
-<p class="lede"><code>Stamped</code> is a final class of two final fields; <code>cached</code> is a macro that reads and writes the field it is called on. The current stamp comes from a given <code>Stamp[K]</code> whose kind (per run or per period) is a phantom type, so a call site names no stamp and a field is never read with one kind and written with another.</p>
+<p class="lede"><code>Stamped</code> is an immutable pair, and <code>cached</code> is a macro on the field. The current stamp is a given <code>Stamp[K]</code> whose kind (per run, per period) is a phantom type, so call sites name no stamp and cannot mix kinds.</p>
 
 <div class="scenario" data-card="stamped"></div>
 
@@ -557,61 +557,61 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Publish once
 
-<p class="lede">No new primitive: a value of final fields, built in locals and stored in one field. The Java memory model's rule for final fields does the rest.</p>
+<p class="lede">No new primitive: build in locals, then store one value of final fields.</p>
 
 <div class="scenario" data-card="once"></div>
 
-> A structure that readers share is seen either not at all or whole, never while it is being filled.
+> Readers see a shared structure whole or not at all.
 
 ### Write action and cancel
 
-<p class="lede">A fair read/write lock and one volatile flag, polled at the typer's existing checkpoints. Batch compilation has no driver and never sees either.</p>
+<p class="lede">A fair read/write lock and a volatile flag, polled at the typer's existing checkpoints. Batch compilation has neither.</p>
 
 <div class="scenario" data-card="write"></div>
 
-> Readers never see a write half done, and a writer waits only until each reader's next checkpoint.
+> Readers never see a half-done write; a writer waits only until each reader's next checkpoint.
 
 ### Owner cancelled mid-completion
 
-<p class="lede">No new machinery: the unwound completion is a lazy type like any other, and it pre-empts whoever reaches it through the slow path every lazy type already takes.</p>
+<p class="lede">The unwound completion is just another lazy type; whoever reaches it is pre-empted.</p>
 
 <div class="scenario" data-card="unwound"></div>
 
-> A released claim leaves its symbol finished, or marked so that the next reader to reach it starts over. No reader waits on work that nobody is doing.
+> A released claim leaves its symbol finished, or marked to start over. Nobody waits on abandoned work.
 
 ### Wait-for cycles
 
-<p class="lede">The graph is not kept anywhere: each reader publishes the claim it waits on in a volatile field, and a waiter walks owners from claim to claim at every slice of its wait.</p>
+<p class="lede">No graph is stored: each reader publishes the claim it waits on, and a waiter follows owners from claim to claim.</p>
 
 <div class="scenario" data-card="cycles"></div>
 
-> No two readers wait on each other forever. A cycle that someone can give way on is broken by that reader; a real cycle between signatures is reported, as one reader would report it.
+> No two readers wait on each other forever: one gives way, or a real cycle is reported as one reader would report it.
 
 ### Epoch invalidation
 
-<p class="lede">An edge case: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) With one thread, such a change clears the caches computed from the scope by walking a list of them. With several readers nothing is walked: the base keeps one counter that every such change increments, and a cache is valid only while the counter still reads what it did when the cache was made.</p>
+<p class="lede">An edge case. A published scope changes in only a few places: a package's flat classes, entered when first needed, or a classfile completer deleting symbols it found absent. (Synthetic function classes are kept beside <code>scala</code>'s scope.) With one thread, such a change walks and clears the dependent caches. With several readers it increments a counter on the base, and a cache is valid only while that counter is unchanged since the cache was made.</p>
 
 <div class="scenario" data-card="epoch"></div>
 
-> A cache computed from scopes is used only while no published scope has changed since it was made, however a late store and a change interleave.
+> A cache is used only if no published scope has changed since it was made.
 
 ### Result stamps
 
-<p class="lede">A volatile count of write actions on the driver, and a stamp on each reader. The check runs once per request, at its end.</p>
+<p class="lede">A volatile write count on the driver and a stamp per reader, compared once at the end of each request.</p>
 
 <div class="scenario" data-card="resultstamp"></div>
 
-> A result goes to the editor only if no write action ran between the last lock its request left and its delivery.
+> A result reaches the editor only if no write action ran since its request last held the lock.
 
 ## Finally: the whole compiler
 
 ### Every file of dotc, N readers
 
-The compiler's own sources, `compiler/src/dotty/tools/dotc/**/*.scala`: 491 files, 188k lines, opened in one run of the presentation compiler and typed by N reader threads. The open parses, indexes and skips every statement, serially; then each reader takes the largest file left. A recorded run, replayed. The blocks share one clock, so more readers finish sooner; each N joins the plot when its last thread is done. Press Play, or drag across the lanes.
+`compiler/src/dotty/tools/dotc/**/*.scala`: 491 files, 188k lines. One run opens them all (parse, index, skip every statement; serial), then N reader threads type them, each taking the largest file left. A recorded run, replayed on one clock, so more readers finish sooner. Press Play, or drag across the lanes.
 
 <div class="throughput"></div>
 
-Every N gives the same diagnostics as one reader, file for file, with no back-offs and no cycles raised. The waits on another reader's claim are a few milliseconds in all.
+Every N reports the same diagnostics as one reader, with no back-offs and no cycles. Waits on other readers' claims total a few milliseconds.
 </script>
 <script type="application/json" id="frames-src">{
  "scenario": {
@@ -774,7 +774,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "1",
     "title": "Open the file",
-    "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
+    "caption": "Opening the file is a write action: a new run, statements entered but not typed. Every symbol is lazy.",
     "cogs": [
      "write"
     ],
@@ -798,7 +798,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "2",
     "title": "The background pass starts",
-    "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
+    "caption": "T2, with its own Reader, types from the top. It claims each completion root; while it completes, the symbol's info is an InProgress that only T2 sees through. Line 9 holds T2 in subtotal, so every run interleaves the same way.",
     "cogs": [
      "reader",
      "claim"
@@ -838,7 +838,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "3",
     "title": "Hover on total",
-    "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
+    "caption": "T1 types only the path to total, which needs subtotal's type. It takes the usual slow path for a LazyType, finds T2's claim, and waits. It neither sees T2's half-built state nor mistakes it for a cycle.",
     "cogs": [
      "reader",
      "claim",
@@ -874,7 +874,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "4",
     "title": "T2 publishes subtotal",
-    "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
+    "caption": "Released, T2 finishes subtotal and publishes it before releasing the claim, so T1 wakes to a complete denotation. T1 then waits briefly on tax, which T2 has just claimed.",
     "cogs": [
      "publish",
      "wait"
@@ -910,7 +910,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "5",
     "title": "The hover answers",
-    "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
+    "caption": "T1 completes total and answers BigDecimal, as one reader would. receipt stays skipped.",
     "cogs": [
      "publish",
      "target"
@@ -948,7 +948,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "6",
     "title": "The background pass finishes",
-    "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
+    "caption": "T2 reaches Checkout, finds total already published, and types receipt. Everything is typed; no diagnostics.",
     "cogs": [
      "target"
     ],
@@ -986,7 +986,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "7a",
     "title": "A keystroke in receipt, nothing in flight",
-    "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
+    "caption": "The edit is inside receipt's body. The write action re-indexes receipt and keeps the run; everything else stays published.",
     "cogs": [
      "write",
      "bodyedit"
@@ -1016,7 +1016,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "7b",
     "title": "The hover after the edit",
-    "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
+    "caption": "T3 types line 19 only, reading subtotal, tax and total as published.",
     "cogs": [
      "reader",
      "target"
@@ -1054,7 +1054,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     "reset": 2,
     "beat": "8",
     "title": "The same keystroke, while T2 is held",
-    "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
+    "caption": "Back to T1 waiting on T2. Now the user types in receipt: the editor cancels the stale requests, and the new text arrives as a writer. It raises a sticky cancel and waits for readers to leave.",
     "cogs": [
      "write",
      "cancel"
@@ -1085,7 +1085,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "9",
     "title": "T2 unwinds",
-    "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
+    "caption": "T2 unwinds at its next checkpoint, resets the roots it was completing, and releases the claim. A Namer completion cannot run twice, so subtotal is marked unwound, not lazy.",
     "cogs": [
      "cancel",
      "unwound"
@@ -1109,7 +1109,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "10",
     "title": "The waiter takes over, and is pre-empted",
-    "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
+    "caption": "T1 takes over subtotal's root, meets the unwound completion, and is pre-empted: it resets total, unwinds, and the run is tainted. Nothing hangs or tears; the work is discarded.",
     "cogs": [
      "claim",
      "unwound"
@@ -1140,7 +1140,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
    {
     "beat": "11",
     "title": "A fresh run for the new text",
-    "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
+    "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax on the way, and answers. The background pass follows in the same run.",
     "cogs": [
      "write",
      "reader",
@@ -1220,7 +1220,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "Two readers, one lazy symbol",
-     "caption": "Take away the claims. T2 is completing subtotal, whose inferred type needs its body typed. While a completer runs, it marks its symbol as being completed.",
+     "caption": "Without claims. T2 is completing subtotal, whose inferred type needs its body typed. A running completer marks its symbol as being completed.",
      "run": "run 1",
      "units": {
       "s5": "T2",
@@ -1275,7 +1275,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "Claim the root",
-     "caption": "Before completing, T2 claims subtotal's completion root and sets its info to an InProgress: a lazy type that records T2 as its owner. Only T2 sees through it, to the info it is building.",
+     "caption": "T2 claims subtotal's root and sets its info to an InProgress: a lazy type that names T2 as owner. Only T2 sees through it.",
      "syms": {
       "subtotal": "prog:T2",
       "hold": "prog:T2",
@@ -1313,7 +1313,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "4",
      "title": "Wait, don't peek",
-     "caption": "To T1 the InProgress is a lazy type like any other, so it takes the slow path every unforced symbol already takes. There it finds the root claimed by another reader and waits on the claim. Asking whether subtotal is completing waits in the same way, instead of answering from a glimpse.",
+     "caption": "To T1 the InProgress is an ordinary lazy type: it takes the usual slow path, finds T2's claim, and waits. Asking whether subtotal is completing waits too, instead of peeking.",
      "syms": {
       "total": "prog:T1",
       "subtotal": "prog:T2|T1"
@@ -1357,7 +1357,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "5",
      "title": "Publish, release, wake",
-     "caption": "T2 publishes the info, then releases the claim. T1 wakes, reads the finished type and answers BigDecimal, as one reader would.",
+     "caption": "T2 publishes the info, then releases the claim. T1 wakes and answers BigDecimal.",
      "syms": {
       "subtotal": "done",
       "hold": "done",
@@ -1428,7 +1428,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "A shared reference caches what it resolved to",
-     "caption": "Types are shared by all readers, and a reference such as subtotal in total's body caches what it resolved to: a denotation, a symbol, and the period they were checked in. T2 resolves it and stores the three, in that order, with plain stores.",
+     "caption": "Types are shared. A reference such as subtotal in total's body caches its denotation, its symbol, and the period they were checked in. T2 stores all three, in that order, with plain stores.",
      "run": "run 1",
      "units": {
       "s14": "T2"
@@ -1476,7 +1476,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "2",
      "title": "Seen in another order",
-     "caption": "On Apple silicon, plain stores can become visible to another thread in a different order. T1 finds the period current, trusts the cached fields, and gets a null symbol. This was seen in testing.",
+     "caption": "On Apple silicon, plain stores can become visible out of order. T1 finds the period current and reads a null symbol. Seen in testing.",
      "ticks": [
       {
        "sym": "total",
@@ -1525,7 +1525,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "The period publishes the fields",
-     "caption": "The period is the field that publishes the other two. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store of the period, and read only after checkedPeriod.acquired, an acquire load. The types hold the order: a plain read or write of these fields does not compile.",
+     "caption": "The period publishes the other two fields. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store, and read only after checkedPeriod.acquired, an acquire load. Plain access does not compile.",
      "lanes": {
       "T1": [
        "typing",
@@ -1562,7 +1562,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "4",
      "title": "Current means complete",
-     "caption": "If T1 finds the period current, it sees everything stored before it; if not, it resolves the reference itself. Either way the symbol is never null. On x86 an acquire load is a plain load.",
+     "caption": "If the period is current, everything stored before it is visible; otherwise T1 resolves the reference itself. On x86 an acquire load is a plain load.",
      "syms": {
       "total": "done"
      },
@@ -1632,7 +1632,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "A value and its stamp, in two fields",
-     "caption": "Many caches keep a value and the period it was computed in, as two plain fields: here, the supertype of List[Item]. The previous run left both behind. In run 2, T2 computes the value again and stores the value, then the period.",
+     "caption": "Many caches keep a value and its period in two plain fields, here the supertype of List[Item]. In run 2, T2 recomputes and stores the value, then the period.",
      "run": "run 2",
      "units": {
       "s5": "T2"
@@ -1675,7 +1675,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "2",
      "title": "A torn pair",
-     "caption": "T1 sees the new period beside the old value, so the hit hands it a type built in the previous run. Two writers in one period can also leave one's stamp beside the other's value. Seen in testing: a null, a false, the previous run's value.",
+     "caption": "T1 sees the new period with the old value: a type from the previous run. Two writers can also mix one's stamp with the other's value. Seen in testing: a null, a false, the previous run's value.",
      "ticks": [
       {
        "sym": "items",
@@ -1713,7 +1713,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "One field, one immutable pair",
-     "caption": "The cache becomes one field holding a Stamped: the stamp and the value together, in an immutable object whose fields are final. A miss computes the value and replaces the whole pair.",
+     "caption": "The cache is now one field holding a Stamped: stamp and value in one immutable object. A miss replaces the whole pair.",
      "lanes": {
       "T1": [
        "typing",
@@ -1738,7 +1738,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "4",
      "title": "Old or new, never mixed",
-     "caption": "T1 loads the reference once and sees one pair whole: the new one, a hit, or the old one, a miss it computes again. No fences, and the same code with one thread or several. The price is an allocation per miss.",
+     "caption": "T1 reads the reference once and gets one whole pair: new, a hit, or old, a miss it recomputes. No fences, and the same code for one thread or many. The cost is an allocation per miss.",
      "syms": {
       "items": "done"
      },
@@ -1799,7 +1799,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "A keystroke behind a long pass",
-     "caption": "T2's background pass holds a read lock while it types. The user types in receipt. With a plain read/write lock the writer waits for the whole pass, which on a large file takes seconds, and every keystroke after it waits too.",
+     "caption": "T2's background pass holds a read lock. The user types in receipt. With a plain read/write lock the writer waits for the whole pass, seconds on a large file, and so does every later keystroke.",
      "run": "run 1 · write 2",
      "edited": true,
      "units": {
@@ -1824,7 +1824,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "2",
      "title": "The writer is pending",
-     "caption": "Instead, the writer raises a pending flag and queues for the lock; readers that start now queue behind it. T2 polls the flag at its typer checkpoints, unwinds at the next one, and releases the read lock.",
+     "caption": "Instead, the writer raises a pending flag and queues; new readers queue behind it. T2 polls the flag at its typer checkpoints, unwinds, and releases its lock.",
      "lanes": {
       "T2": [
        "cancelled",
@@ -1840,7 +1840,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "The writer runs alone",
-     "caption": "With no reader left, the writer takes the lock and applies the edit: the change is inside receipt's body, so it re-indexes receipt and keeps the run.",
+     "caption": "With no readers left, the writer applies the edit. It is inside receipt's body, so it re-indexes receipt and keeps the run.",
      "run": "run 1 · write 3",
      "units": {
       "s5": "skip",
@@ -1861,7 +1861,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "4",
      "title": "Readers are retried",
-     "caption": "The writer releases the lock. T2's request is retried on the new text, and its caller never sees the cancellation. A writer waits only until each reader reaches its next checkpoint, and no reader sees a write half done.",
+     "caption": "The writer releases the lock, and T2's request is retried on the new text; its caller never sees the cancellation.",
      "units": {
       "receipt": "typed",
       "s5": "typed"
@@ -1908,7 +1908,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "The owner is cancelled",
-     "caption": "T2 is completing subtotal, and T1 waits on its claim. The user types, and T2 is cancelled in the middle of the completion.",
+     "caption": "T2 is completing subtotal; T1 waits on its claim. The user types, and T2 is cancelled mid-completion.",
      "run": "run 1",
      "units": {
       "s5": "T2",
@@ -1944,8 +1944,8 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     {
      "group": "Problem",
      "beat": "2",
-     "title": "What a careless unwind leaves",
-     "caption": "If T2 simply unwound, subtotal would keep an InProgress that nobody is completing, or the half-built info T2 had set. T1 would wait forever, or read the half-built info.",
+     "title": "Unwinding without cleanup",
+     "caption": "If T2 just unwound, subtotal would keep an InProgress that nobody is completing, or T2's half-built info. T1 would wait forever, or read it.",
      "lanes": {
       "T2": [
        "unwound",
@@ -1989,7 +1989,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "Reset, then release",
-     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice: it enters symbols as it goes, a method's parameters among them, and a second run would enter them again. So subtotal is left marked as an unwound completion rather than as lazy.",
+     "caption": "T2 resets every root it was completing, then releases its claims. A Namer completion cannot run twice (a second run would enter the method's parameters again), so subtotal is marked unwound, not lazy.",
      "syms": {
       "subtotal": "unwound",
       "hold": "lazy"
@@ -2030,7 +2030,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "4",
      "title": "The waiter takes over, and is pre-empted",
-     "caption": "T1 takes the claim over and meets the unwound completion. It cannot finish it, so it is pre-empted too: it resets total, unwinds, and the run is marked tainted.",
+     "caption": "T1 takes over the claim, meets the unwound completion, and is pre-empted too: it resets total, unwinds, and the run is tainted.",
      "syms": {
       "subtotal": "unwound:T1",
       "total": "lazy"
@@ -2074,7 +2074,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "5",
      "title": "A fresh run",
-     "caption": "The writer gives the new text a fresh run, and the next request completes subtotal from scratch. No reader waits on work that nobody is doing, and none reads a half-built info. What it costs is the run.",
+     "caption": "The new text gets a fresh run, and the next request completes subtotal from scratch. The cost is the run.",
      "run": "run 2",
      "units": {
       "s5": "skip",
@@ -2186,7 +2186,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "Each reader holds one signature",
-     "caption": "Two hovers, on useA and on useB. T1 claims a's completion, T2 claims b's. The latch in each body holds both readers there, so the two claims are taken before either needs the other.",
+     "caption": "Hovers on useA and useB. T1 claims a's completion, T2 claims b's. The latches hold both until each has its claim.",
      "run": "run 1",
      "units": {
       "A": "T1",
@@ -2213,7 +2213,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "2",
      "title": "Each needs the other's",
-     "caption": "Released, T1 needs b's type and waits on T2's claim; T2 needs a's and waits on T1's. Waiting on a claim is safe only if the owner finishes. Here each owner waits on the other: without a check, both hovers hang.",
+     "caption": "Released, each needs the other's type and waits on the other's claim. Without a check, both hang.",
      "syms": {
       "b": "prog:T2|T1",
       "a": "prog:T1|T2"
@@ -2245,7 +2245,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "The wait-for graph",
-     "caption": "Each waiting reader records the claim it waits on. At every 5 ms slice of its wait, a reader follows the owners: b is held by T2, who waits on a, which this reader holds. That closes a cycle.",
+     "caption": "Each waiting reader records the claim it waits on. Every 5 ms a waiter follows the owners: b is held by T2, which waits on a, which T1 holds. That is a cycle.",
      "lanes": {
       "T1": [
        "waiting",
@@ -2293,7 +2293,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "4",
      "title": "Who gives way",
-     "caption": "Claims are coarser than the facts they protect, so most cycles are two roots taken in opposite orders, and a reader that can give way does. Here both readers are inside Namer completions and both roots are symbols: the signatures really do need each other.",
+     "caption": "Claims are coarser than the facts they protect, so most cycles are two roots taken in opposite orders, and a reader that can give way does. Here both readers are in Namer completions on symbol roots: the signatures really depend on each other.",
      "ticks": [
       {
        "sym": "b",
@@ -2336,7 +2336,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "5",
      "title": "Seen twice, then reported",
-     "caption": "The graph is read from fields the readers change as they go, so a cycle counts only when the same chain is seen at two looks a slice apart. One reader, chosen by a fixed order of the threads, then raises the cyclic reference a single reader would raise, and both readers finish.",
+     "caption": "The chain is read while readers move, so it counts only if seen twice, a slice apart. Then one reader, picked by a fixed thread order, raises the cyclic reference a single reader would.",
      "syms": {
       "b": "done",
       "a": "done",
@@ -2423,7 +2423,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "A cache built from a scope",
-     "caption": "To resolve BigDecimal, T2 needs the names in package scala, and builds the package's member-name set from its scope: a cache that also answers \"no such member\" quickly.",
+     "caption": "To resolve BigDecimal, T2 builds package scala's member-name set from its scope: a cache that also answers \"no such member\" quickly.",
      "run": "run 1",
      "units": {
       "s3": "T2"
@@ -2469,7 +2469,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "2",
      "title": "The scope grows; the store lands after",
-     "caption": "An edge case: a published scope rarely changes. One that does is a package's flat classes, entered once, the first time they are needed. T1 enters scala's into its scope and invalidates the package's caches. T2, still working from the old scope, stores its set after that invalidation. The stale set stays: the new classes read as absent for the rest of the run.",
+     "caption": "The rare case: a package enters its flat classes the first time they are needed, after the package is published. T1 enters scala's and invalidates its caches. T2 stores its set, built from the old scope, after the invalidation. The new classes now read as absent for the rest of the run.",
      "ticks": [
       {
        "sym": "scala",
@@ -2508,7 +2508,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "A cache records the epoch it was made at",
-     "caption": "With several readers, nothing is cleared. The base keeps one counter, the structure epoch. A cache records its value when the cache is made, and is valid only while the counter has not moved.",
+     "caption": "With several readers, nothing is cleared. The base keeps one counter, the structure epoch. A cache records it when made and is valid only while it is unchanged.",
      "lanes": {
       "T1": [
        "typing",
@@ -2541,7 +2541,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "4",
      "title": "A change to a published scope moves the epoch",
-     "caption": "Entering into a scope that is already published moves the epoch. T2's store still lands after it, but carries the epoch it was made at.",
+     "caption": "Entering into a published scope increments the epoch. T2's late store carries the old value.",
      "ticks": [
       {
        "sym": "scala",
@@ -2580,7 +2580,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "5",
      "title": "The next read builds it again",
-     "caption": "The next reader to need the names finds the epoch moved and builds the set from the scope as it is now. However the store and the change interleave, a stale set is never used.",
+     "caption": "The next reader sees that the epoch has moved and rebuilds the set from the current scope.",
      "ticks": [
       {
        "sym": "scala",
@@ -2635,7 +2635,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "A provider reads after the lock",
-     "caption": "A hover runs the typer up to its position under the read lock, then reads the typed tree to build its answer, after the lock is released. T1's request left the lock when the driver had made 2 write actions.",
+     "caption": "A hover types up to its position under the read lock, then reads the typed tree after releasing it. T1 left the lock at write 2.",
      "run": "run 1 · write 2",
      "units": {
       "s14": "typed"
@@ -2676,7 +2676,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "2",
      "title": "A write lands in between",
-     "caption": "The user types. The new text is a write action that runs now, because T1 holds no lock. When T1 reads the tree, it reads what that write left. After a fresh run, that would be trees the editor no longer shows.",
+     "caption": "The user types, and the write runs at once, since T1 holds no lock. T1 then reads whatever the write left: after a fresh run, trees the editor no longer shows.",
      "run": "run 1 · write 3",
      "edited": true,
      "units": {
@@ -2723,7 +2723,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "Compare the stamps",
-     "caption": "A result carries the write count of the last lock its request left. Before the result goes out, the driver compares it with the count now. If a write ran since, the request is served again on a fresh reader, up to three times.",
+     "caption": "A result carries the write count from when its request last left the lock. If a write ran since, the request is served again on a fresh reader, up to three times.",
      "lanes": {
       "T3": [
        "done",
@@ -2756,7 +2756,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "4",
      "title": "Served again",
-     "caption": "The second try reads a tree no write has touched since, and its stamp matches. T1's request still names the text it was sent, so its retry is a write action of its own; an editor that has moved on would cancel it instead.",
+     "caption": "The retry's stamp matches. T1's request still names the old text, so its retry is itself a write; an editor that had moved on would cancel it.",
      "run": "run 1 · write 4",
      "units": {
       "receipt": "typed"
@@ -2832,7 +2832,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "1",
      "title": "Fields filled one by one",
-     "caption": "Every reader resolves names in Checkout through the same import, and the import caches what its selectors say. With one thread it sets a marker field first and then fills in the mappings. T2 has stored the marker and is still building the mappings.",
+     "caption": "Every reader resolves names in Checkout through one shared import, which caches what its selectors say. The single-threaded code sets a marker field, then fills in the mappings. T2 has set the marker and is still filling.",
      "run": "run 1",
      "units": {
       "s14": "T2"
@@ -2881,7 +2881,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Problem",
      "beat": "2",
      "title": "Seen half filled",
-     "caption": "T1 resolves subtotal through the same import, finds the marker set and skips the work, then reads a mapping that is still null. The request fails with a null where the type system promised none. This was seen in testing.",
+     "caption": "T1 sees the marker, skips the work, and reads a mapping that is still null. The request fails. Seen in testing.",
      "ticks": [
       {
        "sym": "imp",
@@ -2933,7 +2933,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "Build in a local, store once",
-     "caption": "Instead, a reader builds everything in locals, then stores one immutable value whose fields are final, in one field. Nothing is visible until all of it is.",
+     "caption": "Instead, build everything in locals, then store one immutable value in one field.",
      "syms": {
       "total": "lazy"
      },
@@ -2969,7 +2969,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Fixed",
      "beat": "4",
      "title": "Nothing, or all of it",
-     "caption": "T1 finds either nothing, and builds an equal value itself, or the whole value. Two readers may both build it; each stores an equal value, and either is whole. A scope's list of members is published the same way.",
+     "caption": "T1 finds nothing, and builds an equal value itself, or the whole value. A scope's member list is published the same way.",
      "syms": {
       "imp": "done",
       "total": "done"
@@ -5472,20 +5472,20 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
   document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
   // The cogs: what each one is for, and the steps of the scenario where it fires.
   const GEARS = [
-    ['write', 'Edits run alone. The writer raises a sticky cancel and waits for readers to leave; a body edit re-indexes one member.'],
-    ['reader', 'Each request reads through its own Reader: its own typer scratch and its own view of what it is completing.'],
-    ['claim', 'Before completing a root, a reader claims it. Until it is done, the info is an InProgress only the owner sees through.'],
-    ['wait', 'Another reader that needs the info, or asks whether it is completing, waits on the claim instead of peeking.'],
-    ['publish', 'The completed info is published before the claim is released, so a waiter wakes to a whole denotation.'],
-    ['target', 'A request types only the statements on its path; the rest stay skipped for whoever needs them next.'],
-    ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
-    ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
-    ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
-    ['once', 'A structure that readers share is built in locals and stored once, as one immutable value: seen as nothing or as all of it.'],
-    ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
-    ['epoch', 'A change to a published scope increments one counter on the base; a cache is valid only while the counter still reads what it did when the cache was made.'],
-    ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
-    ['cycles', 'A wait that would close a cycle of claims: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
+    ['write', 'Edits run alone: the writer raises a sticky cancel and waits for readers to leave. A body edit re-indexes one member.'],
+    ['reader', 'Each request has its own Reader: its own typer scratch and its own completions in progress.'],
+    ['claim', 'A reader claims a root before completing it; meanwhile the info is an InProgress that only the owner sees through.'],
+    ['wait', 'A reader that needs the info, or asks whether it is completing, waits on the claim.'],
+    ['publish', 'The info is published before the claim is released, so waiters wake to a whole denotation.'],
+    ['target', 'A request types only the statements on its path; the rest stay skipped.'],
+    ['bodyedit', 'An edit inside a body keeps the run; only that member is re-indexed.'],
+    ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases its claims.'],
+    ['unwound', 'An unwinding owner resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run replaced.'],
+    ['once', 'A shared structure is built in locals and stored once, as one immutable value.'],
+    ['stamped', 'A cache value and its period, in one immutable object in one field.'],
+    ['epoch', 'A change to a published scope increments a counter; a cache is valid while the counter is unchanged since it was made.'],
+    ['resultstamp', 'A result carries the write count of its request\'s last lock, and is served again if a write ran since.'],
+    ['cycles', 'A wait that would close a cycle: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
   ];
   main.querySelectorAll('.gears').forEach(host => {
     host.innerHTML = GEARS.map(([id, text]) => {

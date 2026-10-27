@@ -159,7 +159,7 @@
    {
     "beat": "1",
     "title": "Open the file",
-    "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
+    "caption": "Opening the file is a write action: a new run, statements entered but not typed. Every symbol is lazy.",
     "cogs": [
      "write"
     ],
@@ -183,7 +183,7 @@
    {
     "beat": "2",
     "title": "The background pass starts",
-    "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
+    "caption": "T2, with its own Reader, types from the top. It claims each completion root; while it completes, the symbol's info is an InProgress that only T2 sees through. Line 9 holds T2 in subtotal, so every run interleaves the same way.",
     "cogs": [
      "reader",
      "claim"
@@ -223,7 +223,7 @@
    {
     "beat": "3",
     "title": "Hover on total",
-    "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
+    "caption": "T1 types only the path to total, which needs subtotal's type. It takes the usual slow path for a LazyType, finds T2's claim, and waits. It neither sees T2's half-built state nor mistakes it for a cycle.",
     "cogs": [
      "reader",
      "claim",
@@ -259,7 +259,7 @@
    {
     "beat": "4",
     "title": "T2 publishes subtotal",
-    "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
+    "caption": "Released, T2 finishes subtotal and publishes it before releasing the claim, so T1 wakes to a complete denotation. T1 then waits briefly on tax, which T2 has just claimed.",
     "cogs": [
      "publish",
      "wait"
@@ -295,7 +295,7 @@
    {
     "beat": "5",
     "title": "The hover answers",
-    "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
+    "caption": "T1 completes total and answers BigDecimal, as one reader would. receipt stays skipped.",
     "cogs": [
      "publish",
      "target"
@@ -333,7 +333,7 @@
    {
     "beat": "6",
     "title": "The background pass finishes",
-    "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
+    "caption": "T2 reaches Checkout, finds total already published, and types receipt. Everything is typed; no diagnostics.",
     "cogs": [
      "target"
     ],
@@ -371,7 +371,7 @@
    {
     "beat": "7a",
     "title": "A keystroke in receipt, nothing in flight",
-    "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
+    "caption": "The edit is inside receipt's body. The write action re-indexes receipt and keeps the run; everything else stays published.",
     "cogs": [
      "write",
      "bodyedit"
@@ -401,7 +401,7 @@
    {
     "beat": "7b",
     "title": "The hover after the edit",
-    "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
+    "caption": "T3 types line 19 only, reading subtotal, tax and total as published.",
     "cogs": [
      "reader",
      "target"
@@ -439,7 +439,7 @@
     "reset": 2,
     "beat": "8",
     "title": "The same keystroke, while T2 is held",
-    "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
+    "caption": "Back to T1 waiting on T2. Now the user types in receipt: the editor cancels the stale requests, and the new text arrives as a writer. It raises a sticky cancel and waits for readers to leave.",
     "cogs": [
      "write",
      "cancel"
@@ -470,7 +470,7 @@
    {
     "beat": "9",
     "title": "T2 unwinds",
-    "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
+    "caption": "T2 unwinds at its next checkpoint, resets the roots it was completing, and releases the claim. A Namer completion cannot run twice, so subtotal is marked unwound, not lazy.",
     "cogs": [
      "cancel",
      "unwound"
@@ -494,7 +494,7 @@
    {
     "beat": "10",
     "title": "The waiter takes over, and is pre-empted",
-    "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
+    "caption": "T1 takes over subtotal's root, meets the unwound completion, and is pre-empted: it resets total, unwinds, and the run is tainted. Nothing hangs or tears; the work is discarded.",
     "cogs": [
      "claim",
      "unwound"
@@ -525,7 +525,7 @@
    {
     "beat": "11",
     "title": "A fresh run for the new text",
-    "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
+    "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax on the way, and answers. The background pass follows in the same run.",
     "cogs": [
      "write",
      "reader",
@@ -605,7 +605,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "Two readers, one lazy symbol",
-     "caption": "Take away the claims. T2 is completing subtotal, whose inferred type needs its body typed. While a completer runs, it marks its symbol as being completed.",
+     "caption": "Without claims. T2 is completing subtotal, whose inferred type needs its body typed. A running completer marks its symbol as being completed.",
      "run": "run 1",
      "units": {
       "s5": "T2",
@@ -660,7 +660,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "Claim the root",
-     "caption": "Before completing, T2 claims subtotal's completion root and sets its info to an InProgress: a lazy type that records T2 as its owner. Only T2 sees through it, to the info it is building.",
+     "caption": "T2 claims subtotal's root and sets its info to an InProgress: a lazy type that names T2 as owner. Only T2 sees through it.",
      "syms": {
       "subtotal": "prog:T2",
       "hold": "prog:T2",
@@ -698,7 +698,7 @@
      "group": "Mechanism",
      "beat": "4",
      "title": "Wait, don't peek",
-     "caption": "To T1 the InProgress is a lazy type like any other, so it takes the slow path every unforced symbol already takes. There it finds the root claimed by another reader and waits on the claim. Asking whether subtotal is completing waits in the same way, instead of answering from a glimpse.",
+     "caption": "To T1 the InProgress is an ordinary lazy type: it takes the usual slow path, finds T2's claim, and waits. Asking whether subtotal is completing waits too, instead of peeking.",
      "syms": {
       "total": "prog:T1",
       "subtotal": "prog:T2|T1"
@@ -742,7 +742,7 @@
      "group": "Fixed",
      "beat": "5",
      "title": "Publish, release, wake",
-     "caption": "T2 publishes the info, then releases the claim. T1 wakes, reads the finished type and answers BigDecimal, as one reader would.",
+     "caption": "T2 publishes the info, then releases the claim. T1 wakes and answers BigDecimal.",
      "syms": {
       "subtotal": "done",
       "hold": "done",
@@ -813,7 +813,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "A shared reference caches what it resolved to",
-     "caption": "Types are shared by all readers, and a reference such as subtotal in total's body caches what it resolved to: a denotation, a symbol, and the period they were checked in. T2 resolves it and stores the three, in that order, with plain stores.",
+     "caption": "Types are shared. A reference such as subtotal in total's body caches its denotation, its symbol, and the period they were checked in. T2 stores all three, in that order, with plain stores.",
      "run": "run 1",
      "units": {
       "s14": "T2"
@@ -861,7 +861,7 @@
      "group": "Problem",
      "beat": "2",
      "title": "Seen in another order",
-     "caption": "On Apple silicon, plain stores can become visible to another thread in a different order. T1 finds the period current, trusts the cached fields, and gets a null symbol. This was seen in testing.",
+     "caption": "On Apple silicon, plain stores can become visible out of order. T1 finds the period current and reads a null symbol. Seen in testing.",
      "ticks": [
       {
        "sym": "total",
@@ -910,7 +910,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "The period publishes the fields",
-     "caption": "The period is the field that publishes the other two. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store of the period, and read only after checkedPeriod.acquired, an acquire load. The types hold the order: a plain read or write of these fields does not compile.",
+     "caption": "The period publishes the other two fields. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store, and read only after checkedPeriod.acquired, an acquire load. Plain access does not compile.",
      "lanes": {
       "T1": [
        "typing",
@@ -947,7 +947,7 @@
      "group": "Fixed",
      "beat": "4",
      "title": "Current means complete",
-     "caption": "If T1 finds the period current, it sees everything stored before it; if not, it resolves the reference itself. Either way the symbol is never null. On x86 an acquire load is a plain load.",
+     "caption": "If the period is current, everything stored before it is visible; otherwise T1 resolves the reference itself. On x86 an acquire load is a plain load.",
      "syms": {
       "total": "done"
      },
@@ -1017,7 +1017,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "A value and its stamp, in two fields",
-     "caption": "Many caches keep a value and the period it was computed in, as two plain fields: here, the supertype of List[Item]. The previous run left both behind. In run 2, T2 computes the value again and stores the value, then the period.",
+     "caption": "Many caches keep a value and its period in two plain fields, here the supertype of List[Item]. In run 2, T2 recomputes and stores the value, then the period.",
      "run": "run 2",
      "units": {
       "s5": "T2"
@@ -1060,7 +1060,7 @@
      "group": "Problem",
      "beat": "2",
      "title": "A torn pair",
-     "caption": "T1 sees the new period beside the old value, so the hit hands it a type built in the previous run. Two writers in one period can also leave one's stamp beside the other's value. Seen in testing: a null, a false, the previous run's value.",
+     "caption": "T1 sees the new period with the old value: a type from the previous run. Two writers can also mix one's stamp with the other's value. Seen in testing: a null, a false, the previous run's value.",
      "ticks": [
       {
        "sym": "items",
@@ -1098,7 +1098,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "One field, one immutable pair",
-     "caption": "The cache becomes one field holding a Stamped: the stamp and the value together, in an immutable object whose fields are final. A miss computes the value and replaces the whole pair.",
+     "caption": "The cache is now one field holding a Stamped: stamp and value in one immutable object. A miss replaces the whole pair.",
      "lanes": {
       "T1": [
        "typing",
@@ -1123,7 +1123,7 @@
      "group": "Fixed",
      "beat": "4",
      "title": "Old or new, never mixed",
-     "caption": "T1 loads the reference once and sees one pair whole: the new one, a hit, or the old one, a miss it computes again. No fences, and the same code with one thread or several. The price is an allocation per miss.",
+     "caption": "T1 reads the reference once and gets one whole pair: new, a hit, or old, a miss it recomputes. No fences, and the same code for one thread or many. The cost is an allocation per miss.",
      "syms": {
       "items": "done"
      },
@@ -1184,7 +1184,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "A keystroke behind a long pass",
-     "caption": "T2's background pass holds a read lock while it types. The user types in receipt. With a plain read/write lock the writer waits for the whole pass, which on a large file takes seconds, and every keystroke after it waits too.",
+     "caption": "T2's background pass holds a read lock. The user types in receipt. With a plain read/write lock the writer waits for the whole pass, seconds on a large file, and so does every later keystroke.",
      "run": "run 1 · write 2",
      "edited": true,
      "units": {
@@ -1209,7 +1209,7 @@
      "group": "Mechanism",
      "beat": "2",
      "title": "The writer is pending",
-     "caption": "Instead, the writer raises a pending flag and queues for the lock; readers that start now queue behind it. T2 polls the flag at its typer checkpoints, unwinds at the next one, and releases the read lock.",
+     "caption": "Instead, the writer raises a pending flag and queues; new readers queue behind it. T2 polls the flag at its typer checkpoints, unwinds, and releases its lock.",
      "lanes": {
       "T2": [
        "cancelled",
@@ -1225,7 +1225,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "The writer runs alone",
-     "caption": "With no reader left, the writer takes the lock and applies the edit: the change is inside receipt's body, so it re-indexes receipt and keeps the run.",
+     "caption": "With no readers left, the writer applies the edit. It is inside receipt's body, so it re-indexes receipt and keeps the run.",
      "run": "run 1 · write 3",
      "units": {
       "s5": "skip",
@@ -1246,7 +1246,7 @@
      "group": "Fixed",
      "beat": "4",
      "title": "Readers are retried",
-     "caption": "The writer releases the lock. T2's request is retried on the new text, and its caller never sees the cancellation. A writer waits only until each reader reaches its next checkpoint, and no reader sees a write half done.",
+     "caption": "The writer releases the lock, and T2's request is retried on the new text; its caller never sees the cancellation.",
      "units": {
       "receipt": "typed",
       "s5": "typed"
@@ -1293,7 +1293,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "The owner is cancelled",
-     "caption": "T2 is completing subtotal, and T1 waits on its claim. The user types, and T2 is cancelled in the middle of the completion.",
+     "caption": "T2 is completing subtotal; T1 waits on its claim. The user types, and T2 is cancelled mid-completion.",
      "run": "run 1",
      "units": {
       "s5": "T2",
@@ -1329,8 +1329,8 @@
     {
      "group": "Problem",
      "beat": "2",
-     "title": "What a careless unwind leaves",
-     "caption": "If T2 simply unwound, subtotal would keep an InProgress that nobody is completing, or the half-built info T2 had set. T1 would wait forever, or read the half-built info.",
+     "title": "Unwinding without cleanup",
+     "caption": "If T2 just unwound, subtotal would keep an InProgress that nobody is completing, or T2's half-built info. T1 would wait forever, or read it.",
      "lanes": {
       "T2": [
        "unwound",
@@ -1374,7 +1374,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "Reset, then release",
-     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice: it enters symbols as it goes, a method's parameters among them, and a second run would enter them again. So subtotal is left marked as an unwound completion rather than as lazy.",
+     "caption": "T2 resets every root it was completing, then releases its claims. A Namer completion cannot run twice (a second run would enter the method's parameters again), so subtotal is marked unwound, not lazy.",
      "syms": {
       "subtotal": "unwound",
       "hold": "lazy"
@@ -1415,7 +1415,7 @@
      "group": "Mechanism",
      "beat": "4",
      "title": "The waiter takes over, and is pre-empted",
-     "caption": "T1 takes the claim over and meets the unwound completion. It cannot finish it, so it is pre-empted too: it resets total, unwinds, and the run is marked tainted.",
+     "caption": "T1 takes over the claim, meets the unwound completion, and is pre-empted too: it resets total, unwinds, and the run is tainted.",
      "syms": {
       "subtotal": "unwound:T1",
       "total": "lazy"
@@ -1459,7 +1459,7 @@
      "group": "Fixed",
      "beat": "5",
      "title": "A fresh run",
-     "caption": "The writer gives the new text a fresh run, and the next request completes subtotal from scratch. No reader waits on work that nobody is doing, and none reads a half-built info. What it costs is the run.",
+     "caption": "The new text gets a fresh run, and the next request completes subtotal from scratch. The cost is the run.",
      "run": "run 2",
      "units": {
       "s5": "skip",
@@ -1571,7 +1571,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "Each reader holds one signature",
-     "caption": "Two hovers, on useA and on useB. T1 claims a's completion, T2 claims b's. The latch in each body holds both readers there, so the two claims are taken before either needs the other.",
+     "caption": "Hovers on useA and useB. T1 claims a's completion, T2 claims b's. The latches hold both until each has its claim.",
      "run": "run 1",
      "units": {
       "A": "T1",
@@ -1598,7 +1598,7 @@
      "group": "Problem",
      "beat": "2",
      "title": "Each needs the other's",
-     "caption": "Released, T1 needs b's type and waits on T2's claim; T2 needs a's and waits on T1's. Waiting on a claim is safe only if the owner finishes. Here each owner waits on the other: without a check, both hovers hang.",
+     "caption": "Released, each needs the other's type and waits on the other's claim. Without a check, both hang.",
      "syms": {
       "b": "prog:T2|T1",
       "a": "prog:T1|T2"
@@ -1630,7 +1630,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "The wait-for graph",
-     "caption": "Each waiting reader records the claim it waits on. At every 5 ms slice of its wait, a reader follows the owners: b is held by T2, who waits on a, which this reader holds. That closes a cycle.",
+     "caption": "Each waiting reader records the claim it waits on. Every 5 ms a waiter follows the owners: b is held by T2, which waits on a, which T1 holds. That is a cycle.",
      "lanes": {
       "T1": [
        "waiting",
@@ -1678,7 +1678,7 @@
      "group": "Mechanism",
      "beat": "4",
      "title": "Who gives way",
-     "caption": "Claims are coarser than the facts they protect, so most cycles are two roots taken in opposite orders, and a reader that can give way does. Here both readers are inside Namer completions and both roots are symbols: the signatures really do need each other.",
+     "caption": "Claims are coarser than the facts they protect, so most cycles are two roots taken in opposite orders, and a reader that can give way does. Here both readers are in Namer completions on symbol roots: the signatures really depend on each other.",
      "ticks": [
       {
        "sym": "b",
@@ -1721,7 +1721,7 @@
      "group": "Fixed",
      "beat": "5",
      "title": "Seen twice, then reported",
-     "caption": "The graph is read from fields the readers change as they go, so a cycle counts only when the same chain is seen at two looks a slice apart. One reader, chosen by a fixed order of the threads, then raises the cyclic reference a single reader would raise, and both readers finish.",
+     "caption": "The chain is read while readers move, so it counts only if seen twice, a slice apart. Then one reader, picked by a fixed thread order, raises the cyclic reference a single reader would.",
      "syms": {
       "b": "done",
       "a": "done",
@@ -1808,7 +1808,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "A cache built from a scope",
-     "caption": "To resolve BigDecimal, T2 needs the names in package scala, and builds the package's member-name set from its scope: a cache that also answers \"no such member\" quickly.",
+     "caption": "To resolve BigDecimal, T2 builds package scala's member-name set from its scope: a cache that also answers \"no such member\" quickly.",
      "run": "run 1",
      "units": {
       "s3": "T2"
@@ -1854,7 +1854,7 @@
      "group": "Problem",
      "beat": "2",
      "title": "The scope grows; the store lands after",
-     "caption": "An edge case: a published scope rarely changes. One that does is a package's flat classes, entered once, the first time they are needed. T1 enters scala's into its scope and invalidates the package's caches. T2, still working from the old scope, stores its set after that invalidation. The stale set stays: the new classes read as absent for the rest of the run.",
+     "caption": "The rare case: a package enters its flat classes the first time they are needed, after the package is published. T1 enters scala's and invalidates its caches. T2 stores its set, built from the old scope, after the invalidation. The new classes now read as absent for the rest of the run.",
      "ticks": [
       {
        "sym": "scala",
@@ -1893,7 +1893,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "A cache records the epoch it was made at",
-     "caption": "With several readers, nothing is cleared. The base keeps one counter, the structure epoch. A cache records its value when the cache is made, and is valid only while the counter has not moved.",
+     "caption": "With several readers, nothing is cleared. The base keeps one counter, the structure epoch. A cache records it when made and is valid only while it is unchanged.",
      "lanes": {
       "T1": [
        "typing",
@@ -1926,7 +1926,7 @@
      "group": "Mechanism",
      "beat": "4",
      "title": "A change to a published scope moves the epoch",
-     "caption": "Entering into a scope that is already published moves the epoch. T2's store still lands after it, but carries the epoch it was made at.",
+     "caption": "Entering into a published scope increments the epoch. T2's late store carries the old value.",
      "ticks": [
       {
        "sym": "scala",
@@ -1965,7 +1965,7 @@
      "group": "Fixed",
      "beat": "5",
      "title": "The next read builds it again",
-     "caption": "The next reader to need the names finds the epoch moved and builds the set from the scope as it is now. However the store and the change interleave, a stale set is never used.",
+     "caption": "The next reader sees that the epoch has moved and rebuilds the set from the current scope.",
      "ticks": [
       {
        "sym": "scala",
@@ -2020,7 +2020,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "A provider reads after the lock",
-     "caption": "A hover runs the typer up to its position under the read lock, then reads the typed tree to build its answer, after the lock is released. T1's request left the lock when the driver had made 2 write actions.",
+     "caption": "A hover types up to its position under the read lock, then reads the typed tree after releasing it. T1 left the lock at write 2.",
      "run": "run 1 · write 2",
      "units": {
       "s14": "typed"
@@ -2061,7 +2061,7 @@
      "group": "Problem",
      "beat": "2",
      "title": "A write lands in between",
-     "caption": "The user types. The new text is a write action that runs now, because T1 holds no lock. When T1 reads the tree, it reads what that write left. After a fresh run, that would be trees the editor no longer shows.",
+     "caption": "The user types, and the write runs at once, since T1 holds no lock. T1 then reads whatever the write left: after a fresh run, trees the editor no longer shows.",
      "run": "run 1 · write 3",
      "edited": true,
      "units": {
@@ -2108,7 +2108,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "Compare the stamps",
-     "caption": "A result carries the write count of the last lock its request left. Before the result goes out, the driver compares it with the count now. If a write ran since, the request is served again on a fresh reader, up to three times.",
+     "caption": "A result carries the write count from when its request last left the lock. If a write ran since, the request is served again on a fresh reader, up to three times.",
      "lanes": {
       "T3": [
        "done",
@@ -2141,7 +2141,7 @@
      "group": "Fixed",
      "beat": "4",
      "title": "Served again",
-     "caption": "The second try reads a tree no write has touched since, and its stamp matches. T1's request still names the text it was sent, so its retry is a write action of its own; an editor that has moved on would cancel it instead.",
+     "caption": "The retry's stamp matches. T1's request still names the old text, so its retry is itself a write; an editor that had moved on would cancel it.",
      "run": "run 1 · write 4",
      "units": {
       "receipt": "typed"
@@ -2217,7 +2217,7 @@
      "group": "Problem",
      "beat": "1",
      "title": "Fields filled one by one",
-     "caption": "Every reader resolves names in Checkout through the same import, and the import caches what its selectors say. With one thread it sets a marker field first and then fills in the mappings. T2 has stored the marker and is still building the mappings.",
+     "caption": "Every reader resolves names in Checkout through one shared import, which caches what its selectors say. The single-threaded code sets a marker field, then fills in the mappings. T2 has set the marker and is still filling.",
      "run": "run 1",
      "units": {
       "s14": "T2"
@@ -2266,7 +2266,7 @@
      "group": "Problem",
      "beat": "2",
      "title": "Seen half filled",
-     "caption": "T1 resolves subtotal through the same import, finds the marker set and skips the work, then reads a mapping that is still null. The request fails with a null where the type system promised none. This was seen in testing.",
+     "caption": "T1 sees the marker, skips the work, and reads a mapping that is still null. The request fails. Seen in testing.",
      "ticks": [
       {
        "sym": "imp",
@@ -2318,7 +2318,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "Build in a local, store once",
-     "caption": "Instead, a reader builds everything in locals, then stores one immutable value whose fields are final, in one field. Nothing is visible until all of it is.",
+     "caption": "Instead, build everything in locals, then store one immutable value in one field.",
      "syms": {
       "total": "lazy"
      },
@@ -2354,7 +2354,7 @@
      "group": "Fixed",
      "beat": "4",
      "title": "Nothing, or all of it",
-     "caption": "T1 finds either nothing, and builds an equal value itself, or the whole value. Two readers may both build it; each stores an equal value, and either is whole. A scope's list of members is published the same way.",
+     "caption": "T1 finds nothing, and builds an equal value itself, or the whole value. A scope's member list is published the same way.",
      "syms": {
       "imp": "done",
       "total": "done"

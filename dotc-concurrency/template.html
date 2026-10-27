@@ -1177,20 +1177,20 @@ body.focus .scn-cap { font-size: 18px; }
   document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
   // The cogs: what each one is for, and the steps of the scenario where it fires.
   const GEARS = [
-    ['write', 'Edits run alone. The writer raises a sticky cancel and waits for readers to leave; a body edit re-indexes one member.'],
-    ['reader', 'Each request reads through its own Reader: its own typer scratch and its own view of what it is completing.'],
-    ['claim', 'Before completing a root, a reader claims it. Until it is done, the info is an InProgress only the owner sees through.'],
-    ['wait', 'Another reader that needs the info, or asks whether it is completing, waits on the claim instead of peeking.'],
-    ['publish', 'The completed info is published before the claim is released, so a waiter wakes to a whole denotation.'],
-    ['target', 'A request types only the statements on its path; the rest stay skipped for whoever needs them next.'],
-    ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
-    ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
-    ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
-    ['once', 'A structure that readers share is built in locals and stored once, as one immutable value: seen as nothing or as all of it.'],
-    ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
-    ['epoch', 'A change to a published scope increments one counter on the base; a cache is valid only while the counter still reads what it did when the cache was made.'],
-    ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
-    ['cycles', 'A wait that would close a cycle of claims: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
+    ['write', 'Edits run alone: the writer raises a sticky cancel and waits for readers to leave. A body edit re-indexes one member.'],
+    ['reader', 'Each request has its own Reader: its own typer scratch and its own completions in progress.'],
+    ['claim', 'A reader claims a root before completing it; meanwhile the info is an InProgress that only the owner sees through.'],
+    ['wait', 'A reader that needs the info, or asks whether it is completing, waits on the claim.'],
+    ['publish', 'The info is published before the claim is released, so waiters wake to a whole denotation.'],
+    ['target', 'A request types only the statements on its path; the rest stay skipped.'],
+    ['bodyedit', 'An edit inside a body keeps the run; only that member is re-indexed.'],
+    ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases its claims.'],
+    ['unwound', 'An unwinding owner resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run replaced.'],
+    ['once', 'A shared structure is built in locals and stored once, as one immutable value.'],
+    ['stamped', 'A cache value and its period, in one immutable object in one field.'],
+    ['epoch', 'A change to a published scope increments a counter; a cache is valid while the counter is unchanged since it was made.'],
+    ['resultstamp', 'A result carries the write count of its request\'s last lock, and is served again if a write ran since.'],
+    ['cycles', 'A wait that would close a cycle: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
   ];
   main.querySelectorAll('.gears').forEach(host => {
     host.innerHTML = GEARS.map(([id, text]) => {

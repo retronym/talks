@@ -1,12 +1,12 @@
 # Several readers, one symbol table
 
-<p class="sub">How dotc's presentation compiler lets a hover, a background pass and the editor share one run, and the parts that keep it safe.</p>
+<p class="sub">Concurrent requests in dotc's presentation compiler, and how they share one symbol table safely.</p>
 
-Interactive mode serves several requests at once against one symbol table. Each request reads through a `Reader` of its own; edits arrive as write actions that run alone. Symbols still complete lazily, and a completion may be needed by a reader other than the one running it.
+Interactive mode serves several requests at once against one symbol table. Each request has its own `Reader`; edits run alone, as write actions. Symbols still complete lazily, so one reader may need a completion that another is running.
 
-The work is [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*.
+The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*.
 
-What follows is one IDE scenario, run for real on the compiler, with the code in the middle. Step through it with `,` and `.` or the buttons. Each cog lights up at the moment it does its job; a cog with a card links to it, where the cog is taken out to show what goes wrong without it.
+Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each cog lights up when it acts; its card shows what breaks without it.
 
 ## The scenario
 
@@ -16,35 +16,35 @@ What follows is one IDE scenario, run for real on the compiler, with the code in
 
 ### The cogs
 
-What each cog is for, the steps of the scenario where it fires, and its card.
+What each cog does, where it fires in the scenario, and its card.
 
 <div class="gears"></div>
 
-Batch compilation picks the single-reader mode once per `ContextBase` and runs the code it always ran: under 2% overhead. Interactively the overhead is minor, and the work scales well to four threads and more.
+Batch compilation chooses the single-reader mode once per `ContextBase` and runs the original code: under 2% overhead. Interactive overhead is minor, and typing scales to four threads and more.
 
 ## The cogs, one at a time
 
-Each card starts from the same file and takes one cog away: first the problem, then the mechanism, then the same moment with the cog in place.
+Each card removes one cog: the problem, the mechanism, then the same moment with the cog in place.
 
 ### Claim on a completion root
 
-<p class="lede">In code, a claim is a capability: <code>Sharing.claim(key)</code> hands its body evidence of type <code>Holds[key.type]</code>, and a completer's <code>complete</code> asks for that evidence, so a completion run without its claim does not compile. Every such operation is an inline method whose batch branch is the original code, so the batch compiler pays a test of a final field and nothing else.</p>
+<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
 
 <div class="scenario" data-card="claim"></div>
 
-> A reader sees a symbol's info either finished, or as a lazy type it can wait on. It never sees another reader's half-built info, and never takes another reader's completion for a cycle.
+> A reader sees a symbol's info finished, or as a lazy type to wait on: never half-built, never mistaken for a cycle.
 
 ### Publish, then release
 
-<p class="lede"><code>Published</code> and <code>Payload</code> are opaque types over the plain fields, and their operations are macros. A payload store needs a <code>Publishing</code> capability that only the <code>publishing</code> block provides, and a payload read needs the <code>Acquired</code> evidence of the period: the order is checked at compile time and costs a release store and an acquire load at run time, nothing more.</p>
+<p class="lede"><code>Published</code> and <code>Payload</code> are opaque types with macro operations. A store needs the <code>Publishing</code> capability of a <code>publishing</code> block; a read needs the period's <code>Acquired</code> evidence. The order is checked at compile time and costs one release store and one acquire load at run time.</p>
 
 <div class="scenario" data-card="publish"></div>
 
-> A reader that finds a cached period current sees everything stored before it.
+> A reader that finds the period current sees everything stored before it.
 
 ### Stamped cells
 
-<p class="lede"><code>Stamped</code> is a final class of two final fields; <code>cached</code> is a macro that reads and writes the field it is called on. The current stamp comes from a given <code>Stamp[K]</code> whose kind (per run or per period) is a phantom type, so a call site names no stamp and a field is never read with one kind and written with another.</p>
+<p class="lede"><code>Stamped</code> is an immutable pair, and <code>cached</code> is a macro on the field. The current stamp is a given <code>Stamp[K]</code> whose kind (per run, per period) is a phantom type, so call sites name no stamp and cannot mix kinds.</p>
 
 <div class="scenario" data-card="stamped"></div>
 
@@ -52,58 +52,58 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Publish once
 
-<p class="lede">No new primitive: a value of final fields, built in locals and stored in one field. The Java memory model's rule for final fields does the rest.</p>
+<p class="lede">No new primitive: build in locals, then store one value of final fields.</p>
 
 <div class="scenario" data-card="once"></div>
 
-> A structure that readers share is seen either not at all or whole, never while it is being filled.
+> Readers see a shared structure whole or not at all.
 
 ### Write action and cancel
 
-<p class="lede">A fair read/write lock and one volatile flag, polled at the typer's existing checkpoints. Batch compilation has no driver and never sees either.</p>
+<p class="lede">A fair read/write lock and a volatile flag, polled at the typer's existing checkpoints. Batch compilation has neither.</p>
 
 <div class="scenario" data-card="write"></div>
 
-> Readers never see a write half done, and a writer waits only until each reader's next checkpoint.
+> Readers never see a half-done write; a writer waits only until each reader's next checkpoint.
 
 ### Owner cancelled mid-completion
 
-<p class="lede">No new machinery: the unwound completion is a lazy type like any other, and it pre-empts whoever reaches it through the slow path every lazy type already takes.</p>
+<p class="lede">The unwound completion is just another lazy type; whoever reaches it is pre-empted.</p>
 
 <div class="scenario" data-card="unwound"></div>
 
-> A released claim leaves its symbol finished, or marked so that the next reader to reach it starts over. No reader waits on work that nobody is doing.
+> A released claim leaves its symbol finished, or marked to start over. Nobody waits on abandoned work.
 
 ### Wait-for cycles
 
-<p class="lede">The graph is not kept anywhere: each reader publishes the claim it waits on in a volatile field, and a waiter walks owners from claim to claim at every slice of its wait.</p>
+<p class="lede">No graph is stored: each reader publishes the claim it waits on, and a waiter follows owners from claim to claim.</p>
 
 <div class="scenario" data-card="cycles"></div>
 
-> No two readers wait on each other forever. A cycle that someone can give way on is broken by that reader; a real cycle between signatures is reported, as one reader would report it.
+> No two readers wait on each other forever: one gives way, or a real cycle is reported as one reader would report it.
 
 ### Epoch invalidation
 
-<p class="lede">An edge case: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) With one thread, such a change clears the caches computed from the scope by walking a list of them. With several readers nothing is walked: the base keeps one counter that every such change increments, and a cache is valid only while the counter still reads what it did when the cache was made.</p>
+<p class="lede">An edge case. A published scope changes in only a few places: a package's flat classes, entered when first needed, or a classfile completer deleting symbols it found absent. (Synthetic function classes are kept beside <code>scala</code>'s scope.) With one thread, such a change walks and clears the dependent caches. With several readers it increments a counter on the base, and a cache is valid only while that counter is unchanged since the cache was made.</p>
 
 <div class="scenario" data-card="epoch"></div>
 
-> A cache computed from scopes is used only while no published scope has changed since it was made, however a late store and a change interleave.
+> A cache is used only if no published scope has changed since it was made.
 
 ### Result stamps
 
-<p class="lede">A volatile count of write actions on the driver, and a stamp on each reader. The check runs once per request, at its end.</p>
+<p class="lede">A volatile write count on the driver and a stamp per reader, compared once at the end of each request.</p>
 
 <div class="scenario" data-card="resultstamp"></div>
 
-> A result goes to the editor only if no write action ran between the last lock its request left and its delivery.
+> A result reaches the editor only if no write action ran since its request last held the lock.
 
 ## Finally: the whole compiler
 
 ### Every file of dotc, N readers
 
-The compiler's own sources, `compiler/src/dotty/tools/dotc/**/*.scala`: 491 files, 188k lines, opened in one run of the presentation compiler and typed by N reader threads. The open parses, indexes and skips every statement, serially; then each reader takes the largest file left. A recorded run, replayed. The blocks share one clock, so more readers finish sooner; each N joins the plot when its last thread is done. Press Play, or drag across the lanes.
+`compiler/src/dotty/tools/dotc/**/*.scala`: 491 files, 188k lines. One run opens them all (parse, index, skip every statement; serial), then N reader threads type them, each taking the largest file left. A recorded run, replayed on one clock, so more readers finish sooner. Press Play, or drag across the lanes.
 
 <div class="throughput"></div>
 
-Every N gives the same diagnostics as one reader, file for file, with no back-offs and no cycles raised. The waits on another reader's claim are a few milliseconds in all.
+Every N reports the same diagnostics as one reader, with no back-offs and no cycles. Waits on other readers' claims total a few milliseconds.
