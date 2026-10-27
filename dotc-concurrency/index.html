@@ -349,6 +349,24 @@ body.lb-open { overflow: hidden; }
 .xl.gap .code { color: var(--muted); }
 .xc.lit .xl:not(.hl) { opacity: .45; }
 .xc .xl.hl { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+/* A Problem step is shown on an old CRT: the world without the cog, dated and not to be trusted. */
+:root { --crt-line: rgba(0, 0, 0, .07); --crt-edge: rgba(0, 0, 0, .14); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --crt-line: rgba(0, 0, 0, .38); --crt-edge: rgba(0, 0, 0, .55); } }
+:root[data-theme="dark"] { --crt-line: rgba(0, 0, 0, .38); --crt-edge: rgba(0, 0, 0, .55); }
+.scn-body { position: relative; }
+.scn-body::after {
+  content: ""; position: absolute; inset: -4px; z-index: 3; pointer-events: none; border-radius: 12px; opacity: 0;
+  background:
+    repeating-linear-gradient(to bottom, var(--crt-line) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 55%, var(--crt-edge) 100%);
+  transition: opacity calc(.5s / var(--spd, 1));
+}
+.scenario.problem .scn-body::after { opacity: 1; }
+.scn-body > * { transition: filter calc(.5s / var(--spd, 1)); }
+.scenario.problem .scn-body > * { filter: saturate(.65) contrast(1.06); }
+.scenario.problem .ed-lines .code, .scenario.problem .side { text-shadow: .6px 0 rgba(255, 40, 40, .35), -.6px 0 rgba(0, 170, 255, .35); }
+.motion .scenario.problem .scn-body::after { animation: k-crt 3.2s steps(1) infinite; }
+@keyframes k-crt { 0%, 100% { opacity: 1; } 47% { opacity: .82; } 48% { opacity: 1; } 83% { opacity: .9; } 84% { opacity: 1; } }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background calc(.45s / var(--spd, 1)), box-shadow calc(.45s / var(--spd, 1)), text-decoration-color calc(.45s / var(--spd, 1)), outline-color calc(.3s / var(--spd, 1)); }
 .badge { transition: background calc(.45s / var(--spd, 1)), color calc(.45s / var(--spd, 1)), border-color calc(.45s / var(--spd, 1)); }
@@ -4674,6 +4692,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
           return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
         }).join('');
         $('.scn-cap').textContent = f.caption;
+        host.classList.toggle('problem', f.group === 'Problem');
         if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
         dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
         showCode(f.beat);
