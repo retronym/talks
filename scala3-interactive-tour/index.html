@@ -256,7 +256,7 @@ body.focus .card.part h2 { font-size: 44px; }
 body.focus .focus-counter { display: block; }
 
 @media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
   nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); max-height: 40vh; }
   main { padding: 16px 16px 80px; }
   .card { padding: 18px 16px; }

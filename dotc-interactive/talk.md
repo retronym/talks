@@ -487,6 +487,20 @@ private def lockAndComplete(completer: LazyType)(using Context): Unit =
 - Now a hit takes no lock: a bucket's head is loaded with acquire, a new entry stored with release, a resize publishes the new table only once it is complete; a miss is looked up again under the monitor before it inserts, so equal types still intern to one object. With the same change to `SyncEqHashMap` and a fast path in `isCurrent`, this took shared k=4 from 12.7 to 11.1 ms per file (§46b).
 - Interning order, and so symbol ids and fresh names, now depends on the schedule. Nothing may depend on it; the oracles compare up to fresh-name numbers ([readers §4.3][M]).
 
+### 22d. The primitives as a library
+
+The claims, evidence, black holes, guarded fields, `once` and the stamped cache never needed the compiler. What tied them to it was where they found their inputs. They now live in `dotty.tools.sharing`, a package that names nothing in the compiler, and the compiler supplies the inputs ([readers §8][M], the primitives as a library):
+
+| input | what it is | the compiler's |
+|---|---|---|
+| `Mode` | whether threads are concurrent, an inline given | a value class over the base's flag, so a batch call site is still one load and a branch |
+| `ClaimRegistry` | what a claim, `claimAt` and `once` call when concurrent | `CompletionRoots` with parallel readers, the completion lock with serialised ones |
+| `CycleHandler` | what a registry does when a wait would close a wait-for cycle | back off the reader (§28) |
+
+- `SharingBoundaryTest` compiles the package on its own against the Scala library and fails if it names the compiler.
+- An opaque `Int` for the mode was tried first: the inliner left a load of the package object at every site, about 12 bytes more each.
+- Next: a separate module built before the compiler, with the Lincheck suites moving with it; then capture checking, so that evidence such as a `Holds` cannot escape the operation that made it.
+
 ### 23. Step 3: one lock around all completions is correct but too slow
 
 <div class="chips">{chip:coarse lock}</div>
@@ -607,7 +621,7 @@ Each card names a hazard that appears once several readers share one symbol tabl
 <figcaption>[readers §8][M] step 4.</figcaption>
 </figure>
 
-**Pattern: detect before waiting, then choose a victim.** Before it waits, a reader follows owners from the root back to itself. On a cycle, a reader typing a body backs off and its request restarts; a reader inside a Namer completion never does; if every party is inside a Namer completion and every root is a symbol, one raises `CyclicReference`, the single-reader answer. Only a chain of live claims seen twice, a short wait apart, counts as a cycle (I87).
+**Pattern: detect before waiting, then choose a victim.** Before it waits, a reader follows owners from the root back to itself. On a cycle, a reader typing a body backs off and its request restarts; a reader inside a Namer completion never does; if every party is inside a Namer completion and every root is a symbol, one raises `CyclicReference`, the single-reader answer. Only a chain of live claims seen twice, a short wait apart, counts as a cycle (I87), and only if every claim in it is still held after the walk: a claim read while held and released before its owner waited joined two waits that never coexisted (I98, found by Lincheck on the claims).
 
 - **Where it lives:** `Sharing.exclusive` and `Sharing.claimed` take the claim on a parallel base and pass `CompletionRoots.backOff` as what to do on a cycle; on a serialised base `exclusive` takes the one completion lock, and batch runs the code as it was.
 - The residue: two readers completing `Settings.Setting`'s members in opposite orders still raise a cycle no sequential order has (7 divergent files in 20 rounds of 484). Namer completions that can run again are the fix ([readers §8][M] step 4).
@@ -766,6 +780,117 @@ class Cell:                      // starts with a pair from an earlier period
 - **Where it lives:** `Sharing.privately` runs code in a private child state on a parallel base, and as before otherwise; `Sharing.endState` settles and drops on a parallel base and commits under the completion lock on a serialised one.
 - Examples: a variable dropped with its state (I62, "Found: Set[A | TermRef], Required: Set[TermRef]"); constraints from one reader's commit met by another's typing, the conversions to `Formatting.Shown` rejected (I70, I76).
 
+### 31a. A reader changing a scope that others read
+
+**Hazard.** Every reader looks names up in scopes: a class's members, a package's. Typing still wrote into scopes other readers were already reading: indexing into a package, deleting from it in a classfile's completion, entering inline accessors, retracting a definition. The presentation-compiler suites made 2,101 such changes outside a write action. A package's flat classes entered in place rehashed its table under readers (12,201 missed lookups of classes it held). And a member made on its first lookup (`Function23`) made answers depend on what earlier code had mentioned: of 200 synthesized names, 101 split into two symbols across readers.
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 196" role="img" aria-label="Filled while no reader can see it, frozen once its completion returns; after that only a write action changes it.">
+  <defs><marker id="mswf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <text x="0" y="31" class="b">completer</text><line x1="112" y1="27" x2="712" y2="27" class="ln"/>
+  <text x="0" y="89" class="b">reader</text><line x1="112" y1="85" x2="712" y2="85" class="ln"/>
+  <text x="0" y="147" class="b">write action</text><line x1="112" y1="143" x2="712" y2="143" class="ln"/>
+  <g class="a-grow-x" style="--d:0.15s"><rect x="112.0" y="16" width="210.0" height="22" rx="4" class="own"/></g>
+  <text x="118.0" y="31" class="a-in" style="--d:0.40s;font-size:11px">fills the scope, hidden</text>
+  <g class="a-grow-x" style="--d:1.37s"><rect x="340.0" y="74" width="108.0" height="22" rx="4" class="typed"/></g>
+  <text x="340.0" y="69" class="m a-in" style="--d:1.62s;font-size:11px">looks up, no lock</text>
+  <g class="a-grow-x" style="--d:1.94s"><g class="a-blink" style="--d:2.54s;--n:2"><rect x="448.0" y="74" width="36.0" height="22" rx="4" class="wait"/></g></g>
+  <text x="448.0" y="69" class="m a-in" style="--d:2.19s;font-size:11px">unwinds</text>
+  <g class="a-grow-x" style="--d:2.13s"><rect x="484.0" y="132" width="132.0" height="22" rx="4" class="pub"/></g>
+  <text x="484.0" y="127" class="m a-in" style="--d:2.38s;font-size:11px">builds aside, publishes</text>
+  <g class="a-grow-x" style="--d:2.93s"><rect x="634.0" y="74" width="78.0" height="22" rx="4" class="typed"/></g>
+  <text x="712.0" y="69" text-anchor="end" class="m a-in" style="--d:3.18s;font-size:11px">sees the new table</text>
+  <g class="a-pop" style="--d:1.27s"><line x1="322.0" y1="13" x2="322.0" y2="41" class="s-own" stroke-width="2"/></g>
+  <text x="326.0" y="11" class="c-own a-in" style="--d:1.27s;font-size:10.5px">published</text>
+  <path d="M 322.0 38 L 340.0 74" class="s-pub a-draw" pathLength="1" style="--d:1.27s" marker-end="url(#mswf)"/>
+  <path d="M 616.0 132 L 634.0 96" class="s-pub a-draw" pathLength="1" style="--d:2.84s" marker-end="url(#mswf)"/>
+</svg>
+<div class="legend"><span><i class="typed"></i>working</span><span><i class="own"></i>holding a claim or lock</span><span><i class="wait"></i>waiting</span><span><i class="pub"></i>write action</span></div>
+<figcaption>Fill hidden, then freeze: a scope is filled while its owner's completion hides it, published when the completion returns, and changed after that only by a write action, building new entries aside. From the state map's guide ([`tools/state-map`][statemap]).</figcaption>
+</figure>
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 138" role="img" aria-label="One symbol per name, and the scope&#x27;s enumeration never changes.">
+  <defs><marker id="mswm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <text x="0" y="31" class="b">reader 1</text><line x1="112" y1="27" x2="712" y2="27" class="ln"/>
+  <text x="0" y="89" class="b">reader 2</text><line x1="112" y1="85" x2="712" y2="85" class="ln"/>
+  <g class="a-grow-x" style="--d:0.15s"><rect x="112.0" y="16" width="180.0" height="22" rx="4" class="typed"/></g>
+  <text x="118.0" y="31" class="a-in" style="--d:0.40s;font-size:11px">Function23: synthesizes</text>
+  <g class="a-grow-x" style="--d:0.28s"><rect x="136.0" y="74" width="180.0" height="22" rx="4" class="typed"/></g>
+  <text x="142.0" y="89" class="a-in" style="--d:0.53s;font-size:11px">Function23: synthesizes</text>
+  <g class="a-grow-x" style="--d:1.30s"><rect x="328.0" y="16" width="324.0" height="22" rx="4" class="typed"/></g>
+  <text x="334.0" y="31" class="a-in" style="--d:1.55s;font-size:11px">the symbol</text>
+  <g class="a-grow-x" style="--d:1.30s"><rect x="328.0" y="74" width="324.0" height="22" rx="4" class="typed"/></g>
+  <text x="334.0" y="89" class="a-in" style="--d:1.55s;font-size:11px">the same symbol</text>
+  <g class="a-pop" style="--d:1.11s"><line x1="292.0" y1="13" x2="292.0" y2="41" class="s-own" stroke-width="2"/></g>
+  <text x="296.0" y="11" class="c-own a-in" style="--d:1.11s;font-size:10.5px">putIfAbsent wins</text>
+  <g class="a-pop" style="--d:1.24s"><line x1="316.0" y1="71" x2="316.0" y2="99" class="s-own" stroke-width="2"/></g>
+  <text x="320.0" y="69" class="c-own a-in" style="--d:1.24s;font-size:10.5px">loses: takes the winner&#x27;s</text>
+</svg>
+<div class="legend"><span><i class="typed"></i>working</span><span><i class="own"></i>holding a claim or lock</span><span><i class="wait"></i>waiting</span><span><i class="pub"></i>write action</span></div>
+<figcaption>Synthesize beside, not into: a member made on a lookup is kept in a memo beside the scope (`putIfAbsent`), never entered, so an enumeration does not depend on history.</figcaption>
+</figure>
+
+- **Patterns:** fill hidden, then freeze (`MutableScope.published`; `-Ycheck-frozen-scopes` fails any other change); build a new table aside and publish it with one store after a release fence (`extendAside`); synthesize beside, not into.
+- **Result:** 0 changes outside a write action in those suites, 0 missed lookups, 0 split names.
+
+### 31b. Invalidation racing a store
+
+**Hazard.** A change pushes invalidation into other objects' caches. A reader that computed from the old information stores its result after the invalidation went past, and the stale value stays. The inherited caches had a monitor each, a validity check on store and a weak map of dependents to keep this right (I46, I92).
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 138" role="img" aria-label="Nobody invalidates the cache; the reader compares stamps when it reads.">
+  <defs><marker id="mswp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <text x="0" y="31" class="b">reader</text><line x1="112" y1="27" x2="712" y2="27" class="ln"/>
+  <text x="0" y="89" class="b">writer</text><line x1="112" y1="85" x2="712" y2="85" class="ln"/>
+  <g class="a-grow-x" style="--d:0.15s"><rect x="112.0" y="16" width="150.0" height="22" rx="4" class="typed"/></g>
+  <text x="112.0" y="11" class="m a-in" style="--d:0.40s;font-size:11px">member names cached at epoch 5</text>
+  <g class="a-grow-x" style="--d:1.27s"><rect x="322.0" y="74" width="120.0" height="22" rx="4" class="pub"/></g>
+  <text x="322.0" y="69" class="m a-in" style="--d:1.52s;font-size:11px">changes a published scope: epoch 6</text>
+  <g class="a-grow-x" style="--d:2.23s"><rect x="502.0" y="16" width="180.0" height="22" rx="4" class="typed"/></g>
+  <text x="508.0" y="31" class="a-in" style="--d:2.48s;font-size:11px">epoch 5 ≠ 6: recomputes</text>
+  <path d="M 442.0 74 L 502.0 38" class="s-pub a-draw" pathLength="1" style="--d:1.91s" marker-end="url(#mswp)"/>
+  <text x="508.0" y="50.0" class="c-pub a-in" style="--d:1.91s;font-size:10.5px">epoch</text>
+</svg>
+<div class="legend"><span><i class="typed"></i>working</span><span><i class="own"></i>holding a claim or lock</span><span><i class="wait"></i>waiting</span><span><i class="pub"></i>write action</span></div>
+<figcaption>Pull, do not push: nobody invalidates the cache; the reader compares stamps when it reads. From the state map's guide ([`tools/state-map`][statemap]).</figcaption>
+</figure>
+
+```scala
+// InheritedCacheImpl, on a concurrent base
+private val epoch: Int = if concurrent then base.structureEpoch else 0
+protected final def epochCurrent: Boolean = !concurrent || epoch == base.structureEpoch
+protected def invalidateDependents(): Unit =
+  if concurrent then base.bumpStructureEpoch()   // every stamped cache is now stale
+  else …                                          // batch: walk the dependents, as before
+```
+
+A cache records the base's structure epoch when it is made and is valid while the epoch has not moved; a change to a published scope moves it. A store that races with a change lands in a cache already stale.
+
+### 31c. A result read after the lock is released
+
+**Hazard.** A provider calls `runUpTo`, the read lock is released, and it reads the typed tree afterwards. A write action between the two replaces what it reads. Most providers read the current context and compilation units outside the lock.
+
+<figure class="fig anim">
+<svg viewBox="0 0 720 138" role="img" aria-label="A result read after a write is not handed over; the request is served again, at most three times.">
+  <defs><marker id="msws" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
+  <text x="0" y="31" class="b">request</text><line x1="112" y1="27" x2="712" y2="27" class="ln"/>
+  <text x="0" y="89" class="b">writer</text><line x1="112" y1="85" x2="712" y2="85" class="ln"/>
+  <g class="a-grow-x" style="--d:0.15s"><rect x="112.0" y="16" width="150.0" height="22" rx="4" class="typed"/></g>
+  <text x="118.0" y="31" class="a-in" style="--d:0.40s;font-size:11px">runUpTo: stamp 7</text>
+  <g class="a-grow-x" style="--d:0.95s"><rect x="262.0" y="16" width="180.0" height="22" rx="4" class="typed"/></g>
+  <text x="262.0" y="11" class="m a-in" style="--d:1.20s;font-size:11px">provider reads the tree, no lock</text>
+  <g class="a-grow-x" style="--d:1.27s"><rect x="322.0" y="74" width="78.0" height="22" rx="4" class="pub"/></g>
+  <text x="322.0" y="69" class="m a-in" style="--d:1.52s;font-size:11px">write: count 8</text>
+  <g class="a-grow-x" style="--d:2.13s"><rect x="484.0" y="16" width="198.0" height="22" rx="4" class="typed"/></g>
+  <text x="490.0" y="31" class="a-in" style="--d:2.38s;font-size:11px">again, on a fresh reader</text>
+  <g class="a-pop" style="--d:2.01s"><line x1="460.0" y1="13" x2="460.0" y2="41" class="s-own" stroke-width="2"/></g>
+  <text x="464.0" y="11" class="c-own a-in" style="--d:2.01s;font-size:10.5px">7 ≠ 8</text>
+</svg>
+<div class="legend"><span><i class="typed"></i>working</span><span><i class="own"></i>holding a claim or lock</span><span><i class="wait"></i>waiting</span><span><i class="pub"></i>write action</span></div>
+<figcaption>Stamp the result: a request's result carries the driver's write count when it last left a lock, and the request is served again if a write ran after it, at most three times. From the state map's guide ([`tools/state-map`][statemap]).</figcaption>
+</figure>
+
 ### 32. The patterns, by mode of `Sharing`
 
 | hazard | pattern | `Batch` | `Serialised` | `Parallel` |
@@ -778,6 +903,9 @@ class Cell:                      // starts with a pair from an earlier period
 | a value and its stamp (§30) | ordered stamp | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
 | type variables crossing readers (§31) | private typer state | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
 | shared maps and interners | concurrent structures | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
+| a reader changing a published scope (§31a) | fill hidden, then freeze; build aside; synthesize beside | the original code | changes only in a write action | changes only in a write action |
+| invalidation racing a store (§31b) | pull by epoch | push: walk the dependents | structure epoch | structure epoch |
+| a result read after the lock (§31c) | stamp the result | – | served again after a write | served again after a write |
 
 - A guard has to say which mode it means: `concurrent` is true for serialised and parallel readers, `parallel` for parallel only. A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86).
 
@@ -789,6 +917,7 @@ class Cell:                      // starts with a pair from an earlier period
 | two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 (§23) |
 | the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 (§29) |
 | one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
+| Lincheck on the claims | readers claiming in nested orders, never opposite ones, must never back off | I98 |
 | lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps §30 true |
 
 The soak flake that showed only in full-suite runs, `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log), has I87 as its likely cause (§28): the symptom is the one I87's commit describes. With the build's JVM options the full suite failed 4 times in about 90 runs, against 0 in 180 runs of the test alone and 0 in 60 runs of the suite with default options. The fix is not yet confirmed: the soak runs with it have not reported.
