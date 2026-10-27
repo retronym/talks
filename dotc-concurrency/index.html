@@ -1129,7 +1129,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
      "group": "Problem",
      "beat": "1",
      "title": "Two readers, one lazy symbol",
-     "caption": "Take away the claims. T2 is completing subtotal, whose inferred type needs its body typed. In a compiler with one thread, a symbol whose completion has started and not finished is somewhere on the current call stack.",
+     "caption": "Take away the claims. T2 is completing subtotal, whose inferred type needs its body typed. While a completer runs, it marks its symbol as being completed.",
      "run": "run 1",
      "units": {
       "s5": "T2",
@@ -1154,7 +1154,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
      "group": "Problem",
      "beat": "2",
      "title": "The other reader concludes there is a cycle",
-     "caption": "T1 needs subtotal's type and finds its completion under way. With one thread that can only mean a cycle, so T1 reports one: a false error in the editor. Had it looked through the completer instead, it would have read T2's half-built state.",
+     "caption": "T1 needs subtotal's type and finds it marked as being completed. With one thread, that mark can only mean that subtotal's own completion asked for subtotal's type: its type depends on itself, and the compiler reports a cycle. T1 applies the same rule to T2's mark and reports a recursion that is not there. Had it looked through the completer instead, it would have read T2's half-built state.",
      "syms": {
       "total": "busy:T1"
      },
