@@ -589,7 +589,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Epoch invalidation
 
-<p class="lede">For the edge cases: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) The guard is one atomic counter on the base: a concurrent base pulls, a batch base keeps the push.</p>
+<p class="lede">An edge case: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) With one thread, such a change clears the caches computed from the scope by walking a list of them. With several readers nothing is walked: the base keeps one counter that every such change increments, and a cache is valid only while the counter still reads what it did when the cache was made.</p>
 
 <div class="scenario" data-card="epoch"></div>
 
@@ -2508,7 +2508,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "group": "Mechanism",
      "beat": "3",
      "title": "A cache records the epoch it was made at",
-     "caption": "With several readers, invalidation pulls instead of pushing. The base keeps one structure epoch. A cache records the epoch when it is made and is valid only while the epoch has not moved.",
+     "caption": "With several readers, nothing is cleared. The base keeps one counter, the structure epoch. A cache records its value when the cache is made, and is valid only while the counter has not moved.",
      "lanes": {
       "T1": [
        "typing",
@@ -5483,7 +5483,7 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
     ['once', 'A structure that readers share is built in locals and stored once, as one immutable value: seen as nothing or as all of it.'],
     ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
-    ['epoch', 'A change to a published scope moves one epoch; a cache records the epoch it was made at and is valid while it has not moved.'],
+    ['epoch', 'A change to a published scope increments one counter on the base; a cache is valid only while the counter still reads what it did when the cache was made.'],
     ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
     ['cycles', 'A wait that would close a cycle of claims: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
   ];

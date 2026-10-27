@@ -84,7 +84,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Epoch invalidation
 
-<p class="lede">For the edge cases: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) The guard is one atomic counter on the base: a concurrent base pulls, a batch base keeps the push.</p>
+<p class="lede">An edge case: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) With one thread, such a change clears the caches computed from the scope by walking a list of them. With several readers nothing is walked: the base keeps one counter that every such change increments, and a cache is valid only while the counter still reads what it did when the cache was made.</p>
 
 <div class="scenario" data-card="epoch"></div>
 

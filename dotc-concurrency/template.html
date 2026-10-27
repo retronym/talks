@@ -1188,7 +1188,7 @@ body.focus .scn-cap { font-size: 18px; }
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
     ['once', 'A structure that readers share is built in locals and stored once, as one immutable value: seen as nothing or as all of it.'],
     ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
-    ['epoch', 'A change to a published scope moves one epoch; a cache records the epoch it was made at and is valid while it has not moved.'],
+    ['epoch', 'A change to a published scope increments one counter on the base; a cache is valid only while the counter still reads what it did when the cache was made.'],
     ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
     ['cycles', 'A wait that would close a cycle of claims: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
   ];

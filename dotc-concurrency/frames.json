@@ -1893,7 +1893,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "A cache records the epoch it was made at",
-     "caption": "With several readers, invalidation pulls instead of pushing. The base keeps one structure epoch. A cache records the epoch when it is made and is valid only while the epoch has not moved.",
+     "caption": "With several readers, nothing is cleared. The base keeps one counter, the structure epoch. A cache records its value when the cache is made, and is valid only while the counter has not moved.",
      "lanes": {
       "T1": [
        "typing",
