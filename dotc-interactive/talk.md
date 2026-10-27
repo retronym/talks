@@ -750,7 +750,7 @@ class Cell:                      // starts with a pair from an earlier period
 
 <div class="chips">{chip:C cache} {chip:packed value}</div>
 
-`Caching` keeps two fields and orders them. `Stamped` keeps one: the stamp and the value as one immutable cell with final fields, so whoever loads the cell sees the pair whole, on any base, with no fence and no test of the mode.
+`Caching` kept two fields and ordered them. `Stamped` keeps one: the stamp and the value as one immutable cell with final fields, so whoever loads the cell sees the pair whole, on any base, with no fence and no test of the mode.
 
 <figure class="fig pair">
 <svg viewBox="0 0 340 190" role="img" aria-label="Before: Caching keeps the stamp and the value in two fields of the type, ordered by fences on a concurrent base">
@@ -765,7 +765,7 @@ class Cell:                      // starts with a pair from an earlier period
 <svg viewBox="0 0 340 190" role="img" aria-label="After: Stamped keeps one reference to an immutable cell; an empty cache points at the shared Stamped.Empty">
   <text x="0" y="14" class="h">Stamped: one cell</text>
   <rect x="0" y="28" width="180" height="56" rx="6" class="box"/><text x="10" y="46" class="b">OrType</text>
-  <text x="10" y="64" class="mono">myJoin: Stamped[Type]</text>
+  <text x="10" y="64" class="mono">myJoin: Stamped[PerPeriod,</text><text x="10" y="78" class="mono">  Type]</text>
   <rect x="210" y="28" width="120" height="56" rx="6" class="pub"/><text x="220" y="46" class="b">Stamped</text>
   <text x="220" y="64" class="mono">final stamp</text><text x="220" y="78" class="mono">final value</text>
   <path d="M 180 60 L 210 56" class="s-pub"/>
@@ -776,9 +776,17 @@ class Cell:                      // starts with a pair from an earlier period
 <figcaption>[readers §4.4.1][M], [`Stamped.scala`][stamped].</figcaption>
 </figure>
 
-- All but two of the stamped caches in `Types` are cells now: the signatures, base classes, join, union, atoms, widening, super type, compile-time fold and normalizable underlying type. `canDropAlias` and `isStable`, a `Boolean` each, and `ClassDenotation`'s member and base-type caches stay on `Caching`.
+```scala
+private var myAtoms: Stamped[PerRun, Atoms] = Stamped.Empty
+override def atoms(using Context): Atoms =
+  myAtoms.cachedIf(_ => !isProvisional):   // the run id from the context; the field written by the macro
+    computeAtoms()
+```
+
+- The stamp's kind is on the field's type, and its current value a given from the context, so a call site names no stamp. `cached` and `cachedIf` are macros that write the field they are called on, so there is no setter either. They live in a module built before the compiler, so they expand in its run without suspending `Types.scala`, and are packaged into the compiler's jar.
+- Every stamped cache is one field now, and `Caching` is gone: the signatures, base classes, join, union, atoms, widening, super type, stability, `canDropAlias`, compile-time fold and normalizable underlying type in `Types`, and `ClassDenotation`'s member and base-type caches (`cachedWhen`, for a hit test of its own). A `Boolean` value is one of `java.lang.Boolean`'s two instances, so it allocates nothing more.
 - Most instances never fill most of these caches: a method's Java and Scala 2 signatures, a union's join, a compile-time fold. An empty cache is now one reference to a shared `Stamped.Empty` instead of a stamp and a value, so the types get smaller, and cells are allocated only for the caches that fill.
-- On the batch compiler cycles per op did not move beyond noise (dottyUtil −0.1% ± 4.0, re2s −0.9% ± 5.1), and allocation per op went down 0.7–0.8%: the fields the cells replace outweigh the cells ([readers §4.4.1][M]).
+- On the batch compiler, moving the first thirteen changed cycles per op by no more than noise (dottyUtil −0.1% ± 4.0, re2s −0.9% ± 5.1), and allocation per op went down 0.7–0.8%: the fields the cells replace outweigh the cells ([readers §4.4.1][M]).
 - Not for `Symbol.checkedPeriod` and `NamedType.checkedPeriod`: a hit there moves the stamp without recomputing, so a cell would allocate once per symbol or type per period, on the hottest reads in the compiler. They keep `util.Publish`.
 - `StampedLincheckTest` checks the cell as §30a checks the fields; a cell updated in place must fail it ([`StampedLincheckTest.scala`][stampedLincheck]).
 
@@ -938,7 +946,7 @@ A cache records the base's structure epoch when it is made and is valid while th
 | acting on another reader's work in progress (§27)  | wait, don't peek | – | wait on the lock, look again | `awaitOtherReader` |
 | readers waiting on each other (§28)  | a chosen victim | –  | – | `CompletionRoots.backOff` |
 | a cache in several fields (§29) | one published value | plain fields | packed value, publish once | packed value, publish once |
-| a value and its stamp (§30) | ordered stamp | plain stores | `Caching.stamped` with fences | `Caching.stamped` with fences |
+| a value and its stamp (§30, §30b) | one immutable value | plain stores | `Stamped`, one field | `Stamped`, one field |
 | type variables crossing readers (§31) | private typer state | the original code | commit under the lock (`endState`) | settle and drop (`privately`, `endState`) |
 | shared maps and interners | concurrent structures | plain | synchronised, lock-free hits (`newEqHashMap`, `newUniques`) | the same |
 | a reader changing a published scope (§31a) | fill hidden, then freeze; build aside; synthesize beside | the original code | changes only in a write action | changes only in a write action |
@@ -950,12 +958,12 @@ A cache records the base's structure epoch when it is made and is valid while th
 
 | layer | what it checks |
 |---|---|
-| Lincheck on `Caching` | the stamped cell from several threads against every sequential order (§30a) |
+| Lincheck on `Stamped` | a stamped cache from several threads against every sequential order (§30a, §30b) |
 | two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's |
 | the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence |
 | one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` |
 | Lincheck on the claims | readers claiming in nested orders, never opposite ones, must never back off |
-| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` |
+| lints | `StampedCachesTest`: no stamp in `core` beside its value but the named exceptions |
 
 A soak that hammers one pattern, written out longhand as well, separates "the search picked wrong" from "the answer it checked was wrong" ([readers §4.4][M]).
 
@@ -967,7 +975,7 @@ A soak that hammers one pattern, written out longhand as well, separates "the se
 A script over the compiler's TASTy collects every `var`, and every `val` holding a mutable collection, of the classes a reader can reach: 1047 fields in 350 classes. For each it records:
 
 - **the kind** of §22, A to E, by rules over owner, base classes, declared type and name;
-- **what protects it** from other readers: `Caching`, `util.Publish`, a packed or single volatile, the completion lock, a root's claim, confinement to one thread, a monitor, batch only, post-typer, or none;
+- **what protects it** from other readers: `Stamped`, `util.Publish`, a packed or single volatile, the completion lock, a root's claim, confinement to one thread, a monitor, batch only, post-typer, or none;
 - **its feature area** and the classes its type names, which give the diagram its edges.
 
 Protection is read from the trees around every access, not from the declaration, so a field protected at most accesses but not all shows as *partial*, with the unprotected lines listed. Checked against the design notes' tables (the stamped caches of §30, the race register), it reports 12 mismatches, each a real access outside the stated discipline ([PR][PR], [`tools/state-map`][statemap]).
