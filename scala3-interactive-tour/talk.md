@@ -381,13 +381,13 @@ The x-ray drives the driver directly: a background pass beside hovers, a recorde
 
 ### 15. Finding races
 
-| layer | what it checks | found |
-|---|---|---|
-| Lincheck on `Caching` | the stamped cell from several threads against every sequential order | the helper's ordering |
-| two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 |
-| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 |
-| one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
-| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps  true |
+| layer | what it checks |
+|---|---|
+| Lincheck on `Caching` | the stamped cell from several threads against every sequential order |
+| two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's |
+| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence |
+| one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` |
+| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` |
 
 Every answer is compared with a single-reader whole-file run; a divergence is a race until shown otherwise.
 

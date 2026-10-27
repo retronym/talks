@@ -128,7 +128,7 @@ stateDiagram-v2
 
 - A `Period` is a run id and a phase interval; a `SymDenotation` is a symbol's meaning over one period, and the denotations of one symbol form a ring.
 - Reading a denotation in a later run is a write: `Denotation.current` validates it, or brings it forward and links it into the ring ([readers §3][M], kind B).
-- The run id is 16 bits, and nothing guarded it: a long-lived driver overflows it into the phase bits (I10, [session §9][S]). A livelock later ran it past 65,535 to 0 (I43).
+- The run id is 16 bits, and nothing guarded it: a long-lived driver overflows it into the phase bits (I10, [session §9][S]).
 
 ### 5. Scala 2's presentation compiler runs requests inside the background type check
 
@@ -506,7 +506,7 @@ The claims, evidence, black holes, guarded fields, `once` and the stamped cache 
 <div class="chips">{chip:coarse lock}</div>
 
 - Every completion, bring-forward, inherited-cache computation and lazy TASTy read under one reentrant lock; concurrency in body typing only, as K2 started.
-- The two-reader suites found fourteen races (I34 to I47), each fixed. Then I48: a completer publishes intermediate infos (a `TempClassInfo`, `TypeBounds.empty` while a TASTy type is read) that a reader outside the lock takes as complete.
+- Then I48: a completer publishes intermediate infos (a `TempClassInfo`, `TypeBounds.empty` while a TASTy type is read) that a reader outside the lock takes as complete.
 
 | hover beside a background pass, `Types.scala` ([readers §8][M]) | median | p90 | right? |
 |---|---|---|---|
@@ -588,7 +588,7 @@ Each card names a hazard that appears once several readers share one symbol tabl
 
 **Pattern: wait, don't peek.** "In progress on another reader" is a state to wait for, never one to act on. `isCompleting` means "on this reader"; on a concurrent base, another reader's completion is waited for and the symbol looked at again (`awaitOtherReader`).
 
-- The design counted thirteen such sites ([readers §4.1][M]). The two-reader suites and the race hunt found more of the same shape: a constructor completion skipped (I72), an empty type-parameter list cached (I73, I75), a `LazyRef` being computed taken for a cycle (I57).
+- The design counted thirteen such sites ([readers §4.1][M]). More sites had the same shape: a constructor completion skipped (I72), an empty type-parameter list cached (I73, I75), a `LazyRef` being computed taken for a cycle (I57).
 
 ### 28. Two readers waiting on each other
 
@@ -621,7 +621,7 @@ Each card names a hazard that appears once several readers share one symbol tabl
 <figcaption>[readers §8][M] step 4.</figcaption>
 </figure>
 
-**Pattern: detect before waiting, then choose a victim.** Before it waits, a reader follows owners from the root back to itself. On a cycle, a reader typing a body backs off and its request restarts; a reader inside a Namer completion never does; if every party is inside a Namer completion and every root is a symbol, one raises `CyclicReference`, the single-reader answer. Only a chain of live claims seen twice, a short wait apart, counts as a cycle (I87), and only if every claim in it is still held after the walk: a claim read while held and released before its owner waited joined two waits that never coexisted (I98, found by Lincheck on the claims).
+**Pattern: detect before waiting, then choose a victim.** Before it waits, a reader follows owners from the root back to itself. On a cycle, a reader typing a body backs off and its request restarts; a reader inside a Namer completion never does; if every party is inside a Namer completion and every root is a symbol, one raises `CyclicReference`, the single-reader answer.
 
 - **Where it lives:** `Sharing.exclusive` and `Sharing.claimed` take the claim on a parallel base and pass `CompletionRoots.backOff` as what to do on a cycle; on a serialised base `exclusive` takes the one completion lock, and batch runs the code as it was.
 - The residue: two readers completing `Settings.Setting`'s members in opposite orders still raise a cycle no sequential order has (7 divergent files in 20 rounds of 484). Namer completions that can run again are the fix ([readers §8][M] step 4).
@@ -907,20 +907,17 @@ A cache records the base's structure epoch when it is made and is valid while th
 | invalidation racing a store (§31b) | pull by epoch | push: walk the dependents | structure epoch | structure epoch |
 | a result read after the lock (§31c) | stamp the result | – | served again after a write | served again after a write |
 
-- A guard has to say which mode it means: `concurrent` is true for serialised and parallel readers, `parallel` for parallel only. A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86).
 
 ### 33. Testing the concurrency
 
-| layer | what it checks | found |
-|---|---|---|
-| Lincheck on `Caching` | the stamped cell from several threads against every sequential order (§30a) | the helper's ordering |
-| two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's | I34–I47 (§23) |
-| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence | I70–I81 (§29) |
-| one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` | I78, I79, I84, I86, I83 |
-| Lincheck on the claims | readers claiming in nested orders, never opposite ones, must never back off | I98 |
-| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` | keeps §30 true |
-
-The soak flake that showed only in full-suite runs, `CompletionSoakSuite.two-readers-objects-seed-2` ("completions at … after complete", `xs.map[Nothing]` in the log), has I87 as its likely cause (§28): the symptom is the one I87's commit describes. With the build's JVM options the full suite failed 4 times in about 90 runs, against 0 in 180 runs of the test alone and 0 in 60 runs of the suite with default options. The fix is not yet confirmed: the soak runs with it have not reported.
+| layer | what it checks |
+|---|---|
+| Lincheck on `Caching` | the stamped cell from several threads against every sequential order (§30a) |
+| two-reader soak and oracle suites | random walks of requests, cancellations and edits on one driver, every answer equal to a whole-file run's |
+| the k=8 race-hunt loop | `Throughput -Dtp.loop`: 484 files, per-file diagnostics diffed against a single-reader run, the claim log around each divergence |
+| one-pattern soaks | `ShownSoak` (conversions to `Shown`, written out longhand as well), `ExtensionParamsSuite`, `LazyRefRunSpliceSuite`, `DriverThreadLocalLeakSuite` |
+| Lincheck on the claims | readers claiming in nested orders, never opposite ones, must never back off |
+| lints | `StampedCachesTest`: a stamp in `core` only through `Caching` |
 
 A soak that hammers one pattern, written out longhand as well, separates "the search picked wrong" from "the answer it checked was wrong" ([readers §4.4][M]).
 
@@ -1362,7 +1359,6 @@ An earlier run had the targeted builds at 231–296 ms median, against 8 ms. Tha
 
 - Eight readers are 2.7 times one and twice the batch typer. Batching files into islands, or warming shared roots first, changes nothing beyond round noise: contention on the symbol table is not the limit.
 - What is: the CPU each file costs as k grows (efficiency cores, the memory system) and the serial open. Per file, about 1.4 times the batch typer's CPU, from resuming statement by statement and splicing.
-- Getting these numbers took six more race fixes (I60, I63–I67). The I68 hunt that followed (§29–§28) brought 20 rounds at k=8 to no failed cell and 7 divergent files, all from raised cycles.
 
 ### 46b. Four threads: the machine costs more than sharing
 
@@ -1474,7 +1470,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 - The whole-file run after a keystroke in `Types.scala`: 382 → 6 ms (§39).
 - All 484 `dotc` sources typed in 2.1 s with 8 readers, against the batch typer's 4.1 s; root waits a few milliseconds in all (§46).
 - On the recorded editor window the three modes tie, because the whole-file askers dominate it (§45).
-- The presentation-compiler suite and the session suites pass in both reader modes; findings I34–I76 on this branch, each with its mechanism and a test.
+- The presentation-compiler suite and the session suites pass in both reader modes.
 
 ### 57. Open problems
 
@@ -1504,7 +1500,7 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 </svg>
 </figure>
 
-- The design counted thirteen `isCompleting` sites; the hunt found seven more shapes of the same thing: `typeParams` caching an empty list, `ensureCompletions` skipping a constructor, a `LazyRef` in progress taken for a cycle (§27).
+- The design counted thirteen `isCompleting` sites; seven more shapes of the same thing turned up: `typeParams` caching an empty list, `ensureCompletions` skipping a constructor, a `LazyRef` in progress taken for a cycle (§27).
 - **Roots coarser than facts turn lock orders into cycles.** Raising `CyclicReference` there made false errors (I54); backing off made I74. The `Setting` residue is the same tension one level down (§28).
 - **The hunt that worked:** the k=8 whole-set run in a loop, each file's diagnostics diffed against a single-reader run, the claim log around each divergence, one shape at a time, each added to a suite; and two review sweeps for the known shapes, which found eleven more instances before the loop would have (§29).
 
@@ -1528,7 +1524,6 @@ Built on [retronym/scala3#84][PR], all behind flags; batch compilation unchanged
 
 - The same channel, four times: I52, I62, I70 and the `Shown` mismatches; the same fix each time (§31, §31).
 - **Keep batch fast by paying when the symbol table is made, or on slow paths that already exist:** a `protected def` answered once per `ContextBase`, one virtual `reader`, the in-progress state as a lazy type on the slow path already there. The one per-access cost, release/acquire on `checkedPeriod`, is the one that still needs a paired A/B (§47).
-- **A guard must say which mode it means.** A fix for parallel readers guarded by `concurrent` changed the serialised mode too, and a document-highlight test caught it (I86, §32).
 - **Demo honesty costs a day and is worth it:** the baseline must go through `CachingDriver`, the driver must use the build's options, and a server that outlives its build misleads (I58, the `Shown` warnings, the wedged x-ray).
 
 ### 61. Next steps
@@ -1690,45 +1685,6 @@ sequenceDiagram
 <figcaption>A second black hole hiding in a cache ([readers §8][M] step 3). The cache version also leaked the mark on cancellation.</figcaption>
 </figure>
 
-### A claim not released after an exception froze the x-ray (I61)
-
-<figure class="fig pair">
-<svg viewBox="0 0 340 180" role="img" aria-label="Before: a claim is released only on cancellation; another exception leaks it">
-  <text x="0" y="14" class="h">before</text>
-  <rect x="0" y="30" width="190" height="28" rx="6" class="own"/><text x="10" y="48">claim: statement s, R1</text>
-  <text x="200" y="48" class="c-bad">assertion escapes</text>
-  <text x="0" y="82">released only on cancellation</text>
-  <rect x="0" y="96" width="320" height="28" rx="6" class="wait"/><text x="10" y="114">R2 waits for s, holding the session monitor</text>
-  <text x="0" y="146">forever: the x-ray's handlers ran on</text>
-  <text x="0" y="164" class="c-bad">the HTTP dispatcher, and the page froze</text>
-</svg>
-<svg viewBox="0 0 340 180" role="img" aria-label="After: released on any exception, the session poisoned, waits bounded">
-  <text x="0" y="14" class="h">after</text>
-  <rect x="0" y="30" width="190" height="28" rx="6" class="skip"/><text x="10" y="48">claim released</text>
-  <text x="200" y="48" class="c-typed">session poisoned</text>
-  <text x="0" y="82">on any exception; the next request is fresh</text>
-  <rect x="0" y="96" width="320" height="28" rx="6" class="typed"/><text x="10" y="114">a claim records its owner thread</text>
-  <text x="0" y="146">a wait gives up if the owner is gone,</text>
-  <text x="0" y="164">or after 60 s, and retries</text>
-</svg>
-<figcaption>Any mode, not only with several readers ([readers §8][M] step 4). The x-ray now handles each request on a thread of its own and reports one that takes more than 30 s.</figcaption>
-</figure>
-
-### Other races found and fixed
-
-| | finding ([readers §8][M]) |
-|---|---|
-| I35 | the unpickler's address maps filled under the lock and read outside it: `key not found: Addr(417)` |
-| I42 | a completer's constraints and a resume's commit in one typer state: a looping `OrderingConstraint` until the heap ran out |
-| I43 | two fresh runs replacing each other for ever, run ids past 65,535 to 0: a fresh run and the read of its result are one write action |
-| I44 | a completer captured before the wait, stale after it: `UnsupportedOperationException: complete` |
-| I45 | `cleanup` erroring out a classpath symbol another reader was loading |
-| I52, I55, I57 | a read action in the run's root typer state; a shared implicit `SearchRoot`; a `LazyRef` in progress taken for a cycle |
-| I63–I67 | found by the throughput runs: a false self-type cycle, explicit nulls' flow facts, committed creation states, a class's caches read twice |
-| I60 | two-reader soak failures under heavy load, a different symptom each time: an import's selector facts, now published as one value |
-| I68 | with four or eight readers, now and then one file's errors differ from the whole-set run: the hunt in §29–§28 |
-| I70, I72, I73, I75 | found by that hunt: a completion typed in the run's shared state without the lock; three more peeks at another reader's `InProgress` (`ensureCompletions`, `typeParams`, the self type); a cached empty list computed while another reader's completion started |
-
 ### Moving every position after the edit
 
 <figure class="fig anim">
@@ -1782,26 +1738,6 @@ sequenceDiagram
 - Run 1: worker CPU grows only 18 percent from one reader to six, root waits are at most 15 per cell and under 1 ms, no file's diagnostics differ, and the batch typer on the same files takes 5.42 s. What stops the curve is the time outside the workers, about 0.57 s at every N (derived as above, not measured): opening the set is serial.
 - Run 2 parses in parallel and hands out the largest files first: the open is 0.31 s (measured), the tail of the timeline 0 to 7 ms, and four readers are 2.98 times one (wall 4.93, 2.80, 2.08, 1.65 s; worker CPU 1.00, 1.07, 1.14, 1.15 of N=1's). Its batch reference moved to 6.41 s without an explanation, so it is not used here.
 
-### A fix guarded by the wrong mode flag (I86)
-
-<figure class="fig anim">
-<svg viewBox="0 0 720 190" role="img" aria-label="A fix for parallel readers, guarded by concurrent, also changed the serialised mode and broke a document-highlight test">
-  <defs><marker id="m33e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mut"/></marker></defs>
-  <text x="0" y="14" class="h">extension [N &lt;: Name](name: N): one parameter clause, shared by every method</text>
-  <g class="a-in" style="--d:.1s"><rect x="0" y="30" width="220" height="44" rx="6" class="bad"/><text x="110" y="49" text-anchor="middle" class="b">race (parallel readers)</text><text x="110" y="65" text-anchor="middle">siblings consume each other's</text></g>
-  <path d="M 222 52 L 262 52" class="mut a-draw" pathLength="1" style="--d:.4s" marker-end="url(#m33e)"/>
-  <g class="a-in" style="--d:.5s"><rect x="266" y="30" width="200" height="44" rx="6" class="own"/><text x="366" y="49" text-anchor="middle" class="b">fix: copy the trees</text><text x="366" y="65" text-anchor="middle" class="mono">if concurrent</text></g>
-  <path d="M 468 52 L 508 52" class="mut a-draw" pathLength="1" style="--d:.8s" marker-end="url(#m33e)"/>
-  <g class="a-pop" style="--d:.9s"><rect x="512" y="30" width="208" height="44" rx="6" class="bad"/><text x="616" y="49" text-anchor="middle" class="b">serialised mode changed</text><text x="616" y="65" text-anchor="middle">a highlight of Int finds nothing</text></g>
-  <g class="a-in" style="--d:1.4s"><rect x="0" y="110" width="720" height="60" rx="6" class="typed"/>
-    <text x="14" y="132" class="b">kept: if parallel, the first method keeps the extension's own trees, the others get copies</text>
-    <text x="14" y="152">batch and serialised readers type one at a time and keep the shared trees</text></g>
-</svg>
-</figure>
-
-- `desugar.extMethod` prepends the same parameter clauses to every method of an extension. Two readers completing or typing sibling methods removed each other's `SymOfTree` and `TypedAhead`: "`N` does not have a symbol" at k=6 ([readers §8][M], I86).
-- The first fix copied the trees on any concurrent base, and `DocumentHighlightSuite.extension-with-type-param4` failed: the serialised mode had changed behaviour too. `concurrent` covers serialised and parallel readers; a guard has to name the mode it means.
-- `ExtensionParamsSuite`: 60 extension methods and 6 files calling them, 7 readers at once. Before, an assertion in round 1 of 3 runs out of 3; after, 30 rounds clean in 6 runs.
 
 [PR]: https://github.com/retronym/scala3/pull/84
 [PR68]: https://github.com/retronym/scala3/pull/68
