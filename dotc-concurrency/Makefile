@@ -6,10 +6,11 @@ watch:
 
 .PHONY: watch
 
-excerpts.gen.json: excerpts.json extract.py
+# needs a checkout of the compiler (SCALA3); not part of the default build, which uses the committed excerpts.gen.json
+excerpts:
 	python3 extract.py
 
 check:
 	python3 extract.py --check
 
-.PHONY: check
+.PHONY: check excerpts
