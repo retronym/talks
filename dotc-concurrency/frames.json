@@ -910,7 +910,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "The period publishes the fields",
-     "caption": "The period is the flag that publishes the other fields. T2 stores the denotation and the symbol, then the period with a release store. T1 loads the period with an acquire load.",
+     "caption": "The period is the field that publishes the other two. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store of the period, and read only after checkedPeriod.acquired, an acquire load. The types hold the order: a plain read or write of these fields does not compile.",
      "lanes": {
       "T1": [
        "typing",
@@ -927,18 +927,18 @@
       "rows": [
        [
         "lastDenotation",
-        "1. plain",
-        "~"
+        "1. inside publishing",
+        "after acquired"
        ],
        [
         "lastSymbol",
-        "2. plain",
-        "~"
+        "2. inside publishing",
+        "after acquired"
        ],
        [
         "checkedPeriod",
         "3. release",
-        "acquire"
+        "acquired"
        ]
       ]
      }

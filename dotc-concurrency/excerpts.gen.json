@@ -1,5 +1,5 @@
 {
- "sha": "8d756a59a9",
+ "sha": "e790554431",
  "cards": {
   "claim": [
    {
@@ -208,40 +208,39 @@
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2640,
+      "n": 2646,
       "text": "private def setDenot(denot: Denotation)(using Context): Unit = {"
      },
      {
-      "n": 2641,
+      "n": 2647,
       "text": "  if ctx.base.checkNoDoubleBindings then"
      },
      {
-      "n": 2642,
+      "n": 2648,
       "text": "    checkSymAssign(denot.symbol)"
      },
      {
-      "n": 2644,
-      "text": "  lastDenotation = denot"
+      "n": 2651,
+      "text": "  val sym = denot.symbol"
      },
      {
-      "n": 2645,
-      "text": "  lastSymbol = denot.symbol"
+      "n": 2652,
+      "text": "  checkedPeriod.publishing(if prefix.isProvisional then Nowhere else ctx.period):"
      },
      {
-      "n": 2647,
-      "text": "  util.Publish.setNamedTypeCheckedPeriod(this, (if (prefix.isProvisional) Nowhere else ctx.period).rawCode)"
+      "n": 2653,
+      "text": "    lastDenotation := denot"
+     },
+     {
+      "n": 2654,
+      "text": "    lastSymbol := sym"
      }
     ],
     "hl": {
-     "1": [
-      3,
-      4,
-      5
-     ],
      "3": [
-      3,
       4,
-      5
+      5,
+      6
      ]
     }
    },
@@ -250,24 +249,55 @@
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2427,
+      "n": 2431,
       "text": "final def symbol(using Context): Symbol ="
      },
      {
-      "n": 2431,
-      "text": "  if Period.fromCode(util.Publish.namedTypeCheckedPeriod(this)) == ctx.period then lastSymbol.asInstanceOf[Symbol]"
+      "n": 2435,
+      "text": "  val checked = checkedPeriod.acquired"
      },
      {
-      "n": 2432,
+      "n": 2436,
+      "text": "  if checked.value == ctx.period then lastSymbol.after(checked).asInstanceOf[Symbol]"
+     },
+     {
+      "n": 2437,
       "text": "  else computeSymbol"
      }
     ],
     "hl": {
-     "2": [
-      1
-     ],
      "3": [
       1
+     ],
+     "4": [
+      2
+     ]
+    }
+   },
+   {
+    "file": "Published.scala",
+    "path": "sharing/src/dotty/tools/sharing/Published.scala",
+    "lines": [
+     {
+      "n": 81,
+      "text": "extension [O, F <: String, T](inline field: Payload[O, F, T])"
+     },
+     {
+      "n": 85,
+      "text": "  inline def after[S, V](snap: Acquired[S, F, V]): T = ${ PublishedMacros.afterImpl[S, F, T]('field, 'snap) }"
+     },
+     {
+      "n": 88,
+      "text": "  inline def peek: T = ${ PublishedMacros.payloadPeekImpl[T]('field) }"
+     },
+     {
+      "n": 91,
+      "text": "  inline def :=(inline v: T)(using Publishing): Unit = ${ PublishedMacros.payloadStoreImpl[O, F, T]('field, 'v) }"
+     }
+    ],
+    "hl": {
+     "3": [
+      3
      ],
      "4": [
       1
@@ -275,40 +305,25 @@
     }
    },
    {
-    "file": "Publish.java",
-    "path": "compiler/src/dotty/tools/dotc/util/Publish.java",
+    "file": "Published.scala",
+    "path": "sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
-      "n": 59,
-      "text": "public static int namedTypeCheckedPeriod(Object tp) {"
+      "n": 117,
+      "text": "transparent inline def acquired: Any = ${ PublishedMacros.acquiredImpl[T]('field) }"
      },
      {
-      "n": 60,
-      "text": "  return (int) NAMED_TYPE_CHECKED_PERIOD.getAcquire(tp);"
+      "n": 121,
+      "text": "inline def publishing(inline v: T)(inline body: Published.Publishing ?=> Unit): Unit ="
      },
      {
-      "n": 61,
-      "text": "}"
-     },
-     {
-      "n": 63,
-      "text": "public static void setNamedTypeCheckedPeriod(Object tp, int period) {"
-     },
-     {
-      "n": 64,
-      "text": "  NAMED_TYPE_CHECKED_PERIOD.setRelease(tp, period);"
-     },
-     {
-      "n": 65,
-      "text": "}"
+      "n": 122,
+      "text": "  ${ PublishedMacros.publishingImpl[T]('field, 'v, 'body) }"
      }
     ],
     "hl": {
      "3": [
-      1,
-      4
-     ],
-     "4": [
+      0,
       1
      ]
     }
@@ -335,15 +350,15 @@
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 3560,
+      "n": 3567,
       "text": "private var myBaseClasses: Stamped[PerPeriod, List[ClassSymbol]] = Stamped.Empty"
      },
      {
-      "n": 3562,
+      "n": 3569,
       "text": "override final def baseClasses(using Context): List[ClassSymbol] ="
      },
      {
-      "n": 3563,
+      "n": 3570,
       "text": "  myBaseClasses.cached:"
      }
     ],

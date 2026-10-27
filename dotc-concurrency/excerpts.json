@@ -1,6 +1,6 @@
 {
  "repo": "scala3",
- "sha": "8d756a59a9",
+ "sha": "e790554431",
  "note": "Excerpts of the code each card explains. extract.py reads them at `sha`, drops comments, and writes excerpts.gen.json; `extract.py --check` fails if the code at `sha` no longer matches what was generated. `hl` maps a card step (its beat) to patterns of the lines that do that step's work.",
  "cards": {
   "claim": [
@@ -53,17 +53,12 @@
    {
     "file": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "start": "private def setDenot\\(denot",
-    "end": "util\\.Publish\\.setNamedTypeCheckedPeriod",
+    "end": "lastSymbol := sym",
     "hl": {
-     "1": [
-      "lastDenotation = denot",
-      "lastSymbol = denot\\.symbol",
-      "setNamedTypeCheckedPeriod"
-     ],
      "3": [
-      "lastDenotation = denot",
-      "lastSymbol = denot\\.symbol",
-      "setNamedTypeCheckedPeriod"
+      "checkedPeriod\\.publishing",
+      "lastDenotation := denot",
+      "lastSymbol := sym"
      ]
     }
    },
@@ -72,29 +67,35 @@
     "start": "final def symbol\\(using Context\\): Symbol =",
     "end": "else computeSymbol",
     "hl": {
-     "2": [
-      "namedTypeCheckedPeriod\\(this\\)\\) == ctx\\.period then lastSymbol"
-     ],
      "3": [
-      "namedTypeCheckedPeriod"
+      "checkedPeriod\\.acquired"
      ],
      "4": [
-      "namedTypeCheckedPeriod\\(this\\)\\) == ctx\\.period then lastSymbol"
+      "checked\\.value == ctx\\.period then lastSymbol\\.after\\(checked\\)"
      ]
     }
    },
    {
-    "file": "compiler/src/dotty/tools/dotc/util/Publish.java",
-    "start": "public static int namedTypeCheckedPeriod",
-    "end": "NAMED_TYPE_CHECKED_PERIOD\\.setRelease",
-    "after": 1,
+    "file": "sharing/src/dotty/tools/sharing/Published.scala",
+    "start": "extension \\[O, F <: String, T\\]\\(inline field: Payload",
+    "end": "inline def :=",
     "hl": {
      "3": [
-      "getAcquire",
-      "setRelease"
+      "inline def :="
      ],
      "4": [
-      "getAcquire"
+      "inline def after"
+     ]
+    }
+   },
+   {
+    "file": "sharing/src/dotty/tools/sharing/Published.scala",
+    "start": "transparent inline def acquired",
+    "end": "PublishedMacros\\.publishingImpl",
+    "hl": {
+     "3": [
+      "inline def publishing",
+      "transparent inline def acquired"
      ]
     }
    }

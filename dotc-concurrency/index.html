@@ -328,10 +328,19 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .speed button { font: inherit; font-size: 11.5px; padding: 2px 6px; border-radius: 5px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
 .speed button.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
 /* The code under a card */
-details.l3 { margin: 12px 0 0; }
-details.l3 > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); padding: 4px 0; }
-details.l3 > summary:hover { color: var(--accent); }
-.l3-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+.scn-nav > button.code-btn { margin-left: 4px; }
+.lightbox { position: fixed; inset: 0; z-index: 50; background: color-mix(in srgb, #000 55%, transparent); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.lightbox[hidden] { display: none; }
+.lb-panel { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); width: min(1100px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; }
+.lb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--rule); font-weight: 650; }
+.lb-head .bn { color: var(--accent); margin-right: .5em; }
+.lb-nav { display: flex; gap: 6px; flex: 0 0 auto; }
+.lb-nav button { font: inherit; font-size: 13px; font-weight: 400; padding: 4px 10px; border-radius: 7px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
+.lb-nav button:hover { border-color: var(--accent); }
+.lb-panel .l3-body { overflow: auto; padding: 12px 16px 16px; margin: 0; }
+body.lb-open { overflow: hidden; }
+@media (max-width: 640px) { .lightbox { padding: 8px; } .lb-panel { max-height: calc(100vh - 16px); } }
+.l3-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .l3-body .ed { min-width: 0; }
 .xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 50px max-content; }
 .xl { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; transition: opacity calc(.3s / var(--spd, 1)), background calc(.3s / var(--spd, 1)); }
@@ -421,7 +430,7 @@ body.focus .scn-cap { font-size: 18px; }
 <div class="layout">
   <nav class="toc" aria-label="Contents">
     <div class="title">Several readers, one symbol table</div>
-    <div class="hint">j / k or ← / → move between cards · , / . step · &lt; / &gt; one change at a time · p play · [ / ] speed · drag the bar under a scenario to scrub · f focus mode · t theme</div>
+    <div class="hint">j / k or ← / → move between cards · , / . step · &lt; / &gt; one change at a time · p play · c the code · [ / ] speed · drag the bar under a scenario to scrub · f focus mode · t theme</div>
     <div class="controls">
       <button id="btn-focus" type="button">Focus mode</button>
       <button id="btn-theme" type="button">Theme</button>
@@ -1425,7 +1434,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
      "group": "Mechanism",
      "beat": "3",
      "title": "The period publishes the fields",
-     "caption": "The period is the flag that publishes the other fields. T2 stores the denotation and the symbol, then the period with a release store. T1 loads the period with an acquire load.",
+     "caption": "The period is the field that publishes the other two. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store of the period, and read only after checkedPeriod.acquired, an acquire load. The types hold the order: a plain read or write of these fields does not compile.",
      "lanes": {
       "T1": [
        "typing",
@@ -1442,18 +1451,18 @@ Each card starts from the same file and takes one cog away: first the problem, t
       "rows": [
        [
         "lastDenotation",
-        "1. plain",
-        "~"
+        "1. inside publishing",
+        "after acquired"
        ],
        [
         "lastSymbol",
-        "2. plain",
-        "~"
+        "2. inside publishing",
+        "after acquired"
        ],
        [
         "checkedPeriod",
         "3. release",
-        "acquire"
+        "acquired"
        ]
       ]
      }
@@ -2898,7 +2907,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
  }
 }</script>
 <script type="application/json" id="excerpts-src">{
- "sha": "8d756a59a9",
+ "sha": "e790554431",
  "cards": {
   "claim": [
    {
@@ -3107,40 +3116,39 @@ Each card starts from the same file and takes one cog away: first the problem, t
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2640,
+      "n": 2646,
       "text": "private def setDenot(denot: Denotation)(using Context): Unit = {"
      },
      {
-      "n": 2641,
+      "n": 2647,
       "text": "  if ctx.base.checkNoDoubleBindings then"
      },
      {
-      "n": 2642,
+      "n": 2648,
       "text": "    checkSymAssign(denot.symbol)"
      },
      {
-      "n": 2644,
-      "text": "  lastDenotation = denot"
+      "n": 2651,
+      "text": "  val sym = denot.symbol"
      },
      {
-      "n": 2645,
-      "text": "  lastSymbol = denot.symbol"
+      "n": 2652,
+      "text": "  checkedPeriod.publishing(if prefix.isProvisional then Nowhere else ctx.period):"
      },
      {
-      "n": 2647,
-      "text": "  util.Publish.setNamedTypeCheckedPeriod(this, (if (prefix.isProvisional) Nowhere else ctx.period).rawCode)"
+      "n": 2653,
+      "text": "    lastDenotation := denot"
+     },
+     {
+      "n": 2654,
+      "text": "    lastSymbol := sym"
      }
     ],
     "hl": {
-     "1": [
-      3,
-      4,
-      5
-     ],
      "3": [
-      3,
       4,
-      5
+      5,
+      6
      ]
     }
    },
@@ -3149,24 +3157,55 @@ Each card starts from the same file and takes one cog away: first the problem, t
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2427,
+      "n": 2431,
       "text": "final def symbol(using Context): Symbol ="
      },
      {
-      "n": 2431,
-      "text": "  if Period.fromCode(util.Publish.namedTypeCheckedPeriod(this)) == ctx.period then lastSymbol.asInstanceOf[Symbol]"
+      "n": 2435,
+      "text": "  val checked = checkedPeriod.acquired"
      },
      {
-      "n": 2432,
+      "n": 2436,
+      "text": "  if checked.value == ctx.period then lastSymbol.after(checked).asInstanceOf[Symbol]"
+     },
+     {
+      "n": 2437,
       "text": "  else computeSymbol"
      }
     ],
     "hl": {
-     "2": [
-      1
-     ],
      "3": [
       1
+     ],
+     "4": [
+      2
+     ]
+    }
+   },
+   {
+    "file": "Published.scala",
+    "path": "sharing/src/dotty/tools/sharing/Published.scala",
+    "lines": [
+     {
+      "n": 81,
+      "text": "extension [O, F <: String, T](inline field: Payload[O, F, T])"
+     },
+     {
+      "n": 85,
+      "text": "  inline def after[S, V](snap: Acquired[S, F, V]): T = ${ PublishedMacros.afterImpl[S, F, T]('field, 'snap) }"
+     },
+     {
+      "n": 88,
+      "text": "  inline def peek: T = ${ PublishedMacros.payloadPeekImpl[T]('field) }"
+     },
+     {
+      "n": 91,
+      "text": "  inline def :=(inline v: T)(using Publishing): Unit = ${ PublishedMacros.payloadStoreImpl[O, F, T]('field, 'v) }"
+     }
+    ],
+    "hl": {
+     "3": [
+      3
      ],
      "4": [
       1
@@ -3174,40 +3213,25 @@ Each card starts from the same file and takes one cog away: first the problem, t
     }
    },
    {
-    "file": "Publish.java",
-    "path": "compiler/src/dotty/tools/dotc/util/Publish.java",
+    "file": "Published.scala",
+    "path": "sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
-      "n": 59,
-      "text": "public static int namedTypeCheckedPeriod(Object tp) {"
+      "n": 117,
+      "text": "transparent inline def acquired: Any = ${ PublishedMacros.acquiredImpl[T]('field) }"
      },
      {
-      "n": 60,
-      "text": "  return (int) NAMED_TYPE_CHECKED_PERIOD.getAcquire(tp);"
+      "n": 121,
+      "text": "inline def publishing(inline v: T)(inline body: Published.Publishing ?=> Unit): Unit ="
      },
      {
-      "n": 61,
-      "text": "}"
-     },
-     {
-      "n": 63,
-      "text": "public static void setNamedTypeCheckedPeriod(Object tp, int period) {"
-     },
-     {
-      "n": 64,
-      "text": "  NAMED_TYPE_CHECKED_PERIOD.setRelease(tp, period);"
-     },
-     {
-      "n": 65,
-      "text": "}"
+      "n": 122,
+      "text": "  ${ PublishedMacros.publishingImpl[T]('field, 'v, 'body) }"
      }
     ],
     "hl": {
      "3": [
-      1,
-      4
-     ],
-     "4": [
+      0,
       1
      ]
     }
@@ -3234,15 +3258,15 @@ Each card starts from the same file and takes one cog away: first the problem, t
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 3560,
+      "n": 3567,
       "text": "private var myBaseClasses: Stamped[PerPeriod, List[ClassSymbol]] = Stamped.Empty"
      },
      {
-      "n": 3562,
+      "n": 3569,
       "text": "override final def baseClasses(using Context): List[ClassSymbol] ="
      },
      {
-      "n": 3563,
+      "n": 3570,
       "text": "  myBaseClasses.cached:"
      }
     ],
@@ -4532,7 +4556,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
       '<div class="transport">' +
       '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button>' + (sc.id && excerpts[sc.id] ? '<button type="button" class="code-btn" title="the code (c)">Code</button>' : '') + '</div>' +
       '</div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
@@ -4543,12 +4567,13 @@ Each card starts from the same file and takes one cog away: first the problem, t
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
-      (sc.id && excerpts[sc.id] ? '<details class="l3"><summary>The code</summary><div class="l3-body">' + excerpts[sc.id].map(ex =>
+      (sc.id && excerpts[sc.id] ? '<div class="lightbox" hidden><div class="lb-panel" role="dialog" aria-label="The code"><div class="lb-head"><span class="lb-title"></span><span class="lb-nav"><button type="button" class="lb-prev" title="step back (,)">◀</button><button type="button" class="lb-next" title="step forward (.)">▶</button><button type="button" class="lb-close" title="close (Esc)">✕</button></span></div><div class="l3-body">' + excerpts[sc.id].map(ex =>
         '<div class="ed xc"><div class="ed-tabs"><span class="ed-tab">' + esc(ex.file) + '</span></div><div class="xc-lines">' +
         ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '"><span class="no">' + (x.n || '') + '</span><span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
-        '</div></div>').join('') + '</div></details>' : '');
+        '</div></div>').join('') + '</div></div></div>' : '');
     const $ = q => host.querySelector(q);
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
+    const lbEl = host.querySelector('.lightbox');
     let group = null;
     sc.frames.forEach((f, i) => {
       const g = f.group || (f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass');
@@ -4652,6 +4677,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
         if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
         dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
         showCode(f.beat);
+        const lbt = lbEl && lbEl.querySelector('.lb-title'); if (lbt) lbt.innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
       }
       const m = at(i, t);
       $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : '');
@@ -4720,7 +4746,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
     // say about the step stays as it is.
     function showCode(beat) {
       if (!sc.id || !excerpts[sc.id]) return;
-      host.querySelectorAll('.xc').forEach((panel, j) => {
+      (lbEl || host).querySelectorAll('.xc').forEach((panel, j) => {
         const hl = new Set(excerpts[sc.id][j].hl[beat] || []);
         panel.classList.toggle('lit', hl.size > 0);
         const rowsEl = panel.querySelectorAll('.xl');
@@ -4847,6 +4873,25 @@ Each card starts from the same file and takes one cog away: first the problem, t
     });
     const p = { host, show: i => { stop(); go(i, Infinity, false); }, next: () => { stop(); next(); }, prev, sub, toggle,
       relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; } };
+    // The code in a lightbox over the page; the card's steps go on under it and light its lines.
+    const lb = lbEl;
+    function code(open) {
+      if (!lb) return;
+      lb.hidden = !open;
+      document.body.classList.toggle('lb-open', open);
+      if (open) showCode(sc.frames[pos.i].beat);
+    }
+    if (lb) {
+      // fixed to the window: a card's own transforms would otherwise make it the box the overlay is fixed to
+      document.body.appendChild(lb);
+      $('.code-btn').onclick = () => code(true);
+      lb.querySelector('.lb-close').onclick = () => code(false);
+      lb.querySelector('.lb-prev').onclick = prev;
+      lb.querySelector('.lb-next').onclick = () => { stop(); next(); };
+      lb.addEventListener('click', e => { if (e.target === lb) code(false); });
+    }
+    p.code = code;
+    p.codeOpen = () => !!lb && !lb.hidden;
     players.push(p);
     go(0, Infinity, false);
     reserveHeights();
@@ -5004,11 +5049,12 @@ Each card starts from the same file and takes one cog away: first the problem, t
     else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
     else if (e.key === 'f') toggleFocus();
     else if (e.key === 't') toggleTheme();
-    else if (e.key === 'Escape') document.body.classList.remove('focus');
+    else if (e.key === 'Escape') { const open = players.find(q => q.codeOpen()); if (open) open.code(false); else document.body.classList.remove('focus'); }
+    else if (e.key === 'c') { const c = cards[current], p = c && players.find(q => c.contains(q.host)); if (p && p.code) p.code(!p.codeOpen()); }
     else if (e.key === '[' || e.key === ']') nudgeSpeed(e.key === ']' ? 1 : -1);
     else if (['.', ',', '>', '<', 'p'].includes(e.key)) {
       const c = cards[current];
-      const p = c && players.find(q => c.contains(q.host));
+      const p = players.find(q => q.codeOpen()) || (c && players.find(q => c.contains(q.host)));
       if (p) { e.preventDefault(); ({ '.': p.next, ',': p.prev, '>': () => p.sub(1), '<': () => p.sub(-1), p: p.toggle })[e.key](); }
       else if (c && c.querySelector('figure.anim') && (e.key === '.' || e.key === ',')) step(c.querySelector('figure.anim'), e.key === '.' ? 1 : -1);
     }
@@ -5034,7 +5080,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
     if (p) {
       document.body.classList.add('focus', 'shot');
       setCurrent(cards.indexOf(p.host.closest('.card')), false);
-      if (shotQ.get('code')) p.host.querySelectorAll('details.l3').forEach(d => { d.open = true; });
+      if (shotQ.get('code') && p.code) p.code(true);
       p.show(+stepNo);
     }
   }
