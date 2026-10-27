@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Several readers, one symbol table</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --rule: #e4e2dc;
+  --accent: #b4441f;
+  --accent-soft: #f6e4dc;
+  --link: #1f5fa8;
+  --code-bg: #f2f1ec;
+  --part-bg: #1d1d1f;
+  --part-ink: #f6f5f1;
+  --kw: #a3361a; --str: #2f7a3a; --com: #8a8a8f; --typ: #1f5fa8; --num: #7a3fa0;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+    --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+    --part-bg: #ececee; --part-ink: #141416;
+    --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --card: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --rule: #2e2e33;
+  --accent: #f08a5d; --accent-soft: #3a2620; --link: #7fb2ff; --code-bg: #26262b;
+  --part-bg: #ececee; --part-ink: #141416;
+  --kw: #f08a5d; --str: #8fd19e; --com: #777780; --typ: #7fb2ff; --num: #d1a3ff;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+
+* { box-sizing: border-box; }
+html { scroll-padding-top: 16px; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; }
+:not(pre) > code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre.mermaid { background: transparent; text-align: center; padding: 8px 0; }
+.hljs-keyword, .hljs-built_in { color: var(--kw); }
+.hljs-string { color: var(--str); }
+.hljs-comment { color: var(--com); font-style: italic; }
+.hljs-type, .hljs-title { color: var(--typ); }
+.hljs-number, .hljs-literal { color: var(--num); }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+nav.toc {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 24px 16px 40px 20px; border-right: 1px solid var(--rule); font-size: 13.5px;
+}
+nav.toc .title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+nav.toc .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; }
+nav.toc li a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--ink); }
+nav.toc li a:hover { background: var(--accent-soft); text-decoration: none; }
+nav.toc li.h2 > a { font-weight: 600; margin-top: 12px; color: var(--muted); text-transform: uppercase; font-size: 11.5px; letter-spacing: .04em; }
+nav.toc li.h4 > a { padding-left: 22px; color: var(--muted); }
+nav.toc li a.active { background: var(--accent-soft); color: var(--accent); }
+.controls { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.controls button {
+  font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+}
+.controls button:hover { border-color: var(--accent); }
+
+main { padding: 32px 40px 120px; max-width: 980px; width: 100%; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 26px 32px; margin: 0 0 22px; box-shadow: var(--shadow);
+}
+.card.part { background: var(--part-bg); color: var(--part-ink); border: none; padding: 36px 32px; }
+.card.part h2 { margin: 0; font-size: 28px; letter-spacing: -.01em; }
+.card.part code { background: transparent; color: inherit; }
+.card.cover h1 { font-size: 34px; line-height: 1.2; margin: 0 0 18px; letter-spacing: -.02em; }
+.card.cover .sub { font-size: 19px; color: var(--muted); margin: -8px 0 22px; line-height: 1.4; }
+.card h3 { margin: 0 0 14px; font-size: 22px; letter-spacing: -.01em; }
+.card h4 { margin: 0 0 12px; font-size: 18px; }
+.card .cont { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.card h3 .num, .card h4 .num { color: var(--accent); margin-right: .35em; }
+.card > :last-child { margin-bottom: 0; }
+.card ul, .card ol { padding-left: 1.3em; }
+.card li { margin: .25em 0; }
+.card li > ul { margin: .2em 0; }
+strong { font-weight: 650; }
+.katex-display { margin: 14px 0; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.katex { font-size: 1.05em; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; display: block; overflow-x: auto; }
+th, td { border-bottom: 1px solid var(--rule); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); color: var(--muted); }
+a.sref { white-space: nowrap; }
+
+/* Figures: inline SVG drawn with the theme's tokens */
+:root {
+  --typed: #2f7a3a; --typed-bg: #dcefdf; --skip: #8a8a8f; --skip-bg: #ecebe6;
+  --own: #b4441f; --own-bg: #f6e4dc; --wait: #1f5fa8; --wait-bg: #e2ecf8;
+  --bad: #b3261e; --bad-bg: #f9dedc; --pub: #6b3fa0; --pub-bg: #efe6f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --typed: #8fd19e; --typed-bg: #1d3323; --skip: #8a8a92; --skip-bg: #2a2a2f;
+    --own: #f08a5d; --own-bg: #3a2620; --wait: #7fb2ff; --wait-bg: #1c2a40;
+    --bad: #ff8a80; --bad-bg: #3d1f1d; --pub: #d1a3ff; --pub-bg: #2e2340;
+  }
+}
+:root[data-theme="dark"] {
+  --typed: #8fd19e; --typed-bg: #1d3323; --skip: #8a8a92; --skip-bg: #2a2a2f;
+  --own: #f08a5d; --own-bg: #3a2620; --wait: #7fb2ff; --wait-bg: #1c2a40;
+  --bad: #ff8a80; --bad-bg: #3d1f1d; --pub: #d1a3ff; --pub-bg: #2e2340;
+}
+figure.fig { margin: 16px 0; position: relative; }
+figure.fig.anim { padding-top: 24px; }
+figure.fig svg { display: block; width: 100%; height: auto; overflow: visible; }
+figure.fig figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+figure.fig.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+figure.fig.pair figcaption { grid-column: 1 / -1; }
+@media (max-width: 640px) { figure.fig.pair { grid-template-columns: 1fr; } }
+.fig text { fill: var(--ink); font: 12px Inter, system-ui, sans-serif; }
+.fig text.m { fill: var(--muted); }
+.fig text.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; }
+.fig text.b { font-weight: 650; }
+.fig text.h { font-weight: 650; fill: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-size: 10.5px; }
+.fig .ln { stroke: var(--rule); fill: none; }
+.fig .ink { stroke: var(--ink); fill: none; }
+.fig .mut { stroke: var(--muted); fill: none; }
+.fig .box { fill: var(--card); stroke: var(--rule); }
+.fig .typed { fill: var(--typed-bg); stroke: var(--typed); }
+.fig .skip { fill: var(--skip-bg); stroke: var(--skip); stroke-dasharray: 3 3; }
+.fig .own { fill: var(--own-bg); stroke: var(--own); }
+.fig .wait { fill: var(--wait-bg); stroke: var(--wait); }
+.fig .bad { fill: var(--bad-bg); stroke: var(--bad); }
+.fig .pub { fill: var(--pub-bg); stroke: var(--pub); }
+.fig .s-typed { stroke: var(--typed); fill: none; } .fig .f-typed { fill: var(--typed); }
+.fig .s-own { stroke: var(--own); fill: none; }     .fig .f-own { fill: var(--own); }
+.fig .s-wait { stroke: var(--wait); fill: none; }   .fig .f-wait { fill: var(--wait); }
+.fig .s-bad { stroke: var(--bad); fill: none; }     .fig .f-bad { fill: var(--bad); }
+.fig .s-pub { stroke: var(--pub); fill: none; }     .fig .f-pub { fill: var(--pub); }
+.fig .tk { fill: var(--kw); } .fig .tt { fill: var(--typ); } .fig .tn { fill: var(--num); } .fig .editor { fill: var(--code-bg); stroke: var(--rule); } .fig .tab { fill: var(--card); stroke: var(--rule); }
+.fig .f-mut { fill: var(--muted); } .fig .f-ink { fill: var(--ink); }
+.fig .dash { stroke-dasharray: 4 3; }
+.fig text.c-typed { fill: var(--typed); } .fig text.c-own { fill: var(--own); } .fig text.c-wait { fill: var(--wait); }
+.fig text.c-bad { fill: var(--bad); } .fig text.c-pub { fill: var(--pub); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1px solid; }
+.legend i.typed { background: var(--typed-bg); border-color: var(--typed); }
+.legend i.skip { background: var(--skip-bg); border-color: var(--skip); border-style: dashed; }
+.legend i.own { background: var(--own-bg); border-color: var(--own); }
+.legend i.wait { background: var(--wait-bg); border-color: var(--wait); }
+.legend i.bad { background: var(--bad-bg); border-color: var(--bad); }
+.legend i.pub { background: var(--pub-bg); border-color: var(--pub); }
+
+/* Motion. A figure's static styles are its final state; when its card comes into view
+   (or becomes current in focus mode) the card gets .play and the steps run in order,
+   each delayed by --d. With reduced motion nothing moves and the final state shows. */
+@keyframes k-in    { from { opacity: 0; } }
+@keyframes k-pop   { from { opacity: 0; transform: scale(.7); } }
+@keyframes k-grow-x { from { transform: scaleX(0); } }
+@keyframes k-grow-y { from { transform: scaleY(0); } }
+@keyframes k-draw  { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes k-out   { from { opacity: 1; } }
+@keyframes k-slide { from { transform: translateX(var(--dx, 0)); } }
+@keyframes k-drop  { from { transform: translateY(var(--dy, -40px)); opacity: 0; } }
+@keyframes k-blink { 50% { opacity: .35; } }
+@keyframes k-sweep { from { transform: translateY(0); } }
+.fig .a-pop, .fig .a-grow-x, .fig .a-grow-y, .fig .a-slide, .fig .a-drop { transform-box: fill-box; }
+.fig .a-pop { transform-origin: center; }
+.fig .a-grow-x { transform-origin: left center; }
+.fig .a-grow-y { transform-origin: center bottom; }
+.fig .a-grow-d { transform-origin: center top; transform-box: fill-box; }
+.fig .a-draw { stroke-dasharray: 1 0; }
+.fig .a-out { opacity: var(--o, .3); }
+.fig .a-sweep { transform: translateY(var(--ty, 0)); }
+.motion .fig.anim .a-in     { animation: k-in var(--t, .5s) ease-out var(--d, 0s) both; }
+.motion .fig.anim .a-pop    { animation: k-pop .45s cubic-bezier(.2,.8,.3,1.2) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-x { animation: k-grow-x .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-d { animation: k-grow-y .6s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-grow-y { animation: k-grow-y .7s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-draw   { stroke-dasharray: 1 1; animation: k-draw .6s ease-in-out var(--d, 0s) both; }
+.motion .fig.anim .a-out    { animation: k-out .5s ease-in var(--d, 0s) both; }
+.motion .fig.anim .a-slide  { animation: k-slide .8s cubic-bezier(.3,.7,.2,1) var(--d, 0s) both; }
+.motion .fig.anim .a-drop   { animation: k-drop .55s cubic-bezier(.2,.8,.3,1) var(--d, 0s) both; }
+.motion .fig.anim .a-sweep  { animation: k-sweep var(--t, 4s) linear var(--d, 0s) both; }
+.motion .fig.anim .a-blink  { animation: k-blink 1s ease-in-out var(--d, 0s) var(--n, 3); }
+.fig .replay {
+  position: absolute; top: -4px; right: 0; font: 11.5px Inter, system-ui, sans-serif; color: var(--muted);
+  background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 2px 10px; cursor: pointer; opacity: .75;
+}
+.fig .replay { display: flex; gap: 2px; padding: 1px 4px; }
+.fig .replay button { font: inherit; color: inherit; background: none; border: 0; padding: 1px 6px; cursor: pointer; border-radius: 999px; }
+.fig .replay button:hover { color: var(--accent); background: var(--accent-soft); }
+.fig .replay:hover { opacity: 1; border-color: var(--accent); }
+.motion .card:not(.play) .fig.anim * { animation-play-state: paused !important; }
+.motion .card.rewind .fig.anim * { animation: none !important; }
+@media print { .motion .fig.anim * { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  .fig * { animation: none !important; }
+  .fig .replay { display: none; }
+}
+@media print { .fig .replay { display: none; } }
+
+.card .fn { margin-top: 1.2em; padding-top: .5em; border-top: 1px solid var(--rule); font-size: .78em; color: var(--muted); }
+.card .fn p { margin: .2em 0; }
+
+/* Card 22's table of the five kinds: a chip, what it is, its treatment */
+.fig.kinds { display: grid; gap: 8px; }
+.krow { display: grid; grid-template-columns: 112px minmax(0, 1fr) 22px minmax(0, 1fr); gap: 10px; align-items: center; }
+.krow.khead { font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.kbox { border: 1px solid var(--rule); border-radius: 8px; padding: 7px 11px; background: var(--card); font-size: 14px; line-height: 1.4; }
+.kbox .kt { font-weight: 650; font-size: 14.5px; }
+.kbox .kd { font-size: 13.5px; margin-top: 1px; }
+.kbox .kx { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.kbox.ktreat .kx { font-family: inherit; font-size: 12px; }
+.kbox.ktreat { background: var(--typed-bg); border-color: var(--typed); }
+.karrow { color: var(--muted); text-align: center; }
+@media (max-width: 640px) { .krow { grid-template-columns: 1fr; } .krow.khead, .karrow { display: none; } }
+
+/* Chips: {chip:B lazy fact} names a kind of mutable state (A–E), {chip:claim} a concurrency pattern. */
+:root { --chip-kind: #1f6f78; --chip-kind-bg: #dcf0f1; --chip-pat: #8a5a00; --chip-pat-bg: #f8edd6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chip-kind: #7fd3dc; --chip-kind-bg: #18343a; --chip-pat: #f0c060; --chip-pat-bg: #3a2e14; } }
+:root[data-theme="dark"] { --chip-kind: #7fd3dc; --chip-kind-bg: #18343a; --chip-pat: #f0c060; --chip-pat-bg: #3a2e14; }
+.chip { display: inline-block; padding: .05em .55em; border-radius: 999px; font-size: .74em; font-weight: 600; line-height: 1.5; white-space: nowrap; vertical-align: .08em; border: 1px solid; }
+.chip.kind { color: var(--chip-kind); background: var(--chip-kind-bg); border-color: color-mix(in srgb, var(--chip-kind) 35%, transparent); }
+.chip.pat { color: var(--chip-pat); background: var(--chip-pat-bg); border-color: color-mix(in srgb, var(--chip-pat) 35%, transparent); }
+.chips { margin: -6px 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px 16px; margin: 0 0 14px; }
+.card-head > h3, .card-head > h4 { margin: 0; flex: 1 1 auto; min-width: 0; }
+.card-head > .chips { margin: .35em 0 0; flex: 0 0 auto; justify-content: flex-end; max-width: 45%; }
+@media (max-width: 640px) { .card-head { flex-wrap: wrap; } .card-head > .chips { max-width: none; margin-left: auto; } }
+.card.part .chip { filter: none; }
+
+/* Focus mode: one card at a time, bigger type, for presenting */
+body.focus nav.toc { display: none; }
+body.focus .layout { grid-template-columns: 1fr; }
+body.focus main { max-width: 1100px; font-size: 20px; padding-top: 6vh; }
+body.focus .card { display: none; min-height: 80vh; }
+body.focus .card.current { display: block; outline: none; }
+body.focus .card.part.current { display: flex; align-items: center; }
+body.focus .card.part h2 { font-size: 44px; }
+.focus-counter { display: none; position: fixed; bottom: 14px; right: 18px; color: var(--muted); font-size: 13px; }
+body.focus .focus-counter { display: block; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  main { padding: 16px 16px 80px; }
+  .card { padding: 18px 16px; }
+}
+/* The scenario player */
+main { max-width: 1260px; }
+.card > p, .card > ul, .card > ol { max-width: 780px; }
+:root { --t1: #0f7486; --t1-bg: #d9eff2; --t2: #a35f00; --t2-bg: #f8ead2; --t3: #6b3fa0; --t3-bg: #efe6f8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --t1: #6fd3e0; --t1-bg: #163439; --t2: #f2b85c; --t2-bg: #3a2c14; --t3: #d1a3ff; --t3-bg: #2e2340; } }
+:root[data-theme="dark"] { --t1: #6fd3e0; --t1-bg: #163439; --t2: #f2b85c; --t2-bg: #3a2c14; --t3: #d1a3ff; --t3-bg: #2e2340; }
+.scenario { margin: 6px 0 0; }
+.scn-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
+.scn-beat { font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+.scn-beat .bn { color: var(--accent); margin-right: .5em; font-variant-numeric: tabular-nums; }
+.scn-cogs { display: flex; flex-wrap: wrap; gap: 6px; }
+.cog { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
+.scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
+.ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.ed-tabs { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
+.ed-tab { background: var(--card); padding: 6px 14px; border-right: 1px solid var(--rule); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
+.ed-run { color: var(--muted); padding: 0 12px; font-size: 12px; }
+.ed-lines { padding: 8px 0 10px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; line-height: 1.75; overflow-x: auto; display: grid; grid-template-columns: 5px 34px max-content minmax(max-content, 1fr); }
+.l { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 1.75em; }
+.l .no { color: var(--muted); text-align: right; padding-right: 12px; font-size: 11.5px; user-select: none; }
+.l.held .no::before { content: "⏸ "; color: var(--t2); }
+.l .code { white-space: pre; }
+.l .ov { padding: 0 10px 0 8px; }
+.gb { align-self: stretch; transition: background .3s; }
+.gb.u-skip { background: repeating-linear-gradient(to bottom, var(--skip) 0 3px, transparent 3px 6px); opacity: .7; }
+.gb.u-typed { background: var(--typed); }
+.gb.u-T1 { background: var(--t1); } .gb.u-T2 { background: var(--t2); } .gb.u-T3 { background: var(--t3); }
+.t-kw { color: var(--kw); } .t-str { color: var(--str); } .t-num { color: var(--num); } .t-typ { color: var(--typ); }
+.sym { border-radius: 4px; padding: 0 2px; margin: 0 -2px; font-weight: 600; transition: background .3s, box-shadow .3s; }
+.sym.s-lazy { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+.sym.s-done { text-decoration: underline solid var(--typed); text-underline-offset: 3px; }
+.sym.s-prog.o-T1 { background: var(--t1-bg); box-shadow: inset 0 0 0 1.5px var(--t1); }
+.sym.s-prog.o-T2 { background: var(--t2-bg); box-shadow: inset 0 0 0 1.5px var(--t2); }
+.sym.s-prog.o-T3 { background: var(--t3-bg); box-shadow: inset 0 0 0 1.5px var(--t3); }
+.sym.s-unwound { background: var(--bad-bg); box-shadow: inset 0 0 0 1.5px var(--bad); }
+.sym.tick { outline: 2px solid var(--tk); outline-offset: 2px; }
+.sym.tk-T1 { --tk: var(--t1); } .sym.tk-T2 { --tk: var(--t2); } .sym.tk-T3 { --tk: var(--t3); }
+.sym.pulse { outline-style: dashed; }
+.motion .sym.pulse { animation: k-ring 1.2s ease-in-out infinite; }
+@keyframes k-ring { 0%, 100% { outline-offset: 2px; } 50% { outline-offset: 5px; } }
+.badge { display: inline-block; font: 600 10.5px/1.6 Inter, system-ui, sans-serif; padding: 0 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.badge.b-lazy { color: var(--muted); border-color: var(--rule); border-style: dashed; }
+.badge.b-done { color: var(--typed); background: var(--typed-bg); border-color: color-mix(in srgb, var(--typed) 40%, transparent); }
+.badge.b-prog.o-T1 { color: var(--t1); background: var(--t1-bg); }
+.badge.b-prog.o-T2 { color: var(--t2); background: var(--t2-bg); }
+.badge.b-prog.o-T3 { color: var(--t3); background: var(--t3-bg); }
+.badge.b-unwound { color: var(--bad); background: var(--bad-bg); }
+.ed-pop { position: absolute; z-index: 2; max-width: 260px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; box-shadow: var(--shadow); padding: 5px 10px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+.side { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px 6px; font-size: 13px; background: var(--card); }
+.side-h { font-size: 10.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 2px 0 6px; }
+.side-h:not(:first-child) { margin-top: 14px; }
+.lane { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--rule); transition: opacity .3s; }
+.lane:last-child { border-bottom: 0; }
+.lane.idle { opacity: .55; }
+.lane .role { color: var(--muted); font-size: 12px; }
+.lane .act { grid-column: 2 / -1; font-size: 12.5px; line-height: 1.35; }
+.th { display: inline-block; font: 700 11px/1.5 Inter, system-ui, sans-serif; padding: 0 6px; border-radius: 5px; color: #fff; }
+.th-T1 { background: var(--t1); } .th-T2 { background: var(--t2); } .th-T3 { background: var(--t3); }
+:root[data-theme="dark"] .th { color: #141416; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .th { color: #141416; } }
+.st { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
+.st-typing { color: var(--typed); } .st-waiting { color: var(--wait); } .st-writer { color: var(--t3); } .st-done { color: var(--typed); }
+.st-idle { color: var(--muted); } .st-unwound, .st-cancelled { color: var(--bad); }
+table.symtab { display: table; font-size: 12.5px; margin: 0; }
+table.symtab th { font-size: 10px; padding: 3px 4px; }
+table.symtab td { padding: 3px 4px; vertical-align: middle; }
+table.symtab td.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
+table.symtab tr.hot td { background: var(--accent-soft); }
+.scn-cap { font-size: 15.5px; line-height: 1.55; margin: 14px 0 10px; min-height: 4.7em; max-width: 860px; }
+.scn-nav { display: flex; align-items: flex-end; gap: 10px; }
+.scn-nav > button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 8px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
+.scn-nav > button:hover { border-color: var(--accent); }
+.dots { display: flex; flex-wrap: wrap; gap: 6px 18px; flex: 1; }
+.dgroup { display: flex; flex-direction: column; gap: 3px; }
+.dlabel { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.drow { display: flex; gap: 4px; }
+.dot { font: 600 11.5px Inter, system-ui, sans-serif; min-width: 30px; padding: 3px 6px; border-radius: 6px; cursor: pointer; background: var(--card); color: var(--muted); border: 1px solid var(--rule); }
+.dot.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
+.gears { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 12px 0; }
+.gear { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; line-height: 1.45; }
+.gear .gn { font-weight: 650; color: var(--chip-pat); margin-bottom: 3px; }
+.gear .ga { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.gear .ga a { display: inline-block; padding: 0 5px; border: 1px solid var(--rule); border-radius: 5px; margin-left: 2px; }
+.gear.off { opacity: .55; }
+.gear.off .gn { color: var(--muted); }
+body.focus main { max-width: 1400px; }
+body.focus .scn-cap { font-size: 18px; }
+
+@media print {
+  nav.toc, .focus-counter { display: none; }
+  .layout { display: block; }
+  .card { break-inside: avoid; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <div class="title">Several readers, one symbol table</div>
+    <div class="hint">j / k or ← / → to move · , / . to step a figure · f focus mode · t theme</div>
+    <div class="controls">
+      <button id="btn-focus" type="button">Focus mode</button>
+      <button id="btn-theme" type="button">Theme</button>
+    </div>
+    <ol id="toc"></ol>
+  </nav>
+  <main id="content"></main>
+</div>
+<div class="focus-counter" id="counter"></div>
+
+<script type="text/markdown" id="talk-src"># Several readers, one symbol table
+
+<p class="sub">How dotc's presentation compiler lets a hover, a background pass and the editor share one run, and the parts that keep it safe.</p>
+
+Interactive mode serves several requests at once against one symbol table. Each request reads through a `Reader` of its own; edits arrive as write actions that run alone. Symbols still complete lazily, and a completion may be needed by a reader other than the one running it.
+
+What follows is one IDE scenario, run for real on the compiler, with the code in the middle. Step through it with `,` and `.` or the buttons. Each cog lights up at the moment it does its job.
+
+## The scenario
+
+### An IDE session, step by step
+
+<div class="scenario"></div>
+
+### The cogs
+
+Each cog fired in the scenario above. The ones in grey are part of the model but have no moment of their own in this scenario.
+
+<div class="gears"></div>
+
+Batch compilation picks the single-reader mode once per `ContextBase` and runs the code it always ran: under 2% overhead. Interactively the overhead is minor, and the work scales well to four threads and more.
+</script>
+<script type="application/json" id="frames-src">{
+  "file": "Basket.scala",
+  "code": [
+    "import tests.macros.Latch",
+    "",
+    "case class Item(name: String, price: BigDecimal, qty: Int)",
+    "",
+    "object Basket:",
+    "  val items = List(Item(\"tea\", 4.5, 2), Item(\"milk\", 1.2, 1))",
+    "",
+    "  def subtotal =",
+    "    val hold = Latch.await",
+    "    items.map(i => i.price * i.qty).sum + hold",
+    "",
+    "  def tax = subtotal * 0.2",
+    "",
+    "object Checkout:",
+    "  import Basket.*",
+    "",
+    "  def total = subtotal + tax",
+    "",
+    "  def receipt: String =",
+    "    val lines = items.map(i => s\"${i.name} x${i.qty}\")",
+    "    lines.mkString(\"\\n\") + s\"\\ntotal $total\""
+  ],
+  "edit": { "line": 20, "from": "x${i.qty}", "to": "x ${i.qty}" },
+  "units": [
+    { "id": "s3", "lines": [3, 3] },
+    { "id": "s5", "lines": [5, 12] },
+    { "id": "s14", "lines": [14, 21] },
+    { "id": "total", "lines": [17, 17], "in": "s14" },
+    { "id": "receipt", "lines": [19, 21], "in": "s14" }
+  ],
+  "symbols": [
+    { "id": "Item", "line": 3, "tok": "Item" },
+    { "id": "Basket", "line": 5, "tok": "Basket" },
+    { "id": "items", "line": 6, "tok": "items" },
+    { "id": "subtotal", "line": 8, "tok": "subtotal" },
+    { "id": "hold", "label": "subtotal.hold", "line": 9, "tok": "hold" },
+    { "id": "tax", "line": 12, "tok": "tax" },
+    { "id": "Checkout", "line": 14, "tok": "Checkout" },
+    { "id": "total", "line": 17, "tok": "total" },
+    { "id": "receipt", "line": 19, "tok": "receipt" },
+    { "id": "lines", "label": "receipt.lines", "line": 20, "tok": "lines" }
+  ],
+  "threads": [
+    { "id": "T1", "name": "T1", "role": "hover" },
+    { "id": "T2", "name": "T2", "role": "background pass" },
+    { "id": "T3", "name": "T3", "role": "editor" }
+  ],
+  "cogs": {
+    "write": "Write action",
+    "reader": "A Reader per request",
+    "claim": "Claim on a completion root",
+    "wait": "Wait, don't peek",
+    "publish": "Publish, then release",
+    "target": "Targeting",
+    "bodyedit": "Body edit keeps the run",
+    "cancel": "Sticky cancel",
+    "unwound": "Owner cancelled mid-completion"
+  },
+  "frames": [
+    {
+      "beat": "1", "title": "Open the file",
+      "caption": "Opening the file is a write action: a new run whose top-level statements are entered but not typed. Every symbol is still lazy.",
+      "cogs": ["write"],
+      "run": "run 1 · write 2",
+      "units": { "s3": "skip", "s5": "skip", "s14": "skip" },
+      "syms": { "*": "lazy" },
+      "lanes": { "T3": ["writer", "write action: enter the new text, skip every statement"] },
+      "ticks": []
+    },
+    {
+      "beat": "2", "title": "The background pass starts",
+      "caption": "T2 types from the top with its own Reader. It claims each completion root before completing it; while it runs, the symbol's info is an InProgress that only T2 can see through. Line 9 holds T2 inside subtotal, so every run interleaves the same way.",
+      "cogs": ["reader", "claim"],
+      "units": { "s3": "typed", "s5": "T2" },
+      "syms": { "Item": "done", "Basket": "done", "items": "done", "subtotal": "prog:T2", "hold": "prog:T2" },
+      "lanes": { "T3": ["idle", ""], "T2": ["typing", "completing subtotal, held on line 9"] },
+      "ticks": [{ "sym": "subtotal", "t": "T2" }],
+      "note": { "line": 9, "text": "holds the typer here, so every run interleaves the same way" }
+    },
+    {
+      "beat": "3", "title": "Hover on total",
+      "caption": "T1 types only the path to total. total's inferred type needs subtotal's. T1 takes the slow path that every LazyType already takes, finds the root claimed by T2, and waits on the claim. It never sees T2's half-built state, and never mistakes \"in progress elsewhere\" for a cycle.",
+      "cogs": ["reader", "claim", "wait"],
+      "units": { "s14": "T1", "total": "T1" },
+      "syms": { "Checkout": "done", "total": "prog:T1", "subtotal": "prog:T2|T1" },
+      "lanes": { "T1": ["waiting", "needs subtotal: waits on T2's claim"] },
+      "ticks": [{ "sym": "total", "t": "T1" }, { "sym": "subtotal", "t": "T1", "pulse": true }]
+    },
+    {
+      "beat": "4", "title": "T2 publishes subtotal",
+      "caption": "Released from line 9, T2 finishes subtotal. The info is published before the claim is released, so T1 wakes to a complete denotation. T1 needs tax next, which T2 has just claimed: a second, short wait.",
+      "cogs": ["publish", "wait"],
+      "syms": { "subtotal": "done", "hold": "done", "tax": "prog:T2|T1" },
+      "lanes": { "T2": ["typing", "completing tax"], "T1": ["waiting", "needs tax: waits on T2's claim"] },
+      "ticks": [{ "sym": "subtotal", "t": "T1" }, { "sym": "tax", "t": "T1", "pulse": true }],
+      "note": null
+    },
+    {
+      "beat": "5", "title": "The hover answers",
+      "caption": "T1 completes total and answers BigDecimal, the answer a single reader gives. It typed only what the hover needed: receipt stays skipped.",
+      "cogs": ["publish", "target"],
+      "units": { "total": "typed", "receipt": "skip", "s5": "typed" },
+      "syms": { "tax": "done", "total": "done" },
+      "lanes": { "T1": ["done", "hover: BigDecimal"], "T2": ["typing", "next: object Checkout"] },
+      "ticks": [{ "sym": "tax", "t": "T1" }],
+      "popup": { "sym": "total", "text": "def total: BigDecimal" }
+    },
+    {
+      "beat": "6", "title": "The background pass finishes",
+      "caption": "T2 reaches Checkout, finds total already published by T1, and types the receipt that T1 skipped. Every statement is typed; no diagnostics.",
+      "cogs": ["target"],
+      "units": { "s14": "typed", "receipt": "typed", "total": null },
+      "syms": { "receipt": "done", "lines": "done" },
+      "lanes": { "T1": ["idle", ""], "T2": ["done", "0 problems"] },
+      "ticks": [{ "sym": "total", "t": "T2" }, { "sym": "receipt", "t": "T2" }],
+      "popup": null
+    },
+    {
+      "beat": "7a", "title": "A keystroke in receipt, nothing in flight",
+      "caption": "The edit only touches receipt's body. The write action re-indexes receipt and keeps the run: every other symbol stays published.",
+      "cogs": ["write", "bodyedit"],
+      "edited": true,
+      "run": "run 1 · write 3",
+      "units": { "receipt": "skip", "s14": "typed" },
+      "syms": { "receipt": "lazy", "lines": "lazy" },
+      "lanes": { "T2": ["idle", ""], "T3": ["writer", "write action: re-index receipt"] },
+      "ticks": []
+    },
+    {
+      "beat": "7b", "title": "The hover after the edit",
+      "caption": "T3's request types line 19 and nothing else, reading subtotal, tax and total as already published.",
+      "cogs": ["reader", "target"],
+      "units": { "receipt": "T3" },
+      "syms": { "receipt": "done", "lines": "done" },
+      "lanes": { "T3": ["done", "hover: (\" x \" : String)"] },
+      "ticks": [{ "sym": "lines", "t": "T3" }, { "sym": "total", "t": "T3" }],
+      "popup": { "sym": "lines", "text": "(\" x \" : String)", "at": "x ${i.qty}" }
+    },
+    {
+      "reset": 2,
+      "beat": "8", "title": "The same keystroke, while T2 is held",
+      "caption": "Back to the moment T1 waits on T2. Now the user types in receipt. The editor cancels the stale hover and pass, and the new text arrives as a writer. The writer raises a sticky cancel and waits for the readers to leave.",
+      "cogs": ["write", "cancel"],
+      "edited": true,
+      "lanes": { "T3": ["writer", "write pending: waits for the readers to leave"], "T1": ["cancelled", "waits on T2's claim"], "T2": ["cancelled", "held on line 9 in subtotal"] },
+      "ticks": [{ "sym": "subtotal", "t": "T1", "pulse": true }]
+    },
+    {
+      "beat": "9", "title": "T2 unwinds",
+      "caption": "At its next checkpoint T2 unwinds. It resets the roots it was completing and releases the claim. A Namer completion cannot run twice, so subtotal is left marked as unwound rather than lazy.",
+      "cogs": ["cancel", "unwound"],
+      "syms": { "subtotal": "unwound:T1", "hold": "lazy" },
+      "lanes": { "T2": ["unwound", "cancelled: reset subtotal, released the claim"], "T1": ["cancelled", "takes over subtotal's claim"] },
+      "ticks": []
+    },
+    {
+      "beat": "10", "title": "The waiter takes over, and is pre-empted",
+      "caption": "T1 now owns subtotal's root and meets the unwound completion. It cannot finish it, so it is pre-empted: it resets total, unwinds, and the run is tainted. No hang, no torn state; the work is just not reused.",
+      "cogs": ["claim", "unwound"],
+      "run": "run 1 · tainted",
+      "units": { "s14": "skip", "total": null, "s5": "skip" },
+      "syms": { "subtotal": "unwound", "total": "lazy" },
+      "lanes": { "T1": ["unwound", "pre-empted"] },
+      "ticks": [{ "sym": "subtotal", "t": "T1" }]
+    },
+    {
+      "beat": "11", "title": "A fresh run for the new text",
+      "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax along the way, and answers. The background pass on the new text follows in the same run.",
+      "cogs": ["write", "reader", "claim"],
+      "run": "run 2 · write 6",
+      "units": { "s3": "skip", "s5": "skip", "s14": "T3", "total": "skip", "receipt": "T3" },
+      "syms": { "*": "lazy", "Checkout": "done", "receipt": "done", "lines": "done", "total": "done", "subtotal": "done", "hold": "done", "tax": "done", "items": "done", "Basket": "done", "Item": "done" },
+      "lanes": { "T1": ["idle", ""], "T2": ["idle", ""], "T3": ["done", "hover: (\" x \" : String)"] },
+      "ticks": [{ "sym": "total", "t": "T3" }, { "sym": "subtotal", "t": "T3" }],
+      "popup": { "sym": "lines", "text": "(\" x \" : String)", "at": "x ${i.qty}" }
+    }
+  ]
+}
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  const src = document.getElementById('talk-src').textContent;
+
+  // 1. Protect $…$ and $$…$$ from markdown, skipping fenced and inline code.
+  const maths = [];
+  function protectMath(text) {
+    return text
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => token(m, true))
+      .replace(/(^|[^\\\w])\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\w)/g, (_, pre, m) => pre + token(m, false));
+  }
+  function token(tex, display) { maths.push({ tex, display }); return 'MATHTOKEN' + (maths.length - 1) + 'X'; }
+  const fenceSplit = src.split(/(^```[^\n]*\n[\s\S]*?^```[ \t]*$)/m);
+  const protectedSrc = fenceSplit.map((part, i) => {
+    if (i % 2 === 1) return part;
+    return part.split(/(`+[^`\n]*?`+)/).map((p, j) => (j % 2 === 1 ? p : protectMath(p))).join('');
+  }).join('');
+
+  // 2. Render markdown; mermaid fences become <pre class="mermaid">.
+  const md = window.markdownit({ html: true, linkify: false, typographer: false });
+  const defaultFence = md.renderer.rules.fence;
+  md.renderer.rules.fence = function (tokens, idx, opts, env, self) {
+    const t = tokens[idx];
+    const lang = (t.info || '').trim().split(/\s+/)[0];
+    if (lang === 'mermaid') return '<pre class="mermaid">' + md.utils.escapeHtml(t.content) + '</pre>';
+    if (lang && window.hljs && hljs.getLanguage(lang)) {
+      return '<pre><code class="hljs language-' + lang + '">' + hljs.highlight(t.content, { language: lang }).value + '</code></pre>';
+    }
+    return defaultFence(tokens, idx, opts, env, self);
+  };
+  const env = {};
+  let html = md.render(protectedSrc, env);
+  // Reference-style links inside raw HTML blocks (figure captions) are left as text by
+  // markdown-it; resolve them against the document's reference definitions.
+  html = html.replace(/\[([^\]<>]+)\]\[([^\]<>]+)\]/g, (m, t, k) => {
+    const r = env.references && env.references[k.trim().replace(/\s+/g, ' ').toUpperCase()];
+    return r ? '<a href="' + r.href + '">' + t + '</a>' : m;
+  });
+  html = html.replace(/MATHTOKEN(\d+)X/g, (_, i) => {
+    const m = maths[+i];
+    try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, strict: 'ignore' }); }
+    catch (e) { return '<code>' + md.utils.escapeHtml(m.tex) + '</code>'; }
+  });
+
+  // Chips: {chip:B lazy fact} is a kind of mutable state (a letter A–E first), anything else a pattern.
+  html = html.replace(/\{chip:([^}<>]+)\}/g, (_, label) => {
+    const l = label.trim(); const kind = /^[A-E]\s/.test(l);
+    return '<span class="chip ' + (kind ? 'kind' : 'pat') + '">' + md.utils.escapeHtml(l) + '</span>';
+  });
+
+  // 3. Chunk into cards at h1/h2/h3/h4 and at <!-- break --> comments; drop <hr>.
+  const scratch = document.createElement('div');
+  scratch.innerHTML = html;
+  const main = document.getElementById('content');
+  let card = null, lastHeading = null;
+  function newCard(cls) { card = document.createElement('section'); card.className = 'card ' + (cls || ''); main.appendChild(card); return card; }
+  function slugFor(h) {
+    const text = h.textContent.trim();
+    const m = text.match(/^(\d+[a-z]?)\.\s/) || text.match(/^(N\d+)\.\s/);
+    if (m) return 's' + m[1].toLowerCase();
+    return text.toLowerCase().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+  Array.from(scratch.childNodes).forEach(node => {
+    if (node.nodeType === Node.COMMENT_NODE && /break/.test(node.textContent)) {
+      newCard();
+      if (lastHeading) { const c = document.createElement('div'); c.className = 'cont'; const n = lastHeading.querySelector('.num'); c.textContent = (n ? n.textContent + ' ' + lastHeading.textContent.slice(n.textContent.length) : lastHeading.textContent) + ' (cont.)'; card.appendChild(c); }
+      return;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = node.tagName;
+      if (tag === 'HR') return;
+      if (/^H[1-4]$/.test(tag)) {
+        newCard(tag === 'H2' ? 'part' : tag === 'H1' ? 'cover' : '');
+        const id = slugFor(node);
+        card.id = id;
+        const m = node.innerHTML.match(/^(\d+[a-z]?\.|N\d+\.)\s/);
+        if (m) node.innerHTML = '<span class="num">' + m[1] + '</span>' + node.innerHTML.slice(m[0].length);
+        if (tag !== 'H2') lastHeading = node;
+      }
+    }
+    if (!card) newCard('cover');
+    card.appendChild(node);
+  });
+
+  // A row of chips right under a card's heading sits in the heading row, right-aligned.
+  main.querySelectorAll('.card > h3 + .chips, .card > h4 + .chips').forEach(chips => {
+    const h = chips.previousElementSibling;
+    const row = document.createElement('div'); row.className = 'card-head';
+    h.parentNode.insertBefore(row, h); row.appendChild(h); row.appendChild(chips);
+  });
+
+  // 4. Link § references and "Notes N1" to their cards.
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('code, pre, a, .katex, h3, h4') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const textNodes = []; while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(n => {
+    const re = /§(\d+[a-h]?)((?:[–-]\d+[a-h]?)?)|Notes (N\d)/g;
+    if (!re.test(n.nodeValue)) return;
+    const frag = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
+    while ((m = re.exec(n.nodeValue))) {
+      frag.appendChild(document.createTextNode(n.nodeValue.slice(last, m.index)));
+      const a = document.createElement('a'); a.className = 'sref';
+      a.href = '#s' + (m[1] || m[3]).toLowerCase(); a.textContent = m[0];
+      frag.appendChild(a); last = re.lastIndex;
+    }
+    frag.appendChild(document.createTextNode(n.nodeValue.slice(last)));
+    n.parentNode.replaceChild(frag, n);
+  });
+
+  // 5. Table of contents.
+  const toc = document.getElementById('toc');
+  const cards = Array.from(main.querySelectorAll('.card'));
+  cards.forEach(c => {
+    const h = c.querySelector(':scope > h2, :scope > h3, :scope > h4, :scope > .card-head > h3, :scope > .card-head > h4');
+    if (!h || !c.id) return;
+    const li = document.createElement('li'); li.className = h.tagName.toLowerCase();
+    const num = h.querySelector('.num');
+    const label = num ? num.textContent + ' ' + h.textContent.slice(num.textContent.length) : h.textContent;
+    const a = document.createElement('a'); a.href = '#' + c.id; a.textContent = label; a.dataset.target = c.id;
+    li.appendChild(a); toc.appendChild(li);
+  });
+
+  // 5b. The scenario player: the editor in the middle, symbol states on the code, threads and symbols beside it.
+  // frames.json holds deltas; a frame's state is the fold of the frames before it (or from frame `reset`).
+  const scenario = JSON.parse(document.getElementById('frames-src').textContent);
+  const players = [];
+  function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def']);
+  function highlight(line, symTok) {
+    const re = /(s?"(?:[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|(.)/g;
+    let out = '', m, symDone = false;
+    while ((m = re.exec(line))) {
+      const [t, str, num, id] = m;
+      if (str) out += '<span class="t-str">' + esc(t) + '</span>';
+      else if (num) out += '<span class="t-num">' + t + '</span>';
+      else if (id && KW.has(id)) out += '<span class="t-kw">' + t + '</span>';
+      else if (id && symTok && id === symTok.tok && !symDone) { symDone = true; out += '<span class="sym" data-sym="' + symTok.id + '">' + t + '</span>'; }
+      else if (id && /^[A-Z]/.test(id)) out += '<span class="t-typ">' + t + '</span>';
+      else out += esc(t);
+    }
+    return out;
+  }
+  function parseSym(v) {
+    const m = /^(\w+)(?::(\w+))?(?:\|([\w,]+))?$/.exec(v || 'lazy');
+    return { st: m[1], owner: m[2] || null, waiters: m[3] ? m[3].split(',') : [] };
+  }
+  function stateAt(k) {
+    const fr = scenario.frames;
+    const f = fr[k];
+    let s = k === 0 ? { units: {}, syms: {}, lanes: {}, run: '', edited: false }
+      : f.reset != null ? stateAt(f.reset) : stateAt(k - 1);
+    s = JSON.parse(JSON.stringify(s));
+    if (f.run) s.run = f.run;
+    if (f.edited != null) s.edited = f.edited;
+    Object.entries(f.units || {}).forEach(([u, v]) => { if (v == null) delete s.units[u]; else s.units[u] = v; });
+    if (f.syms && f.syms['*']) scenario.symbols.forEach(x => { s.syms[x.id] = f.syms['*']; });
+    Object.entries(f.syms || {}).forEach(([x, v]) => { if (x !== '*') s.syms[x] = v; });
+    Object.assign(s.lanes, f.lanes || {});
+    return s;
+  }
+  const STATUS = { typing: 'typing', waiting: 'waiting', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled' };
+  function threadChip(t) { return '<span class="th th-' + t + '">' + t + '</span>'; }
+  function badgeText(p) {
+    if (p.st === 'prog') return 'InProgress · ' + p.owner;
+    if (p.st === 'unwound') return 'unwound' + (p.owner ? ' · ' + p.owner : '');
+    return p.st;
+  }
+  function buildPlayer(host) {
+    const sc = scenario;
+    const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
+    host.innerHTML =
+      '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
+      '<div class="scn-body">' +
+        '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
+        '<div class="side">' +
+          '<div class="side-h">Threads</div><div class="lanes"></div>' +
+          '<div class="side-h">Symbols</div><table class="symtab"><thead><tr><th>symbol</th><th>state</th><th>owner</th><th>waiting</th></tr></thead><tbody></tbody></table>' +
+        '</div>' +
+      '</div>' +
+      '<p class="scn-cap"></p>' +
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button></div>';
+    const linesEl = host.querySelector('.ed-lines');
+    const dots = host.querySelector('.dots');
+    let group = null;
+    sc.frames.forEach((f, i) => {
+      const g = f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass';
+      if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup'; d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = f.beat; b.title = f.title;
+      b.onclick = () => show(i);
+      dots.lastChild.querySelector('.drow').appendChild(b);
+    });
+    function unitFor(line, s) {
+      let best = null;
+      sc.units.forEach(u => {
+        if (line < u.lines[0] || line > u.lines[1] || !s.units[u.id]) return;
+        if (!best || (u.lines[1] - u.lines[0]) < (best.lines[1] - best.lines[0])) best = u;
+      });
+      return best ? s.units[best.id] : null;
+    }
+    let k = 0;
+    function show(i) {
+      k = Math.max(0, Math.min(sc.frames.length - 1, i));
+      const f = sc.frames[k], s = stateAt(k);
+      host.querySelector('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
+      host.querySelector('.scn-cogs').innerHTML = (f.cogs || []).map(c => '<span class="cog" data-cog="' + c + '">⚙ ' + esc(sc.cogs[c]) + '</span>').join('');
+      host.querySelector('.scn-cap').textContent = f.caption;
+      host.querySelector('.ed-run').textContent = s.run + (s.edited ? ' · edited' : '');
+      // Editor
+      const code = sc.code.slice();
+      if (s.edited) code[sc.edit.line - 1] = code[sc.edit.line - 1].replace(sc.edit.from, sc.edit.to);
+      const ticks = {}; (f.ticks || []).forEach(t => { ticks[t.sym] = t; });
+      linesEl.innerHTML = code.map((text, j) => {
+        const n = j + 1, sy = symByLine[n], u = unitFor(n, s);
+        let ov = '';
+        if (sy) { const p = parseSym(s.syms[sy.id]); ov = '<span class="badge b-' + p.st + (p.owner ? ' o-' + p.owner : '') + '">' + badgeText(p) + '</span>'; }
+        const held = sy && sy.id === 'hold' && /^prog/.test(s.syms.hold || '') ? ' held' : '';
+        return '<div class="l' + held + '"><span class="gb' + (u ? ' u-' + u : '') + '" title="' + (u || '') + '"></span><span class="no">' + n + '</span><span class="code">' + (highlight(text, sy) || ' ') + '</span><span class="ov">' + ov + '</span></div>';
+      }).join('');
+      linesEl.querySelectorAll('.sym').forEach(el => {
+        const p = parseSym(s.syms[el.dataset.sym]);
+        el.classList.add('s-' + p.st); if (p.owner) el.classList.add('o-' + p.owner);
+        const t = ticks[el.dataset.sym];
+        if (t) { el.classList.add('tick', 'tk-' + t.t); if (t.pulse) el.classList.add('pulse'); }
+      });
+      // Popup
+      const pop = host.querySelector('.ed-pop');
+      if (f.popup) {
+        const anchor = linesEl.querySelector('.sym[data-sym="' + f.popup.sym + '"]');
+        let r = anchor.getBoundingClientRect(), left = r.left;
+        if (f.popup.at) {
+          // Point at a column of the anchor's line: the code is monospaced, so a column is a fixed width.
+          const ln = anchor.closest('.l'), codeEl = ln.querySelector('.code'), col = codeEl.textContent.indexOf(f.popup.at);
+          const probe = document.createElement('span'); probe.textContent = 'x'.repeat(10); codeEl.appendChild(probe);
+          const cw = probe.getBoundingClientRect().width / 10; probe.remove();
+          r = ln.getBoundingClientRect(); left = codeEl.getBoundingClientRect().left + col * cw;
+        }
+        pop.hidden = false; pop.textContent = f.popup.text;
+        const ed = host.querySelector('.ed').getBoundingClientRect();
+        pop.style.top = (r.bottom - ed.top + 4) + 'px';
+        pop.style.left = Math.max(8, Math.min(ed.width - 260, left - ed.left)) + 'px';
+      } else pop.hidden = true;
+      // Threads
+      host.querySelector('.lanes').innerHTML = sc.threads.map(t => {
+        const l = s.lanes[t.id] || ['idle', ''];
+        return '<div class="lane' + (l[0] === 'idle' ? ' idle' : '') + '">' + threadChip(t.id) + '<span class="role">' + esc(t.role) + '</span><span class="st st-' + l[0] + '">' + STATUS[l[0]] + '</span><span class="act">' + esc(l[1]) + '</span></div>';
+      }).join('');
+      // Symbols
+      host.querySelector('.symtab tbody').innerHTML = sc.symbols.map(x => {
+        const p = parseSym(s.syms[x.id]);
+        const hot = ticks[x.id] ? ' class="hot"' : '';
+        return '<tr' + hot + '><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge b-' + p.st + (p.owner ? ' o-' + p.owner : '') + '">' + (p.st === 'prog' ? 'InProgress' : p.st) + '</span></td><td>' + (p.owner ? threadChip(p.owner) : '') + '</td><td>' + p.waiters.map(threadChip).join(' ') + '</td></tr>';
+      }).join('');
+      dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === k));
+    }
+    host.querySelector('.prev').onclick = () => show(k - 1);
+    host.querySelector('.next').onclick = () => show(k + 1);
+    const p = { host, show, step: d => show(k + d), get k() { return k; } };
+    players.push(p);
+    show(0);
+    return p;
+  }
+  main.querySelectorAll('.scenario').forEach(buildPlayer);
+  window.addEventListener('resize', () => players.forEach(p => p.show(p.k)));
+  // The cogs: what each one is for, and the steps of the scenario where it fires.
+  const GEARS = [
+    ['write', 'Edits run alone. The writer raises a sticky cancel and waits for readers to leave; a body edit re-indexes one member.'],
+    ['reader', 'Each request reads through its own Reader: its own typer scratch and its own view of what it is completing.'],
+    ['claim', 'Before completing a root, a reader claims it. Until it is done, the info is an InProgress only the owner sees through.'],
+    ['wait', 'Another reader that needs the info, or asks whether it is completing, waits on the claim instead of peeking.'],
+    ['publish', 'The completed info is published before the claim is released, so a waiter wakes to a whole denotation.'],
+    ['target', 'A request types only the statements on its path; the rest stay skipped for whoever needs them next.'],
+    ['bodyedit', 'An edit inside one body keeps the run: only that member is entered again.'],
+    ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
+    ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
+    [null, 'Stamped cells: a cache value and the period it is valid for, read and written as one.'],
+    [null, 'Epoch invalidation: a change to a published scope bumps an epoch, and dependent caches notice on their next read.'],
+    [null, 'Result stamps: a result read after the lock is released is re-served if a write landed in between.'],
+    [null, 'Wait-for cycles: two readers taking two roots in opposite orders; the one typing a body backs off.']
+  ];
+  main.querySelectorAll('.gears').forEach(host => {
+    host.innerHTML = GEARS.map(([id, text]) => {
+      if (!id) { const [name, rest] = text.split(': '); return '<div class="gear off"><div class="gn">⚙ ' + esc(name) + '</div><div class="gd">' + esc(rest) + '</div></div>'; }
+      const at = scenario.frames.map((f, i) => (f.cogs || []).includes(id) ? '<a href="#" data-frame="' + i + '">' + f.beat + '</a>' : null).filter(Boolean).join(' ');
+      return '<div class="gear"><div class="gn">⚙ ' + esc(scenario.cogs[id]) + '</div><div class="gd">' + esc(text) + '</div><div class="ga">fires at ' + at + '</div></div>';
+    }).join('');
+    host.addEventListener('click', e => {
+      const a = e.target.closest('a[data-frame]'); if (!a || !players.length) return;
+      e.preventDefault(); const p = players[0]; p.show(+a.dataset.frame);
+      const i = cards.indexOf(p.host.closest('.card')); if (i >= 0) setCurrent(i, true, true);
+    });
+  });
+
+  // 6. Mermaid, themed to match; re-rendered on theme change.
+  const mermaidBlocks = Array.from(main.querySelectorAll('pre.mermaid'));
+  mermaidBlocks.forEach(b => { b.dataset.src = b.textContent; });
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  async function renderMermaid() {
+    mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
+      fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: true, curve: 'basis' } });
+    mermaidBlocks.forEach(b => { b.removeAttribute('data-processed'); b.innerHTML = ''; b.textContent = b.dataset.src; });
+    try { await mermaid.run({ nodes: mermaidBlocks }); } catch (e) { console.error(e); }
+  }
+  // Mermaid measures label text; wait for the web fonts or the boxes are sized for the fallback font.
+  const firstRender = (document.fonts ? document.fonts.ready : Promise.resolve()).then(renderMermaid);
+
+  // 7. Navigation: current card, keyboard, focus mode, theme.
+  let current = 0, suppressObserverUntil = 0;
+  const counter = document.getElementById('counter');
+  function setCurrent(i, scroll, smooth) {
+    current = Math.max(0, Math.min(cards.length - 1, i));
+    cards.forEach((c, j) => c.classList.toggle('current', j === current));
+    counter.textContent = (current + 1) + ' / ' + cards.length;
+    const id = cards[current].id;
+    toc.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+    if (scroll) {
+      suppressObserverUntil = performance.now() + 1000;
+      if (document.body.classList.contains('focus')) window.scrollTo(0, 0);
+      else cards[current].scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'instant' });
+      if (id) history.replaceState(null, '', '#' + id);
+    }
+  }
+  const io = new IntersectionObserver(entries => {
+    if (document.body.classList.contains('focus') || performance.now() < suppressObserverUntil) return;
+    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length) setCurrent(cards.indexOf(visible[0].target), false);
+  }, { rootMargin: '0px 0px -60% 0px' });
+  cards.forEach(c => io.observe(c));
+  // Motion: a card's figures play when it comes into view, and again on re-entry.
+  // Without reduced motion, an animated figure waits at its first frame until its card plays.
+  const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (motion) document.documentElement.classList.add('motion');
+  function rewind(c) { c.querySelectorAll('figure.anim').forEach(f => { f._step = undefined; }); c.classList.remove('play'); c.classList.add('rewind'); void c.offsetWidth; c.classList.remove('rewind'); }
+  function play(c) { rewind(c); c.classList.add('play'); }
+  // A figure's steps: its animations grouped by start time, a start within 150 ms of the previous one joining
+  // its group. A sweep or a blink runs alongside and does not delimit steps.
+  function stepsOf(f) {
+    const all = f.getAnimations({ subtree: true });
+    const side = a => { const el = a.effect.target; return !!(el && el.classList && (el.classList.contains('a-sweep') || el.classList.contains('a-blink'))); };
+    const timed = all.filter(a => !side(a)).map(a => { const st = a.effect.getTiming().delay || 0; return { a, st, end: st + (a.effect.getComputedTiming().activeDuration || 0) }; }).sort((x, y) => x.st - y.st);
+    const steps = []; let prev = -Infinity;
+    timed.forEach(s => { const last = steps[steps.length - 1]; if (last && s.st - prev < 150) { last.end = Math.max(last.end, s.end); last.members.push(s); } else steps.push({ st: s.st, end: s.end, members: [s] }); prev = s.st; });
+    return { all, side, steps };
+  }
+  // Step k shows every animation of steps 0..k finished and every later one not yet started.
+  function step(f, dir) {
+    const c = f.closest('.card');
+    if (!c.classList.contains('play')) play(c);
+    const { all, side, steps } = stepsOf(f);
+    if (!steps.length) return;
+    const k = f._step === undefined ? (dir > 0 ? 0 : steps.length - 1) : Math.max(-1, Math.min(steps.length - 1, f._step + dir));
+    f._step = k;
+    all.forEach(a => a.pause());
+    steps.forEach((s, i) => s.members.forEach(m => { m.a.currentTime = i <= k ? m.end : 0; }));
+    const tm = k < 0 ? 0 : steps[k].end;
+    all.filter(side).forEach(a => { a.currentTime = tm; });
+  }
+  const animated = cards.filter(c => c.querySelector('figure.anim'));
+  // Watch the figures, not the cards: a card can be taller than the window, a figure is not.
+  // A figure half in view plays its card; a card whose figures have all left the view rewinds.
+  const playObs = new IntersectionObserver(entries => {
+    if (document.body.classList.contains('focus')) return;
+    entries.forEach(e => {
+      const c = e.target.closest('.card');
+      e.target.dataset.seen = e.isIntersecting ? '1' : '';
+      if (e.isIntersecting && e.intersectionRatio >= 0.5) { if (!c.classList.contains('play')) play(c); }
+      else if (!e.isIntersecting && c.classList.contains('play') && ![...c.querySelectorAll('figure.anim')].some(f => f.dataset.seen)) rewind(c);
+    });
+  }, { threshold: [0, 0.5] });
+  animated.forEach(c => {
+    c.querySelectorAll('figure.anim').forEach(f => playObs.observe(f));
+    c.querySelectorAll('figure.anim').forEach(f => {
+      const bar = document.createElement('div'); bar.className = 'replay';
+      const mk = (label, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.onclick = fn; bar.appendChild(b); };
+      mk('◀', 'step back', () => step(f, -1));
+      mk('▶', 'step forward', () => step(f, +1));
+      mk('↻', 'replay', () => play(c));
+      f.appendChild(bar);
+    });
+  });
+  const baseSetCurrent = setCurrent;
+  setCurrent = function (i, scroll, smooth) {
+    baseSetCurrent(i, scroll, smooth);
+    if (document.body.classList.contains('focus')) { animated.forEach(c => c !== cards[current] && c.classList.contains('play') && rewind(c)); if (animated.includes(cards[current])) play(cards[current]); }
+  };
+  function toggleFocus() { document.body.classList.toggle('focus'); setCurrent(current, true); }
+  function toggleTheme() {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('dotc-concurrency-theme', next); } catch (e) {}
+    renderMermaid();
+  }
+  try { const t = localStorage.getItem('dotc-concurrency-theme'); if (t) { document.documentElement.dataset.theme = t; renderMermaid(); } } catch (e) {}
+  document.getElementById('btn-focus').onclick = toggleFocus;
+  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['j', 'ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); setCurrent(current + 1, true, true); }
+    else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
+    else if (e.key === 'f') toggleFocus();
+    else if (e.key === 't') toggleTheme();
+    else if (e.key === 'Escape') document.body.classList.remove('focus');
+    else if (e.key === '.' || e.key === ',') {
+      const c = cards[current], d = e.key === '.' ? 1 : -1;
+      const p = c && players.find(q => c.contains(q.host));
+      if (p) p.step(d); else if (c && c.querySelector('figure.anim')) step(c.querySelector('figure.anim'), d);
+    }
+  });
+  toc.addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  main.addEventListener('click', e => {
+    const a = e.target.closest('a.sref'); if (!a) return;
+    const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
+  });
+  const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
+  setCurrent(start < 0 ? 0 : start, start > 0);
+  firstRender.then(() => { if (start > 0) setCurrent(start, true); });
+})();
+</script>
+</body>
+</html>
