@@ -5,6 +5,16 @@
  "cards": {
   "claim": [
    {
+    "file": "compiler/src/dotty/tools/dotc/core/Denotations.scala",
+    "start": "protected var myInfo: Type = initInfo",
+    "end": "protected var myInfo: Type = initInfo",
+    "hl": {
+     "3": [
+      "myInfo"
+     ]
+    }
+   },
+   {
     "file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "start": "private def completeUnderRootClaim",
     "end": "roots\\.release\\(key\\)",
@@ -50,6 +60,22 @@
    }
   ],
   "publish": [
+   {
+    "file": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "start": "private var lastDenotation: Payload",
+    "end": "private var checkedPeriod: Published\\[Period\\]",
+    "hl": {
+     "1": [
+      "lastDenotation",
+      "lastSymbol",
+      "checkedPeriod"
+     ],
+     "3": [
+      "Payload\\[NamedType",
+      "Published\\[Period\\]"
+     ]
+    }
+   },
    {
     "file": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "start": "private def setDenot\\(denot",
@@ -142,6 +168,22 @@
   "write": [
    {
     "file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "start": "private var myCancelled = false",
+    "end": "private var myCancelled = false"
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "start": "private val regime = ",
+    "end": "private var writerPending = false",
+    "hl": {
+     "2": [
+      "writerPending",
+      "ReentrantReadWriteLock\\(true\\)"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "start": "override def isCancelled\\(\\): Boolean",
     "end": "override def isCancelled\\(\\): Boolean",
     "hl": {
@@ -223,6 +265,44 @@
   "cycles": [
    {
     "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "start": "private val claims = new ConcurrentHashMap",
+    "end": "private val claims = new ConcurrentHashMap"
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "start": "final class Claim\\(",
+    "end": "val done: CountDownLatch",
+    "hl": {
+     "2": [
+      "val done: CountDownLatch"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/Reader.scala",
+    "start": "var waitingOn: core\\.CompletionRoots\\.Claim",
+    "end": "var waitingOn: core\\.CompletionRoots\\.Claim",
+    "hl": {
+     "3": [
+      "waitingOn"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/Reader.scala",
+    "start": "var namerCompletionDepth: Int",
+    "end": "var namerCompletionDepth: Int",
+    "hl": {
+     "4": [
+      "namerCompletionDepth"
+     ],
+     "5": [
+      "namerCompletionDepth"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
     "start": "def acquire\\(key",
     "end": "finally me\\.waitingOn = null",
     "skip": [
@@ -266,6 +346,20 @@
   ],
   "epoch": [
    {
+    "file": "compiler/src/dotty/tools/dotc/core/Contexts.scala",
+    "start": "private val myStructureEpoch = ",
+    "end": "def bumpStructureEpoch",
+    "hl": {
+     "3": [
+      "myStructureEpoch = ",
+      "def structureEpoch"
+     ],
+     "4": [
+      "def bumpStructureEpoch"
+     ]
+    }
+   },
+   {
     "file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "start": "protected final val concurrent: Boolean = base\\.concurrent",
     "end": "dependent\\.nn\\.put\\(dep, \\(\\)\\)",
@@ -284,6 +378,16 @@
      ],
      "4": [
       "if concurrent then base\\.bumpStructureEpoch"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "start": "var published = false",
+    "end": "var published = false",
+    "hl": {
+     "4": [
+      "published"
      ]
     }
    },
@@ -310,6 +414,32 @@
    }
   ],
   "resultstamp": [
+   {
+    "file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "start": "private var myWrites: Int = 0",
+    "end": "private var myWrites: Int = 0",
+    "hl": {
+     "2": [
+      "myWrites"
+     ],
+     "3": [
+      "myWrites"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/Reader.scala",
+    "start": "var resultStamp: Long",
+    "end": "var resultStamp: Long",
+    "hl": {
+     "1": [
+      "resultStamp"
+     ],
+     "3": [
+      "resultStamp"
+     ]
+    }
+   },
    {
     "file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "start": "reader\\.resultStamp = myWrites$",
@@ -378,6 +508,16 @@
    },
    {
     "file": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "start": "private var elemsCache",
+    "end": "private var elemsCache",
+    "hl": {
+     "4": [
+      "elemsCache"
+     ]
+    }
+   },
+   {
+    "file": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "start": "override final def toList\\(using Context\\)",
     "end": "^        elems$",
     "hl": {
@@ -388,5 +528,6 @@
     }
    }
   ]
- }
+ },
+ "github": "https://github.com/retronym/scala3"
 }

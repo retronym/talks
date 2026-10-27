@@ -28,11 +28,15 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Claim on a completion root
 
+<p class="lede">In code, a claim is a capability: <code>Sharing.claim(key)</code> hands its body evidence of type <code>Holds[key.type]</code>, and a completer's <code>complete</code> asks for that evidence, so a completion run without its claim does not compile. Every such operation is an inline method whose batch branch is the original code, so the batch compiler pays a test of a final field and nothing else.</p>
+
 <div class="scenario" data-card="claim"></div>
 
 > A reader sees a symbol's info either finished, or as a lazy type it can wait on. It never sees another reader's half-built info, and never takes another reader's completion for a cycle.
 
 ### Publish, then release
+
+<p class="lede"><code>Published</code> and <code>Payload</code> are opaque types over the plain fields, and their operations are macros. A payload store needs a <code>Publishing</code> capability that only the <code>publishing</code> block provides, and a payload read needs the <code>Acquired</code> evidence of the period: the order is checked at compile time and costs a release store and an acquire load at run time, nothing more.</p>
 
 <div class="scenario" data-card="publish"></div>
 
@@ -40,11 +44,15 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Stamped cells
 
+<p class="lede"><code>Stamped</code> is a final class of two final fields; <code>cached</code> is a macro that reads and writes the field it is called on. The current stamp comes from a given <code>Stamp[K]</code> whose kind (per run or per period) is a phantom type, so a call site names no stamp and a field is never read with one kind and written with another.</p>
+
 <div class="scenario" data-card="stamped"></div>
 
 > A cache hit returns a value computed at the stamp it was read with.
 
 ### Publish once
+
+<p class="lede">No new primitive: a value of final fields, built in locals and stored in one field. The Java memory model's rule for final fields does the rest.</p>
 
 <div class="scenario" data-card="once"></div>
 
@@ -52,11 +60,15 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Write action and cancel
 
+<p class="lede">A fair read/write lock and one volatile flag, polled at the typer's existing checkpoints. Batch compilation has no driver and never sees either.</p>
+
 <div class="scenario" data-card="write"></div>
 
 > Readers never see a write half done, and a writer waits only until each reader's next checkpoint.
 
 ### Owner cancelled mid-completion
+
+<p class="lede">No new machinery: the unwound completion is a lazy type like any other, and it pre-empts whoever reaches it through the slow path every lazy type already takes.</p>
 
 <div class="scenario" data-card="unwound"></div>
 
@@ -64,17 +76,23 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Wait-for cycles
 
+<p class="lede">The graph is not kept anywhere: each reader publishes the claim it waits on in a volatile field, and a waiter walks owners from claim to claim at every slice of its wait.</p>
+
 <div class="scenario" data-card="cycles"></div>
 
 > No two readers wait on each other forever. A cycle that someone can give way on is broken by that reader; a real cycle between signatures is reported, as one reader would report it.
 
 ### Epoch invalidation
 
+<p class="lede">One atomic counter on the base. A concurrent base pulls; a batch base keeps the push, chosen once by a final field of the base.</p>
+
 <div class="scenario" data-card="epoch"></div>
 
 > A cache computed from published scopes is used only while no published scope has changed since it was made.
 
 ### Result stamps
+
+<p class="lede">A volatile count of write actions on the driver, and a stamp on each reader. The check runs once per request, at its end.</p>
 
 <div class="scenario" data-card="resultstamp"></div>
 

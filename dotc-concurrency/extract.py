@@ -2,7 +2,7 @@
 """Extract the cards' code excerpts (excerpts.json) from the compiler at a pinned commit into excerpts.gen.json.
 
 Each excerpt runs from the first line matching `start` to the next matching `end` (plus `after` lines), with
-comments and `skip` lines dropped; a run of dropped code lines shows as one `⋯`. `hl` patterns are resolved to the
+comments, bookkeeping annotations and `skip` lines dropped; a run of dropped code lines shows as one `⋯`. `hl` patterns are resolved to the
 excerpt's lines here, so a pattern that matches nothing is an error, not a quiet loss of a highlight.
 
     extract.py [--check]   # SCALA3=<a checkout of the compiler's repository>, default ~/code/scala/scala3
@@ -26,6 +26,25 @@ out_path = here / "excerpts.gen.json"
 def show(path):
     return subprocess.run(["git", "-C", repo, "show", f"{spec['sha']}:{path}"], check=True, capture_output=True,
                           text=True).stdout.split("\n")
+
+
+# The state map's bookkeeping annotations (`@cache`, `@publishedBy(...)`, `@treeState`, ...) are left off; `@volatile`,
+# which changes what the code means, stays.
+ANNOT = re.compile(r'@(\w+)(\((?:[^()"]|"[^"]*")*\))?\s*')
+
+
+def strip_annotations(line):
+    ind = line[:len(line) - len(line.lstrip())]
+    rest = line.lstrip()
+    out = ""
+    while rest.startswith("@"):
+        m = ANNOT.match(rest)
+        if not m:
+            break
+        if m.group(1) == "volatile":
+            out += "@volatile "
+        rest = rest[m.end():]
+    return ind + out + rest
 
 
 def strip_comment(line):
@@ -60,10 +79,13 @@ def excerpt(card, ex, cache):
         if any(re.search(p, raw) for p in ex.get("skip", [])):
             dropped = True
             continue
+        text = strip_annotations(strip_comment(raw))
+        if not text.strip():
+            continue
         if dropped:
             out.append({"n": None, "text": "⋯"})
             dropped = False
-        out.append({"n": i + 1, "text": strip_comment(raw)})
+        out.append({"n": i + 1, "text": text})
     # the common indent, so that the excerpt starts at column 0
     ind = min(len(x["text"]) - len(x["text"].lstrip()) for x in out if x["n"] is not None)
     for x in out:
@@ -80,7 +102,11 @@ def excerpt(card, ex, cache):
                 sys.exit(f"{card}: highlight {p!r} (step {beat}) matches no line of the excerpt from {ex['file']}")
             idx += hits
         hl[beat] = sorted(set(idx))
-    return {"file": ex["file"].split("/")[-1], "path": ex["file"], "lines": out, "hl": hl}
+    return {"file": ex["file"].split("/")[-1], "path": ex["file"], "url": f"{spec['github']}/blob/{full_sha}/{ex['file']}",
+            "lines": out, "hl": hl}
+
+
+full_sha = subprocess.run(["git", "-C", repo, "rev-parse", spec["sha"]], check=True, capture_output=True, text=True).stdout.strip()
 
 
 def extract():

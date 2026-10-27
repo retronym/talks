@@ -407,6 +407,9 @@ body.lb-open { overflow: hidden; }
 .tppt { opacity: 0; transition: opacity .3s; } .tppt.on { opacity: 1; }
 .tppt circle { fill: var(--accent); } .throughput .tppt text { fill: var(--ink); font-weight: 650; }
 table.tp-table { font-size: 13px; margin: 0; } table.tp-table td.c-good { color: var(--typed); } table.tp-table td.c-bad { color: var(--bad); }
+a.ed-tab { color: var(--ink); text-decoration: none; } a.ed-tab:hover { color: var(--accent); }
+.xl a.no { color: var(--muted); text-decoration: none; } .xl a.no:hover { color: var(--accent); text-decoration: underline; }
+.card p.lede { color: var(--muted); font-size: 15px; margin: -6px 0 16px; max-width: 900px; }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background calc(.45s / var(--spd, 1)), box-shadow calc(.45s / var(--spd, 1)), text-decoration-color calc(.45s / var(--spd, 1)), outline-color calc(.3s / var(--spd, 1)); }
 .badge { transition: background calc(.45s / var(--spd, 1)), color calc(.45s / var(--spd, 1)), border-color calc(.45s / var(--spd, 1)); }
@@ -744,8 +747,8 @@ body.focus .scn-cap { font-size: 18px; }
       '</div>' +
       '<p class="scn-cap"></p>' +
       (sc.id && excerpts[sc.id] ? '<div class="lightbox" hidden><div class="lb-panel" role="dialog" aria-label="The code"><div class="lb-head"><span class="lb-title"></span><span class="lb-nav"><button type="button" class="lb-prev" title="step back (,)">◀</button><button type="button" class="lb-next" title="step forward (.)">▶</button><button type="button" class="lb-close" title="close (Esc)">✕</button></span></div><div class="l3-body">' + excerpts[sc.id].map(ex =>
-        '<div class="ed xc"><div class="ed-tabs"><span class="ed-tab">' + esc(ex.file) + '</span></div><div class="xc-lines">' +
-        ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '"><span class="no">' + (x.n || '') + '</span><span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
+        '<div class="ed xc"><div class="ed-tabs"><a class="ed-tab" href="' + ex.url + '#L' + ex.lines[0].n + '" target="_blank" rel="noopener" title="' + esc(ex.path) + ' on GitHub">' + esc(ex.file) + '</a></div><div class="xc-lines">' +
+        ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '">' + (x.n ? '<a class="no" href="' + ex.url + '#L' + x.n + '" target="_blank" rel="noopener" title="line ' + x.n + ' on GitHub">' + x.n + '</a>' : '<span class="no"></span>') + '<span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
         '</div></div>').join('') + '</div></div></div>' : '');
     const $ = q => host.querySelector(q);
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');

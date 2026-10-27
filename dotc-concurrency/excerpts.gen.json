@@ -3,8 +3,25 @@
  "cards": {
   "claim": [
    {
+    "file": "Denotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Denotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Denotations.scala",
+    "lines": [
+     {
+      "n": 208,
+      "text": "protected var myInfo: Type = initInfo"
+     }
+    ],
+    "hl": {
+     "3": [
+      0
+     ]
+    }
+   },
+   {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 233,
@@ -125,6 +142,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 303,
@@ -172,6 +190,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3430,
@@ -206,6 +225,38 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "lines": [
+     {
+      "n": 2366,
+      "text": "private var lastDenotation: Payload[NamedType, \"checkedPeriod\", Denotation | Null] = Payload(null)"
+     },
+     {
+      "n": 2367,
+      "text": "private var lastSymbol: Payload[NamedType, \"checkedPeriod\", Symbol | Null] = Payload(null)"
+     },
+     {
+      "n": 2368,
+      "text": "private var checkedPeriod: Published[Period] = Published(Nowhere)"
+     }
+    ],
+    "hl": {
+     "1": [
+      0,
+      1,
+      2
+     ],
+     "3": [
+      0,
+      1,
+      2
+     ]
+    }
+   },
+   {
+    "file": "Types.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2646,
@@ -247,6 +298,7 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2431,
@@ -277,6 +329,7 @@
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
       "n": 81,
@@ -307,6 +360,7 @@
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
       "n": 117,
@@ -333,6 +387,7 @@
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
       "n": 18,
@@ -348,6 +403,7 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 3567,
@@ -418,6 +474,7 @@
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
       "n": 108,
@@ -467,6 +524,40 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 90,
+      "text": "@volatile private var myCancelled = false"
+     }
+    ],
+    "hl": {}
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 116,
+      "text": "private val regime = new java.util.concurrent.locks.ReentrantReadWriteLock(true)"
+     },
+     {
+      "n": 117,
+      "text": "@volatile private var writerPending = false"
+     }
+    ],
+    "hl": {
+     "2": [
+      0,
+      1
+     ]
+    }
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 95,
@@ -482,6 +573,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 152,
@@ -569,6 +661,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 123,
@@ -651,6 +744,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 384,
@@ -708,6 +802,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3403,
@@ -758,6 +853,78 @@
    {
     "file": "CompletionRoots.scala",
     "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "lines": [
+     {
+      "n": 44,
+      "text": "private val claims = new ConcurrentHashMap[AnyRef, Claim]()"
+     }
+    ],
+    "hl": {}
+   },
+   {
+    "file": "CompletionRoots.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "lines": [
+     {
+      "n": 170,
+      "text": "final class Claim(val owner: Reader, val what: CompletionLock.What, val ownerName: String):"
+     },
+     {
+      "n": 173,
+      "text": "  @volatile var holds: Int = 1"
+     },
+     {
+      "n": 175,
+      "text": "  val done: CountDownLatch = new CountDownLatch(1)"
+     }
+    ],
+    "hl": {
+     "2": [
+      2
+     ]
+    }
+   },
+   {
+    "file": "Reader.scala",
+    "path": "compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/Reader.scala",
+    "lines": [
+     {
+      "n": 281,
+      "text": "@volatile var waitingOn: core.CompletionRoots.Claim | Null = null"
+     }
+    ],
+    "hl": {
+     "3": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "Reader.scala",
+    "path": "compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/Reader.scala",
+    "lines": [
+     {
+      "n": 292,
+      "text": "@volatile var namerCompletionDepth: Int = 0"
+     }
+    ],
+    "hl": {
+     "4": [
+      0
+     ],
+     "5": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "CompletionRoots.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
     "lines": [
      {
       "n": 49,
@@ -957,6 +1124,7 @@
    {
     "file": "CompletionRoots.scala",
     "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
     "lines": [
      {
       "n": 129,
@@ -1017,8 +1185,37 @@
   ],
   "epoch": [
    {
+    "file": "Contexts.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Contexts.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Contexts.scala",
+    "lines": [
+     {
+      "n": 1159,
+      "text": "private val myStructureEpoch = java.util.concurrent.atomic.AtomicInteger()"
+     },
+     {
+      "n": 1160,
+      "text": "private[dotc] def structureEpoch: Int = myStructureEpoch.get"
+     },
+     {
+      "n": 1161,
+      "text": "private[dotc] def bumpStructureEpoch(): Unit = myStructureEpoch.incrementAndGet()"
+     }
+    ],
+    "hl": {
+     "3": [
+      0,
+      1
+     ],
+     "4": [
+      2
+     ]
+    }
+   },
+   {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3548,
@@ -1035,10 +1232,6 @@
      {
       "n": 3552,
       "text": "private var dependent: WeakHashMap[InheritedCache, Unit] | Null = null"
-     },
-     {
-      "n": 3555,
-      "text": "@benignRace(\"any reader that finds the cache valid stores the period it checked in; a stale one only repeats the check\")"
      },
      {
       "n": 3556,
@@ -1095,25 +1288,42 @@
     ],
     "hl": {
      "1": [
-      11,
-      17
+      10,
+      16
      ],
      "2": [
-      11,
-      17
+      10,
+      16
      ],
      "3": [
       1,
       2
      ],
      "4": [
-      7
+      6
      ]
     }
    },
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "lines": [
+     {
+      "n": 313,
+      "text": "private[dotc] var published = false"
+     }
+    ],
+    "hl": {
+     "4": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "Scopes.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 336,
@@ -1142,6 +1352,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3588,
@@ -1172,6 +1383,45 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 367,
+      "text": "@volatile private var myWrites: Int = 0"
+     }
+    ],
+    "hl": {
+     "2": [
+      0
+     ],
+     "3": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "Reader.scala",
+    "path": "compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/Reader.scala",
+    "lines": [
+     {
+      "n": 73,
+      "text": "private[dotc] var resultStamp: Long = -1"
+     }
+    ],
+    "hl": {
+     "1": [
+      0
+     ],
+     "3": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 139,
@@ -1187,6 +1437,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 161,
@@ -1202,6 +1453,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 381,
@@ -1268,6 +1520,7 @@
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 92,
@@ -1279,7 +1532,7 @@
      },
      {
       "n": 94,
-      "text": "@cache @benignRace(\"recomputed from `selectors`; an immutable value of final fields, seen whole (I60)\") private var mySelectorInfo: SelectorInfo | Null = null"
+      "text": "private var mySelectorInfo: SelectorInfo | Null = null"
      }
     ],
     "hl": {
@@ -1292,6 +1545,7 @@
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 100,
@@ -1399,6 +1653,23 @@
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "lines": [
+     {
+      "n": 259,
+      "text": "private var elemsCache: List[Symbol] | Null = null"
+     }
+    ],
+    "hl": {
+     "4": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "Scopes.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 559,
