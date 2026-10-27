@@ -276,6 +276,7 @@ main { max-width: 1260px; }
 .scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; align-content: start; }
 @media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
 .ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; }
+.scn-body > .ed { z-index: 2; } /* its hover popup draws over the side panel stacked below it */
 .ed-tabs { border-radius: 10px 10px 0 0; overflow: hidden; }
 .ed-tabs { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
 .ed-tab { background: var(--card); padding: 6px 14px; border-right: 1px solid var(--rule); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
@@ -350,9 +351,9 @@ body.lb-open { overflow: hidden; }
 .xc.lit .xl:not(.hl) { opacity: .45; }
 .xc .xl.hl { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 /* A Problem step is shown on an old CRT: the world without the cog, dated and not to be trusted. */
-:root { --crt-line: rgba(0, 0, 0, .07); --crt-edge: rgba(0, 0, 0, .14); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --crt-line: rgba(0, 0, 0, .38); --crt-edge: rgba(0, 0, 0, .55); } }
-:root[data-theme="dark"] { --crt-line: rgba(0, 0, 0, .38); --crt-edge: rgba(0, 0, 0, .55); }
+:root { --crt-line: rgba(0, 0, 0, .04); --crt-edge: rgba(0, 0, 0, .14); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --crt-line: rgba(0, 0, 0, .22); --crt-edge: rgba(0, 0, 0, .55); } }
+:root[data-theme="dark"] { --crt-line: rgba(0, 0, 0, .22); --crt-edge: rgba(0, 0, 0, .55); }
 .scn-body { position: relative; }
 .scn-body::after {
   content: ""; position: absolute; inset: -4px; z-index: 3; pointer-events: none; border-radius: 12px; opacity: 0;
@@ -362,6 +363,14 @@ body.lb-open { overflow: hidden; }
   transition: opacity calc(.5s / var(--spd, 1));
 }
 .scenario.problem .scn-body::after { opacity: 1; }
+/* the label: what the screen shows */
+.scn-body::before {
+  content: "without the cog"; position: absolute; z-index: 4; right: 10px; bottom: 10px; pointer-events: none; opacity: 0;
+  font: 600 10.5px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--bad); background: var(--bad-bg); border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); border-radius: 4px; padding: 4px 7px;
+  transition: opacity calc(.5s / var(--spd, 1));
+}
+.scenario.problem .scn-body::before { opacity: 1; }
 .scn-body > * { transition: filter calc(.5s / var(--spd, 1)); }
 .scenario.problem .scn-body > * { filter: saturate(.65) contrast(1.06); }
 .scenario.problem .ed-lines .code, .scenario.problem .side { text-shadow: .6px 0 rgba(255, 40, 40, .35), -.6px 0 rgba(0, 170, 255, .35); }
