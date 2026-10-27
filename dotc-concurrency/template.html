@@ -1132,7 +1132,7 @@ body.focus .scn-cap { font-size: 18px; }
     });
     const rows = pts.map(q => '<tr><td>' + q.n + '</td><td>' + (q.wallMs / 1000).toFixed(2) + '</td><td>' + (base / q.wallMs).toFixed(2) + '×</td><td>' + (q.workerCpuMs / 1000).toFixed(1) + '</td><td>' + q.rootWaits + ' / ' + Math.round(q.rootWaitMs) + ' ms</td><td class="' + (q.differ ? 'c-bad' : 'c-good') + '">' + q.differ + '</td><td>' + q.backoffs + '</td><td>' + q.cyclesRaised + '</td></tr>').join('');
     host.innerHTML =
-      '<div class="tp-head"><div class="tp-ctl"><button type="button" class="tp-play">Play</button><span class="tp-note">' + tpData.files + ' files of the compiler · ' + tpData.processors + ' processors · the open is serial, then each reader takes the largest file left</span></div></div>' +
+      '<div class="tp-head"><div class="tp-ctl"><button type="button" class="tp-play">Play</button><span class="tp-note"><code>' + esc(tpData.source) + '</code> · ' + tpData.files + ' files · ' + Math.round(tpData.lines / 1000) + 'k lines · ' + tpData.processors + ' processors</span></div></div>' +
       '<div class="tp-grid"><div class="tp-race"><svg viewBox="0 0 ' + W + ' ' + H + '"><defs>' + clips + '</defs>' + g + '</svg></div>' +
       '<div class="tp-side"><svg viewBox="0 0 ' + PW + ' ' + PH + '">' + pg + '</svg>' +
       '<table class="symtab tp-table"><thead><tr><th>N</th><th>wall s</th><th>speed-up</th><th>CPU s</th><th>root waits</th><th>files differ</th><th>back-offs</th><th>cycles</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';

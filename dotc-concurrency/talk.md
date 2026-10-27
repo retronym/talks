@@ -102,7 +102,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Every file of dotc, N readers
 
-The x-ray's throughput demo, replayed from a recorded run. Every file of the compiler is opened in one run (the open parses, indexes and skips every statement, serially), then typed by N reader threads, each taking the largest file left. The blocks share one clock, so more readers finish sooner; each N joins the plot when its last thread is done. Press Play, or drag across the lanes.
+The compiler's own sources, `compiler/src/dotty/tools/dotc/**/*.scala`: 491 files, 188k lines, opened in one run of the presentation compiler and typed by N reader threads. The open parses, indexes and skips every statement, serially; then each reader takes the largest file left. A recorded run, replayed. The blocks share one clock, so more readers finish sooner; each N joins the plot when its last thread is done. Press Play, or drag across the lanes.
 
 <div class="throughput"></div>
 
