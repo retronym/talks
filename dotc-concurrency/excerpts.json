@@ -114,7 +114,7 @@
    {
     "file": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "start": "private var myBaseClasses: Stamped",
-    "end": "myBaseClasses\\.cached:",
+    "end": "recur\\(tp2\\.baseClasses\\)",
     "hl": {
      "3": [
       "Stamped\\[PerPeriod"

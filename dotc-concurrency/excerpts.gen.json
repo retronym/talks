@@ -360,6 +360,50 @@
      {
       "n": 3570,
       "text": "  myBaseClasses.cached:"
+     },
+     {
+      "n": 3571,
+      "text": "    val bcs1 = tp1.baseClasses"
+     },
+     {
+      "n": 3572,
+      "text": "    val bcs1set = BaseClassSet(bcs1)"
+     },
+     {
+      "n": 3573,
+      "text": "    def recur(bcs2: List[ClassSymbol]): List[ClassSymbol] = bcs2 match {"
+     },
+     {
+      "n": 3574,
+      "text": "      case bc2 :: bcs2rest =>"
+     },
+     {
+      "n": 3575,
+      "text": "        if bcs1set.contains(bc2) then"
+     },
+     {
+      "n": 3576,
+      "text": "          if bc2.is(Trait) then recur(bcs2rest)"
+     },
+     {
+      "n": 3577,
+      "text": "          else bcs1"
+     },
+     {
+      "n": 3578,
+      "text": "        else bc2 :: recur(bcs2rest)"
+     },
+     {
+      "n": 3579,
+      "text": "      case nil => bcs1"
+     },
+     {
+      "n": 3580,
+      "text": "    }"
+     },
+     {
+      "n": 3581,
+      "text": "    recur(tp2.baseClasses)"
      }
     ],
     "hl": {
