@@ -84,11 +84,11 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Epoch invalidation
 
-<p class="lede">One atomic counter on the base. A concurrent base pulls; a batch base keeps the push, chosen once by a final field of the base.</p>
+<p class="lede">For the edge cases: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) The guard is one atomic counter on the base: a concurrent base pulls, a batch base keeps the push.</p>
 
 <div class="scenario" data-card="epoch"></div>
 
-> A cache computed from published scopes is used only while no published scope has changed since it was made.
+> A cache computed from scopes is used only while no published scope has changed since it was made, however a late store and a change interleave.
 
 ### Result stamps
 

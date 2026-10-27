@@ -403,6 +403,20 @@
     }
    },
    {
+    "file": "compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "start": "enterFlatClasses = Some \\{",
+    "end": "currentDecls\\.asOneChange",
+    "hl": {
+     "2": [
+      "currentDecls\\.extendAside",
+      "invalidateMemberCaches"
+     ],
+     "4": [
+      "currentDecls\\.extendAside"
+     ]
+    }
+   },
+   {
     "file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "start": "def isValidAt\\(phase: Phase\\)\\(using Context\\) =$",
     "end": "createdAt\\.runId == ctx\\.runId &&",

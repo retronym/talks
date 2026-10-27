@@ -365,7 +365,7 @@ body.lb-open { overflow: hidden; }
 .scenario.problem .scn-body::after { opacity: 1; }
 /* the label: what the screen shows */
 .scn-body::before {
-  content: "without the cog"; position: absolute; z-index: 4; right: 10px; bottom: 10px; pointer-events: none; opacity: 0;
+  content: "without the cog"; position: absolute; z-index: 4; right: 12px; top: -12px; pointer-events: none; opacity: 0;
   font: 600 10.5px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
   color: var(--bad); background: var(--bad-bg); border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); border-radius: 4px; padding: 4px 7px;
   transition: opacity calc(.5s / var(--spd, 1));
@@ -589,11 +589,11 @@ Each card starts from the same file and takes one cog away: first the problem, t
 
 ### Epoch invalidation
 
-<p class="lede">One atomic counter on the base. A concurrent base pulls; a batch base keeps the push, chosen once by a final field of the base.</p>
+<p class="lede">For the edge cases: once published, a scope changes only in a few places, such as a package's flat classes entered when first needed, or a classfile completer deleting the symbols it found absent. (The synthetic function classes are kept beside <code>scala</code>'s scope, not entered into it.) The guard is one atomic counter on the base: a concurrent base pulls, a batch base keeps the push.</p>
 
 <div class="scenario" data-card="epoch"></div>
 
-> A cache computed from published scopes is used only while no published scope has changed since it was made.
+> A cache computed from scopes is used only while no published scope has changed since it was made, however a late store and a change interleave.
 
 ### Result stamps
 
@@ -2395,53 +2395,72 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
   },
   "epoch": {
    "lines": [
-    3,
+    1,
     6
    ],
+   "symbolDefs": [
+    {
+     "id": "scala",
+     "label": "package scala",
+     "line": 3,
+     "tok": "BigDecimal"
+    },
+    {
+     "id": "Item",
+     "line": 3,
+     "tok": "Item"
+    }
+   ],
    "symbols": [
-    "Item"
+    "scala"
    ],
    "threads": [
-    "T2",
-    "T3"
+    "T1",
+    "T2"
    ],
    "frames": [
     {
      "group": "Problem",
      "beat": "1",
-     "title": "Push: an invalidation walks the dependents",
-     "caption": "Item's member names are computed from its parents'. With one thread, a cache registers with the caches it was computed from, and an invalidation walks those registrations and clears each dependent.",
+     "title": "A cache built from a scope",
+     "caption": "To resolve BigDecimal, T2 needs the names in package scala, and builds the package's member-name set from its scope: a cache that also answers \"no such member\" quickly.",
      "run": "run 1",
      "units": {
-      "s3": "typed"
+      "s3": "T2"
      },
      "syms": {
-      "Item": "done"
+      "scala": "done"
      },
+     "ticks": [
+      {
+       "sym": "scala",
+       "t": "T2"
+      }
+     ],
      "lanes": {
       "T2": [
        "typing",
-       "background pass"
+       "builds scala's member names from its scope"
       ],
-      "T3": [
-       "idle",
-       ""
+      "T1": [
+       "typing",
+       "hover"
       ]
      },
      "heap": {
-      "title": "caches computed from other caches",
+      "title": "package scala's member names",
       "cols": [
-       "cache",
-       "state"
+       "",
+       "value"
       ],
       "rows": [
        [
-        "Product's member names",
-        "valid"
+        "scope",
+        "the classes entered so far"
        ],
        [
-        "Item's member names",
-        "valid, registered with Product's"
+        "member names",
+        "~being built by T2"
        ]
       ]
      }
@@ -2449,38 +2468,38 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     {
      "group": "Problem",
      "beat": "2",
-     "title": "A store races the walk",
-     "caption": "With several readers, T3 changes a published scope and walks the dependents while T2 is computing Item's names from the old ones. T2 registers after the walk has passed. Nothing will ever clear its stale cache, and lookups answer from the old structure.",
+     "title": "The scope grows; the store lands after",
+     "caption": "An edge case: a published scope rarely changes. One that does is a package's flat classes, entered once, the first time they are needed. T1 enters scala's into its scope and invalidates the package's caches. T2, still working from the old scope, stores its set after that invalidation. The stale set stays: the new classes read as absent for the rest of the run.",
      "ticks": [
       {
-       "sym": "Item",
-       "t": "T2"
+       "sym": "scala",
+       "t": "T1"
       }
      ],
      "lanes": {
-      "T3": [
-       "writer",
-       "changes a published scope, walks the dependents"
+      "T1": [
+       "typing",
+       "enters scala's remaining classes, invalidates"
       ],
       "T2": [
        "failed",
-       "stores Item's names after the walk"
+       "stores its set after the invalidation"
       ]
      },
      "heap": {
-      "title": "caches computed from other caches",
+      "title": "package scala's member names",
       "cols": [
-       "cache",
-       "state"
+       "",
+       "value"
       ],
       "rows": [
        [
-        "Product's member names",
-        "+cleared"
+        "scope",
+        "+the classes, and the late ones"
        ],
        [
-        "Item's member names",
-        "!stale, and still marked valid"
+        "member names",
+        "!the old set, stored last: valid"
        ]
       ]
      }
@@ -2488,32 +2507,32 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     {
      "group": "Mechanism",
      "beat": "3",
-     "title": "Pull: a cache records the epoch",
-     "caption": "With several readers, nothing registers and nothing is walked. The base keeps one structure epoch. A cache records the epoch when it is made, and it is valid while the epoch has not moved.",
+     "title": "A cache records the epoch it was made at",
+     "caption": "With several readers, invalidation pulls instead of pushing. The base keeps one structure epoch. A cache records the epoch when it is made and is valid only while the epoch has not moved.",
      "lanes": {
-      "T3": [
-       "idle",
-       ""
+      "T1": [
+       "typing",
+       "hover"
       ],
       "T2": [
        "typing",
-       "computes Item's names"
+       "builds scala's member names"
       ]
      },
      "heap": {
-      "title": "the structure epoch",
+      "title": "package scala's member names",
       "cols": [
        "",
-       "epoch"
+       "value"
       ],
       "rows": [
        [
-        "the base",
+        "structure epoch",
         "7"
        ],
        [
-        "Item's member names",
-        "made at 7"
+        "member names",
+        "~being built, made at 7"
        ]
       ]
      }
@@ -2521,37 +2540,37 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     {
      "group": "Mechanism",
      "beat": "4",
-     "title": "A change moves the epoch",
-     "caption": "A change to a scope that has been published, made in a write action or under the scope's own claim, moves the epoch. T2's store still lands, but it carries the epoch it was made at.",
+     "title": "A change to a published scope moves the epoch",
+     "caption": "Entering into a scope that is already published moves the epoch. T2's store still lands after it, but carries the epoch it was made at.",
+     "ticks": [
+      {
+       "sym": "scala",
+       "t": "T1"
+      }
+     ],
      "lanes": {
-      "T3": [
-       "writer",
-       "changes a published scope"
+      "T1": [
+       "typing",
+       "enters scala's remaining classes"
       ],
       "T2": [
        "typing",
-       "stores Item's names"
+       "stores its set"
       ]
      },
-     "ticks": [
-      {
-       "sym": "Item",
-       "t": "T2"
-      }
-     ],
      "heap": {
-      "title": "the structure epoch",
+      "title": "package scala's member names",
       "cols": [
        "",
-       "epoch"
+       "value"
       ],
       "rows": [
        [
-        "the base",
+        "structure epoch",
         "+8"
        ],
        [
-        "Item's member names",
+        "member names",
         "!made at 7: stale"
        ]
       ]
@@ -2560,37 +2579,37 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
     {
      "group": "Fixed",
      "beat": "5",
-     "title": "The next read recomputes",
-     "caption": "The next read finds the epoch moved and computes the names again from the new structure. There is no list to walk and no store to race. A stale store lands harmlessly: its own epoch marks it stale.",
+     "title": "The next read builds it again",
+     "caption": "The next reader to need the names finds the epoch moved and builds the set from the scope as it is now. However the store and the change interleave, a stale set is never used.",
+     "ticks": [
+      {
+       "sym": "scala",
+       "t": "T2"
+      }
+     ],
      "lanes": {
-      "T3": [
-       "idle",
+      "T1": [
+       "done",
        ""
       ],
       "T2": [
        "done",
-       "reads Item's names"
+       "resolves BigDecimal"
       ]
      },
-     "ticks": [
-      {
-       "sym": "Item",
-       "t": "T2"
-      }
-     ],
      "heap": {
-      "title": "the structure epoch",
+      "title": "package scala's member names",
       "cols": [
        "",
-       "epoch"
+       "value"
       ],
       "rows": [
        [
-        "the base",
+        "structure epoch",
         "8"
        ],
        [
-        "Item's member names",
+        "member names",
         "+made at 8: valid"
        ]
       ]
@@ -4345,6 +4364,54 @@ Every N gives the same diagnostics as one reader, file for file, with no back-of
      "4": [
       1,
       3
+     ]
+    }
+   },
+   {
+    "file": "SymbolLoaders.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "lines": [
+     {
+      "n": 346,
+      "text": "enterFlatClasses = Some { () =>"
+     },
+     {
+      "n": 347,
+      "text": "  if ctx.base.concurrent then"
+     },
+     {
+      "n": 348,
+      "text": "    currentDecls.extendAside(aside => inContext(ctx){enterClasses(root, packageName, flat = true, target = aside)})"
+     },
+     {
+      "n": 350,
+      "text": "    root.asClass.invalidateMemberCaches()"
+     },
+     {
+      "n": 351,
+      "text": "    enterFlatClasses = None"
+     },
+     {
+      "n": 352,
+      "text": "  else"
+     },
+     {
+      "n": 353,
+      "text": "    enterFlatClasses = None"
+     },
+     {
+      "n": 354,
+      "text": "    currentDecls.asOneChange(inContext(ctx){enterClasses(root, packageName, flat = true)})"
+     }
+    ],
+    "hl": {
+     "2": [
+      2,
+      3
+     ],
+     "4": [
+      2
      ]
     }
    },

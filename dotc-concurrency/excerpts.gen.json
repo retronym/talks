@@ -1350,6 +1350,54 @@
     }
    },
    {
+    "file": "SymbolLoaders.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "lines": [
+     {
+      "n": 346,
+      "text": "enterFlatClasses = Some { () =>"
+     },
+     {
+      "n": 347,
+      "text": "  if ctx.base.concurrent then"
+     },
+     {
+      "n": 348,
+      "text": "    currentDecls.extendAside(aside => inContext(ctx){enterClasses(root, packageName, flat = true, target = aside)})"
+     },
+     {
+      "n": 350,
+      "text": "    root.asClass.invalidateMemberCaches()"
+     },
+     {
+      "n": 351,
+      "text": "    enterFlatClasses = None"
+     },
+     {
+      "n": 352,
+      "text": "  else"
+     },
+     {
+      "n": 353,
+      "text": "    enterFlatClasses = None"
+     },
+     {
+      "n": 354,
+      "text": "    currentDecls.asOneChange(inContext(ctx){enterClasses(root, packageName, flat = true)})"
+     }
+    ],
+    "hl": {
+     "2": [
+      2,
+      3
+     ],
+     "4": [
+      2
+     ]
+    }
+   },
+   {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
