@@ -315,19 +315,30 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .dgroup.g-problem .dot.on { background: var(--bad); border-color: var(--bad); }
 .dgroup.g-fixed .dot.on { background: var(--typed); border-color: var(--typed); }
 .card .scenario + blockquote { margin-top: 14px; }
+/* The scrubber and the speed control */
+.scrub { position: relative; height: 22px; margin: 4px 0 10px; cursor: ew-resize; touch-action: none; user-select: none; }
+.scrub-track { position: absolute; left: 0; right: 0; top: 9px; height: 4px; display: flex; gap: 3px; }
+.scrub-track .seg { position: relative; flex: 1; background: var(--rule); border-radius: 2px; }
+.scrub-track .seg i { position: absolute; top: -2px; width: 1px; height: 8px; background: var(--muted); opacity: .6; }
+.scrub-thumb { position: absolute; top: 3px; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+.scrub:hover .scrub-track .seg { background: color-mix(in srgb, var(--rule) 60%, var(--muted)); }
+.speed { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin: -6px 0 14px; font-size: 12px; }
+.speed span { color: var(--muted); margin-right: 4px; }
+.speed button { font: inherit; font-size: 11.5px; padding: 2px 6px; border-radius: 5px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
+.speed button.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
-.sym { transition: background .45s, box-shadow .45s, text-decoration-color .45s, outline-color .3s; }
-.badge { transition: background .45s, color .45s, border-color .45s; }
+.sym { transition: background calc(.45s / var(--spd, 1)), box-shadow calc(.45s / var(--spd, 1)), text-decoration-color calc(.45s / var(--spd, 1)), outline-color calc(.3s / var(--spd, 1)); }
+.badge { transition: background calc(.45s / var(--spd, 1)), color calc(.45s / var(--spd, 1)), border-color calc(.45s / var(--spd, 1)); }
 .lane .st, .lane .act { transition: color .3s; }
 .scenario.instant *, .scenario.instant { transition: none !important; }
 .motion .sym.pulse { animation: k-pulse 1.2s ease-in-out infinite; }
-.motion .sym.ring { animation: k-ring .55s cubic-bezier(.2,.8,.3,1) both; }
-.motion .sym.ring.pulse { animation: k-ring .55s cubic-bezier(.2,.8,.3,1) both, k-pulse 1.2s ease-in-out infinite; }
-.motion .scenario .pop { animation: k-pop2 .5s cubic-bezier(.2,.8,.3,1.25) both; }
+.motion .sym.ring { animation: k-ring calc(.55s / var(--spd, 1)) cubic-bezier(.2,.8,.3,1) both; }
+.motion .sym.ring.pulse { animation: k-ring calc(.55s / var(--spd, 1)) cubic-bezier(.2,.8,.3,1) both, k-pulse 1.2s ease-in-out infinite; }
+.motion .scenario .pop { animation: k-pop2 calc(.5s / var(--spd, 1)) cubic-bezier(.2,.8,.3,1.25) both; }
 .motion .scenario .fade { animation: k-in .45s ease-out both; }
-.motion .scenario .flash, .motion .scenario tr.flash td { animation: k-flash 1.3s ease-out both; }
+.motion .scenario .flash, .motion .scenario tr.flash td { animation: k-flash calc(1.3s / var(--spd, 1)) ease-out both; }
 .motion .scenario tr.flash td { animation-delay: inherit; }
-.motion .scenario .l.flash .code { animation: k-flash 1.3s ease-out both; }
+.motion .scenario .l.flash .code { animation: k-flash calc(1.3s / var(--spd, 1)) ease-out both; }
 .motion .scenario .ed.blink { animation: k-blink2 .45s ease-out; }
 @keyframes k-pulse { 0%, 100% { outline-offset: 2px; } 50% { outline-offset: 5px; } }
 @keyframes k-ring { from { outline-offset: 12px; outline-color: transparent; } to { outline-offset: 2px; } }
@@ -395,11 +406,12 @@ body.focus .scn-cap { font-size: 18px; }
 <div class="layout">
   <nav class="toc" aria-label="Contents">
     <div class="title">Several readers, one symbol table</div>
-    <div class="hint">j / k or ← / → to move · , / . to step a figure · f focus mode · t theme</div>
+    <div class="hint">j / k or ← / → move between cards · , / . step · &lt; / &gt; one change at a time · p play · [ / ] speed · drag the bar under a scenario to scrub · f focus mode · t theme</div>
     <div class="controls">
       <button id="btn-focus" type="button">Focus mode</button>
       <button id="btn-theme" type="button">Theme</button>
     </div>
+    <div class="speed" title="animation speed ([ / ])"><span>Speed</span><button type="button" data-s="0.25">¼×</button><button type="button" data-s="0.5">½×</button><button type="button" data-s="1">1×</button><button type="button" data-s="1.5">1½×</button><button type="button" data-s="2">2×</button><button type="button" data-s="3">3×</button></div>
     <ol id="toc"></ol>
   </nav>
   <main id="content"></main>
@@ -2159,14 +2171,27 @@ Each card starts from the same file and takes one cog away: first the problem, t
     const host = main.querySelector('.scenario[data-card="' + (CARD_OF[cog] || cog) + '"]');
     return host ? host.closest('.card') : null;
   }
-  // The player builds the editor, panel and lanes once and then updates them in place, so that a step forward is
-  // a transition from the previous state. Within a step the changes play in the order the frame lists its symbols
-  // (the order of the trace): each symbol has a slot, a thread's tick and its lane change share the slot of the
-  // symbol it touches, and the hover popup comes last. A step back, a jump or a reset shows the state at once.
-  const SLOT = 420, FIRST = 250;
+  // The player builds the editor, panel and lanes once, and paints the state at a time: frame i, t ms into it.
+  // Within a frame the changes come in the order the frame lists its symbols (the order of the trace): each symbol
+  // has a slot, a thread's tick and its lane change share the slot of the symbol it touches, the fields table's
+  // rows follow, and the hover popup comes last. Playing advances t (scaled by the global speed) and the CSS
+  // transitions carry each change; stepping, sub-stepping and scrubbing paint a time directly.
+  const SLOT = 420, FIRST = 250, HOLD = 600;
+  const EMPTY = { units: {}, syms: {}, lanes: {}, run: '', edited: false, heap: null };
+  let speed = 1;
+  try { speed = +localStorage.getItem('dotc-concurrency-speed') || 1; } catch (e) {}
+  const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3];
+  function setSpeed(x) {
+    speed = x;
+    document.documentElement.style.setProperty('--spd', String(x));
+    try { localStorage.setItem('dotc-concurrency-speed', String(x)); } catch (e) {}
+    document.querySelectorAll('.speed button').forEach(b => b.classList.toggle('on', +b.dataset.s === x));
+  }
+  function nudgeSpeed(d) { const j = SPEEDS.indexOf(speed); setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (j < 0 ? 2 : j) + d))]); }
   function buildPlayer(host, sc) {
     const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
     const [from, to] = sc.lines || [1, sc.code.length];
+    const N = sc.frames.length;
     host.innerHTML =
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
       '<div class="scn-body">' +
@@ -2178,7 +2203,8 @@ Each card starts from the same file and takes one cog away: first the problem, t
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play from here">Play</button></div>';
+      '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>';
     const $ = q => host.querySelector(q);
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
     let group = null;
@@ -2186,7 +2212,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
       const g = f.group || (f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass');
       if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup g-' + g.toLowerCase().replace(/\W+/g, '-'); d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
       const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = f.beat; b.title = f.title;
-      b.onclick = () => { stop(); show(i); };
+      b.onclick = () => { stop(); go(i, Infinity, false); };
       dots.lastChild.querySelector('.drow').appendChild(b);
     });
 
@@ -2199,17 +2225,135 @@ Each card starts from the same file and takes one cog away: first the problem, t
       const l = document.createElement('div'); l.className = 'l';
       l.innerHTML = '<span class="gb"></span><span class="no">' + n + '</span><span class="code"></span><span class="ov">' + (sy ? '<span class="badge"></span>' : '') + '</span>';
       linesEl.appendChild(l);
-      lines.push({ n, l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null });
+      lines.push({ n, l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null, v: null, u: null, tk: null });
     });
     const lanes = {};
     $('.lanes').innerHTML = sc.threads.map(t => '<div class="lane" data-t="' + t.id + '">' + threadChip(t.id) + '<span class="role">' + esc(t.role) + '</span><span class="st"></span><span class="act"></span></div>').join('');
-    host.querySelectorAll('.lane').forEach(el => { lanes[el.dataset.t] = { el, st: el.querySelector('.st'), act: el.querySelector('.act') }; });
+    host.querySelectorAll('.lane').forEach(el => { lanes[el.dataset.t] = { el, st: el.querySelector('.st'), act: el.querySelector('.act'), v: null }; });
     const rows = {};
     if (sc.symbols.length) {
       $('.syms tbody').innerHTML = sc.symbols.map(x => '<tr data-s="' + x.id + '"><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge"></span></td><td class="own"></td><td class="wt"></td></tr>').join('');
       host.querySelectorAll('.syms tr[data-s]').forEach(tr => { rows[tr.dataset.s] = { tr, badge: tr.querySelector('.badge'), own: tr.querySelector('.own'), wt: tr.querySelector('.wt') }; });
     }
 
+    // Each frame's timeline: the state it starts from, its own, and when each change lands.
+    const states = [], timelines = [];
+    function stateOf(i) { return states[i] || (states[i] = stateAt(sc, i)); }
+    function timeline(i) {
+      if (timelines[i]) return timelines[i];
+      const f = sc.frames[i], s = stateOf(i), was = i === 0 ? EMPTY : f.reset != null ? stateOf(f.reset) : stateOf(i - 1);
+      const order = Object.keys(f.syms || {}).filter(x => x !== '*');
+      sc.symbols.forEach(x => { if (!order.includes(x.id) && (s.syms[x.id] || 'lazy') !== (was.syms[x.id] || 'lazy')) order.push(x.id); });
+      (f.ticks || []).forEach(t => { if (!order.includes(t.sym)) order.push(t.sym); });
+      const slot = id => order.includes(id) ? FIRST + SLOT * order.indexOf(id) : 0;
+      let end = FIRST + SLOT * order.length;
+      const lane = {};
+      sc.threads.forEach(th => { const t = (f.ticks || []).find(x => x.t === th.id); lane[th.id] = t ? slot(t.sym) : 0; });
+      const rowAt = [];
+      if (s.heap && was.heap && was.heap.title === s.heap.title) {
+        let n = 0;
+        s.heap.rows.forEach((r, j) => { rowAt[j] = JSON.stringify(r) !== JSON.stringify(was.heap.rows[j]) ? end + SLOT * n++ : 0; });
+        end += SLOT * n;
+      }
+      const marks = [...new Set([0, ...order.map(slot), ...Object.values(lane), ...rowAt, end])].sort((a, b) => a - b);
+      return (timelines[i] = { f, s, was, slot, lane, rowAt, end, marks, reset: f.reset != null });
+    }
+    // The state at t ms into frame i.
+    function at(i, t) {
+      const tl = timeline(i), { s, was, f } = tl;
+      const m = { units: s.units, run: s.run, edited: s.edited, syms: {}, lanes: {}, heap: s.heap };
+      sc.allSymbols.forEach(x => { m.syms[x.id] = t >= tl.slot(x.id) ? s.syms[x.id] : was.syms[x.id]; });
+      sc.threads.forEach(th => { m.lanes[th.id] = t >= tl.lane[th.id] ? s.lanes[th.id] : was.lanes[th.id]; });
+      if (s.heap && tl.rowAt.length) m.heap = { title: s.heap.title, cols: s.heap.cols, rows: s.heap.rows.map((r, j) => t >= tl.rowAt[j] ? r : was.heap.rows[j]) };
+      m.ticks = (f.ticks || []).filter(x => t >= tl.slot(x.sym));
+      m.popup = f.popup && t >= tl.end ? f.popup : null;
+      return m;
+    }
+
+    // Restart a keyframe animation on `el`.
+    function kick(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+    let painted = { i: -1, key: null, heapTitle: null };
+    function paint(i, t, animate) {
+      const tl = timeline(i), f = tl.f;
+      const key = i + ':' + tl.marks.filter(x => x <= t).length;
+      if (key === painted.key) return;
+      animate = animate && motionOn();
+      host.classList.toggle('instant', !animate);
+      if (i !== painted.i) {
+        host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
+        if (!animate && painted.i >= 0 && motionOn()) kick($('.ed'), 'blink');
+        $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
+        $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
+          const linked = !sc.id && cardLink(c);
+          return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
+        }).join('');
+        $('.scn-cap').textContent = f.caption;
+        if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
+        dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
+      }
+      const m = at(i, t);
+      $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : '');
+      const ticks = {}; m.ticks.forEach(x => { ticks[x.sym] = x; });
+      lines.forEach(ln => {
+        let text = sc.code[ln.n - 1];
+        if (m.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
+        if (text !== ln.text) {
+          ln.code.innerHTML = highlight(text, ln.sy) || ' ';
+          ln.sym = ln.code.querySelector('.sym');
+          if (animate && ln.text !== null) kick(ln.l, 'flash');
+          ln.text = text; ln.v = null;
+        }
+        const u = unitFor(ln.n, m) || '';
+        if (ln.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.title = u; ln.u = u; }
+        ln.l.classList.toggle('held', !!(ln.sy && ln.sy.id === 'hold' && /^prog/.test(m.syms.hold || '')));
+        if (!ln.sy) return;
+        const id = ln.sy.id, v = m.syms[id] || 'lazy', p = parseSym(v), t2 = ticks[id];
+        const tk = t2 ? t2.t + (t2.pulse ? '~' : '') : '', squig = !!(f.squiggle && f.squiggle.sym === id && t >= tl.end);
+        const look = v + '|' + tk + '|' + squig;
+        if (ln.v === look) return;
+        const changed = ln.v !== null && ln.v.split('|')[0] !== v, newTick = tk && (ln.v === null || ln.v.split('|')[1] !== tk);
+        ln.v = look;
+        ln.sym.className = 'sym s-' + p.st + (p.owner ? ' o-' + p.owner : '') + (tk ? ' tick tk-' + t2.t : '') + (t2 && t2.pulse ? ' pulse' : '') + (squig ? ' squig' : '');
+        if (animate && newTick) kick(ln.sym, 'ring');
+        ln.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
+        ln.badge.textContent = badgeText(p);
+        if (animate && changed) kick(ln.badge, 'pop');
+        const r = rows[id];
+        if (!r) return;
+        r.tr.classList.toggle('hot', !!t2);
+        r.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
+        r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st === 'busy' ? 'completing' : p.st;
+        r.own.innerHTML = p.owner ? threadChip(p.owner) : '';
+        r.wt.innerHTML = p.waiters.map(threadChip).join(' ');
+        if (animate && changed) kick(r.tr, 'flash');
+      });
+      sc.threads.forEach(th => {
+        const l = m.lanes[th.id] || ['idle', ''], el = lanes[th.id], v = l.join('|');
+        if (el.v === v) return;
+        if (animate && el.v !== null) kick(el.el, 'flash');
+        el.v = v;
+        el.el.classList.toggle('idle', l[0] === 'idle'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1];
+      });
+      const hw = $('.heap-wrap'), hp = m.heap;
+      hw.hidden = !hp;
+      if (hp) {
+        const tb = $('.heap tbody');
+        if (painted.heapTitle !== hp.title || tb.children.length !== hp.rows.length) {
+          $('.heap-h').textContent = hp.title;
+          $('.heap thead').innerHTML = '<tr>' + hp.cols.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr>';
+          tb.innerHTML = hp.rows.map(() => '<tr></tr>').join('');
+          painted.heapTitle = hp.title;
+        }
+        hp.rows.forEach((r, j) => {
+          const tr = tb.children[j], html = r.map(cell).join('');
+          if (tr.innerHTML !== html) { const fresh = !tr.innerHTML; tr.innerHTML = html; if (animate && !fresh) kick(tr, 'flash'); }
+        });
+      } else painted.heapTitle = null;
+      if (m.popup) placePopup(m.popup, animate && !(painted.key && painted.key.startsWith(i + ':') && !pop.hidden));
+      else { pop.hidden = true; pop.classList.remove('pop'); }
+      painted.i = i; painted.key = key;
+      if (!animate) requestAnimationFrame(() => requestAnimationFrame(() => host.classList.remove('instant')));
+    }
     function unitFor(line, s) {
       let best = null;
       sc.units.forEach(u => {
@@ -2217,108 +2361,6 @@ Each card starts from the same file and takes one cog away: first the problem, t
         if (!best || (u.lines[1] - u.lines[0]) < (best.lines[1] - best.lines[0])) best = u;
       });
       return best ? s.units[best.id] : null;
-    }
-    // Restart a keyframe animation on `el`, starting `d` ms from now.
-    function kick(el, cls, d) { el.classList.remove(cls); void el.offsetWidth; el.style.animationDelay = d + 'ms'; el.classList.add(cls); }
-    function at(el, d) { el.style.transitionDelay = d + 'ms'; }
-
-    let k = -1, prev = null, timers = [];
-    function later(d, fn) { timers.push(setTimeout(fn, d)); }
-    function show(i, animate) {
-      i = Math.max(0, Math.min(sc.frames.length - 1, i));
-      const f = sc.frames[i], s = stateAt(sc, i);
-      animate = !!animate && prev && motionOn() && f.reset == null;
-      timers.forEach(clearTimeout); timers = [];
-      host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
-      host.classList.toggle('instant', !animate);
-      if (!animate && prev && motionOn()) kick($('.ed'), 'blink', 0);
-      const was = prev || { units: {}, syms: {}, lanes: {}, run: '', edited: null, heap: null };
-      k = i; prev = s;
-
-      $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
-      $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
-        const linked = !sc.id && cardLink(c);
-        return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
-      }).join('');
-      $('.scn-cap').textContent = f.caption;
-      $('.ed-run').textContent = s.run + (s.edited ? ' · edited' : '');
-      if (animate) { kick($('.scn-cap'), 'fade', 0); host.querySelectorAll('.cog').forEach((c, j) => kick(c, 'pop', 80 * j)); }
-
-      // The timeline: one slot per symbol, in the frame's order, then the symbols that changed without being listed.
-      const order = Object.keys(f.syms || {}).filter(x => x !== '*');
-      sc.symbols.forEach(x => { if (!order.includes(x.id) && (s.syms[x.id] || 'lazy') !== (was.syms[x.id] || 'lazy')) order.push(x.id); });
-      (f.ticks || []).forEach(t => { if (!order.includes(t.sym)) order.push(t.sym); });
-      const slot = id => animate ? FIRST + SLOT * Math.max(0, order.indexOf(id)) : 0;
-      let end = animate ? FIRST + SLOT * order.length : 0;
-
-      // Text: the edit is typed in at the start of the step.
-      lines.forEach(ln => {
-        let text = sc.code[ln.n - 1];
-        if (s.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
-        if (text !== ln.text) {
-          ln.code.innerHTML = highlight(text, ln.sy) || ' ';
-          ln.sym = ln.code.querySelector('.sym');
-          if (animate && ln.text !== null) kick(ln.l, 'flash', 0);
-          ln.text = text;
-        }
-      });
-      const ticks = {}; (f.ticks || []).forEach(t => { ticks[t.sym] = t; });
-      lines.forEach(ln => {
-        const u = unitFor(ln.n, s) || '';
-        if (ln.gb.dataset.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.dataset.u = u; ln.gb.title = u; at(ln.gb, 0); }
-        ln.l.classList.toggle('held', !!(ln.sy && ln.sy.id === 'hold' && /^prog/.test(s.syms.hold || '')));
-        if (!ln.sy) return;
-        const id = ln.sy.id, v = s.syms[id] || 'lazy', p = parseSym(v), changed = v !== (was.syms[id] || 'lazy') || !ln.sym.dataset.v;
-        const d = slot(id);
-        ln.sym.className = 'sym s-' + p.st + (p.owner ? ' o-' + p.owner : '');
-        ln.sym.dataset.v = v;
-        at(ln.sym, d);
-        const t = ticks[id];
-        if (t) { ln.sym.classList.add('tick', 'tk-' + t.t); if (t.pulse) ln.sym.classList.add('pulse'); if (animate) kick(ln.sym, 'ring', d); }
-        if (f.squiggle && f.squiggle.sym === id) ln.sym.classList.add('squig');
-        ln.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
-        if (changed && animate) { later(d, () => { ln.badge.textContent = badgeText(p); }); kick(ln.badge, 'pop', d); }
-        else ln.badge.textContent = badgeText(p);
-        const r = rows[id];
-        if (!r) return;
-        r.tr.classList.toggle('hot', !!t);
-        r.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
-        const fill = () => { r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st === 'busy' ? 'completing' : p.st; r.own.innerHTML = p.owner ? threadChip(p.owner) : ''; r.wt.innerHTML = p.waiters.map(threadChip).join(' '); };
-        if (changed && animate) { later(d, fill); kick(r.tr, 'flash', d); } else fill();
-      });
-
-      // Threads: a lane changes in the slot of the first symbol its thread touches in this step.
-      sc.threads.forEach(th => {
-        const l = s.lanes[th.id] || ['idle', ''], o = was.lanes[th.id] || ['idle', ''], el = lanes[th.id];
-        const t = (f.ticks || []).find(x => x.t === th.id);
-        const d = animate ? (t ? slot(t.sym) : 0) : 0;
-        const fill = () => { el.el.classList.toggle('idle', l[0] === 'idle'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1]; };
-        if (animate && (l[0] !== o[0] || l[1] !== o[1])) { later(d, fill); kick(el.el, 'flash', d); } else fill();
-      });
-
-      // Fields: a table of the memory the step is about; its rows change one slot each, after the symbols.
-      const hw = $('.heap-wrap'), hp = s.heap, hwas = was.heap;
-      hw.hidden = !hp;
-      if (hp) {
-        $('.heap-h').textContent = hp.title;
-        $('.heap thead').innerHTML = '<tr>' + hp.cols.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr>';
-        const tb = $('.heap tbody');
-        if (tb.children.length !== hp.rows.length || !hwas || hwas.title !== hp.title) tb.innerHTML = hp.rows.map(() => '<tr></tr>').join('');
-        let n = 0;
-        hp.rows.forEach((r, j) => {
-          const tr = tb.children[j], html = r.map(cell).join(''), old = hwas && hwas.title === hp.title ? JSON.stringify(hwas.rows[j]) : null;
-          if (animate && old !== null && old !== JSON.stringify(r)) { const d = end + SLOT * n++; later(d, () => { tr.innerHTML = html; }); kick(tr, 'flash', d); }
-          else tr.innerHTML = html;
-        });
-        end += SLOT * n;
-      }
-
-      // The hover popup answers last.
-      pop.hidden = true; pop.classList.remove('pop');
-      if (f.popup) later(end, () => placePopup(f.popup, animate));
-      dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === k));
-      if (!animate) requestAnimationFrame(() => requestAnimationFrame(() => host.classList.remove('instant')));
-      return end;
     }
     function placePopup(pp, animate) {
       const anchor = linesEl.querySelector('.sym[data-sym="' + pp.sym + '"]');
@@ -2335,38 +2377,111 @@ Each card starts from the same file and takes one cog away: first the problem, t
       const ed = $('.ed').getBoundingClientRect();
       pop.style.top = (r.bottom - ed.top + 4) + 'px';
       pop.style.left = Math.max(8, Math.min(ed.width - 280, left - ed.left)) + 'px';
-      if (animate) kick(pop, 'pop', 0);
+      if (animate) kick(pop, 'pop');
     }
 
-    // Play: step forward on a timer that leaves time to read the caption.
-    let playing = null;
-    function stop() { clearTimeout(playing); playing = null; $('.play').textContent = 'Play'; }
-    function tick() {
-      if (k >= sc.frames.length - 1) { stop(); return; }
-      const end = show(k + 1, true);
-      const words = sc.frames[k].caption.split(/\s+/).length;
-      playing = setTimeout(tick, end + Math.max(3500, words * 260));
+    // The scrubber: one equal segment per frame, its changes as ticks, and the hold after them.
+    const track = $('.scrub-track'), thumb = $('.scrub-thumb');
+    track.innerHTML = sc.frames.map((f, i) => {
+      const tl = timeline(i), span = tl.end + HOLD;
+      return '<div class="seg" title="' + esc(f.beat + ' ' + f.title) + '">' + tl.marks.filter(x => x > 0).map(x => '<i style="left:' + (100 * x / span).toFixed(2) + '%"></i>').join('') + '</div>';
+    }).join('');
+    function placeThumb() {
+      const tl = timeline(pos.i), span = tl.end + HOLD;
+      const frac = pos.t <= tl.end ? pos.t / span : (tl.end + HOLD * Math.min(1, (pos.t - tl.end) / Math.max(1, pos.dwell || HOLD))) / span;
+      thumb.style.left = (100 * (pos.i + Math.min(1, frac)) / N) + '%';
     }
-    $('.play').onclick = () => {
-      if (playing) { stop(); return; }
-      $('.play').textContent = 'Pause';
-      if (k >= sc.frames.length - 1) show(0);
-      playing = setTimeout(tick, 600);
-    };
-    $('.prev').onclick = () => { stop(); show(k - 1); };
-    $('.next').onclick = () => { stop(); show(k + 1, true); };
+    function fromX(x) {
+      const r = track.getBoundingClientRect(), p = Math.max(0, Math.min(N - 1e-6, (x - r.left) / r.width * N));
+      const i = Math.floor(p), tl = timeline(i);
+      return { i, t: Math.min(tl.end, (p - i) * (tl.end + HOLD)) };
+    }
+    let drag = false;
+    track.parentElement.addEventListener('pointerdown', e => { drag = true; stop(); track.parentElement.setPointerCapture(e.pointerId); const q = fromX(e.clientX); go(q.i, q.t, false); });
+    track.parentElement.addEventListener('pointermove', e => { if (!drag) return; const q = fromX(e.clientX); go(q.i, q.t, false); });
+    track.parentElement.addEventListener('pointerup', () => { drag = false; });
+
+    // Position and motion.
+    const pos = { i: 0, t: 0, dwell: 0 };
+    function go(i, t, animate) {
+      i = Math.max(0, Math.min(N - 1, i));
+      const tl = timeline(i);
+      pos.i = i; pos.t = Math.min(t, tl.end); pos.dwell = 0;
+      paint(i, pos.t, animate);
+      placeThumb();
+    }
+    let raf = null, mode = null, last = 0;
+    function dwellOf(i) { return Math.max(3500, sc.frames[i].caption.split(/\s+/).length * 260); }
+    function frame(now) {
+      const dt = (now - last) * speed; last = now;
+      const tl = timeline(pos.i);
+      pos.t += dt;
+      if (pos.t <= tl.end) paint(pos.i, pos.t, true);
+      else if (mode === 'step') { pos.t = tl.end; paint(pos.i, pos.t, true); placeThumb(); stop(); return; }
+      else {
+        paint(pos.i, tl.end, true);
+        pos.dwell = dwellOf(pos.i);
+        if (pos.t >= tl.end + pos.dwell) {
+          if (pos.i >= N - 1) { stop(); return; }
+          pos.i += 1; pos.t = 0;
+          const nt = timeline(pos.i);
+          if (nt.reset) painted.key = null;
+          paint(pos.i, 0, !nt.reset);
+        }
+      }
+      placeThumb();
+      raf = requestAnimationFrame(frame);
+    }
+    function start(m) { mode = m; last = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); $('.play').textContent = m === 'play' ? 'Pause' : 'Play'; }
+    function stop() { cancelAnimationFrame(raf); raf = null; mode = null; $('.play').textContent = 'Play'; }
+    // `.`: finish the step under way, or play the next one. `,`: the end of the step before.
+    function next() {
+      const tl = timeline(pos.i);
+      if (pos.t < tl.end) { start('step'); return; }
+      if (pos.i >= N - 1) return;
+      const nt = timeline(pos.i + 1);
+      go(pos.i + 1, 0, !nt.reset);
+      if (motionOn()) start('step'); else go(pos.i, Infinity, false);
+    }
+    function prev() { stop(); const tl = timeline(pos.i); if (pos.t > 0 && pos.t < tl.end) go(pos.i, 0, false); else go(pos.i - 1, Infinity, false); }
+    // `>` and `<`: one change at a time.
+    function sub(d) {
+      stop();
+      const tl = timeline(pos.i);
+      if (d > 0) {
+        const nx = tl.marks.find(x => x > pos.t);
+        if (nx !== undefined) go(pos.i, nx, true);
+        else if (pos.i < N - 1) go(pos.i + 1, 0, !timeline(pos.i + 1).reset);
+      } else {
+        const pv = [...tl.marks].reverse().find(x => x < pos.t);
+        if (pv !== undefined) go(pos.i, pv, false);
+        else if (pos.i > 0) go(pos.i - 1, Infinity, false);
+      }
+    }
+    function toggle() {
+      if (mode === 'play') { stop(); return; }
+      if (pos.i >= N - 1 && pos.t >= timeline(pos.i).end) go(0, 0, false);
+      start('play');
+    }
+    $('.play').onclick = toggle;
+    $('.prev').onclick = prev;
+    $('.next').onclick = () => { stop(); next(); };
     host.addEventListener('click', e => {
       const a = e.target.closest('a.cog[data-cog]'); if (!a) return;
       e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
     });
-    const p = { host, show: i => { stop(); show(i); }, step: d => { stop(); show(k + d, d > 0); }, relayout: () => show(k), get k() { return k; } };
+    const p = { host, show: i => { stop(); go(i, Infinity, false); }, next: () => { stop(); next(); }, prev, sub, toggle,
+      relayout: () => { painted.key = null; paint(pos.i, pos.t, false); placeThumb(); }, get k() { return pos.i; } };
     players.push(p);
-    show(0);
+    go(0, Infinity, false);
     return p;
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
   main.querySelectorAll('.scenario').forEach(h => buildPlayer(h, h.dataset.card ? cardScenarios[h.dataset.card] : scenario));
   window.addEventListener('resize', () => players.forEach(p => p.relayout()));
+  window.scenarioPlayers = players; // for checks from the console
+  setSpeed(speed);
+  document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
   // The cogs: what each one is for, and the steps of the scenario where it fires.
   const GEARS = [
     ['write', 'Edits run alone. The writer raises a sticky cancel and waits for readers to leave; a body edit re-indexes one member.'],
@@ -2511,10 +2626,12 @@ Each card starts from the same file and takes one cog away: first the problem, t
     else if (e.key === 'f') toggleFocus();
     else if (e.key === 't') toggleTheme();
     else if (e.key === 'Escape') document.body.classList.remove('focus');
-    else if (e.key === '.' || e.key === ',') {
-      const c = cards[current], d = e.key === '.' ? 1 : -1;
+    else if (e.key === '[' || e.key === ']') nudgeSpeed(e.key === ']' ? 1 : -1);
+    else if (['.', ',', '>', '<', 'p'].includes(e.key)) {
+      const c = cards[current];
       const p = c && players.find(q => c.contains(q.host));
-      if (p) p.step(d); else if (c && c.querySelector('figure.anim')) step(c.querySelector('figure.anim'), d);
+      if (p) { e.preventDefault(); ({ '.': p.next, ',': p.prev, '>': () => p.sub(1), '<': () => p.sub(-1), p: p.toggle })[e.key](); }
+      else if (c && c.querySelector('figure.anim') && (e.key === '.' || e.key === ',')) step(c.querySelector('figure.anim'), e.key === '.' ? 1 : -1);
     }
   });
   toc.addEventListener('click', e => {
