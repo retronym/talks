@@ -376,6 +376,37 @@ body.lb-open { overflow: hidden; }
 .scenario.problem .ed-lines .code, .scenario.problem .side { text-shadow: .6px 0 rgba(255, 40, 40, .35), -.6px 0 rgba(0, 170, 255, .35); }
 .motion .scenario.problem .scn-body::after { animation: k-crt 3.2s steps(1) infinite; }
 @keyframes k-crt { 0%, 100% { opacity: 1; } 47% { opacity: .82; } 48% { opacity: 1; } 83% { opacity: .9; } 84% { opacity: 1; } }
+/* The throughput race */
+.throughput { margin: 8px 0 0; }
+.tp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.tp-ctl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tp-ctl button { font: inherit; font-size: 13px; padding: 5px 14px; border-radius: 8px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); min-width: 72px; }
+.tp-ctl button:hover { border-color: var(--accent); }
+.tp-note { color: var(--muted); font-size: 13px; }
+.tp-grid { display: block; }
+.tp-side { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 14px; }
+@media (max-width: 900px) { .tp-side { grid-template-columns: minmax(0, 1fr); } }
+.tp-race svg, .tp-side svg { width: 100%; height: auto; display: block; }
+.tp-race { overflow-x: auto; }
+.tp-race svg { cursor: ew-resize; touch-action: pan-y; user-select: none; min-width: 720px; }
+.throughput text { font: 11px Inter, system-ui, sans-serif; fill: var(--muted); }
+.throughput .tpn { font-weight: 650; fill: var(--ink); }
+.tpbg { fill: var(--code-bg); }
+.tpopen { fill: var(--skip); opacity: .55; }
+.tpidle { fill: var(--rule); }
+.tpf0 { fill: var(--typed); } .tpf1 { fill: color-mix(in srgb, var(--typed) 70%, var(--card)); }
+.tpcursor { stroke: var(--accent); stroke-width: 1.5; }
+.throughput .tpclock { fill: var(--accent); font-weight: 650; }
+.tpref { stroke: var(--t2); stroke-dasharray: 4 3; }
+.throughput .tpreft { fill: var(--t2); }
+.throughput .tpdone { opacity: 0; fill: var(--ink); font-weight: 650; transition: opacity .3s; }
+.throughput .tpdone.on { opacity: 1; }
+.tpgrid { stroke: var(--rule); } .throughput .tpax { font-size: 10.5px; }
+.tpideal { stroke: var(--muted); stroke-dasharray: 3 3; }
+.tpseg { stroke: var(--accent); stroke-width: 2; opacity: 0; transition: opacity .3s; } .tpseg.on { opacity: 1; }
+.tppt { opacity: 0; transition: opacity .3s; } .tppt.on { opacity: 1; }
+.tppt circle { fill: var(--accent); } .throughput .tppt text { fill: var(--ink); font-weight: 650; }
+table.tp-table { font-size: 13px; margin: 0; } table.tp-table td.c-good { color: var(--typed); } table.tp-table td.c-bad { color: var(--bad); }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background calc(.45s / var(--spd, 1)), box-shadow calc(.45s / var(--spd, 1)), text-decoration-color calc(.45s / var(--spd, 1)), outline-color calc(.3s / var(--spd, 1)); }
 .badge { transition: background calc(.45s / var(--spd, 1)), color calc(.45s / var(--spd, 1)), border-color calc(.45s / var(--spd, 1)); }
@@ -472,6 +503,7 @@ body.focus .scn-cap { font-size: 18px; }
 <script type="text/markdown" id="talk-src">%%TALK%%</script>
 <script type="application/json" id="frames-src">%%FRAMES%%</script>
 <script type="application/json" id="excerpts-src">%%EXCERPTS%%</script>
+<script type="application/json" id="throughput-src">%%THROUGHPUT%%</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -1048,6 +1080,96 @@ body.focus .scn-cap { font-size: 18px; }
   let lastW = innerWidth;
   window.addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; players.forEach(p => p.relayout()); });
   window.scenarioPlayers = players; // for checks from the console
+
+  // 5c. The throughput race: the x-ray's demo, replayed from its recorded run. Every file of the compiler typed by N
+  // reader threads, one block of lanes per N on one clock, so more readers finish sooner; each N's point joins the
+  // speed-up plot when its last thread finishes. Replays at the global speed; drag across the lanes to scrub.
+  const tpData = JSON.parse(document.getElementById('throughput-src').textContent);
+  main.querySelectorAll('.throughput').forEach(host => {
+    const pts = tpData.points.filter(q => !q.failure);
+    if (!pts.length) { host.textContent = 'No throughput run recorded.'; return; }
+    const base = pts.find(q => q.n === 1).wallMs, maxWall = Math.max(...pts.map(q => q.wallMs));
+    const REPLAY = 10000; // ms of replay for the slowest N, at speed 1
+    const W = 1100, L = 50, R = 96, lane = 8, gap = 2, blockGap = 14, top = 24;
+    const x = ms => L + (ms / maxWall) * (W - L - R);
+    let y = top, g = '', clips = '', ends = [];
+    pts.forEach((q, k) => {
+      const h = q.lanes.length * (lane + gap);
+      clips += '<clipPath id="tpc' + k + '"><rect class="tpclip" x="' + L + '" y="' + (y - 2) + '" width="0" height="' + (h + 4) + '"/></clipPath>';
+      g += '<text class="tpn" x="' + (L - 8) + '" y="' + (y + h / 2 + 4) + '" text-anchor="end">N=' + q.n + '</text>';
+      g += '<rect class="tpbg" x="' + L + '" y="' + (y - 2) + '" width="' + (x(q.wallMs) - L) + '" height="' + (h + 2) + '"/>';
+      g += '<g clip-path="url(#tpc' + k + ')">';
+      q.lanes.forEach((files, ti) => {
+        const ly = y + ti * (lane + gap);
+        g += '<rect class="tpopen" x="' + x(0) + '" y="' + ly + '" width="' + (x(q.openMs) - x(0)) + '" height="' + lane + '"><title>the open: parse, index and skip every statement (serial)</title></rect>';
+        files.forEach(([f, a, b], i) => { g += '<rect class="tpf' + (i % 2) + ' tt' + (ti % 8) + '" x="' + x(a) + '" y="' + ly + '" width="' + Math.max(0.6, x(b) - x(a)) + '" height="' + lane + '"><title>' + esc(f) + ': ' + Math.round(b - a) + ' ms</title></rect>'; });
+        const end = files.length ? files[files.length - 1][2] : q.openMs;
+        if (end < q.wallMs) g += '<rect class="tpidle" x="' + x(end) + '" y="' + ly + '" width="' + (x(q.wallMs) - x(end)) + '" height="' + lane + '"/>';
+      });
+      g += '</g>';
+      g += '<text class="tpdone" data-k="' + k + '" x="' + (x(q.wallMs) + 6) + '" y="' + (y + h / 2 + 4) + '">' + (q.wallMs / 1000).toFixed(1) + ' s · ' + (base / q.wallMs).toFixed(1) + '×</text>';
+      ends.push(q.wallMs);
+      y += h + blockGap;
+    });
+    const H = y + 6;
+    if (tpData.batchMs > 0 && tpData.batchMs < maxWall * 1.02) g += '<line class="tpref" x1="' + x(tpData.batchMs) + '" y1="' + (top - 10) + '" x2="' + x(tpData.batchMs) + '" y2="' + (H - 10) + '"/><text class="tpreft" x="' + x(tpData.batchMs) + '" y="' + (top - 12) + '" text-anchor="middle">batch typer, one thread</text>';
+    g += '<line class="tpcursor" x1="' + L + '" y1="' + (top - 6) + '" x2="' + L + '" y2="' + (H - 10) + '"/><text class="tpclock" x="' + L + '" y="' + (top - 12) + '">0.0 s</text>';
+    // the speed-up plot
+    const PW = 300, PH = 236, PL = 34, PR = 26, PT = 24, PB = 30, maxN = Math.max(...pts.map(q => q.n));
+    const maxY = Math.ceil(Math.max(maxN, ...pts.map(q => base / q.wallMs)));
+    const px = n => PL + (n / maxN) * (PW - PL - PR), py = v => PH - PB - (v / maxY) * (PH - PT - PB);
+    let pg = '';
+    for (let v = 0; v <= maxY; v += maxY > 8 ? 2 : 1) pg += '<line class="tpgrid" x1="' + PL + '" y1="' + py(v) + '" x2="' + (PW - PR) + '" y2="' + py(v) + '"/><text class="tpax" x="' + (PL - 5) + '" y="' + (py(v) + 3) + '" text-anchor="end">' + v + '</text>';
+    pts.forEach(q => { pg += '<text class="tpax" x="' + px(q.n) + '" y="' + (PH - PB + 14) + '" text-anchor="middle">' + q.n + '</text>'; });
+    pg += '<text class="tpax" x="' + ((PL + PW - PR) / 2) + '" y="' + (PH - 4) + '" text-anchor="middle">reader threads</text><text class="tpax" x="4" y="10">speed-up ×</text>';
+    pg += '<line class="tpideal" x1="' + px(0) + '" y1="' + py(0) + '" x2="' + px(Math.min(maxN, maxY)) + '" y2="' + py(Math.min(maxN, maxY)) + '"><title>linear speed-up</title></line>';
+    pts.forEach((q, k) => {
+      if (k > 0) { const p0 = pts[k - 1]; pg += '<line class="tpseg" data-k="' + k + '" x1="' + px(p0.n) + '" y1="' + py(base / p0.wallMs) + '" x2="' + px(q.n) + '" y2="' + py(base / q.wallMs) + '"/>'; }
+      pg += '<g class="tppt" data-k="' + k + '"><circle cx="' + px(q.n) + '" cy="' + py(base / q.wallMs) + '" r="4"/><text x="' + px(q.n) + '" y="' + (py(base / q.wallMs) - 8) + '" text-anchor="middle">' + (base / q.wallMs).toFixed(1) + '×</text></g>';
+    });
+    const rows = pts.map(q => '<tr><td>' + q.n + '</td><td>' + (q.wallMs / 1000).toFixed(2) + '</td><td>' + (base / q.wallMs).toFixed(2) + '×</td><td>' + (q.workerCpuMs / 1000).toFixed(1) + '</td><td>' + q.rootWaits + ' / ' + Math.round(q.rootWaitMs) + ' ms</td><td class="' + (q.differ ? 'c-bad' : 'c-good') + '">' + q.differ + '</td><td>' + q.backoffs + '</td><td>' + q.cyclesRaised + '</td></tr>').join('');
+    host.innerHTML =
+      '<div class="tp-head"><div class="tp-ctl"><button type="button" class="tp-play">Play</button><span class="tp-note">' + tpData.files + ' files of the compiler · ' + tpData.processors + ' processors · the open is serial, then each reader takes the largest file left</span></div></div>' +
+      '<div class="tp-grid"><div class="tp-race"><svg viewBox="0 0 ' + W + ' ' + H + '"><defs>' + clips + '</defs>' + g + '</svg></div>' +
+      '<div class="tp-side"><svg viewBox="0 0 ' + PW + ' ' + PH + '">' + pg + '</svg>' +
+      '<table class="symtab tp-table"><thead><tr><th>N</th><th>wall s</th><th>speed-up</th><th>CPU s</th><th>root waits</th><th>files differ</th><th>back-offs</th><th>cycles</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    const clipR = [...host.querySelectorAll('.tpclip')], done = [...host.querySelectorAll('.tpdone')], ptsEl = [...host.querySelectorAll('.tppt')], segs = [...host.querySelectorAll('.tpseg')];
+    const cursor = host.querySelector('.tpcursor'), clock = host.querySelector('.tpclock'), btn = host.querySelector('.tp-play');
+    let t = maxWall, raf = null, last = 0;
+    function paintAt(ms) {
+      t = Math.max(0, Math.min(maxWall, ms));
+      pts.forEach((q, k) => {
+        clipR[k].setAttribute('width', Math.max(0, x(Math.min(t, q.wallMs)) - L + 1));
+        const fin = t >= q.wallMs;
+        done[k].classList.toggle('on', fin); ptsEl[k].classList.toggle('on', fin);
+        if (k > 0) segs[k - 1].classList.toggle('on', fin);
+      });
+      cursor.setAttribute('x1', x(t)); cursor.setAttribute('x2', x(t));
+      clock.setAttribute('x', x(t)); clock.textContent = (t / 1000).toFixed(1) + ' s';
+    }
+    function frame(now) {
+      paintAt(t + (now - last) * speed * maxWall / REPLAY); last = now;
+      if (t < maxWall) raf = requestAnimationFrame(frame); else stop();
+    }
+    function stop() { cancelAnimationFrame(raf); raf = null; btn.textContent = t >= maxWall ? 'Replay' : 'Play'; }
+    function toggle() {
+      if (raf) { stop(); return; }
+      if (t >= maxWall) paintAt(0);
+      btn.textContent = 'Pause'; last = performance.now(); raf = requestAnimationFrame(frame);
+    }
+    btn.onclick = toggle;
+    const svg = host.querySelector('.tp-race svg');
+    const toMs = e => { const r = svg.getBoundingClientRect(), sx = (e.clientX - r.left) / r.width * W; return (sx - L) / (W - L - R) * maxWall; };
+    let drag = false;
+    svg.addEventListener('pointerdown', e => { drag = true; stop(); svg.setPointerCapture(e.pointerId); paintAt(toMs(e)); });
+    svg.addEventListener('pointermove', e => { if (drag) paintAt(toMs(e)); });
+    svg.addEventListener('pointerup', () => { drag = false; btn.textContent = t >= maxWall ? 'Replay' : 'Play'; });
+    // keys as for the scenario: p plays, . and , move a tenth of the slowest run, > and < a fiftieth
+    const nudge = f => { stop(); paintAt(t + f * maxWall); btn.textContent = t >= maxWall ? 'Replay' : 'Play'; };
+    players.push({ host, next: () => nudge(.1), prev: () => nudge(-.1), sub: d => nudge(d * .02), toggle, codeOpen: () => false, relayout: () => {}, show: () => { stop(); paintAt(maxWall); btn.textContent = 'Replay'; }, get k() { return 0; } });
+    paintAt(motionOn() ? 0 : maxWall);
+    btn.textContent = motionOn() ? 'Play' : 'Replay';
+  });
   setSpeed(speed);
   document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
   // The cogs: what each one is for, and the steps of the scenario where it fires.
@@ -1219,7 +1341,7 @@ body.focus .scn-cap { font-size: 18px; }
   const shotQ = new URLSearchParams(location.search);
   if (shotQ.get('shot')) {
     const [cardId, stepNo] = shotQ.get('shot').split(':');
-    const p = players.find(q => (q.host.dataset.card || 'l1') === cardId);
+    const p = players.find(q => (q.host.dataset.card || (q.host.classList.contains('throughput') ? 'throughput' : 'l1')) === cardId);
     if (shotQ.get('theme')) document.documentElement.dataset.theme = shotQ.get('theme');
     document.documentElement.classList.remove('motion');
     if (p) {

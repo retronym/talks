@@ -4,6 +4,8 @@
 
 Interactive mode serves several requests at once against one symbol table. Each request reads through a `Reader` of its own; edits arrive as write actions that run alone. Symbols still complete lazily, and a completion may be needed by a reader other than the one running it.
 
+The work is [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*.
+
 What follows is one IDE scenario, run for real on the compiler, with the code in the middle. Step through it with `,` and `.` or the buttons. Each cog lights up at the moment it does its job; a cog with a card links to it, where the cog is taken out to show what goes wrong without it.
 
 ## The scenario
@@ -77,3 +79,13 @@ Each card starts from the same file and takes one cog away: first the problem, t
 <div class="scenario" data-card="resultstamp"></div>
 
 > A result goes to the editor only if no write action ran between the last lock its request left and its delivery.
+
+## Finally: the whole compiler
+
+### Every file of dotc, N readers
+
+The x-ray's throughput demo, replayed from a recorded run. Every file of the compiler is opened in one run (the open parses, indexes and skips every statement, serially), then typed by N reader threads, each taking the largest file left. The blocks share one clock, so more readers finish sooner; each N joins the plot when its last thread is done. Press Play, or drag across the lanes.
+
+<div class="throughput"></div>
+
+Every N gives the same diagnostics as one reader, file for file, with no back-offs and no cycles raised. The waits on another reader's claim are a few milliseconds in all.

@@ -12,13 +12,15 @@ here = pathlib.Path(__file__).resolve().parent
 src = (here / "talk.md").read_text(encoding="utf-8")
 frames = (here / "frames.json").read_text(encoding="utf-8")
 excerpts = (here / "excerpts.gen.json").read_text(encoding="utf-8")
+throughput = (here / "throughput.json").read_text(encoding="utf-8")
 template = (here / "template.html").read_text(encoding="utf-8")
 
-for slot in ("%%TALK%%", "%%FRAMES%%", "%%EXCERPTS%%"):
+for slot in ("%%TALK%%", "%%FRAMES%%", "%%EXCERPTS%%", "%%THROUGHPUT%%"):
     if slot not in template:
         sys.exit(f"template.html has no {slot} placeholder")
 json.loads(frames)
 json.loads(excerpts)
+json.loads(throughput)
 
 # A '---' straight after a line of text makes that line a heading (a setext underline), not a divider.
 lines = src.split("\n")
@@ -29,5 +31,6 @@ for i, line in enumerate(lines[1:], 1):
 out = template.replace("%%TALK%%", src.replace("</script", "<\\/script"))
 out = out.replace("%%FRAMES%%", frames.replace("</script", "<\\/script"))
 out = out.replace("%%EXCERPTS%%", excerpts.replace("</script", "<\\/script"))
+out = out.replace("%%THROUGHPUT%%", throughput.replace("</script", "<\\/script"))
 (here / "index.html").write_text(out, encoding="utf-8")
 print("wrote", here / "index.html")

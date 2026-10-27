@@ -1,4 +1,4 @@
-index.html: talk.md template.html build.py frames.json excerpts.gen.json
+index.html: talk.md template.html build.py frames.json excerpts.gen.json throughput.json
 	python3 build.py
 
 watch:
