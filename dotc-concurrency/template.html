@@ -300,8 +300,27 @@ main { max-width: 1260px; }
 .sym.tick { outline: 2px solid var(--tk); outline-offset: 2px; }
 .sym.tk-T1 { --tk: var(--t1); } .sym.tk-T2 { --tk: var(--t2); } .sym.tk-T3 { --tk: var(--t3); }
 .sym.pulse { outline-style: dashed; }
-.motion .sym.pulse { animation: k-ring 1.2s ease-in-out infinite; }
-@keyframes k-ring { 0%, 100% { outline-offset: 2px; } 50% { outline-offset: 5px; } }
+/* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
+.sym { transition: background .45s, box-shadow .45s, text-decoration-color .45s, outline-color .3s; }
+.badge { transition: background .45s, color .45s, border-color .45s; }
+.lane .st, .lane .act { transition: color .3s; }
+.scenario.instant *, .scenario.instant { transition: none !important; }
+.motion .sym.pulse { animation: k-pulse 1.2s ease-in-out infinite; }
+.motion .sym.ring { animation: k-ring .55s cubic-bezier(.2,.8,.3,1) both; }
+.motion .sym.ring.pulse { animation: k-ring .55s cubic-bezier(.2,.8,.3,1) both, k-pulse 1.2s ease-in-out infinite; }
+.motion .scenario .pop { animation: k-pop2 .5s cubic-bezier(.2,.8,.3,1.25) both; }
+.motion .scenario .fade { animation: k-in .45s ease-out both; }
+.motion .scenario .flash, .motion .scenario tr.flash td { animation: k-flash 1.3s ease-out both; }
+.motion .scenario tr.flash td { animation-delay: inherit; }
+.motion .scenario .l.flash .code { animation: k-flash 1.3s ease-out both; }
+.motion .scenario .ed.blink { animation: k-blink2 .45s ease-out; }
+@keyframes k-pulse { 0%, 100% { outline-offset: 2px; } 50% { outline-offset: 5px; } }
+@keyframes k-ring { from { outline-offset: 12px; outline-color: transparent; } to { outline-offset: 2px; } }
+@keyframes k-pop2 { from { transform: scale(.55); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes k-flash { from { background-color: var(--accent-soft); } }
+@keyframes k-blink2 { from { opacity: .25; } }
+.badge, .cog { display: inline-block; }
+.scn-nav > button.play { margin-left: 4px; min-width: 64px; }
 .badge { display: inline-block; font: 600 10.5px/1.6 Inter, system-ui, sans-serif; padding: 0 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
 .badge.b-lazy { color: var(--muted); border-color: var(--rule); border-style: dashed; }
 .badge.b-done { color: var(--typed); background: var(--typed-bg); border-color: color-mix(in srgb, var(--typed) 40%, transparent); }
@@ -548,6 +567,11 @@ body.focus .scn-cap { font-size: 18px; }
     if (p.st === 'unwound') return 'unwound' + (p.owner ? ' · ' + p.owner : '');
     return p.st;
   }
+  // The player builds the editor, panel and lanes once and then updates them in place, so that a step forward is
+  // a transition from the previous state. Within a step the changes play in the order the frame lists its symbols
+  // (the order of the trace): each symbol has a slot, a thread's tick and its lane change share the slot of the
+  // symbol it touches, and the hover popup comes last. A step back, a jump or a reset shows the state at once.
+  const SLOT = 420, FIRST = 250;
   function buildPlayer(host) {
     const sc = scenario;
     const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
@@ -561,17 +585,33 @@ body.focus .scn-cap { font-size: 18px; }
         '</div>' +
       '</div>' +
       '<p class="scn-cap"></p>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button></div>';
-    const linesEl = host.querySelector('.ed-lines');
-    const dots = host.querySelector('.dots');
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play from here">Play</button></div>';
+    const $ = q => host.querySelector(q);
+    const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
     let group = null;
     sc.frames.forEach((f, i) => {
       const g = f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass';
       if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup'; d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
       const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = f.beat; b.title = f.title;
-      b.onclick = () => show(i);
+      b.onclick = () => { stop(); show(i); };
       dots.lastChild.querySelector('.drow').appendChild(b);
     });
+
+    // Built once.
+    const lines = sc.code.map((text, j) => {
+      const n = j + 1, sy = symByLine[n];
+      const l = document.createElement('div'); l.className = 'l';
+      l.innerHTML = '<span class="gb"></span><span class="no">' + n + '</span><span class="code"></span><span class="ov">' + (sy ? '<span class="badge"></span>' : '') + '</span>';
+      linesEl.appendChild(l);
+      return { l, gb: l.querySelector('.gb'), code: l.querySelector('.code'), badge: l.querySelector('.badge'), sy, text: null };
+    });
+    const lanes = {};
+    $('.lanes').innerHTML = sc.threads.map(t => '<div class="lane" data-t="' + t.id + '">' + threadChip(t.id) + '<span class="role">' + esc(t.role) + '</span><span class="st"></span><span class="act"></span></div>').join('');
+    host.querySelectorAll('.lane').forEach(el => { lanes[el.dataset.t] = { el, st: el.querySelector('.st'), act: el.querySelector('.act') }; });
+    const rows = {};
+    $('.symtab tbody').innerHTML = sc.symbols.map(x => '<tr data-s="' + x.id + '"><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge"></span></td><td class="own"></td><td class="wt"></td></tr>').join('');
+    host.querySelectorAll('.symtab tr[data-s]').forEach(tr => { rows[tr.dataset.s] = { tr, badge: tr.querySelector('.badge'), own: tr.querySelector('.own'), wt: tr.querySelector('.wt') }; });
+
     function unitFor(line, s) {
       let best = null;
       sc.units.forEach(u => {
@@ -580,70 +620,128 @@ body.focus .scn-cap { font-size: 18px; }
       });
       return best ? s.units[best.id] : null;
     }
-    let k = 0;
-    function show(i) {
-      k = Math.max(0, Math.min(sc.frames.length - 1, i));
-      const f = sc.frames[k], s = stateAt(k);
-      host.querySelector('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
-      host.querySelector('.scn-cogs').innerHTML = (f.cogs || []).map(c => '<span class="cog" data-cog="' + c + '">⚙ ' + esc(sc.cogs[c]) + '</span>').join('');
-      host.querySelector('.scn-cap').textContent = f.caption;
-      host.querySelector('.ed-run').textContent = s.run + (s.edited ? ' · edited' : '');
-      // Editor
-      const code = sc.code.slice();
-      if (s.edited) code[sc.edit.line - 1] = code[sc.edit.line - 1].replace(sc.edit.from, sc.edit.to);
-      const ticks = {}; (f.ticks || []).forEach(t => { ticks[t.sym] = t; });
-      linesEl.innerHTML = code.map((text, j) => {
-        const n = j + 1, sy = symByLine[n], u = unitFor(n, s);
-        let ov = '';
-        if (sy) { const p = parseSym(s.syms[sy.id]); ov = '<span class="badge b-' + p.st + (p.owner ? ' o-' + p.owner : '') + '">' + badgeText(p) + '</span>'; }
-        const held = sy && sy.id === 'hold' && /^prog/.test(s.syms.hold || '') ? ' held' : '';
-        return '<div class="l' + held + '"><span class="gb' + (u ? ' u-' + u : '') + '" title="' + (u || '') + '"></span><span class="no">' + n + '</span><span class="code">' + (highlight(text, sy) || ' ') + '</span><span class="ov">' + ov + '</span></div>';
-      }).join('');
-      linesEl.querySelectorAll('.sym').forEach(el => {
-        const p = parseSym(s.syms[el.dataset.sym]);
-        el.classList.add('s-' + p.st); if (p.owner) el.classList.add('o-' + p.owner);
-        const t = ticks[el.dataset.sym];
-        if (t) { el.classList.add('tick', 'tk-' + t.t); if (t.pulse) el.classList.add('pulse'); }
-      });
-      // Popup
-      const pop = host.querySelector('.ed-pop');
-      if (f.popup) {
-        const anchor = linesEl.querySelector('.sym[data-sym="' + f.popup.sym + '"]');
-        let r = anchor.getBoundingClientRect(), left = r.left;
-        if (f.popup.at) {
-          // Point at a column of the anchor's line: the code is monospaced, so a column is a fixed width.
-          const ln = anchor.closest('.l'), codeEl = ln.querySelector('.code'), col = codeEl.textContent.indexOf(f.popup.at);
-          const probe = document.createElement('span'); probe.textContent = 'x'.repeat(10); codeEl.appendChild(probe);
-          const cw = probe.getBoundingClientRect().width / 10; probe.remove();
-          r = ln.getBoundingClientRect(); left = codeEl.getBoundingClientRect().left + col * cw;
+    // Restart a keyframe animation on `el`, starting `d` ms from now.
+    function kick(el, cls, d) { el.classList.remove(cls); void el.offsetWidth; el.style.animationDelay = d + 'ms'; el.classList.add(cls); }
+    function at(el, d) { el.style.transitionDelay = d + 'ms'; }
+
+    let k = -1, prev = null, timers = [];
+    function later(d, fn) { timers.push(setTimeout(fn, d)); }
+    function show(i, animate) {
+      i = Math.max(0, Math.min(sc.frames.length - 1, i));
+      const f = sc.frames[i], s = stateAt(i);
+      animate = !!animate && prev && motionOn() && f.reset == null;
+      timers.forEach(clearTimeout); timers = [];
+      host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
+      host.classList.toggle('instant', !animate);
+      if (!animate && prev && motionOn()) kick($('.ed'), 'blink', 0);
+      const was = prev || { units: {}, syms: {}, lanes: {}, run: '', edited: null };
+      k = i; prev = s;
+
+      $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
+      $('.scn-cogs').innerHTML = (f.cogs || []).map(c => '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>').join('');
+      $('.scn-cap').textContent = f.caption;
+      $('.ed-run').textContent = s.run + (s.edited ? ' · edited' : '');
+      if (animate) { kick($('.scn-cap'), 'fade', 0); host.querySelectorAll('.cog').forEach((c, j) => kick(c, 'pop', 80 * j)); }
+
+      // The timeline: one slot per symbol, in the frame's order, then the symbols that changed without being listed.
+      const order = Object.keys(f.syms || {}).filter(x => x !== '*');
+      sc.symbols.forEach(x => { if (!order.includes(x.id) && (s.syms[x.id] || 'lazy') !== (was.syms[x.id] || 'lazy')) order.push(x.id); });
+      (f.ticks || []).forEach(t => { if (!order.includes(t.sym)) order.push(t.sym); });
+      const slot = id => animate ? FIRST + SLOT * order.indexOf(id) : 0;
+      const end = animate ? FIRST + SLOT * order.length : 0;
+
+      // Text: the edit is typed in at the start of the step.
+      lines.forEach((ln, j) => {
+        let text = sc.code[j];
+        if (s.edited && j === sc.edit.line - 1) text = text.replace(sc.edit.from, sc.edit.to);
+        if (text !== ln.text) {
+          ln.code.innerHTML = highlight(text, ln.sy) || ' ';
+          ln.sym = ln.code.querySelector('.sym');
+          if (animate && ln.text !== null) kick(ln.l, 'flash', 0);
+          ln.text = text;
         }
-        pop.hidden = false; pop.textContent = f.popup.text;
-        const ed = host.querySelector('.ed').getBoundingClientRect();
-        pop.style.top = (r.bottom - ed.top + 4) + 'px';
-        pop.style.left = Math.max(8, Math.min(ed.width - 260, left - ed.left)) + 'px';
-      } else pop.hidden = true;
-      // Threads
-      host.querySelector('.lanes').innerHTML = sc.threads.map(t => {
-        const l = s.lanes[t.id] || ['idle', ''];
-        return '<div class="lane' + (l[0] === 'idle' ? ' idle' : '') + '">' + threadChip(t.id) + '<span class="role">' + esc(t.role) + '</span><span class="st st-' + l[0] + '">' + STATUS[l[0]] + '</span><span class="act">' + esc(l[1]) + '</span></div>';
-      }).join('');
-      // Symbols
-      host.querySelector('.symtab tbody').innerHTML = sc.symbols.map(x => {
-        const p = parseSym(s.syms[x.id]);
-        const hot = ticks[x.id] ? ' class="hot"' : '';
-        return '<tr' + hot + '><td class="mono">' + esc(x.label || x.id) + '</td><td><span class="badge b-' + p.st + (p.owner ? ' o-' + p.owner : '') + '">' + (p.st === 'prog' ? 'InProgress' : p.st) + '</span></td><td>' + (p.owner ? threadChip(p.owner) : '') + '</td><td>' + p.waiters.map(threadChip).join(' ') + '</td></tr>';
-      }).join('');
+      });
+      const ticks = {}; (f.ticks || []).forEach(t => { ticks[t.sym] = t; });
+      lines.forEach((ln, j) => {
+        const u = unitFor(j + 1, s) || '';
+        if (ln.gb.dataset.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.dataset.u = u; ln.gb.title = u; at(ln.gb, 0); }
+        ln.l.classList.toggle('held', !!(ln.sy && ln.sy.id === 'hold' && /^prog/.test(s.syms.hold || '')));
+        if (!ln.sy) return;
+        const id = ln.sy.id, v = s.syms[id] || 'lazy', p = parseSym(v), changed = v !== (was.syms[id] || 'lazy') || !ln.sym.dataset.v;
+        const d = slot(id);
+        ln.sym.className = 'sym s-' + p.st + (p.owner ? ' o-' + p.owner : '');
+        ln.sym.dataset.v = v;
+        at(ln.sym, d);
+        const t = ticks[id];
+        if (t) { ln.sym.classList.add('tick', 'tk-' + t.t); if (t.pulse) ln.sym.classList.add('pulse'); if (animate) kick(ln.sym, 'ring', d); }
+        ln.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
+        if (changed && animate) { later(d, () => { ln.badge.textContent = badgeText(p); }); kick(ln.badge, 'pop', d); }
+        else ln.badge.textContent = badgeText(p);
+        const r = rows[id];
+        r.tr.classList.toggle('hot', !!t);
+        r.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
+        const fill = () => { r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st; r.own.innerHTML = p.owner ? threadChip(p.owner) : ''; r.wt.innerHTML = p.waiters.map(threadChip).join(' '); };
+        if (changed && animate) { later(d, fill); kick(r.tr, 'flash', d); } else fill();
+      });
+
+      // Threads: a lane changes in the slot of the first symbol its thread touches in this step.
+      sc.threads.forEach(th => {
+        const l = s.lanes[th.id] || ['idle', ''], o = was.lanes[th.id] || ['idle', ''], el = lanes[th.id];
+        const t = (f.ticks || []).find(x => x.t === th.id);
+        const d = animate ? (t ? slot(t.sym) : 0) : 0;
+        const fill = () => { el.el.classList.toggle('idle', l[0] === 'idle'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1]; };
+        if (animate && (l[0] !== o[0] || l[1] !== o[1])) { later(d, fill); kick(el.el, 'flash', d); } else fill();
+      });
+
+      // The hover popup answers last.
+      pop.hidden = true; pop.classList.remove('pop');
+      if (f.popup) later(end, () => placePopup(f.popup, animate));
       dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === k));
+      if (!animate) requestAnimationFrame(() => requestAnimationFrame(() => host.classList.remove('instant')));
+      return end;
     }
-    host.querySelector('.prev').onclick = () => show(k - 1);
-    host.querySelector('.next').onclick = () => show(k + 1);
-    const p = { host, show, step: d => show(k + d), get k() { return k; } };
+    function placePopup(pp, animate) {
+      const anchor = linesEl.querySelector('.sym[data-sym="' + pp.sym + '"]');
+      let r = anchor.getBoundingClientRect(), left = r.left;
+      if (pp.at) {
+        // Point at a column of the anchor's line: the code is monospaced, so a column is a fixed width.
+        const ln = anchor.closest('.l'), codeEl = ln.querySelector('.code'), col = codeEl.textContent.indexOf(pp.at);
+        const probe = document.createElement('span'); probe.textContent = 'x'.repeat(10); codeEl.appendChild(probe);
+        const cw = probe.getBoundingClientRect().width / 10; probe.remove();
+        r = ln.getBoundingClientRect(); left = codeEl.getBoundingClientRect().left + col * cw;
+      }
+      pop.hidden = false; pop.textContent = pp.text;
+      const ed = $('.ed').getBoundingClientRect();
+      pop.style.top = (r.bottom - ed.top + 4) + 'px';
+      pop.style.left = Math.max(8, Math.min(ed.width - 260, left - ed.left)) + 'px';
+      if (animate) kick(pop, 'pop', 0);
+    }
+
+    // Play: step forward on a timer that leaves time to read the caption.
+    let playing = null;
+    function stop() { clearTimeout(playing); playing = null; $('.play').textContent = 'Play'; }
+    function tick() {
+      if (k >= sc.frames.length - 1) { stop(); return; }
+      const end = show(k + 1, true);
+      const words = sc.frames[k].caption.split(/\s+/).length;
+      playing = setTimeout(tick, end + Math.max(3500, words * 260));
+    }
+    $('.play').onclick = () => {
+      if (playing) { stop(); return; }
+      $('.play').textContent = 'Pause';
+      if (k >= sc.frames.length - 1) show(0);
+      playing = setTimeout(tick, 600);
+    };
+    $('.prev').onclick = () => { stop(); show(k - 1); };
+    $('.next').onclick = () => { stop(); show(k + 1, true); };
+    const p = { host, show: i => { stop(); show(i); }, step: d => { stop(); show(k + d, d > 0); }, relayout: () => show(k), get k() { return k; } };
     players.push(p);
     show(0);
     return p;
   }
+  function motionOn() { return document.documentElement.classList.contains('motion'); }
   main.querySelectorAll('.scenario').forEach(buildPlayer);
-  window.addEventListener('resize', () => players.forEach(p => p.show(p.k)));
+  window.addEventListener('resize', () => players.forEach(p => p.relayout()));
   // The cogs: what each one is for, and the steps of the scenario where it fires.
   const GEARS = [
     ['write', 'Edits run alone. The writer raises a sticky cancel and waits for readers to leave; a body edit re-indexes one member.'],
