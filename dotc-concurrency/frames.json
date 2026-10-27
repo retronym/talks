@@ -881,21 +881,35 @@
        "T2 stores",
        "T1 sees"
       ],
+      "order": [
+       [
+        2,
+        2
+       ],
+       [
+        1,
+        2
+       ],
+       [
+        0,
+        2
+       ]
+      ],
       "rows": [
        [
         "lastDenotation",
         "+subtotal's",
-        "!not yet"
+        "!2. not yet"
        ],
        [
         "lastSymbol",
         "+subtotal",
-        "!null"
+        "!2. null"
        ],
        [
         "checkedPeriod",
         "+run 1, typer",
-        "+run 1, typer"
+        "+1. run 1, typer"
        ]
       ]
      },
@@ -910,7 +924,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "The period publishes the fields",
-     "caption": "The period publishes the other two fields. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store, and read only after checkedPeriod.acquired, an acquire load. Plain access does not compile.",
+     "caption": "The period publishes the other two fields. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store, and read only after checkedPeriod.acquired, an acquire load. Plain access does not compile. T2 stores down the table; T1 loads up it.",
      "lanes": {
       "T1": [
        "typing",
@@ -924,21 +938,47 @@
        "T2 stores",
        "T1 loads"
       ],
+      "order": [
+       [
+        0,
+        1
+       ],
+       [
+        1,
+        1
+       ],
+       [
+        2,
+        1
+       ],
+       [
+        2,
+        2
+       ],
+       [
+        1,
+        2
+       ],
+       [
+        0,
+        2
+       ]
+      ],
       "rows": [
        [
         "lastDenotation",
         "1. inside publishing",
-        "after acquired"
+        "2. after acquired"
        ],
        [
         "lastSymbol",
         "2. inside publishing",
-        "after acquired"
+        "2. after acquired"
        ],
        [
         "checkedPeriod",
         "3. release",
-        "acquired"
+        "1. acquired"
        ]
       ]
      }
@@ -974,21 +1014,47 @@
        "T2 stores",
        "T1 sees"
       ],
+      "order": [
+       [
+        0,
+        1
+       ],
+       [
+        1,
+        1
+       ],
+       [
+        2,
+        1
+       ],
+       [
+        2,
+        2
+       ],
+       [
+        1,
+        2
+       ],
+       [
+        0,
+        2
+       ]
+      ],
       "rows": [
        [
         "lastDenotation",
         "+subtotal's",
-        "+subtotal's"
+        "+2. subtotal's"
        ],
        [
         "lastSymbol",
         "+subtotal",
-        "+subtotal"
+        "+2. subtotal"
        ],
        [
         "checkedPeriod",
         "+run 1, typer",
-        "+run 1, typer"
+        "+1. run 1, typer"
        ]
       ]
      },

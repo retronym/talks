@@ -1496,21 +1496,35 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
        "T2 stores",
        "T1 sees"
       ],
+      "order": [
+       [
+        2,
+        2
+       ],
+       [
+        1,
+        2
+       ],
+       [
+        0,
+        2
+       ]
+      ],
       "rows": [
        [
         "lastDenotation",
         "+subtotal's",
-        "!not yet"
+        "!2. not yet"
        ],
        [
         "lastSymbol",
         "+subtotal",
-        "!null"
+        "!2. null"
        ],
        [
         "checkedPeriod",
         "+run 1, typer",
-        "+run 1, typer"
+        "+1. run 1, typer"
        ]
       ]
      },
@@ -1525,7 +1539,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "group": "Mechanism",
      "beat": "3",
      "title": "The period publishes the fields",
-     "caption": "The period publishes the other two fields. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store, and read only after checkedPeriod.acquired, an acquire load. Plain access does not compile.",
+     "caption": "The period publishes the other two fields. They can be stored only inside checkedPeriod.publishing(…), which ends with a release store, and read only after checkedPeriod.acquired, an acquire load. Plain access does not compile. T2 stores down the table; T1 loads up it.",
      "lanes": {
       "T1": [
        "typing",
@@ -1539,21 +1553,47 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
        "T2 stores",
        "T1 loads"
       ],
+      "order": [
+       [
+        0,
+        1
+       ],
+       [
+        1,
+        1
+       ],
+       [
+        2,
+        1
+       ],
+       [
+        2,
+        2
+       ],
+       [
+        1,
+        2
+       ],
+       [
+        0,
+        2
+       ]
+      ],
       "rows": [
        [
         "lastDenotation",
         "1. inside publishing",
-        "after acquired"
+        "2. after acquired"
        ],
        [
         "lastSymbol",
         "2. inside publishing",
-        "after acquired"
+        "2. after acquired"
        ],
        [
         "checkedPeriod",
         "3. release",
-        "acquired"
+        "1. acquired"
        ]
       ]
      }
@@ -1589,21 +1629,47 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
        "T2 stores",
        "T1 sees"
       ],
+      "order": [
+       [
+        0,
+        1
+       ],
+       [
+        1,
+        1
+       ],
+       [
+        2,
+        1
+       ],
+       [
+        2,
+        2
+       ],
+       [
+        1,
+        2
+       ],
+       [
+        0,
+        2
+       ]
+      ],
       "rows": [
        [
         "lastDenotation",
         "+subtotal's",
-        "+subtotal's"
+        "+2. subtotal's"
        ],
        [
         "lastSymbol",
         "+subtotal",
-        "+subtotal"
+        "+2. subtotal"
        ],
        [
         "checkedPeriod",
         "+run 1, typer",
-        "+run 1, typer"
+        "+1. run 1, typer"
        ]
       ]
      },
@@ -5090,14 +5156,19 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       let end = FIRST + SLOT * order.length;
       const lane = {};
       sc.threads.forEach(th => { const t = (f.ticks || []).find(x => x.t === th.id); lane[th.id] = t ? slot(t.sym) : 0; });
-      const rowAt = [];
+      // the fields table changes cell by cell: in the frame's `heap.order` ([row, column] pairs; a reader's column can
+      // run bottom-up, the order it loads in), else row by row
+      const cellAt = {};
       if (s.heap && was.heap && was.heap.title === s.heap.title) {
+        const cells = s.heap.order || s.heap.rows.flatMap((r, j) => r.map((_, c) => [j, c]));
         let n = 0;
-        s.heap.rows.forEach((r, j) => { rowAt[j] = JSON.stringify(r) !== JSON.stringify(was.heap.rows[j]) ? end + SLOT * n++ : 0; });
+        cells.forEach(([j, c]) => {
+          if (s.heap.rows[j][c] !== (was.heap.rows[j] || [])[c]) cellAt[j + ',' + c] = end + SLOT * n++;
+        });
         end += SLOT * n;
       }
-      const marks = [...new Set([0, ...order.map(slot), ...Object.values(lane), ...rowAt, end])].sort((a, b) => a - b);
-      return (timelines[i] = { f, s, was, slot, lane, rowAt, end, marks, reset: f.reset != null });
+      const marks = [...new Set([0, ...order.map(slot), ...Object.values(lane), ...Object.values(cellAt), end])].sort((a, b) => a - b);
+      return (timelines[i] = { f, s, was, slot, lane, cellAt, end, marks, reset: f.reset != null });
     }
     // The state at t ms into frame i.
     function at(i, t) {
@@ -5105,7 +5176,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       const m = { units: s.units, run: s.run, edited: s.edited, syms: {}, lanes: {}, heap: s.heap };
       sc.allSymbols.forEach(x => { m.syms[x.id] = t >= tl.slot(x.id) ? s.syms[x.id] : was.syms[x.id]; });
       sc.threads.forEach(th => { m.lanes[th.id] = t >= tl.lane[th.id] ? s.lanes[th.id] : was.lanes[th.id]; });
-      if (s.heap && tl.rowAt.length) m.heap = { title: s.heap.title, cols: s.heap.cols, rows: s.heap.rows.map((r, j) => t >= tl.rowAt[j] ? r : was.heap.rows[j]) };
+      if (s.heap && Object.keys(tl.cellAt).length) m.heap = { title: s.heap.title, cols: s.heap.cols, rows: s.heap.rows.map((r, j) => r.map((v, c) => { const k = j + ',' + c; return k in tl.cellAt && t < tl.cellAt[k] ? was.heap.rows[j][c] : v; })) };
       m.ticks = (f.ticks || []).filter(x => t >= tl.slot(x.sym));
       m.popup = f.popup && t >= tl.end ? f.popup : null;
       return m;
