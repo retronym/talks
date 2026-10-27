@@ -149,7 +149,10 @@
    "bodyedit": "Body edit keeps the run",
    "cancel": "Sticky cancel",
    "unwound": "Owner cancelled mid-completion",
-   "stamped": "Stamped cells"
+   "stamped": "Stamped cells",
+   "cycles": "Wait-for cycles",
+   "epoch": "Epoch invalidation",
+   "resultstamp": "Result stamps"
   },
   "frames": [
    {
@@ -1487,6 +1490,674 @@
       ]
      },
      "heap": null,
+     "popup": {
+      "sym": "total",
+      "text": "def total: BigDecimal"
+     }
+    }
+   ]
+  },
+  "cycles": {
+   "file": "Cycle.scala",
+   "code": [
+    "import tests.macros.Latch",
+    "",
+    "object A:",
+    "  def a = Latch.await + B.b + 1",
+    "  val useA = a",
+    "",
+    "object B:",
+    "  def b = Latch.await + A.a + 1",
+    "  val useB = b"
+   ],
+   "edit": null,
+   "units": [
+    {
+     "id": "A",
+     "lines": [
+      3,
+      5
+     ]
+    },
+    {
+     "id": "B",
+     "lines": [
+      7,
+      9
+     ]
+    }
+   ],
+   "symbolDefs": [
+    {
+     "id": "a",
+     "label": "A.a",
+     "line": 4,
+     "tok": "a"
+    },
+    {
+     "id": "useA",
+     "label": "A.useA",
+     "line": 5,
+     "tok": "useA"
+    },
+    {
+     "id": "b",
+     "label": "B.b",
+     "line": 8,
+     "tok": "b"
+    },
+    {
+     "id": "useB",
+     "label": "B.useB",
+     "line": 9,
+     "tok": "useB"
+    }
+   ],
+   "threadDefs": [
+    {
+     "id": "T1",
+     "name": "T1",
+     "role": "hover on useA"
+    },
+    {
+     "id": "T2",
+     "name": "T2",
+     "role": "hover on useB"
+    }
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "Each reader holds one signature",
+     "caption": "Two hovers, on useA and on useB. T1 claims a's completion, T2 claims b's. The latch in each body holds both readers there, so the two claims are taken before either needs the other.",
+     "run": "run 1",
+     "units": {
+      "A": "T1",
+      "B": "T2"
+     },
+     "syms": {
+      "useA": "prog:T1",
+      "a": "prog:T1",
+      "useB": "prog:T2",
+      "b": "prog:T2"
+     },
+     "lanes": {
+      "T1": [
+       "typing",
+       "completing a, held on line 4"
+      ],
+      "T2": [
+       "typing",
+       "completing b, held on line 8"
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "Each needs the other's",
+     "caption": "Released, T1 needs b's type and waits on T2's claim; T2 needs a's and waits on T1's. Waiting on a claim is safe only if the owner finishes. Here each owner waits on the other: without a check, both hovers hang.",
+     "syms": {
+      "b": "prog:T2|T1",
+      "a": "prog:T1|T2"
+     },
+     "ticks": [
+      {
+       "sym": "b",
+       "t": "T1",
+       "pulse": true
+      },
+      {
+       "sym": "a",
+       "t": "T2",
+       "pulse": true
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "stuck",
+       "waits on T2's claim on b"
+      ],
+      "T2": [
+       "stuck",
+       "waits on T1's claim on a"
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "The wait-for graph",
+     "caption": "Each waiting reader records the claim it waits on. At every 5 ms slice of its wait, a reader follows the owners: b is held by T2, who waits on a, which this reader holds. That closes a cycle.",
+     "lanes": {
+      "T1": [
+       "waiting",
+       "follows the owners: back to itself"
+      ],
+      "T2": [
+       "waiting",
+       "waits on T1's claim on a"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "b",
+       "t": "T1",
+       "pulse": true
+      },
+      {
+       "sym": "a",
+       "t": "T2",
+       "pulse": true
+      }
+     ],
+     "heap": {
+      "title": "the wait-for graph",
+      "cols": [
+       "reader",
+       "waits on",
+       "held by"
+      ],
+      "rows": [
+       [
+        "T1",
+        "B.b",
+        "T2"
+       ],
+       [
+        "T2",
+        "A.a",
+        "T1"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "4",
+     "title": "Who gives way",
+     "caption": "Claims are coarser than the facts they protect, so most cycles are two roots taken in opposite orders, and a reader that can give way does. Here both readers are inside Namer completions and both roots are symbols: the signatures really do need each other.",
+     "ticks": [
+      {
+       "sym": "b",
+       "t": "T1",
+       "pulse": true
+      },
+      {
+       "sym": "a",
+       "t": "T2",
+       "pulse": true
+      }
+     ],
+     "heap": {
+      "title": "who gives way, by what the readers are doing",
+      "cols": [
+       "the cycle",
+       "then"
+      ],
+      "rows": [
+       [
+        "a reader typing a body",
+        "it backs off; its request is retried"
+       ],
+       [
+        "a reader in a Namer completion, another typing a body",
+        "it waits; the other backs off"
+       ],
+       [
+        "through a coarse root (a TASTy file, an inherited cache)",
+        "the owner finishes; after 10 s, back off"
+       ],
+       [
+        "+every reader in a Namer completion, every root a symbol",
+        "+a real cycle: one reader reports it"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "5",
+     "title": "Seen twice, then reported",
+     "caption": "The graph is read from fields the readers change as they go, so a cycle counts only when the same chain is seen at two looks a slice apart. One reader, chosen by a fixed order of the threads, then raises the cyclic reference a single reader would raise, and both readers finish.",
+     "syms": {
+      "b": "done",
+      "a": "done",
+      "useA": "done",
+      "useB": "done"
+     },
+     "units": {
+      "A": "typed",
+      "B": "typed"
+     },
+     "ticks": [
+      {
+       "sym": "b",
+       "t": "T1"
+      }
+     ],
+     "lanes": {
+      "T1": [
+       "done",
+       "reports the cycle"
+      ],
+      "T2": [
+       "done",
+       "the same answer"
+      ]
+     },
+     "heap": {
+      "title": "the wait-for graph",
+      "cols": [
+       "reader",
+       "waits on",
+       "held by"
+      ],
+      "rows": [
+       [
+        "T1",
+        "~nothing",
+        "~"
+       ],
+       [
+        "T2",
+        "~nothing",
+        "~"
+       ]
+      ]
+     },
+     "squiggle": {
+      "sym": "useA"
+     },
+     "popup": {
+      "sym": "useA",
+      "text": "Overloaded or recursive method b needs return type"
+     }
+    }
+   ]
+  },
+  "epoch": {
+   "lines": [
+    3,
+    6
+   ],
+   "symbols": [
+    "Item"
+   ],
+   "threads": [
+    "T2",
+    "T3"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "Push: an invalidation walks the dependents",
+     "caption": "Item's member names are computed from its parents'. With one thread, a cache registers with the caches it was computed from, and an invalidation walks those registrations and clears each dependent.",
+     "run": "run 1",
+     "units": {
+      "s3": "typed"
+     },
+     "syms": {
+      "Item": "done"
+     },
+     "lanes": {
+      "T2": [
+       "typing",
+       "background pass"
+      ],
+      "T3": [
+       "idle",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "caches computed from other caches",
+      "cols": [
+       "cache",
+       "state"
+      ],
+      "rows": [
+       [
+        "Product's member names",
+        "valid"
+       ],
+       [
+        "Item's member names",
+        "valid, registered with Product's"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "A store races the walk",
+     "caption": "With several readers, T3 changes a published scope and walks the dependents while T2 is computing Item's names from the old ones. T2 registers after the walk has passed. Nothing will ever clear its stale cache, and lookups answer from the old structure.",
+     "ticks": [
+      {
+       "sym": "Item",
+       "t": "T2"
+      }
+     ],
+     "lanes": {
+      "T3": [
+       "writer",
+       "changes a published scope, walks the dependents"
+      ],
+      "T2": [
+       "failed",
+       "stores Item's names after the walk"
+      ]
+     },
+     "heap": {
+      "title": "caches computed from other caches",
+      "cols": [
+       "cache",
+       "state"
+      ],
+      "rows": [
+       [
+        "Product's member names",
+        "+cleared"
+       ],
+       [
+        "Item's member names",
+        "!stale, and still marked valid"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Pull: a cache records the epoch",
+     "caption": "With several readers, nothing registers and nothing is walked. The base keeps one structure epoch. A cache records the epoch when it is made, and it is valid while the epoch has not moved.",
+     "lanes": {
+      "T3": [
+       "idle",
+       ""
+      ],
+      "T2": [
+       "typing",
+       "computes Item's names"
+      ]
+     },
+     "heap": {
+      "title": "the structure epoch",
+      "cols": [
+       "",
+       "epoch"
+      ],
+      "rows": [
+       [
+        "the base",
+        "7"
+       ],
+       [
+        "Item's member names",
+        "made at 7"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "4",
+     "title": "A change moves the epoch",
+     "caption": "A change to a scope that has been published, made in a write action or under the scope's own claim, moves the epoch. T2's store still lands, but it carries the epoch it was made at.",
+     "lanes": {
+      "T3": [
+       "writer",
+       "changes a published scope"
+      ],
+      "T2": [
+       "typing",
+       "stores Item's names"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "Item",
+       "t": "T2"
+      }
+     ],
+     "heap": {
+      "title": "the structure epoch",
+      "cols": [
+       "",
+       "epoch"
+      ],
+      "rows": [
+       [
+        "the base",
+        "+8"
+       ],
+       [
+        "Item's member names",
+        "!made at 7: stale"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "5",
+     "title": "The next read recomputes",
+     "caption": "The next read finds the epoch moved and computes the names again from the new structure. There is no list to walk and no store to race. A stale store lands harmlessly: its own epoch marks it stale.",
+     "lanes": {
+      "T3": [
+       "idle",
+       ""
+      ],
+      "T2": [
+       "done",
+       "reads Item's names"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "Item",
+       "t": "T2"
+      }
+     ],
+     "heap": {
+      "title": "the structure epoch",
+      "cols": [
+       "",
+       "epoch"
+      ],
+      "rows": [
+       [
+        "the base",
+        "8"
+       ],
+       [
+        "Item's member names",
+        "+made at 8: valid"
+       ]
+      ]
+     }
+    }
+   ]
+  },
+  "resultstamp": {
+   "lines": [
+    14,
+    21
+   ],
+   "symbols": [
+    "total",
+    "receipt"
+   ],
+   "threads": [
+    "T1",
+    "T3"
+   ],
+   "frames": [
+    {
+     "group": "Problem",
+     "beat": "1",
+     "title": "A provider reads after the lock",
+     "caption": "A hover runs the typer up to its position under the read lock, then reads the typed tree to build its answer, after the lock is released. T1's request left the lock when the driver had made 2 write actions.",
+     "run": "run 1 · write 2",
+     "units": {
+      "s14": "typed"
+     },
+     "syms": {
+      "total": "done",
+      "receipt": "done"
+     },
+     "lanes": {
+      "T1": [
+       "typing",
+       "left the read lock; reads the tree next"
+      ],
+      "T3": [
+       "idle",
+       ""
+      ]
+     },
+     "heap": {
+      "title": "T1's request",
+      "cols": [
+       "",
+       "write count"
+      ],
+      "rows": [
+       [
+        "the driver",
+        "2"
+       ],
+       [
+        "T1's result stamp",
+        "2"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Problem",
+     "beat": "2",
+     "title": "A write lands in between",
+     "caption": "The user types. The new text is a write action that runs now, because T1 holds no lock. When T1 reads the tree, it reads what that write left. After a fresh run, that would be trees the editor no longer shows.",
+     "run": "run 1 · write 3",
+     "edited": true,
+     "units": {
+      "receipt": "skip"
+     },
+     "syms": {
+      "receipt": "lazy"
+     },
+     "lanes": {
+      "T3": [
+       "writer",
+       "write action: re-index receipt"
+      ],
+      "T1": [
+       "typing",
+       "reads the tree"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T1"
+      }
+     ],
+     "heap": {
+      "title": "T1's request",
+      "cols": [
+       "",
+       "write count"
+      ],
+      "rows": [
+       [
+        "the driver",
+        "+3"
+       ],
+       [
+        "T1's result stamp",
+        "!2"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Mechanism",
+     "beat": "3",
+     "title": "Compare the stamps",
+     "caption": "A result carries the write count of the last lock its request left. Before the result goes out, the driver compares it with the count now. If a write ran since, the request is served again on a fresh reader, up to three times.",
+     "lanes": {
+      "T3": [
+       "done",
+       ""
+      ],
+      "T1": [
+       "cancelled",
+       "stamp 2, writes 3: served again"
+      ]
+     },
+     "heap": {
+      "title": "T1's request",
+      "cols": [
+       "",
+       "write count"
+      ],
+      "rows": [
+       [
+        "the driver",
+        "3"
+       ],
+       [
+        "T1's result stamp",
+        "!2: served again"
+       ]
+      ]
+     }
+    },
+    {
+     "group": "Fixed",
+     "beat": "4",
+     "title": "Served again",
+     "caption": "The second try reads a tree no write has touched since, and its stamp matches. T1's request still names the text it was sent, so its retry is a write action of its own; an editor that has moved on would cancel it instead.",
+     "run": "run 1 · write 4",
+     "units": {
+      "receipt": "typed"
+     },
+     "syms": {
+      "receipt": "done"
+     },
+     "lanes": {
+      "T1": [
+       "done",
+       "hover: BigDecimal"
+      ]
+     },
+     "ticks": [
+      {
+       "sym": "total",
+       "t": "T1"
+      }
+     ],
+     "heap": {
+      "title": "T1's request",
+      "cols": [
+       "",
+       "write count"
+      ],
+      "rows": [
+       [
+        "the driver",
+        "4"
+       ],
+       [
+        "T1's result stamp",
+        "+4"
+       ]
+      ]
+     },
      "popup": {
       "sym": "total",
       "text": "def total: BigDecimal"

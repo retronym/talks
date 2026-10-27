@@ -14,7 +14,7 @@ What follows is one IDE scenario, run for real on the compiler, with the code in
 
 ### The cogs
 
-What each cog is for, and the steps of the scenario where it fires. The ones in grey are part of the model but have no moment of their own in this scenario.
+What each cog is for, the steps of the scenario where it fires, and its card.
 
 <div class="gears"></div>
 
@@ -53,3 +53,21 @@ Each card starts from the same file and takes one cog away: first the problem, t
 <div class="scenario" data-card="unwound"></div>
 
 > A released claim leaves its symbol finished, or marked so that the next reader to reach it starts over. No reader waits on work that nobody is doing.
+
+### Wait-for cycles
+
+<div class="scenario" data-card="cycles"></div>
+
+> No two readers wait on each other forever. A cycle that someone can give way on is broken by that reader; a real cycle between signatures is reported, as one reader would report it.
+
+### Epoch invalidation
+
+<div class="scenario" data-card="epoch"></div>
+
+> A cache computed from published scopes is used only while no published scope has changed since it was made.
+
+### Result stamps
+
+<div class="scenario" data-card="resultstamp"></div>
+
+> A result goes to the editor only if no write action ran between the last lock its request left and its delivery.

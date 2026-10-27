@@ -559,9 +559,10 @@ body.focus .scn-cap { font-size: 18px; }
   Object.entries(data.cards).forEach(([id, c]) => {
     cardScenarios[id] = Object.assign({ file: scenario.file, code: scenario.code, edit: scenario.edit, units: scenario.units, cogs: scenario.cogs }, c, {
       id,
-      symbols: scenario.symbols.filter(x => !c.symbols || c.symbols.includes(x.id)),
-      threads: scenario.threads.filter(t => !c.threads || c.threads.includes(t.id)),
-      allSymbols: scenario.symbols
+      // a card on a file of its own brings its own symbols, units and threads
+      symbols: (c.symbolDefs || scenario.symbols).filter(x => !c.symbols || c.symbols.includes(x.id)),
+      threads: (c.threadDefs || scenario.threads).filter(t => !c.threads || c.threads.includes(t.id)),
+      allSymbols: c.symbolDefs || scenario.symbols
     });
   });
   scenario.allSymbols = scenario.symbols;
@@ -942,9 +943,9 @@ body.focus .scn-cap { font-size: 18px; }
     ['cancel', 'A cancelled reader unwinds at its next checkpoint and releases what it holds.'],
     ['unwound', 'An owner that unwinds resets its roots. A Namer completion cannot run twice, so its waiter is pre-empted and the run is replaced.'],
     ['stamped', 'A cache value and the period it is valid for, in one immutable object held in one field: read and written whole.'],
-    [null, 'Epoch invalidation: a change to a published scope bumps an epoch, and dependent caches notice on their next read.'],
-    [null, 'Result stamps: a result read after the lock is released is re-served if a write landed in between.'],
-    [null, 'Wait-for cycles: two readers taking two roots in opposite orders; the one typing a body backs off.']
+    ['epoch', 'A change to a published scope moves one epoch; a cache records the epoch it was made at and is valid while it has not moved.'],
+    ['resultstamp', 'A result carries the write count of the last lock its request left, and is served again if a write ran since.'],
+    ['cycles', 'A wait that would close a cycle of claims: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
   ];
   main.querySelectorAll('.gears').forEach(host => {
     host.innerHTML = GEARS.map(([id, text]) => {
