@@ -498,6 +498,7 @@ The claims, evidence, black holes, guarded fields, `once` and the stamped cache 
 | `CycleHandler` | what a registry does when a wait would close a wait-for cycle | back off the reader (§28) |
 
 - `SharingBoundaryTest` compiles the package on its own against the Scala library and fails if it names the compiler.
+- `Stamped`, added since, is a stamped cache that needs no mode at all (§30b).
 - An opaque `Int` for the mode was tried first: the inliner left a load of the package object at every site, about 12 bytes more each.
 - Next: a separate module built before the compiler, with the Lincheck suites moving with it; then capture checking, so that evidence such as a `Holds` cannot escape the operation that made it.
 
@@ -678,6 +679,7 @@ Three ways to publish a group of fields that several readers fill lazily:
 | packed value | one immutable object in one `@volatile` field, built in a local, stored once | always | an allocation per store |
 | seqlock (`StampedLock`'s optimistic read) | the writer makes a version odd, writes the fields, makes it even with release; a reader rereads the version after its reads and retries if it changed | always | writers exclude each other; every read rereads and may retry |
 | release and acquire on a last field | the fields stored plainly, one designated field last with release; readers load it first with acquire | every writer in a period stores the same values | a fence per read on ARM, no allocation |
+| immutable cell | one object with final fields in one plain field; a store replaces the cell | always | an allocation per store, a dependent load per read, no fence (§30b) |
 
 - It is not enough for `asSeenFrom` (a prefix and a result) or `MatchType.reduced` (one reduction per reader's constraint), whose writers in one period store different values. Release and acquire order one writer's stores but do not make the group atomic across two writers, so a reader can pair one writer's key with another's value: I78.
 - For caches written this rarely a packed value is the simpler of the two that are always correct. They were not measured against each other.
@@ -743,6 +745,42 @@ class Cell:                      // starts with a pair from an earlier period
 - In any sequential order `get` returns 20, and `getProvisional` returns -1 until some `get` has stored 20. A concurrent result outside that, such as 10 (the earlier period's value) for a current stamp, fails the test.
 - Three threads, three operations each. Model checking assumes sequential consistency, so it checks the order of the reads and stores, not the fences; the stress run, on real threads and on Apple silicon too, is the part that can exercise them.
 - `Broken`, the plain idiom `Caching` replaced (the value stored whether kept or not, then the field read again), must fail, so the test is known to catch the bug it is for ([`CachingLincheckTest.scala`][lincheckTest]).
+
+### 30b. One cell instead of two fields
+
+<div class="chips">{chip:C cache} {chip:packed value}</div>
+
+`Caching` keeps two fields and orders them. `Stamped` keeps one: the stamp and the value as one immutable cell with final fields, so whoever loads the cell sees the pair whole, on any base, with no fence and no test of the mode.
+
+<figure class="fig pair">
+<svg viewBox="0 0 340 190" role="img" aria-label="Before: Caching keeps the stamp and the value in two fields of the type, ordered by fences on a concurrent base">
+  <text x="0" y="14" class="h">Caching: two fields</text>
+  <rect x="0" y="28" width="150" height="56" rx="6" class="box"/><text x="10" y="46" class="b">OrType</text>
+  <text x="10" y="64" class="mono">myJoinPeriod: Int</text><text x="10" y="78" class="mono">myJoin: Type</text>
+  <text x="170" y="50">8 bytes on every</text><text x="170" y="66">instance, filled or not</text>
+  <rect x="0" y="110" width="320" height="26" rx="6" class="typed"/><text x="10" y="127">fences under the mode's test</text>
+  <text x="0" y="158">correct because every writer in a</text>
+  <text x="0" y="176">period computes an equal value</text>
+</svg>
+<svg viewBox="0 0 340 190" role="img" aria-label="After: Stamped keeps one reference to an immutable cell; an empty cache points at the shared Stamped.Empty">
+  <text x="0" y="14" class="h">Stamped: one cell</text>
+  <rect x="0" y="28" width="180" height="56" rx="6" class="box"/><text x="10" y="46" class="b">OrType</text>
+  <text x="10" y="64" class="mono">myJoin: Stamped[Type]</text>
+  <rect x="210" y="28" width="120" height="56" rx="6" class="pub"/><text x="220" y="46" class="b">Stamped</text>
+  <text x="220" y="64" class="mono">final stamp</text><text x="220" y="78" class="mono">final value</text>
+  <path d="M 180 60 L 210 56" class="s-pub"/>
+  <rect x="0" y="110" width="320" height="26" rx="6" class="typed"/><text x="10" y="127">the same code on a batch and a concurrent base</text>
+  <text x="0" y="158">empty: 4 bytes, a reference to Stamped.Empty;</text>
+  <text x="0" y="176">a miss allocates a 16 or 24 byte cell</text>
+</svg>
+<figcaption>[readers §4.4.1][M], [`Stamped.scala`][stamped].</figcaption>
+</figure>
+
+- All but two of the stamped caches in `Types` are cells now: the signatures, base classes, join, union, atoms, widening, super type, compile-time fold and normalizable underlying type. `canDropAlias` and `isStable`, a `Boolean` each, and `ClassDenotation`'s member and base-type caches stay on `Caching`.
+- Most instances never fill most of these caches: a method's Java and Scala 2 signatures, a union's join, a compile-time fold. An empty cache is now one reference to a shared `Stamped.Empty` instead of a stamp and a value, so the types get smaller, and cells are allocated only for the caches that fill.
+- On the batch compiler cycles per op did not move beyond noise (dottyUtil −0.1% ± 4.0, re2s −0.9% ± 5.1), and allocation per op went down 0.7–0.8%: the fields the cells replace outweigh the cells ([readers §4.4.1][M]).
+- Not for `Symbol.checkedPeriod` and `NamedType.checkedPeriod`: a hit there moves the stamp without recomputing, so a cell would allocate once per symbol or type per period, on the hottest reads in the compiler. They keep `util.Publish`.
+- `StampedLincheckTest` checks the cell as §30a checks the fields; a cell updated in place must fail it ([`StampedLincheckTest.scala`][stampedLincheck]).
 
 ### 31. One reader's type variables reaching another
 
@@ -1757,6 +1795,8 @@ sequenceDiagram
 [kt200]: https://github.com/JetBrains/kotlin/blob/v2.0.0/ChangeLog.md
 [caching]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/src/dotty/tools/dotc/core/Caching.scala
 [lincheck]: https://github.com/JetBrains/lincheck
+[stamped]: https://github.com/retronym/scala3/blob/a8a5a4a4ce/compiler/src/dotty/tools/sharing/Stamped.scala
+[stampedLincheck]: https://github.com/retronym/scala3/blob/a8a5a4a4ce/compiler/test/dotty/tools/sharing/StampedLincheckTest.scala
 [lincheckTest]: https://github.com/retronym/scala3/blob/fc37c6b7ca/compiler/test/dotty/tools/dotc/core/CachingLincheckTest.scala
 [llfir]: https://github.com/JetBrains/kotlin/blob/master/analysis/low-level-api-fir/README.md
 [firstate]: https://github.com/JetBrains/kotlin/blob/master/compiler/fir/tree/src/org/jetbrains/kotlin/fir/declarations/FirResolveState.kt
