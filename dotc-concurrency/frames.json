@@ -1373,7 +1373,7 @@
      "group": "Mechanism",
      "beat": "3",
      "title": "Reset, then release",
-     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice, because it changes the trees it types, so subtotal is left marked as an unwound completion rather than as lazy.",
+     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice: it enters symbols as it goes, a method's parameters among them, and a second run would enter them again. So subtotal is left marked as an unwound completion rather than as lazy.",
      "syms": {
       "subtotal": "unwound",
       "hold": "lazy"

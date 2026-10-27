@@ -326,6 +326,18 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .speed span { color: var(--muted); margin-right: 4px; }
 .speed button { font: inherit; font-size: 11.5px; padding: 2px 6px; border-radius: 5px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
 .speed button.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
+/* The code under a card */
+details.l3 { margin: 12px 0 0; }
+details.l3 > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); padding: 4px 0; }
+details.l3 > summary:hover { color: var(--accent); }
+.l3-body { display: grid; gap: 10px; margin-top: 8px; }
+.xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 40px max-content; }
+.xl { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; transition: opacity calc(.3s / var(--spd, 1)), background calc(.3s / var(--spd, 1)); }
+.xl .no { color: var(--muted); text-align: right; padding-right: 12px; font-size: 11px; user-select: none; }
+.xl .code { white-space: pre; padding-right: 14px; }
+.xl.gap .code { color: var(--muted); }
+.xc.lit .xl:not(.hl) { opacity: .45; }
+.xc .xl.hl { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background calc(.45s / var(--spd, 1)), box-shadow calc(.45s / var(--spd, 1)), text-decoration-color calc(.45s / var(--spd, 1)), outline-color calc(.3s / var(--spd, 1)); }
 .badge { transition: background calc(.45s / var(--spd, 1)), color calc(.45s / var(--spd, 1)), border-color calc(.45s / var(--spd, 1)); }
@@ -420,6 +432,7 @@ body.focus .scn-cap { font-size: 18px; }
 
 <script type="text/markdown" id="talk-src">%%TALK%%</script>
 <script type="application/json" id="frames-src">%%FRAMES%%</script>
+<script type="application/json" id="excerpts-src">%%EXCERPTS%%</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -568,7 +581,10 @@ body.focus .scn-cap { font-size: 18px; }
   scenario.allSymbols = scenario.symbols;
   const players = [];
   function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def']);
+  const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def', 'var', 'if', 'then', 'else', 'match', 'try', 'catch', 'finally',
+    'while', 'do', 'return', 'throw', 'new', 'private', 'protected', 'final', 'override', 'abstract', 'extends', 'with', 'inline',
+    'null', 'true', 'false', 'this', 'public', 'static', 'int', 'trait', 'lazy', 'given', 'using']);
+  const excerpts = JSON.parse(document.getElementById('excerpts-src').textContent).cards;
   function highlight(line, symTok) {
     const re = /(s?"(?:[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|(.)/g;
     let out = '', m, symDone = false;
@@ -653,7 +669,11 @@ body.focus .scn-cap { font-size: 18px; }
       '</div>' +
       '<p class="scn-cap"></p>' +
       '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>';
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
+      (sc.id && excerpts[sc.id] ? '<details class="l3"><summary>The code</summary><div class="l3-body">' + excerpts[sc.id].map(ex =>
+        '<div class="ed xc"><div class="ed-tabs"><span class="ed-tab">' + esc(ex.file) + '</span></div><div class="xc-lines">' +
+        ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '"><span class="no">' + (x.n || '') + '</span><span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
+        '</div></div>').join('') + '</div></details>' : '');
     const $ = q => host.querySelector(q);
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
     let group = null;
@@ -739,6 +759,7 @@ body.focus .scn-cap { font-size: 18px; }
         $('.scn-cap').textContent = f.caption;
         if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
         dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
+        showCode(f.beat);
       }
       const m = at(i, t);
       $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : '');
@@ -802,6 +823,19 @@ body.focus .scn-cap { font-size: 18px; }
       else { pop.hidden = true; pop.classList.remove('pop'); }
       painted.i = i; painted.key = key;
       if (!animate) requestAnimationFrame(() => requestAnimationFrame(() => host.classList.remove('instant')));
+    }
+    // The code under a card: the lines that do this step's work are lit, the rest dimmed; an excerpt with nothing to
+    // say about the step stays as it is.
+    function showCode(beat) {
+      if (!sc.id || !excerpts[sc.id]) return;
+      host.querySelectorAll('.xc').forEach((panel, j) => {
+        const hl = new Set(excerpts[sc.id][j].hl[beat] || []);
+        panel.classList.toggle('lit', hl.size > 0);
+        const rowsEl = panel.querySelectorAll('.xl');
+        rowsEl.forEach((r, k) => r.classList.toggle('hl', hl.has(k)));
+        const first = [...hl].sort((a, b) => a - b)[0], box = panel.querySelector('.xc-lines');
+        if (first !== undefined && box.scrollHeight > box.clientHeight) box.scrollTop = Math.max(0, rowsEl[first].offsetTop - box.offsetTop - 40);
+      });
     }
     function unitFor(line, s) {
       let best = null;

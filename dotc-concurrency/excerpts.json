@@ -1,0 +1,69 @@
+{
+ "repo": "scala3",
+ "sha": "8d756a59a9",
+ "note": "Excerpts of the code each card explains. extract.py reads them at `sha`, drops comments, and writes excerpts.gen.json; `extract.py --check` fails if the code at `sha` no longer matches what was generated. `hl` maps a card step (its beat) to patterns of the lines that do that step's work.",
+ "cards": {
+  "claim": [
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "private def completeUnderRootClaim", "end": "roots\\.release\\(key\\)",
+    "hl": {"3": ["roots\\.acquire", "val ip = InProgress", "myInfo = ip$"], "4": ["awaitOthers\\(\\) match"], "5": ["myInfo eq ip then myInfo = ip\\.current", "roots\\.release"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "private def ownView", "end": "case _ => ownView",
+    "hl": {"3": ["case ip: InProgress if ip\\.ownedHere => ip\\.current"], "4": ["case ip: InProgress if !ip\\.ownedHere", "completionRoots\\.locked"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "final class InProgress", "end": "override def completionRoot",
+    "hl": {"3": ["final class InProgress", "def ownedHere"]}}
+  ],
+  "publish": [
+   {"file": "compiler/src/dotty/tools/dotc/core/Types.scala", "start": "private def setDenot\\(denot", "end": "util\\.Publish\\.setNamedTypeCheckedPeriod",
+    "hl": {"1": ["lastDenotation = denot", "lastSymbol = denot\\.symbol", "setNamedTypeCheckedPeriod"], "3": ["lastDenotation = denot", "lastSymbol = denot\\.symbol", "setNamedTypeCheckedPeriod"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/Types.scala", "start": "final def symbol\\(using Context\\): Symbol =", "end": "else computeSymbol",
+    "hl": {"2": ["namedTypeCheckedPeriod\\(this\\)\\) == ctx\\.period then lastSymbol"], "3": ["namedTypeCheckedPeriod"], "4": ["namedTypeCheckedPeriod\\(this\\)\\) == ctx\\.period then lastSymbol"]}},
+   {"file": "compiler/src/dotty/tools/dotc/util/Publish.java", "start": "public static int namedTypeCheckedPeriod", "end": "NAMED_TYPE_CHECKED_PERIOD\\.setRelease", "after": 1,
+    "hl": {"3": ["getAcquire", "setRelease"], "4": ["getAcquire"]}}
+  ],
+  "stamped": [
+   {"file": "sharing/src/dotty/tools/sharing/Stamped.scala", "start": "^final class Stamped", "end": "^final class Stamped",
+    "hl": {"3": ["final class Stamped"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/Types.scala", "start": "private var myBaseClasses: Stamped", "end": "myBaseClasses\\.cached:",
+    "hl": {"3": ["Stamped\\[PerPeriod"], "4": ["myBaseClasses\\.cached"]}},
+   {"file": "sharing/src/dotty/tools/sharing/Stamped.scala", "start": "^    '\\{$", "end": "^    \\}$",
+    "hl": {"3": ["store\\(n, 'v\\)"], "4": ["val c = \\$field", "then c\\.value"]}}
+  ],
+  "write": [
+   {"file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala", "start": "override def isCancelled\\(\\): Boolean", "end": "override def isCancelled\\(\\): Boolean",
+    "hl": {"2": ["writerPending"]}},
+   {"file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala", "start": "private def writing\\[T\\]", "end": "lock\\.unlock\\(\\)",
+    "hl": {"1": ["lock\\.lock\\(\\)"], "2": ["writerPending = true", "lock\\.lock\\(\\)"], "3": ["writerPending = false", "myWrites \\+= 1", "val result = body"], "4": ["lock\\.unlock\\(\\)"]}},
+   {"file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala", "start": "private def reading\\[T\\]", "end": "if reader\\.cancelledByChecker \\|\\| myCancelled then throw cancelled",
+    "hl": {"2": ["catch case ex: CompilationUnit\\.CancelledCompilation", "finally lock\\.unlock"], "4": ["while true do", "if reader\\.cancelledByChecker \\|\\| myCancelled then throw"]}}
+  ],
+  "unwound": [
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "private def onUnwind\\(ex", "end": "myFlags &~= Touched$",
+    "skip": ["util\\.Chaos"],
+    "hl": {"3": ["case _: CompilationUnit\\.CancelledCompilation", "untouchIfIncomplete", "info_=\\(UnwoundCompletion"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "final class UnwoundCompletion", "end": "throw CompilationUnit\\.CancelledCompilation",
+    "hl": {"4": ["run\\.markTainted", "throw CompilationUnit\\.CancelledCompilation"], "5": ["if ctx\\.runId != runId then", "original\\.complete\\(denot\\)"]}}
+  ],
+  "cycles": [
+   {"file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala", "start": "def acquire\\(key", "end": "finally me\\.waitingOn = null",
+    "skip": ["util\\.Chaos", "if waitedSince != 0L then$", "val s = seen\\.nn", "me\\.recordLockWait"],
+    "hl": {"2": ["c\\.done\\.await\\(5"], "3": ["cycleChain\\(me, c\\) match", "me\\.waitingOn = c", "c\\.done\\.await\\(5"], "4": ["if me\\.namerCompletionDepth == 0 then", "me\\.waitCyclesBackedOff \\+= 1", "else if parties\\.exists", "else if chain\\.exists"], "5": ["parties\\.forall", "if last != null && last\\.corresponds"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala", "start": "private def cycleChain", "end": "^    null$",
+    "hl": {"3": ["claim = claim\\.owner\\.waitingOn", "if claim\\.owner eq me then"]}}
+  ],
+  "epoch": [
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "protected final val concurrent: Boolean = base\\.concurrent", "end": "dependent\\.nn\\.put\\(dep, \\(\\)\\)",
+    "hl": {"1": ["it\\.next\\(\\)\\.invalidate\\(\\)", "dependent\\.nn\\.put"], "2": ["it\\.next\\(\\)\\.invalidate\\(\\)", "dependent\\.nn\\.put"], "3": ["private val epoch: Int", "def epochCurrent"], "4": ["if concurrent then base\\.bumpStructureEpoch"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/Scopes.scala", "start": "private def changed\\(kind", "end": "base\\.bumpStructureEpoch\\(\\)",
+    "hl": {"4": ["if published then", "base\\.bumpStructureEpoch\\(\\)"]}},
+   {"file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala", "start": "def isValidAt\\(phase: Phase\\)\\(using Context\\) =$", "end": "createdAt\\.runId == ctx\\.runId &&",
+    "hl": {"5": ["epochCurrent"]}}
+  ],
+  "resultstamp": [
+   {"file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala", "start": "reader\\.resultStamp = myWrites$", "end": "reader\\.resultStamp = myWrites$",
+    "hl": {"1": ["resultStamp"]}},
+   {"file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala", "start": "myWrites \\+= 1", "end": "myWrites \\+= 1",
+    "hl": {"2": ["myWrites \\+= 1"]}},
+   {"file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala", "start": "private def servedCurrent", "end": "bindReader\\(check\\)",
+    "hl": {"3": ["val stamp = base\\.reader\\.resultStamp", "if stamp < 0 \\|\\| stamp == myWrites then return result"], "4": ["tries \\+= 1", "bindReader\\(check\\)"]}}
+  ]
+ }
+}

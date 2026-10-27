@@ -326,6 +326,18 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .speed span { color: var(--muted); margin-right: 4px; }
 .speed button { font: inherit; font-size: 11.5px; padding: 2px 6px; border-radius: 5px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
 .speed button.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
+/* The code under a card */
+details.l3 { margin: 12px 0 0; }
+details.l3 > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); padding: 4px 0; }
+details.l3 > summary:hover { color: var(--accent); }
+.l3-body { display: grid; gap: 10px; margin-top: 8px; }
+.xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 40px max-content; }
+.xl { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; transition: opacity calc(.3s / var(--spd, 1)), background calc(.3s / var(--spd, 1)); }
+.xl .no { color: var(--muted); text-align: right; padding-right: 12px; font-size: 11px; user-select: none; }
+.xl .code { white-space: pre; padding-right: 14px; }
+.xl.gap .code { color: var(--muted); }
+.xc.lit .xl:not(.hl) { opacity: .45; }
+.xc .xl.hl { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 /* Motion between steps: transitions carry a state change, keyframes mark the moment it happens. */
 .sym { transition: background calc(.45s / var(--spd, 1)), box-shadow calc(.45s / var(--spd, 1)), text-decoration-color calc(.45s / var(--spd, 1)), outline-color calc(.3s / var(--spd, 1)); }
 .badge { transition: background calc(.45s / var(--spd, 1)), color calc(.45s / var(--spd, 1)), border-color calc(.45s / var(--spd, 1)); }
@@ -1867,7 +1879,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
      "group": "Mechanism",
      "beat": "3",
      "title": "Reset, then release",
-     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice, because it changes the trees it types, so subtotal is left marked as an unwound completion rather than as lazy.",
+     "caption": "Unwinding, T2 resets every root it was completing before it releases the claims. A Namer completion cannot run twice: it enters symbols as it goes, a method's parameters among them, and a second run would enter them again. So subtotal is left marked as an unwound completion rather than as lazy.",
      "syms": {
       "subtotal": "unwound",
       "hold": "lazy"
@@ -2661,6 +2673,1216 @@ Each card starts from the same file and takes one cog away: first the problem, t
   }
  }
 }</script>
+<script type="application/json" id="excerpts-src">{
+ "sha": "8d756a59a9",
+ "cards": {
+  "claim": [
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 233,
+      "text": "private def completeUnderRootClaim(completer0: LazyType)(using Context): Unit ="
+     },
+     {
+      "n": 236,
+      "text": "  val completer = awaitOthers() match"
+     },
+     {
+      "n": 237,
+      "text": "    case lt: LazyType => lt"
+     },
+     {
+      "n": 238,
+      "text": "    case _ => return"
+     },
+     {
+      "n": 239,
+      "text": "  val key = completer.completionRoot(this)"
+     },
+     {
+      "n": 240,
+      "text": "  val roots = ctx.base.completionRoots"
+     },
+     {
+      "n": 241,
+      "text": "  roots.acquire(key, CompletionLock.What(CompletionLock.completionKind(completer), symbol), () => cyclicWait())"
+     },
+     {
+      "n": 243,
+      "text": "  val namer = CompletionLock.completionKind(completer) == CompletionLock.namerKind"
+     },
+     {
+      "n": 244,
+      "text": "  val reader = ctx.reader"
+     },
+     {
+      "n": 245,
+      "text": "  if namer then reader.namerCompletionDepth += 1"
+     },
+     {
+      "n": 246,
+      "text": "  try"
+     },
+     {
+      "n": 248,
+      "text": "    ownView match"
+     },
+     {
+      "n": 249,
+      "text": "      case current: LazyType if current.needsCompletion(this) =>"
+     },
+     {
+      "n": 250,
+      "text": "        myInfo match"
+     },
+     {
+      "n": 251,
+      "text": "          case _: InProgress =>"
+     },
+     {
+      "n": 253,
+      "text": "            lockAndComplete0(current, interactive = true)"
+     },
+     {
+      "n": 254,
+      "text": "          case _ =>"
+     },
+     {
+      "n": 255,
+      "text": "            val ip = InProgress(current, Thread.currentThread.nn, key)"
+     },
+     {
+      "n": 256,
+      "text": "            myInfo = ip"
+     },
+     {
+      "n": 257,
+      "text": "            try lockAndComplete0(current, interactive = true)"
+     },
+     {
+      "n": 258,
+      "text": "            finally if myInfo eq ip then myInfo = ip.current"
+     },
+     {
+      "n": 259,
+      "text": "      case _ =>"
+     },
+     {
+      "n": 260,
+      "text": "  finally"
+     },
+     {
+      "n": 261,
+      "text": "    if namer then reader.namerCompletionDepth -= 1"
+     },
+     {
+      "n": 262,
+      "text": "    roots.release(key)"
+     }
+    ],
+    "hl": {
+     "3": [
+      6,
+      17,
+      18
+     ],
+     "4": [
+      1
+     ],
+     "5": [
+      20,
+      24
+     ]
+    }
+   },
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 303,
+      "text": "private def ownView: Type = myInfo match"
+     },
+     {
+      "n": 304,
+      "text": "  case ip: InProgress if ip.ownedHere => ip.current"
+     },
+     {
+      "n": 305,
+      "text": "  case i => i"
+     },
+     {
+      "n": 311,
+      "text": "private def awaitOthers()(using Context): Type = myInfo match"
+     },
+     {
+      "n": 312,
+      "text": "  case ip: InProgress if !ip.ownedHere =>"
+     },
+     {
+      "n": 313,
+      "text": "    ctx.base.completionRoots.locked(ip.rootKey, CompletionLock.peek, () => cyclicWait())(())"
+     },
+     {
+      "n": 314,
+      "text": "    awaitOthers()"
+     },
+     {
+      "n": 315,
+      "text": "  case _ => ownView"
+     }
+    ],
+    "hl": {
+     "3": [
+      1
+     ],
+     "4": [
+      4,
+      5
+     ]
+    }
+   },
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 3430,
+      "text": "final class InProgress(@volatile var current: Type, val owner: Thread, val rootKey: AnyRef) extends LazyType:"
+     },
+     {
+      "n": 3431,
+      "text": "  def ownedHere: Boolean = owner eq Thread.currentThread"
+     },
+     {
+      "n": 3432,
+      "text": "  def complete(denot: SymDenotation)(using Context, Sharing.Holds[denot.type]): Unit ="
+     },
+     {
+      "n": 3433,
+      "text": "    throw AssertionError(s\"$denot: an InProgress is completed through its root, not run\")"
+     },
+     {
+      "n": 3434,
+      "text": "  override def completionRoot(symd: SymDenotation)(using Context): AnyRef = rootKey"
+     }
+    ],
+    "hl": {
+     "3": [
+      0,
+      1
+     ]
+    }
+   }
+  ],
+  "publish": [
+   {
+    "file": "Types.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "lines": [
+     {
+      "n": 2640,
+      "text": "private def setDenot(denot: Denotation)(using Context): Unit = {"
+     },
+     {
+      "n": 2641,
+      "text": "  if ctx.base.checkNoDoubleBindings then"
+     },
+     {
+      "n": 2642,
+      "text": "    checkSymAssign(denot.symbol)"
+     },
+     {
+      "n": 2644,
+      "text": "  lastDenotation = denot"
+     },
+     {
+      "n": 2645,
+      "text": "  lastSymbol = denot.symbol"
+     },
+     {
+      "n": 2647,
+      "text": "  util.Publish.setNamedTypeCheckedPeriod(this, (if (prefix.isProvisional) Nowhere else ctx.period).rawCode)"
+     }
+    ],
+    "hl": {
+     "1": [
+      3,
+      4,
+      5
+     ],
+     "3": [
+      3,
+      4,
+      5
+     ]
+    }
+   },
+   {
+    "file": "Types.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "lines": [
+     {
+      "n": 2427,
+      "text": "final def symbol(using Context): Symbol ="
+     },
+     {
+      "n": 2431,
+      "text": "  if Period.fromCode(util.Publish.namedTypeCheckedPeriod(this)) == ctx.period then lastSymbol.asInstanceOf[Symbol]"
+     },
+     {
+      "n": 2432,
+      "text": "  else computeSymbol"
+     }
+    ],
+    "hl": {
+     "2": [
+      1
+     ],
+     "3": [
+      1
+     ],
+     "4": [
+      1
+     ]
+    }
+   },
+   {
+    "file": "Publish.java",
+    "path": "compiler/src/dotty/tools/dotc/util/Publish.java",
+    "lines": [
+     {
+      "n": 59,
+      "text": "public static int namedTypeCheckedPeriod(Object tp) {"
+     },
+     {
+      "n": 60,
+      "text": "  return (int) NAMED_TYPE_CHECKED_PERIOD.getAcquire(tp);"
+     },
+     {
+      "n": 61,
+      "text": "}"
+     },
+     {
+      "n": 63,
+      "text": "public static void setNamedTypeCheckedPeriod(Object tp, int period) {"
+     },
+     {
+      "n": 64,
+      "text": "  NAMED_TYPE_CHECKED_PERIOD.setRelease(tp, period);"
+     },
+     {
+      "n": 65,
+      "text": "}"
+     }
+    ],
+    "hl": {
+     "3": [
+      1,
+      4
+     ],
+     "4": [
+      1
+     ]
+    }
+   }
+  ],
+  "stamped": [
+   {
+    "file": "Stamped.scala",
+    "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
+    "lines": [
+     {
+      "n": 18,
+      "text": "final class Stamped[+K, +T](val stamp: Int, val value: T):"
+     }
+    ],
+    "hl": {
+     "3": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "Types.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
+    "lines": [
+     {
+      "n": 3560,
+      "text": "private var myBaseClasses: Stamped[PerPeriod, List[ClassSymbol]] = Stamped.Empty"
+     },
+     {
+      "n": 3562,
+      "text": "override final def baseClasses(using Context): List[ClassSymbol] ="
+     },
+     {
+      "n": 3563,
+      "text": "  myBaseClasses.cached:"
+     }
+    ],
+    "hl": {
+     "3": [
+      0
+     ],
+     "4": [
+      2
+     ]
+    }
+   },
+   {
+    "file": "Stamped.scala",
+    "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
+    "lines": [
+     {
+      "n": 108,
+      "text": "'{"
+     },
+     {
+      "n": 109,
+      "text": "  val c = $field"
+     },
+     {
+      "n": 110,
+      "text": "  if ${ Expr.betaReduce('{ $isCurrent(c.stamp, c.value) }) } then c.value"
+     },
+     {
+      "n": 111,
+      "text": "  else"
+     },
+     {
+      "n": 112,
+      "text": "    val v = $compute"
+     },
+     {
+      "n": 113,
+      "text": "    if ${ Expr.betaReduce('{ $keep(v) }) } then ${ store(n, 'v) }"
+     },
+     {
+      "n": 114,
+      "text": "    v"
+     },
+     {
+      "n": 115,
+      "text": "}"
+     }
+    ],
+    "hl": {
+     "3": [
+      5
+     ],
+     "4": [
+      1,
+      2
+     ]
+    }
+   }
+  ],
+  "write": [
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 95,
+      "text": "override def isCancelled(): Boolean = myCancelled || (writerPending && !regime.writeLock.isHeldByCurrentThread)"
+     }
+    ],
+    "hl": {
+     "2": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 152,
+      "text": "private def writing[T](body: => T): T ="
+     },
+     {
+      "n": 153,
+      "text": "  val lock = regime.writeLock"
+     },
+     {
+      "n": 154,
+      "text": "  if lock.isHeldByCurrentThread then body"
+     },
+     {
+      "n": 155,
+      "text": "  else"
+     },
+     {
+      "n": 156,
+      "text": "    writerPending = true"
+     },
+     {
+      "n": 157,
+      "text": "    lock.lock()"
+     },
+     {
+      "n": 158,
+      "text": "    try"
+     },
+     {
+      "n": 159,
+      "text": "      writerPending = false"
+     },
+     {
+      "n": 160,
+      "text": "      base.writeActionThread = Thread.currentThread"
+     },
+     {
+      "n": 161,
+      "text": "      myWrites += 1"
+     },
+     {
+      "n": 162,
+      "text": "      val result = body"
+     },
+     {
+      "n": 163,
+      "text": "      base.reader.resultStamp = myWrites"
+     },
+     {
+      "n": 164,
+      "text": "      result"
+     },
+     {
+      "n": 165,
+      "text": "    finally"
+     },
+     {
+      "n": 166,
+      "text": "      base.writeActionThread = null"
+     },
+     {
+      "n": 167,
+      "text": "      lock.unlock()"
+     }
+    ],
+    "hl": {
+     "1": [
+      5
+     ],
+     "2": [
+      4,
+      5
+     ],
+     "3": [
+      7,
+      9,
+      10
+     ],
+     "4": [
+      15
+     ]
+    }
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 123,
+      "text": "private def reading[T](body0: => T)(afterCancel: () => Unit = () => (), serialiseWhole: Boolean = true): T ="
+     },
+     {
+      "n": 130,
+      "text": "  def body: T = if serialiseWhole then serialised(CompletionLock.readAction)(body0) else body0"
+     },
+     {
+      "n": 131,
+      "text": "  while true do"
+     },
+     {
+      "n": 132,
+      "text": "    val lock = regime.readLock"
+     },
+     {
+      "n": 133,
+      "text": "    lock.lock()"
+     },
+     {
+      "n": 134,
+      "text": "    val reader = base.reader"
+     },
+     {
+      "n": 135,
+      "text": "    reader.cancelledByChecker = false"
+     },
+     {
+      "n": 136,
+      "text": "    val cancelled ="
+     },
+     {
+      "n": 137,
+      "text": "      try"
+     },
+     {
+      "n": 138,
+      "text": "        val result = body"
+     },
+     {
+      "n": 139,
+      "text": "        reader.resultStamp = myWrites"
+     },
+     {
+      "n": 140,
+      "text": "        return result"
+     },
+     {
+      "n": 141,
+      "text": "      catch case ex: CompilationUnit.CancelledCompilation => ex"
+     },
+     {
+      "n": 142,
+      "text": "      finally lock.unlock()"
+     },
+     {
+      "n": 143,
+      "text": "    afterCancel()"
+     },
+     {
+      "n": 148,
+      "text": "    if reader.cancelledByChecker || myCancelled then throw cancelled"
+     }
+    ],
+    "hl": {
+     "2": [
+      12,
+      13
+     ],
+     "4": [
+      2,
+      15
+     ]
+    }
+   }
+  ],
+  "unwound": [
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 384,
+      "text": "private def onUnwind(ex: Throwable, interactive: Boolean, reader: Reader | Null, completer: LazyType)(using Context): Unit ="
+     },
+     {
+      "n": 385,
+      "text": "  ex match"
+     },
+     {
+      "n": 386,
+      "text": "    case _: CompilationUnit.CancelledCompilation =>"
+     },
+     {
+      "n": 387,
+      "text": "      untouchIfIncomplete()"
+     },
+     {
+      "n": 391,
+      "text": "      ctx.reader.cancelledCompletions += symbol"
+     },
+     {
+      "n": 405,
+      "text": "      if interactive"
+     },
+     {
+      "n": 406,
+      "text": "         && completer.isInstanceOf[SymbolLoaders.SecondCompleter] && !completer.isInstanceOf[UnwoundCompletion]"
+     },
+     {
+      "n": 407,
+      "text": "      then"
+     },
+     {
+      "n": null,
+      "text": "⋯"
+     },
+     {
+      "n": 409,
+      "text": "        info_=(UnwoundCompletion(completer, ctx.runId, UnwoundCompletion.originHere()))"
+     },
+     {
+      "n": 410,
+      "text": "        myFlags &~= Touched"
+     }
+    ],
+    "hl": {
+     "3": [
+      2,
+      3,
+      9
+     ]
+    }
+   },
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 3403,
+      "text": "final class UnwoundCompletion(original: LazyType, runId: Int, val origin: String) extends LazyType with SymbolLoaders.SecondCompleter:"
+     },
+     {
+      "n": 3404,
+      "text": "  def complete(denot: SymDenotation)(using Context, Sharing.Holds[denot.type]): Unit ="
+     },
+     {
+      "n": 3405,
+      "text": "    if ctx.runId != runId then"
+     },
+     {
+      "n": 3409,
+      "text": "      original.complete(denot)"
+     },
+     {
+      "n": 3410,
+      "text": "    else"
+     },
+     {
+      "n": 3411,
+      "text": "      val run = ctx.run"
+     },
+     {
+      "n": 3412,
+      "text": "      if run != null then run.markTainted()"
+     },
+     {
+      "n": 3413,
+      "text": "      throw CompilationUnit.CancelledCompilation(s\"the completion of $denot was unwound by a cancellation on $origin; met again in run $runId by ${Thread.currentThread.getName}\")"
+     }
+    ],
+    "hl": {
+     "4": [
+      6,
+      7
+     ],
+     "5": [
+      2,
+      3
+     ]
+    }
+   }
+  ],
+  "cycles": [
+   {
+    "file": "CompletionRoots.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "lines": [
+     {
+      "n": 49,
+      "text": "def acquire(key: AnyRef, what: CompletionLock.What, cycle: () => Nothing): Unit ="
+     },
+     {
+      "n": 50,
+      "text": "  val me = currentReader()"
+     },
+     {
+      "n": 51,
+      "text": "  var waitedSince = 0L"
+     },
+     {
+      "n": 52,
+      "text": "  var cycleSince = 0L"
+     },
+     {
+      "n": 53,
+      "text": "  var seen: Claim | Null = null"
+     },
+     {
+      "n": 54,
+      "text": "  var lastChain: List[Claim] | Null = null"
+     },
+     {
+      "n": 55,
+      "text": "  while true do"
+     },
+     {
+      "n": 56,
+      "text": "    val c = claims.get(key)"
+     },
+     {
+      "n": 57,
+      "text": "    if c == null then"
+     },
+     {
+      "n": 58,
+      "text": "      val mine = Claim(me, what, Thread.currentThread.nn.getName.nn)"
+     },
+     {
+      "n": 59,
+      "text": "      if claims.putIfAbsent(key, mine) == null then"
+     },
+     {
+      "n": null,
+      "text": "⋯"
+     },
+     {
+      "n": 64,
+      "text": "        return"
+     },
+     {
+      "n": 65,
+      "text": "    else if c.owner eq me then"
+     },
+     {
+      "n": 66,
+      "text": "      c.holds += 1"
+     },
+     {
+      "n": 67,
+      "text": "      return"
+     },
+     {
+      "n": 68,
+      "text": "    else"
+     },
+     {
+      "n": 69,
+      "text": "      if waitedSince == 0L then"
+     },
+     {
+      "n": 70,
+      "text": "        waitedSince = System.nanoTime()"
+     },
+     {
+      "n": 71,
+      "text": "        seen = c"
+     },
+     {
+      "n": 72,
+      "text": "      cycleChain(me, c) match"
+     },
+     {
+      "n": 73,
+      "text": "        case null =>"
+     },
+     {
+      "n": 74,
+      "text": "          cycleSince = 0L"
+     },
+     {
+      "n": 75,
+      "text": "          lastChain = null"
+     },
+     {
+      "n": 76,
+      "text": "        case chain =>"
+     },
+     {
+      "n": 77,
+      "text": "          val parties = chain.map(_.owner)"
+     },
+     {
+      "n": 78,
+      "text": "          if me.namerCompletionDepth == 0 then"
+     },
+     {
+      "n": 80,
+      "text": "            me.waitCyclesBackedOff += 1"
+     },
+     {
+      "n": 81,
+      "text": "            throw CompilationUnit.CancelledCompilation()"
+     },
+     {
+      "n": 82,
+      "text": "          else if parties.exists(_.namerCompletionDepth == 0) then"
+     },
+     {
+      "n": 83,
+      "text": "            ()"
+     },
+     {
+      "n": 84,
+      "text": "          else if chain.exists(_.what.kind != CompletionLock.namerKind) then"
+     },
+     {
+      "n": 87,
+      "text": "            if cycleSince == 0L then cycleSince = System.nanoTime()"
+     },
+     {
+      "n": 88,
+      "text": "            else if System.nanoTime() - cycleSince > CompletionRoots.coarseCycleWaitNanos then"
+     },
+     {
+      "n": 89,
+      "text": "              me.waitCyclesBackedOff += 1"
+     },
+     {
+      "n": 90,
+      "text": "              throw CompilationUnit.CancelledCompilation()"
+     },
+     {
+      "n": 91,
+      "text": "          else if parties.forall(p => System.identityHashCode(p.thread) <= System.identityHashCode(me.thread)) then"
+     },
+     {
+      "n": 99,
+      "text": "            val last = lastChain"
+     },
+     {
+      "n": 100,
+      "text": "            if last != null && last.corresponds(chain)(_ eq _) then cycle()"
+     },
+     {
+      "n": 101,
+      "text": "            else lastChain = chain"
+     },
+     {
+      "n": 102,
+      "text": "      me.waitingOn = c"
+     },
+     {
+      "n": 103,
+      "text": "      try c.done.await(5, TimeUnit.MILLISECONDS)"
+     },
+     {
+      "n": 104,
+      "text": "      finally me.waitingOn = null"
+     }
+    ],
+    "hl": {
+     "2": [
+      41
+     ],
+     "3": [
+      20,
+      40,
+      41
+     ],
+     "4": [
+      26,
+      27,
+      29,
+      31,
+      34
+     ],
+     "5": [
+      36,
+      38
+     ]
+    }
+   },
+   {
+    "file": "CompletionRoots.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "lines": [
+     {
+      "n": 129,
+      "text": "private def cycleChain(me: Reader, c: Claim): List[Claim] | Null ="
+     },
+     {
+      "n": 130,
+      "text": "  var claim: Claim | Null = c"
+     },
+     {
+      "n": 131,
+      "text": "  var chain: List[Claim] = Nil"
+     },
+     {
+      "n": 132,
+      "text": "  var steps = 0"
+     },
+     {
+      "n": 133,
+      "text": "  while claim != null && steps < 1000 do"
+     },
+     {
+      "n": 136,
+      "text": "    if claim.done.getCount == 0 then return null"
+     },
+     {
+      "n": 137,
+      "text": "    chain = claim :: chain"
+     },
+     {
+      "n": 138,
+      "text": "    if claim.owner eq me then"
+     },
+     {
+      "n": 142,
+      "text": "      return if chain.forall(_.done.getCount != 0) then chain else null"
+     },
+     {
+      "n": 143,
+      "text": "    claim = claim.owner.waitingOn"
+     },
+     {
+      "n": 144,
+      "text": "    steps += 1"
+     },
+     {
+      "n": 145,
+      "text": "  null"
+     }
+    ],
+    "hl": {
+     "3": [
+      7,
+      9
+     ]
+    }
+   }
+  ],
+  "epoch": [
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 3548,
+      "text": "protected final val concurrent: Boolean = base.concurrent"
+     },
+     {
+      "n": 3549,
+      "text": "private val epoch: Int = if concurrent then base.structureEpoch else 0"
+     },
+     {
+      "n": 3550,
+      "text": "protected final def epochCurrent: Boolean = !concurrent || epoch == base.structureEpoch"
+     },
+     {
+      "n": 3552,
+      "text": "private var dependent: WeakHashMap[InheritedCache, Unit] | Null = null"
+     },
+     {
+      "n": 3555,
+      "text": "@benignRace(\"any reader that finds the cache valid stores the period it checked in; a stale one only repeats the check\")"
+     },
+     {
+      "n": 3556,
+      "text": "private var checkedPeriod: Period = Nowhere"
+     },
+     {
+      "n": 3559,
+      "text": "protected def invalidateDependents(): Unit ="
+     },
+     {
+      "n": 3560,
+      "text": "  if concurrent then base.bumpStructureEpoch()"
+     },
+     {
+      "n": 3561,
+      "text": "  else"
+     },
+     {
+      "n": 3562,
+      "text": "    if (dependent != null) {"
+     },
+     {
+      "n": 3563,
+      "text": "      val it = dependent.nn.keySet.iterator()"
+     },
+     {
+      "n": 3564,
+      "text": "      while (it.hasNext()) it.next().invalidate()"
+     },
+     {
+      "n": 3565,
+      "text": "    }"
+     },
+     {
+      "n": 3566,
+      "text": "    dependent = null"
+     },
+     {
+      "n": 3568,
+      "text": "protected def addDependent(dep: InheritedCache): Unit ="
+     },
+     {
+      "n": 3569,
+      "text": "  if !concurrent then"
+     },
+     {
+      "n": 3570,
+      "text": "    if (dependent == null) dependent = new WeakHashMap"
+     },
+     {
+      "n": 3571,
+      "text": "    dependent.nn.put(dep, ())"
+     }
+    ],
+    "hl": {
+     "1": [
+      11,
+      17
+     ],
+     "2": [
+      11,
+      17
+     ],
+     "3": [
+      1,
+      2
+     ],
+     "4": [
+      7
+     ]
+    }
+   },
+   {
+    "file": "Scopes.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "lines": [
+     {
+      "n": 336,
+      "text": "private def changed(kind: String)(using Context): Unit ="
+     },
+     {
+      "n": 337,
+      "text": "  if published then"
+     },
+     {
+      "n": 338,
+      "text": "    val base = ctx.base"
+     },
+     {
+      "n": 339,
+      "text": "    base.bumpStructureEpoch()"
+     }
+    ],
+    "hl": {
+     "4": [
+      1,
+      3
+     ]
+    }
+   },
+   {
+    "file": "SymDenotations.scala",
+    "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "lines": [
+     {
+      "n": 3588,
+      "text": "def isValidAt(phase: Phase)(using Context) ="
+     },
+     {
+      "n": 3589,
+      "text": "  epochCurrent && checkedPeriod == ctx.period ||"
+     },
+     {
+      "n": 3590,
+      "text": "    epochCurrent &&"
+     },
+     {
+      "n": 3591,
+      "text": "    createdAt.runId == ctx.runId &&"
+     }
+    ],
+    "hl": {
+     "5": [
+      1,
+      2
+     ]
+    }
+   }
+  ],
+  "resultstamp": [
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 139,
+      "text": "reader.resultStamp = myWrites"
+     }
+    ],
+    "hl": {
+     "1": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 161,
+      "text": "myWrites += 1"
+     }
+    ],
+    "hl": {
+     "2": [
+      0
+     ]
+    }
+   },
+   {
+    "file": "InteractiveDriver.scala",
+    "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "lines": [
+     {
+      "n": 381,
+      "text": "private def servedCurrent[T](check: () => Boolean)(body: => T): T ="
+     },
+     {
+      "n": 382,
+      "text": "  var tries = 0"
+     },
+     {
+      "n": 383,
+      "text": "  while true do"
+     },
+     {
+      "n": 384,
+      "text": "    val result = body"
+     },
+     {
+      "n": 385,
+      "text": "    val stamp = base.reader.resultStamp"
+     },
+     {
+      "n": 386,
+      "text": "    if stamp < 0 || stamp == myWrites then return result"
+     },
+     {
+      "n": 387,
+      "text": "    if tries == MaxStaleRetries then"
+     },
+     {
+      "n": 388,
+      "text": "      staleServed.incrementAndGet()"
+     },
+     {
+      "n": 389,
+      "text": "      return result"
+     },
+     {
+      "n": 390,
+      "text": "    tries += 1"
+     },
+     {
+      "n": 391,
+      "text": "    staleRetries.incrementAndGet()"
+     },
+     {
+      "n": 392,
+      "text": "    bindReader(check)"
+     }
+    ],
+    "hl": {
+     "3": [
+      4,
+      5
+     ],
+     "4": [
+      9,
+      11
+     ]
+    }
+   }
+  ]
+ }
+}
+</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -2809,7 +4031,10 @@ Each card starts from the same file and takes one cog away: first the problem, t
   scenario.allSymbols = scenario.symbols;
   const players = [];
   function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def']);
+  const KW = new Set(['import', 'case', 'class', 'object', 'val', 'def', 'var', 'if', 'then', 'else', 'match', 'try', 'catch', 'finally',
+    'while', 'do', 'return', 'throw', 'new', 'private', 'protected', 'final', 'override', 'abstract', 'extends', 'with', 'inline',
+    'null', 'true', 'false', 'this', 'public', 'static', 'int', 'trait', 'lazy', 'given', 'using']);
+  const excerpts = JSON.parse(document.getElementById('excerpts-src').textContent).cards;
   function highlight(line, symTok) {
     const re = /(s?"(?:[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|(.)/g;
     let out = '', m, symDone = false;
@@ -2894,7 +4119,11 @@ Each card starts from the same file and takes one cog away: first the problem, t
       '</div>' +
       '<p class="scn-cap"></p>' +
       '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>';
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button></div>' +
+      (sc.id && excerpts[sc.id] ? '<details class="l3"><summary>The code</summary><div class="l3-body">' + excerpts[sc.id].map(ex =>
+        '<div class="ed xc"><div class="ed-tabs"><span class="ed-tab">' + esc(ex.file) + '</span></div><div class="xc-lines">' +
+        ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '"><span class="no">' + (x.n || '') + '</span><span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
+        '</div></div>').join('') + '</div></details>' : '');
     const $ = q => host.querySelector(q);
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
     let group = null;
@@ -2980,6 +4209,7 @@ Each card starts from the same file and takes one cog away: first the problem, t
         $('.scn-cap').textContent = f.caption;
         if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
         dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
+        showCode(f.beat);
       }
       const m = at(i, t);
       $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : '');
@@ -3043,6 +4273,19 @@ Each card starts from the same file and takes one cog away: first the problem, t
       else { pop.hidden = true; pop.classList.remove('pop'); }
       painted.i = i; painted.key = key;
       if (!animate) requestAnimationFrame(() => requestAnimationFrame(() => host.classList.remove('instant')));
+    }
+    // The code under a card: the lines that do this step's work are lit, the rest dimmed; an excerpt with nothing to
+    // say about the step stays as it is.
+    function showCode(beat) {
+      if (!sc.id || !excerpts[sc.id]) return;
+      host.querySelectorAll('.xc').forEach((panel, j) => {
+        const hl = new Set(excerpts[sc.id][j].hl[beat] || []);
+        panel.classList.toggle('lit', hl.size > 0);
+        const rowsEl = panel.querySelectorAll('.xl');
+        rowsEl.forEach((r, k) => r.classList.toggle('hl', hl.has(k)));
+        const first = [...hl].sort((a, b) => a - b)[0], box = panel.querySelector('.xc-lines');
+        if (first !== undefined && box.scrollHeight > box.clientHeight) box.scrollTop = Math.max(0, rowsEl[first].offsetTop - box.offsetTop - 40);
+      });
     }
     function unitFor(line, s) {
       let best = null;
