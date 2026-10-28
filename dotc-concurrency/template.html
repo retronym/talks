@@ -354,6 +354,9 @@ button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset
 .ed-sketch { font-size: 11.5px; color: var(--muted); padding: 4px 14px 2px; font-style: italic; }
 .ed-file .xc-lines { max-height: none; overflow: visible; padding: 4px 0; }
 /* A cancellation's arrival: out of band, like an interrupt, so it comes in from the edge rather than being stepped to. */
+.ed-lines .l.sig .no { color: var(--bad); font-weight: 700; }
+.ed-lines .l.sig .no::before { content: "⚡"; margin-right: 3px; color: var(--bad); }
+.ed-lines .l.sig { box-shadow: inset 3px 0 0 var(--bad); }
 .ed-file .xc .xl.sig { box-shadow: inset 3px 0 0 var(--bad); }
 .ed-file .xc .xl.sig .no { color: var(--bad); font-weight: 700; }
 .ed-file .xc .xl.sig .no::before { content: "⚡"; margin-right: 4px; color: var(--bad); }
@@ -943,6 +946,8 @@ body.focus .scn-cap { font-size: 18px; }
       const ticks = {}; m.ticks.forEach(x => { ticks[x.sym] = x; });
       // a thread waiting on another's claim is parked: what it was completing shows as parked, not in progress
       const parked = new Set(sc.threads.filter(th => (m.lanes[th.id] || [])[0] === 'waiting').map(th => th.id));
+      // where a cancellation arrives: from outside the code, on the line its thread is at, before the unwind
+      const cancels = {}; (f.cancel || []).forEach(c => { cancels[c.sym || 'L' + c.line] = c.label; });
       lines.forEach(ln => {
         let text = sc.code[ln.n - 1];
         if (m.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
@@ -950,7 +955,14 @@ body.focus .scn-cap { font-size: 18px; }
           ln.code.innerHTML = highlight(text, ln.sy) || ' ';
           ln.sym = ln.code.querySelector('.sym');
           if (animate && ln.text !== null) kick(ln.l, 'flash');
-          ln.text = text; ln.v = null;
+          ln.text = text; ln.v = null; ln.sig = null;
+        }
+        const sigLabel = (ln.sy && cancels[ln.sy.id]) || cancels['L' + ln.n] || null;
+        if (ln.sig !== sigLabel) {
+          const had = ln.code.querySelector('.sigmark'); if (had) had.remove();
+          if (sigLabel) { const mk = document.createElement('span'); mk.className = 'sigmark'; mk.textContent = '⚡ ' + sigLabel; ln.code.appendChild(mk); }
+          ln.l.classList.toggle('sig', !!sigLabel);
+          ln.sig = sigLabel;
         }
         const u = unitFor(ln.n, m) || '';
         if (ln.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.title = u; ln.u = u; }

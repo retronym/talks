@@ -449,6 +449,16 @@
     "mechanisms": [
      "write",
      "cancel"
+    ],
+    "cancel": [
+     {
+      "sym": "hold",
+      "label": "cancel T2"
+     },
+     {
+      "sym": "total",
+      "label": "cancel T1"
+     }
     ]
    },
    {
@@ -1285,7 +1295,13 @@
        "writer",
        "pending: waits for readers to leave"
       ]
-     }
+     },
+     "cancel": [
+      {
+       "line": 10,
+       "label": "writer pending: cancel T2"
+      }
+     ]
     },
     {
      "group": "Mechanism",
@@ -1390,7 +1406,13 @@
        "writer",
        "pending"
       ]
-     }
+     },
+     "cancel": [
+      {
+       "sym": "subtotal",
+       "label": "the user types: cancel T2"
+      }
+     ]
     },
     {
      "group": "Problem",
@@ -1519,7 +1541,13 @@
         "~nobody"
        ]
       ]
-     }
+     },
+     "cancel": [
+      {
+       "sym": "subtotal",
+       "label": "unwound completion: cancel T1"
+      }
+     ]
     },
     {
      "group": "Fixed",

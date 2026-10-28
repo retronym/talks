@@ -354,6 +354,9 @@ button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset
 .ed-sketch { font-size: 11.5px; color: var(--muted); padding: 4px 14px 2px; font-style: italic; }
 .ed-file .xc-lines { max-height: none; overflow: visible; padding: 4px 0; }
 /* A cancellation's arrival: out of band, like an interrupt, so it comes in from the edge rather than being stepped to. */
+.ed-lines .l.sig .no { color: var(--bad); font-weight: 700; }
+.ed-lines .l.sig .no::before { content: "⚡"; margin-right: 3px; color: var(--bad); }
+.ed-lines .l.sig { box-shadow: inset 3px 0 0 var(--bad); }
 .ed-file .xc .xl.sig { box-shadow: inset 3px 0 0 var(--bad); }
 .ed-file .xc .xl.sig .no { color: var(--bad); font-weight: 700; }
 .ed-file .xc .xl.sig .no::before { content: "⚡"; margin-right: 4px; color: var(--bad); }
@@ -553,7 +556,7 @@ Everyone wants a concurrent typechecker, but there is a mountain to climb to get
 - **Don't make the batch compiler slower!** The batch compiler chooses the single-reader mode once per `ContextBase`. Every operation on shared state is inline, and its batch branch is the original code: a cache hit is a field read and a null test. Under 2% overhead. ([Stamped cells](#stamped-cells))
 - **Don't add cognitive burden to the core of the implementation!** The protection lives in the field's type (`Stamped`, `Published`, `Once`, `Claimed`) and in the evidence a claim hands out (`Holds`), from the scala-sharing library: a site that skips it does not compile. ([Claim on a completion root](#claim-on-a-completion-root), [Publish, then release](#publish-then-release))
 - **Don't make concurrent typechecking too much slower than today!** A completion claims only its own root, so a reader waits only for the symbol it needs. On every file of dotc, typing scales to four threads and more, and waits on other readers' claims total a few milliseconds. ([Every file of dotc, N readers](#every-file-of-dotc-n-readers))
-- **Don't miss any mutable state! Even that random `var` or mutable `Map` used for `-Yexperimental-magic`!** A [state map](https://github.com/retronym/scala3/tree/claude/mr-code-813f14/tools/state-map), extracted from the compiler's TASTy, lists every mutable field with its kind and what protects it.
+- **Don't miss any mutable state! Even that random `var` or mutable `Map` used for `-Yexperimental-magic`!** A [state map](https://claude.ai/artifact/D6J57HdiZ7SAu19NSKT64t), extracted from the compiler's TASTy, lists every mutable field with its kind and what protects it.
 
 Interactive mode serves several requests at once against one symbol table. Each request has its own `Reader`; edits run alone, as write actions. Symbols still complete lazily, so one reader may need a completion that another is running.
 
@@ -1112,6 +1115,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     "mechanisms": [
      "write",
      "cancel"
+    ],
+    "cancel": [
+     {
+      "sym": "hold",
+      "label": "cancel T2"
+     },
+     {
+      "sym": "total",
+      "label": "cancel T1"
+     }
     ]
    },
    {
@@ -1948,7 +1961,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
        "writer",
        "pending: waits for readers to leave"
       ]
-     }
+     },
+     "cancel": [
+      {
+       "line": 10,
+       "label": "writer pending: cancel T2"
+      }
+     ]
     },
     {
      "group": "Mechanism",
@@ -2053,7 +2072,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
        "writer",
        "pending"
       ]
-     }
+     },
+     "cancel": [
+      {
+       "sym": "subtotal",
+       "label": "the user types: cancel T2"
+      }
+     ]
     },
     {
      "group": "Problem",
@@ -2182,7 +2207,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
         "~nobody"
        ]
       ]
-     }
+     },
+     "cancel": [
+      {
+       "sym": "subtotal",
+       "label": "unwound completion: cancel T1"
+      }
+     ]
     },
     {
      "group": "Fixed",
@@ -3741,14 +3772,6 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "2": [
       0
      ]
-    },
-    "sig": {
-     "2": [
-      [
-       0,
-       "writer pending: cancel"
-      ]
-     ]
     }
    },
    {
@@ -3934,14 +3957,6 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       2,
       16
      ]
-    },
-    "sig": {
-     "2": [
-      [
-       12,
-       "unwinds"
-      ]
-     ]
     }
    }
   ],
@@ -4002,14 +4017,6 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       3,
       9
      ]
-    },
-    "sig": {
-     "3": [
-      [
-       2,
-       "cancelled mid-completion"
-      ]
-     ]
     }
    },
    {
@@ -4058,14 +4065,6 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "5": [
       2,
       3
-     ]
-    },
-    "sig": {
-     "4": [
-      [
-       7,
-       "pre-empts T1"
-      ]
      ]
     }
    }
@@ -5132,14 +5131,6 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "myInfo = ip\\.current",
       "roots\\.release"
      ]
-    },
-    "sig": {
-     "1": [
-      [
-       "lockAndComplete0",
-       "the user types: cancel"
-      ]
-     ]
     }
    }
   ],
@@ -5672,6 +5663,8 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       const ticks = {}; m.ticks.forEach(x => { ticks[x.sym] = x; });
       // a thread waiting on another's claim is parked: what it was completing shows as parked, not in progress
       const parked = new Set(sc.threads.filter(th => (m.lanes[th.id] || [])[0] === 'waiting').map(th => th.id));
+      // where a cancellation arrives: from outside the code, on the line its thread is at, before the unwind
+      const cancels = {}; (f.cancel || []).forEach(c => { cancels[c.sym || 'L' + c.line] = c.label; });
       lines.forEach(ln => {
         let text = sc.code[ln.n - 1];
         if (m.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
@@ -5679,7 +5672,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
           ln.code.innerHTML = highlight(text, ln.sy) || ' ';
           ln.sym = ln.code.querySelector('.sym');
           if (animate && ln.text !== null) kick(ln.l, 'flash');
-          ln.text = text; ln.v = null;
+          ln.text = text; ln.v = null; ln.sig = null;
+        }
+        const sigLabel = (ln.sy && cancels[ln.sy.id]) || cancels['L' + ln.n] || null;
+        if (ln.sig !== sigLabel) {
+          const had = ln.code.querySelector('.sigmark'); if (had) had.remove();
+          if (sigLabel) { const mk = document.createElement('span'); mk.className = 'sigmark'; mk.textContent = '⚡ ' + sigLabel; ln.code.appendChild(mk); }
+          ln.l.classList.toggle('sig', !!sigLabel);
+          ln.sig = sigLabel;
         }
         const u = unitFor(ln.n, m) || '';
         if (ln.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.title = u; ln.u = u; }
