@@ -2,7 +2,7 @@
 """Extract the cards' code excerpts (excerpts.json) from the compiler at a pinned commit into excerpts.gen.json.
 
 Each excerpt runs from the first line matching `start` to the next matching `end` (plus `after` lines), with
-comments, bookkeeping annotations and `skip` lines dropped; a run of dropped code lines shows as one `⋯`. `hl` patterns are resolved to the
+comments, bookkeeping annotations and `skip` lines dropped; a run of dropped code lines shows as one `⋯`. `hl` patterns (and `sig`, where a cancellation arrives) are resolved to the
 excerpt's lines here, so a pattern that matches nothing is an error, not a quiet loss of a highlight.
 
     extract.py [--check]   # SCALA3=<a checkout of the compiler's repository>, default ~/code/scala/scala3
@@ -102,8 +102,22 @@ def excerpt(card, ex, cache):
                 sys.exit(f"{card}: highlight {p!r} (step {beat}) matches no line of the excerpt from {ex['file']}")
             idx += hits
         hl[beat] = sorted(set(idx))
-    return {"file": ex["file"].split("/")[-1], "path": ex["file"], "url": f"{spec['github']}/blob/{full_sha}/{ex['file']}",
-            "lines": out, "hl": hl}
+    # `sig`: where a cancellation arrives from outside, per step; an entry is a pattern, or [pattern, label]
+    sig = {}
+    for beat, entries in ex.get("sig", {}).items():
+        marks = []
+        for e in entries:
+            p, label = (e, "cancel") if isinstance(e, str) else e
+            hits = [j for j, x in enumerate(out) if x["n"] is not None and re.search(p, x["text"])]
+            if not hits:
+                sys.exit(f"{card}: signal {p!r} (step {beat}) matches no line of the excerpt from {ex['file']}")
+            marks.append([hits[0], label])
+        sig[beat] = marks
+    r = {"file": ex["file"].split("/")[-1], "path": ex["file"], "url": f"{spec['github']}/blob/{full_sha}/{ex['file']}",
+         "lines": out, "hl": hl}
+    if sig:
+        r["sig"] = sig
+    return r
 
 
 full_sha = subprocess.run(["git", "-C", repo, "rev-parse", spec["sha"]], check=True, capture_output=True, text=True).stdout.strip()

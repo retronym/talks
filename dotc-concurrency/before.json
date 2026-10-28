@@ -1,5 +1,5 @@
 {
- "note": "The code each card's Problem steps run: the after shots (excerpts.json) with the protections taken out, written by hand, not extracted. `hl` maps a Problem step (its beat) to patterns of the lines that do that step's work.",
+ "note": "The code each card's Problem steps run: the after shots (excerpts.json) with the protections taken out, written by hand, not extracted. `hl` maps a Problem step (its beat) to patterns of the lines that do that step's work; `sig`, to where a cancellation arrives ([pattern, label]).",
  "cards": {
   "claim": [
    {
@@ -133,6 +133,14 @@
      "2": [
       "myInfo = ip\\.current",
       "roots\\.release"
+     ]
+    },
+    "sig": {
+     "1": [
+      [
+       "lockAndComplete0",
+       "the user types: cancel"
+      ]
      ]
     }
    }

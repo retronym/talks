@@ -353,6 +353,14 @@ button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset
 .ed-impl[hidden], .ed-lines[hidden] { display: none; }
 .ed-sketch { font-size: 11.5px; color: var(--muted); padding: 4px 14px 2px; font-style: italic; }
 .ed-file .xc-lines { max-height: none; overflow: visible; padding: 4px 0; }
+/* A cancellation's arrival: out of band, like an interrupt, so it comes in from the edge rather than being stepped to. */
+.ed-file .xc .xl.sig { box-shadow: inset 3px 0 0 var(--bad); }
+.ed-file .xc .xl.sig .no { color: var(--bad); font-weight: 700; }
+.ed-file .xc .xl.sig .no::before { content: "⚡"; margin-right: 4px; color: var(--bad); }
+.ed-file .xc .xl.sig.pc .no::before { content: "⚡➜"; }
+.sigmark { position: sticky; right: 10px; z-index: 1; display: inline-block; margin-left: 14px; box-shadow: 0 0 0 4px var(--code-bg); padding: 0 7px; border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); border-radius: 4px; background: linear-gradient(var(--bad-bg), var(--bad-bg)), var(--card); color: var(--bad); font: 600 10.5px/1.6 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .03em; white-space: nowrap; vertical-align: 1px; }
+.motion .sigmark { animation: k-sig .6s cubic-bezier(.2, .8, .3, 1.2) both; }
+@keyframes k-sig { 0% { opacity: 0; transform: translateX(28px); } 60% { opacity: 1; } 100% { transform: none; } }
 .xc-sep { height: 1px; margin: 4px 14px; background: var(--rule); }
 .ed-file .xl { opacity: 1 !important; }
 .ed-file .xc .xl.hl { background: var(--pc-soft); box-shadow: none; }
@@ -3726,6 +3734,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "2": [
       0
      ]
+    },
+    "sig": {
+     "2": [
+      [
+       0,
+       "writer pending: cancel"
+      ]
+     ]
     }
    },
    {
@@ -3911,6 +3927,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       2,
       16
      ]
+    },
+    "sig": {
+     "2": [
+      [
+       12,
+       "unwinds"
+      ]
+     ]
     }
    }
   ],
@@ -3971,6 +3995,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       3,
       9
      ]
+    },
+    "sig": {
+     "3": [
+      [
+       2,
+       "cancelled mid-completion"
+      ]
+     ]
     }
    },
    {
@@ -4019,6 +4051,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "5": [
       2,
       3
+     ]
+    },
+    "sig": {
+     "4": [
+      [
+       7,
+       "pre-empts T1"
+      ]
      ]
     }
    }
@@ -4950,7 +4990,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
 }
 </script>
 <script type="application/json" id="before-src">{
- "note": "The code each card's Problem steps run: the after shots (excerpts.json) with the protections taken out, written by hand, not extracted. `hl` maps a Problem step (its beat) to patterns of the lines that do that step's work.",
+ "note": "The code each card's Problem steps run: the after shots (excerpts.json) with the protections taken out, written by hand, not extracted. `hl` maps a Problem step (its beat) to patterns of the lines that do that step's work; `sig`, to where a cancellation arrives ([pattern, label]).",
  "cards": {
   "claim": [
    {
@@ -5084,6 +5124,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "2": [
       "myInfo = ip\\.current",
       "roots\\.release"
+     ]
+    },
+    "sig": {
+     "1": [
+      [
+       "lockAndComplete0",
+       "the user types: cancel"
+      ]
      ]
     }
    }
@@ -5385,7 +5433,11 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
         res.forEach((re, j) => { if (!ex.code.some(t => re.test(t))) console.warn('before.json: no line of', id, ex.file, 'matches', pats[j]); });
         hl[b] = ex.code.flatMap((t, k) => res.some(re => re.test(t)) ? [k] : []);
       });
-      return { file: ex.file, lines: ex.code.map((t, k) => ({ n: k + 1, text: t })), hl };
+      const sig = {};
+      Object.entries(ex.sig || {}).forEach(([b, es]) => {
+        sig[b] = es.map(e => { const [q, label] = typeof e === 'string' ? [e, 'cancel'] : e; const k = ex.code.findIndex(t => new RegExp(q).test(t)); if (k < 0) console.warn('before.json: no line of', id, ex.file, 'matches signal', q); return [k, label]; }).filter(x => x[0] >= 0);
+      });
+      return { file: ex.file, lines: ex.code.map((t, k) => ({ n: k + 1, text: t })), hl, sig };
     });
   });
   function highlight(line, symTok) {
@@ -5682,9 +5734,21 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       const litFiles = new Map();
       implEl.querySelectorAll('.xc').forEach(panel => {
         const j = +panel.dataset.j, hl = new Set(impl[j].hl[beat] || []);
+        // a cancellation arrives from outside the code being stepped: a mark at the line where it lands
+        const sig = new Map((impl[j].sig || {})[beat] || []);
         const rowsEl = panel.querySelectorAll('.xl');
-        rowsEl.forEach((r, k) => { r.classList.toggle('hl', hl.has(k)); r.classList.remove('pc'); });
-        if (hl.size) { const t = panel.closest('.ed-file').dataset.tab; litFiles.set(t, (litFiles.get(t) || 0) + hl.size); }
+        rowsEl.forEach((r, k) => {
+          r.classList.toggle('hl', hl.has(k)); r.classList.remove('pc');
+          const had = r.querySelector('.sigmark'), label = sig.get(k);
+          if (had && had.dataset.label !== label) had.remove();
+          r.classList.toggle('sig', sig.has(k));
+          if (label !== undefined && !(had && had.dataset.label === label)) {
+            const m = document.createElement('span'); m.className = 'sigmark'; m.dataset.label = label; m.textContent = '⚡ ' + label;
+            r.querySelector('.code').appendChild(m);
+          }
+        });
+        const n = hl.size + sig.size;
+        if (n) { const t = panel.closest('.ed-file').dataset.tab; litFiles.set(t, (litFiles.get(t) || 0) + n); }
       });
       host.querySelectorAll('.ed-ctab').forEach(t => t.classList.toggle('here', litFiles.has(t.dataset.tab)));
       // stepping follows execution into the file this step runs, as a debugger does
@@ -5843,7 +5907,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       if (!implEl) return;
       if (!open) { selectTab('src'); return; }
       const lit = new Map();
-      implEl.querySelectorAll('.xc').forEach(panel => { const n = (impl[+panel.dataset.j].hl[sc.frames[pos.i].beat] || []).length; if (n) { const t = panel.closest('.ed-file').dataset.tab; lit.set(t, (lit.get(t) || 0) + n); } });
+      implEl.querySelectorAll('.xc').forEach(panel => { const ex = impl[+panel.dataset.j], b = sc.frames[pos.i].beat, n = (ex.hl[b] || []).length + ((ex.sig || {})[b] || []).length; if (n) { const t = panel.closest('.ed-file').dataset.tab; lit.set(t, (lit.get(t) || 0) + n); } });
       selectTab(lit.size ? busiest(lit) : host.querySelector('.ed-ctab').dataset.tab);
     }
     host.querySelectorAll('.ed-tab').forEach(b => { b.onclick = () => selectTab(b.dataset.tab); });
