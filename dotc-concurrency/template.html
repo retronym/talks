@@ -330,17 +330,41 @@ a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: va
 .speed button.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
 /* The code under a card */
 .scn-nav > button.code-btn { margin-left: 4px; }
-.lightbox { position: fixed; inset: 0; z-index: 50; background: color-mix(in srgb, #000 55%, transparent); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.lightbox[hidden] { display: none; }
-.lb-panel { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); width: min(1100px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; }
-.lb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--rule); font-weight: 650; }
-.lb-head .bn { color: var(--accent); margin-right: .5em; }
-.lb-nav { display: flex; gap: 6px; flex: 0 0 auto; }
-.lb-nav button { font: inherit; font-size: 13px; font-weight: 400; padding: 4px 10px; border-radius: 7px; cursor: pointer; background: var(--card); color: var(--ink); border: 1px solid var(--rule); }
-.lb-nav button:hover { border-color: var(--accent); }
-.lb-panel .l3-body { overflow: auto; padding: 12px 16px 16px; margin: 0; }
-body.lb-open { overflow: hidden; }
-@media (max-width: 640px) { .lightbox { padding: 8px; } .lb-panel { max-height: calc(100vh - 16px); } }
+/* The editor's tabs: the scenario's file, then the compiler's. A compiler tab looks like a debugger stopped in it. */
+.ed-tablist { display: flex; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+button.ed-tab { flex: 0 0 auto; font: inherit; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted); background: transparent; border: 0; border-right: 1px solid var(--rule); padding: 6px 14px; cursor: pointer; white-space: nowrap; position: relative; }
+button.ed-tab:hover { color: var(--ink); }
+button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset 0 -2px 0 var(--accent); }
+.ed-ctab::before { content: "{ }"; margin-right: 6px; font-size: 10px; color: var(--muted); }
+.ed-ctab.here::after { content: ""; position: absolute; top: 5px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--pc); }
+.ed-run { white-space: nowrap; flex: 1 1 0; min-width: 4.5em; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.ed.debugging .ed-run { color: var(--pc-ink); font-weight: 600; }
+:root { --pc: #e0a800; --pc-ink: #9a6b00; --pc-bg: rgba(245, 196, 0, .28); --pc-soft: rgba(245, 196, 0, .11); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --pc: #f2c230; --pc-ink: #f2c230; --pc-bg: rgba(242, 194, 48, .22); --pc-soft: rgba(242, 194, 48, .08); } }
+:root[data-theme="dark"] { --pc: #f2c230; --pc-ink: #f2c230; --pc-bg: rgba(242, 194, 48, .22); --pc-soft: rgba(242, 194, 48, .08); }
+.ed-impl { overflow: auto; padding: 4px 0 8px; }
+.ed-impl[hidden], .ed-lines[hidden] { display: none; }
+.ed-sketch { font-size: 11.5px; color: var(--muted); padding: 4px 14px 2px; font-style: italic; }
+.ed-file .xc-lines { max-height: none; overflow: visible; padding: 4px 0; }
+.xc-sep { height: 1px; margin: 4px 14px; background: var(--rule); }
+.ed-file .xl { opacity: 1 !important; }
+.ed-file .xc .xl.hl { background: var(--pc-soft); box-shadow: none; }
+.ed-file .xc .xl.pc { background: var(--pc-bg); box-shadow: inset 3px 0 0 var(--pc); }
+.ed-file .xl.pc .no { color: var(--pc-ink); font-weight: 700; }
+.ed-file .xl.pc .no::before { content: "➜"; margin-right: 5px; color: var(--pc); }
+/* A card's two versions: the Problem on the CRT, the Solution on the LCD, each with its own timeline. */
+.ver-tabs { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.vt { font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 3px 12px; border-radius: 999px; cursor: pointer; background: transparent; color: var(--muted); border: 1px solid var(--rule); }
+.vt:hover { border-color: var(--accent); }
+.vt-p.on { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
+.vt-s.on { color: var(--typed); border-color: var(--typed); background: color-mix(in srgb, var(--typed) 12%, transparent); }
+.vt-arrow { color: var(--muted); font-size: 13px; }
+.ver-stage { position: relative; }
+.ver { transition: opacity .55s ease, filter .55s ease; }
+.ver.out { opacity: 0; filter: blur(2px) brightness(.9); }
+.ver-say { position: absolute; left: 0; right: 0; top: 38%; text-align: center; font-size: 22px; font-weight: 650; letter-spacing: -.01em; color: var(--typed); opacity: 0; pointer-events: none; }
+.motion .versions.swapping .ver-say { animation: k-say 1.25s ease both; }
+@keyframes k-say { 0% { opacity: 0; transform: translateY(6px); } 35%, 60% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 .l3-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .l3-body .ed { min-width: 0; }
 .xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 50px max-content; }
@@ -491,7 +515,7 @@ body.focus .scn-cap { font-size: 18px; }
 <div class="layout">
   <nav class="toc" aria-label="Contents">
     <div class="title">Several readers, one symbol table</div>
-    <div class="hint">j / k or ← / → move between cards · , / . step · &lt; / &gt; one change at a time · p play · c the code · [ / ] speed · drag the bar under a scenario to scrub · f focus mode · t theme</div>
+    <div class="hint">j / k or ← / → move between cards · , / . step · &lt; / &gt; one change at a time · p play · c the implementation · [ / ] speed · drag the bar under a scenario to scrub · f focus mode · t theme</div>
     <div class="controls">
       <button id="btn-focus" type="button">Focus mode</button>
       <button id="btn-theme" type="button">Theme</button>
@@ -506,6 +530,7 @@ body.focus .scn-cap { font-size: 18px; }
 <script type="text/markdown" id="talk-src">%%TALK%%</script>
 <script type="application/json" id="frames-src">%%FRAMES%%</script>
 <script type="application/json" id="excerpts-src">%%EXCERPTS%%</script>
+<script type="application/json" id="before-src">%%BEFORE%%</script>
 <script type="application/json" id="throughput-src">%%THROUGHPUT%%</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
@@ -659,6 +684,19 @@ body.focus .scn-cap { font-size: 18px; }
     'while', 'do', 'return', 'throw', 'new', 'private', 'protected', 'final', 'override', 'abstract', 'extends', 'with', 'inline',
     'null', 'true', 'false', 'this', 'public', 'static', 'int', 'trait', 'lazy', 'given', 'using']);
   const excerpts = JSON.parse(document.getElementById('excerpts-src').textContent).cards;
+  // The code a card's Problem steps run (before.json): written by hand, the after shots without their protections.
+  const befores = {};
+  Object.entries(JSON.parse(document.getElementById('before-src').textContent).cards).forEach(([id, list]) => {
+    befores[id] = list.map(ex => {
+      const hl = {};
+      Object.entries(ex.hl || {}).forEach(([b, pats]) => {
+        const res = pats.map(q => new RegExp(q));
+        res.forEach((re, j) => { if (!ex.code.some(t => re.test(t))) console.warn('before.json: no line of', id, ex.file, 'matches', pats[j]); });
+        hl[b] = ex.code.flatMap((t, k) => res.some(re => re.test(t)) ? [k] : []);
+      });
+      return { file: ex.file, lines: ex.code.map((t, k) => ({ n: k + 1, text: t })), hl };
+    });
+  });
   function highlight(line, symTok) {
     const re = /(s?"(?:[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|(.)/g;
     let out = '', m, symDone = false;
@@ -679,7 +717,7 @@ body.focus .scn-cap { font-size: 18px; }
   }
   function stateAt(sc, k) {
     const f = sc.frames[k];
-    let s = k === 0 ? { units: {}, syms: {}, lanes: {}, run: '', edited: false, heap: null }
+    let s = k === 0 ? (sc.base || { units: {}, syms: {}, lanes: {}, run: '', edited: false, heap: null })
       : f.reset != null ? stateAt(sc, f.reset) : stateAt(sc, k - 1);
     s = JSON.parse(JSON.stringify(s));
     if (f.run) s.run = f.run;
@@ -727,7 +765,15 @@ body.focus .scn-cap { font-size: 18px; }
     document.querySelectorAll('.speed button').forEach(b => b.classList.toggle('on', +b.dataset.s === x));
   }
   function nudgeSpeed(d) { const j = SPEEDS.indexOf(speed); setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (j < 0 ? 2 : j) + d))]); }
-  function buildPlayer(host, sc) {
+  // `opt`: `impl`, the excerpts its Implementation panel shows (default: the card's extracted code); `renumber`,
+  // number the steps from 1 (a version of a card); `noRegister`, leave the key routing to a version controller;
+  // `onEnd`, `onPastEnd`, `onPastStart`: playing ran off the last step, stepping went past the last or the first.
+  function buildPlayer(host, sc, opt = {}) {
+    const impl = opt.impl !== undefined ? opt.impl : (sc.id && excerpts[sc.id]) || null;
+    const label = i => opt.renumber ? String(i + 1) : sc.frames[i].beat;
+    // the compiler's files, each a tab of the editor holding its excerpts in order
+    const implFiles = [];
+    (impl || []).forEach((ex, j) => { let f = implFiles.find(x => x.file === ex.file && x.path === ex.path); if (!f) implFiles.push(f = { file: ex.file, path: ex.path, js: [] }); f.js.push(j); });
     const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
     const [from, to] = sc.lines || [1, sc.code.length];
     const N = sc.frames.length;
@@ -735,29 +781,34 @@ body.focus .scn-cap { font-size: 18px; }
       '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
       '<div class="transport">' +
       '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
-      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button>' + (sc.id && excerpts[sc.id] ? '<button type="button" class="code-btn" title="the code (c)">Code</button>' : '') + '</div>' +
+      '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button>' + '</div>' +
       '</div>' +
       '<div class="scn-body">' +
-        '<div class="ed"><div class="ed-tabs"><span class="ed-tab">' + esc(sc.file) + '</span><span class="ed-run"></span></div><div class="ed-lines"></div><div class="ed-pop" hidden></div></div>' +
+        '<div class="ed"><div class="ed-tabs"><div class="ed-tablist" role="tablist"><button type="button" class="ed-tab on" data-tab="src" role="tab" title="the code being edited">' + esc(sc.file) + '</button>' +
+          implFiles.map((f, k) => '<button type="button" class="ed-tab ed-ctab" data-tab="f' + k + '" role="tab" title="' + (opt.impl ? 'the compiler without the cog: a sketch' : esc(f.path) + ', the compiler') + ' (c)">' + esc(f.file) + '</button>').join('') +
+          '</div><span class="ed-run"></span></div><div class="ed-lines"></div>' +
+          (implFiles.length ? '<div class="ed-impl" hidden>' + implFiles.map((f, k) => '<div class="ed-file" data-tab="f' + k + '" hidden>' +
+            (opt.impl ? '<div class="ed-sketch">a sketch: the compiler without the cog</div>' : '') +
+            f.js.map(j => { const ex = impl[j]; return '<div class="xc" data-j="' + j + '"><div class="xc-lines">' +
+              ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '">' + (x.n && ex.url ? '<a class="no" href="' + ex.url + '#L' + x.n + '" target="_blank" rel="noopener" title="line ' + x.n + ' on GitHub">' + x.n + '</a>' : '<span class="no">' + (x.n || '') + '</span>') + '<span class="code">' + (x.n ? highlight(x.text, null) || ' ' : '⋯') + '</span></div>').join('') +
+              '</div></div>'; }).join('<div class="xc-sep"></div>') + '</div>').join('') + '</div>' : '') +
+          '<div class="ed-pop" hidden></div></div>' +
         '<div class="side">' +
           '<div class="side-h">Threads</div><div class="lanes"></div>' +
           '<div class="heap-wrap" hidden><div class="side-h heap-h"></div><table class="symtab heap"><thead></thead><tbody></tbody></table></div>' +
           (sc.symbols.length ? '<div class="side-h">Symbols</div><table class="symtab syms"><thead><tr><th>symbol</th><th>state</th><th>owner</th><th>waiting</th></tr></thead><tbody></tbody></table>' : '') +
         '</div>' +
       '</div>' +
-      '<p class="scn-cap"></p>' +
-      (sc.id && excerpts[sc.id] ? '<div class="lightbox" hidden><div class="lb-panel" role="dialog" aria-label="The code"><div class="lb-head"><span class="lb-title"></span><span class="lb-nav"><button type="button" class="lb-prev" title="step back (,)">◀</button><button type="button" class="lb-next" title="step forward (.)">▶</button><button type="button" class="lb-close" title="close (Esc)">✕</button></span></div><div class="l3-body">' + excerpts[sc.id].map(ex =>
-        '<div class="ed xc"><div class="ed-tabs"><a class="ed-tab" href="' + ex.url + '#L' + ex.lines[0].n + '" target="_blank" rel="noopener" title="' + esc(ex.path) + ' on GitHub">' + esc(ex.file) + '</a></div><div class="xc-lines">' +
-        ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '">' + (x.n ? '<a class="no" href="' + ex.url + '#L' + x.n + '" target="_blank" rel="noopener" title="line ' + x.n + ' on GitHub">' + x.n + '</a>' : '<span class="no"></span>') + '<span class="code">' + (x.n ? highlight(x.text, null) : '⋯') + '</span></div>').join('') +
-        '</div></div>').join('') + '</div></div></div>' : '');
+      '<p class="scn-cap"></p>';
     const $ = q => host.querySelector(q);
     const linesEl = $('.ed-lines'), dots = $('.dots'), pop = $('.ed-pop');
-    const lbEl = host.querySelector('.lightbox');
+    const implEl = host.querySelector('.ed-impl');
+    let tab = 'src';
     let group = null;
     sc.frames.forEach((f, i) => {
       const g = f.group || (f.beat.startsWith('7') ? 'Keystroke, nothing in flight' : +f.beat >= 8 ? 'Keystroke while T2 is held' : 'A hover beside the background pass');
       if (g !== group) { group = g; const d = document.createElement('div'); d.className = 'dgroup g-' + g.toLowerCase().replace(/\W+/g, '-'); d.innerHTML = '<span class="dlabel">' + g + '</span><span class="drow"></span>'; dots.appendChild(d); }
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = f.beat; b.title = f.title;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'dot'; b.textContent = label(i); b.title = f.title;
       b.onclick = () => { stop(); go(i, Infinity, false); };
       dots.lastChild.querySelector('.drow').appendChild(b);
     });
@@ -787,7 +838,7 @@ body.focus .scn-cap { font-size: 18px; }
     function stateOf(i) { return states[i] || (states[i] = stateAt(sc, i)); }
     function timeline(i) {
       if (timelines[i]) return timelines[i];
-      const f = sc.frames[i], s = stateOf(i), was = i === 0 ? EMPTY : f.reset != null ? stateOf(f.reset) : stateOf(i - 1);
+      const f = sc.frames[i], s = stateOf(i), was = i === 0 ? (sc.base || EMPTY) : f.reset != null ? stateOf(f.reset) : stateOf(i - 1);
       const order = Object.keys(f.syms || {}).filter(x => x !== '*');
       sc.symbols.forEach(x => { if (!order.includes(x.id) && (s.syms[x.id] || 'lazy') !== (was.syms[x.id] || 'lazy')) order.push(x.id); });
       (f.ticks || []).forEach(t => { if (!order.includes(t.sym)) order.push(t.sym); });
@@ -852,7 +903,7 @@ body.focus .scn-cap { font-size: 18px; }
       if (i !== painted.i) {
         host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
         if (!animate && painted.i >= 0 && motionOn() && !measuring) kick($('.ed'), 'blink');
-        $('.scn-beat').innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
+        $('.scn-beat').innerHTML = '<span class="bn">' + label(i) + '</span>' + esc(f.title);
         $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
           const linked = !sc.id && cardLink(c);
           return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
@@ -862,10 +913,9 @@ body.focus .scn-cap { font-size: 18px; }
         if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
         dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
         showCode(f.beat);
-        const lbt = lbEl && lbEl.querySelector('.lb-title'); if (lbt) lbt.innerHTML = '<span class="bn">' + f.beat + '</span>' + esc(f.title);
       }
       const m = at(i, t);
-      $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : '');
+      if (tab === 'src') $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : ''); else $('.ed-run').textContent = '⏸ suspended at step ' + label(i);
       const ticks = {}; m.ticks.forEach(x => { ticks[x.sym] = x; });
       lines.forEach(ln => {
         let text = sc.code[ln.n - 1];
@@ -922,7 +972,7 @@ body.focus .scn-cap { font-size: 18px; }
           if (tr.innerHTML !== html) { const fresh = !tr.innerHTML; tr.innerHTML = html; if (animate && !fresh) kick(tr, 'flash'); }
         });
       } else painted.heapTitle = null;
-      if (m.popup) placePopup(m.popup, animate && !(painted.key && painted.key.startsWith(i + ':') && !pop.hidden));
+      if (m.popup && tab === 'src') placePopup(m.popup, animate && !(painted.key && painted.key.startsWith(i + ':') && !pop.hidden));
       else { pop.hidden = true; pop.classList.remove('pop'); }
       painted.i = i; painted.key = key;
       if (!animate) requestAnimationFrame(() => requestAnimationFrame(() => host.classList.remove('instant')));
@@ -930,15 +980,43 @@ body.focus .scn-cap { font-size: 18px; }
     // The code under a card: the lines that do this step's work are lit, the rest dimmed; an excerpt with nothing to
     // say about the step stays as it is.
     function showCode(beat) {
-      if (!sc.id || !excerpts[sc.id]) return;
-      (lbEl || host).querySelectorAll('.xc').forEach((panel, j) => {
-        const hl = new Set(excerpts[sc.id][j].hl[beat] || []);
-        panel.classList.toggle('lit', hl.size > 0);
+      if (!implEl) return;
+      const litFiles = new Map();
+      implEl.querySelectorAll('.xc').forEach(panel => {
+        const j = +panel.dataset.j, hl = new Set(impl[j].hl[beat] || []);
         const rowsEl = panel.querySelectorAll('.xl');
-        rowsEl.forEach((r, k) => r.classList.toggle('hl', hl.has(k)));
-        const first = [...hl].sort((a, b) => a - b)[0], box = panel.querySelector('.xc-lines');
-        if (first !== undefined && box.scrollHeight > box.clientHeight) box.scrollTop = Math.max(0, rowsEl[first].offsetTop - box.offsetTop - 40);
+        rowsEl.forEach((r, k) => { r.classList.toggle('hl', hl.has(k)); r.classList.remove('pc'); });
+        if (hl.size) { const t = panel.closest('.ed-file').dataset.tab; litFiles.set(t, (litFiles.get(t) || 0) + hl.size); }
       });
+      host.querySelectorAll('.ed-ctab').forEach(t => t.classList.toggle('here', litFiles.has(t.dataset.tab)));
+      // stepping follows execution into the file this step runs, as a debugger does
+      if (tab !== 'src' && litFiles.size && !litFiles.has(tab)) selectTab(busiest(litFiles));
+      const file = tab === 'src' ? null : implEl.querySelector('.ed-file[data-tab="' + tab + '"]');
+      if (!file) return;
+      const pc = file.querySelector('.xl.hl');
+      if (pc) {
+        pc.classList.add('pc');
+        if (implEl.scrollHeight > implEl.clientHeight) implEl.scrollTop = Math.max(0, pc.offsetTop - implEl.offsetTop - 60);
+      }
+    }
+    // the file where a step runs the most lines: where a debugger would stop
+    function busiest(m) { return [...m.entries()].sort((a, b) => b[1] - a[1])[0][0]; }
+    function selectTab(t) {
+      // the code view keeps the editor's height, as switching tabs in an editor does
+      if (tab === 'src' && t !== 'src' && implEl) implEl.style.height = Math.max(linesEl.offsetHeight, 180) + 'px';
+      tab = t;
+      host.querySelectorAll('.ed-tab').forEach(b => { b.classList.toggle('on', b.dataset.tab === t); b.setAttribute('aria-selected', String(b.dataset.tab === t)); });
+      linesEl.hidden = t !== 'src';
+      if (implEl) { implEl.hidden = t === 'src'; implEl.querySelectorAll('.ed-file').forEach(f => { f.hidden = f.dataset.tab !== t; }); }
+      $('.ed').classList.toggle('debugging', t !== 'src');
+      if (t !== 'src') { pop.hidden = true; showCode(sc.frames[pos.i].beat); }
+      else painted.key = null, paint(pos.i, pos.t, false);
+      runLabel();
+    }
+    function runLabel() {
+      const el = $('.ed-run');
+      if (tab !== 'src') { el.textContent = '⏸ suspended at step ' + label(pos.i); return; }
+      const m = at(pos.i, pos.t); el.textContent = m.run + (m.edited ? ' · edited' : '');
     }
     function unitFor(line, s) {
       let best = null;
@@ -970,7 +1048,7 @@ body.focus .scn-cap { font-size: 18px; }
     const track = $('.scrub-track'), thumb = $('.scrub-thumb');
     track.innerHTML = sc.frames.map((f, i) => {
       const tl = timeline(i), span = tl.end + HOLD;
-      return '<div class="seg" title="' + esc(f.beat + ' ' + f.title) + '">' + tl.marks.filter(x => x > 0).map(x => '<i style="left:' + (100 * x / span).toFixed(2) + '%"></i>').join('') + '</div>';
+      return '<div class="seg" title="' + esc(label(i) + ' ' + f.title) + '">' + tl.marks.filter(x => x > 0).map(x => '<i style="left:' + (100 * x / span).toFixed(2) + '%"></i>').join('') + '</div>';
     }).join('');
     function placeThumb() {
       const tl = timeline(pos.i), span = tl.end + HOLD;
@@ -1008,7 +1086,7 @@ body.focus .scn-cap { font-size: 18px; }
         paint(pos.i, tl.end, true);
         pos.dwell = dwellOf(pos.i);
         if (pos.t >= tl.end + pos.dwell) {
-          if (pos.i >= N - 1) { stop(); return; }
+          if (pos.i >= N - 1) { const played = mode === 'play'; stop(); if (played && opt.onEnd) opt.onEnd(); return; }
           pos.i += 1; pos.t = 0;
           const nt = timeline(pos.i);
           if (nt.reset) painted.key = null;
@@ -1024,12 +1102,12 @@ body.focus .scn-cap { font-size: 18px; }
     function next() {
       const tl = timeline(pos.i);
       if (pos.t < tl.end) { start('step'); return; }
-      if (pos.i >= N - 1) return;
+      if (pos.i >= N - 1) { if (opt.onPastEnd) opt.onPastEnd(); return; }
       const nt = timeline(pos.i + 1);
       go(pos.i + 1, 0, !nt.reset);
       if (motionOn()) start('step'); else go(pos.i, Infinity, false);
     }
-    function prev() { stop(); const tl = timeline(pos.i); if (pos.t > 0 && pos.t < tl.end) go(pos.i, 0, false); else go(pos.i - 1, Infinity, false); }
+    function prev() { stop(); const tl = timeline(pos.i); if (pos.t > 0 && pos.t < tl.end) go(pos.i, 0, false); else if (pos.i === 0 && opt.onPastStart) opt.onPastStart(); else go(pos.i - 1, Infinity, false); }
     // `>` and `<`: one change at a time.
     function sub(d) {
       stop();
@@ -1038,10 +1116,12 @@ body.focus .scn-cap { font-size: 18px; }
         const nx = tl.marks.find(x => x > pos.t);
         if (nx !== undefined) go(pos.i, nx, true);
         else if (pos.i < N - 1) go(pos.i + 1, 0, !timeline(pos.i + 1).reset);
+        else if (opt.onPastEnd) opt.onPastEnd();
       } else {
         const pv = [...tl.marks].reverse().find(x => x < pos.t);
         if (pv !== undefined) go(pos.i, pv, false);
         else if (pos.i > 0) go(pos.i - 1, Infinity, false);
+        else if (opt.onPastStart) opt.onPastStart();
       }
     }
     function toggle() {
@@ -1057,34 +1137,79 @@ body.focus .scn-cap { font-size: 18px; }
       e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
     });
     const p = { host, show: i => { stop(); go(i, Infinity, false); }, next: () => { stop(); next(); }, prev, sub, toggle,
-      relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; } };
-    // The code in a lightbox over the page; the card's steps go on under it and light its lines.
-    const lb = lbEl;
+      relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; }, stop,
+      begin: () => { stop(); go(0, 0, false); if (motionOn()) start('step'); else go(0, Infinity, false); },
+      playFromStart: () => { go(0, 0, false); start('play'); }, end: () => { stop(); go(N - 1, Infinity, false); } };
+    // `c`: from the scenario's file to the compiler's file this step runs (or the first), and back.
     function code(open) {
-      if (!lb) return;
-      lb.hidden = !open;
-      document.body.classList.toggle('lb-open', open);
-      if (open) showCode(sc.frames[pos.i].beat);
+      if (!implEl) return;
+      if (!open) { selectTab('src'); return; }
+      const lit = new Map();
+      implEl.querySelectorAll('.xc').forEach(panel => { const n = (impl[+panel.dataset.j].hl[sc.frames[pos.i].beat] || []).length; if (n) { const t = panel.closest('.ed-file').dataset.tab; lit.set(t, (lit.get(t) || 0) + n); } });
+      selectTab(lit.size ? busiest(lit) : host.querySelector('.ed-ctab').dataset.tab);
     }
-    if (lb) {
-      // fixed to the window: a card's own transforms would otherwise make it the box the overlay is fixed to
-      document.body.appendChild(lb);
-      $('.code-btn').onclick = () => code(true);
-      lb.querySelector('.lb-close').onclick = () => code(false);
-      lb.querySelector('.lb-prev').onclick = prev;
-      lb.querySelector('.lb-next').onclick = () => { stop(); next(); };
-      lb.addEventListener('click', e => { if (e.target === lb) code(false); });
-    }
+    host.querySelectorAll('.ed-tab').forEach(b => { b.onclick = () => selectTab(b.dataset.tab); });
     p.code = code;
-    p.codeOpen = () => !!lb && !lb.hidden;
-    players.push(p);
+    p.codeOpen = () => tab !== 'src';
+    if (!opt.noRegister) players.push(p);
     go(0, Infinity, false);
     reserveHeights();
     if (document.fonts) document.fonts.ready.then(() => { reserveHeights(); placeThumb(); });
     return p;
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
-  main.querySelectorAll('.scenario').forEach(h => buildPlayer(h, h.dataset.card ? cardScenarios[h.dataset.card] : scenario));
+  // A card in two versions, each with its own steps and timeline: the Problem (on the CRT: the world without the
+  // cog) and the Solution. Stepping or playing past the Problem's last step fades it out and the Solution in.
+  function buildVersions(host, sc) {
+    const nP = sc.frames.findIndex(f => f.group !== 'Problem');
+    const P = Object.assign({}, sc, { frames: sc.frames.slice(0, nP) });
+    // the Solution starts where the scenario stands, without the Problem's fields table: its own timeline
+    const S = Object.assign({}, sc, { frames: sc.frames.slice(nP), base: Object.assign(stateAt(sc, nP - 1), { heap: null }) });
+    const cog = sc.cogs[sc.id] || 'the cog';
+    host.classList.add('versions');
+    host.innerHTML = '<div class="ver-tabs" role="tablist"><button type="button" class="vt vt-p on" role="tab">Problem</button><span class="vt-arrow">→</span><button type="button" class="vt vt-s" role="tab">Solution</button></div>' +
+      '<div class="ver-stage"><div class="scenario ver ver-p"></div><div class="scenario ver ver-s" hidden></div><div class="ver-say" aria-hidden="true"></div></div>';
+    const vp = host.querySelector('.ver-p'), vs = host.querySelector('.ver-s'), say = host.querySelector('.ver-say');
+    let cur = 'P', busy = false;
+    const pp = buildPlayer(vp, P, { impl: befores[sc.id] || null, renumber: true, noRegister: true,
+      onEnd: () => swap('S', 'play'), onPastEnd: () => swap('S', 'begin') });
+    const sp = buildPlayer(vs, S, { renumber: true, noRegister: true, onPastStart: () => swap('P', 'end') });
+    const pl = () => cur === 'P' ? pp : sp;
+    function swap(to, then) {
+      if (to === cur || busy) return;
+      const from = cur === 'P' ? vp : vs, into = to === 'P' ? vp : vs, was = pl(), next = to === 'P' ? pp : sp;
+      const implOpen = was.codeOpen();
+      was.stop();
+      cur = to;
+      host.querySelector('.vt-p').classList.toggle('on', to === 'P');
+      host.querySelector('.vt-s').classList.toggle('on', to === 'S');
+      const land = () => {
+        from.hidden = true; from.classList.remove('out');
+        into.hidden = false; next.relayout();
+        if (implOpen) next.code(true);
+        if (then === 'end') next.end(); else if (then === 'play') next.playFromStart(); else next.begin();
+      };
+      if (!motionOn()) { land(); return; }
+      busy = true;
+      say.textContent = to === 'S' ? 'With ⚙ ' + cog : 'Without ⚙ ' + cog;
+      host.classList.add('swapping');
+      from.classList.add('out');
+      setTimeout(() => {
+        into.classList.add('out');
+        land();
+        void into.offsetWidth;
+        into.classList.remove('out');
+        setTimeout(() => { host.classList.remove('swapping'); busy = false; }, 500);
+      }, 700);
+    }
+    host.querySelector('.vt-p').onclick = () => swap('P', 'begin');
+    host.querySelector('.vt-s').onclick = () => swap('S', 'begin');
+    players.push({ host, next: () => pl().next(), prev: () => pl().prev(), sub: d => pl().sub(d), toggle: () => pl().toggle(),
+      relayout: () => pl().relayout(), code: o => pl().code(o), codeOpen: () => pl().codeOpen(),
+      show: i => { const to = i < nP ? 'P' : 'S'; if (to !== cur) { const m = motionOn(); document.documentElement.classList.remove('motion'); swap(to, 'end'); if (m) document.documentElement.classList.add('motion'); } (to === 'P' ? pp : sp).show(to === 'P' ? i : i - nP); },
+      get k() { return cur === 'P' ? pp.k : nP + sp.k; } });
+  }
+  main.querySelectorAll('.scenario').forEach(h => { if (h.dataset.card) buildVersions(h, cardScenarios[h.dataset.card]); else buildPlayer(h, scenario); });
   let lastW = innerWidth;
   window.addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; players.forEach(p => p.relayout()); });
   window.scenarioPlayers = players; // for checks from the console
@@ -1324,12 +1449,12 @@ body.focus .scn-cap { font-size: 18px; }
     else if (['k', 'ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); setCurrent(current - 1, true, true); }
     else if (e.key === 'f') toggleFocus();
     else if (e.key === 't') toggleTheme();
-    else if (e.key === 'Escape') { const open = players.find(q => q.codeOpen()); if (open) open.code(false); else document.body.classList.remove('focus'); }
+    else if (e.key === 'Escape') { const c = cards[current], open = (c && players.find(q => c.contains(q.host) && q.codeOpen())) || players.find(q => q.codeOpen()); if (open) open.code(false); else document.body.classList.remove('focus'); }
     else if (e.key === 'c') { const c = cards[current], p = c && players.find(q => c.contains(q.host)); if (p && p.code) p.code(!p.codeOpen()); }
     else if (e.key === '[' || e.key === ']') nudgeSpeed(e.key === ']' ? 1 : -1);
     else if (['.', ',', '>', '<', 'p'].includes(e.key)) {
       const c = cards[current];
-      const p = players.find(q => q.codeOpen()) || (c && players.find(q => c.contains(q.host)));
+      const p = c && players.find(q => c.contains(q.host));
       if (p) { e.preventDefault(); ({ '.': p.next, ',': p.prev, '>': () => p.sub(1), '<': () => p.sub(-1), p: p.toggle })[e.key](); }
       else if (c && c.querySelector('figure.anim') && (e.key === '.' || e.key === ',')) step(c.querySelector('figure.anim'), e.key === '.' ? 1 : -1);
     }
