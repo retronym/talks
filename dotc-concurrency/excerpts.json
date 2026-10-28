@@ -1,6 +1,6 @@
 {
  "repo": "scala3",
- "sha": "e790554431",
+ "sha": "70b068d698",
  "note": "Excerpts of the code each card explains. extract.py reads them at `sha`, drops comments, and writes excerpts.gen.json; `extract.py --check` fails if the code at `sha` no longer matches what was generated. `hl` maps a card step (its beat) to patterns of the lines that do that step's work.",
  "cards": {
   "claim": [
@@ -31,7 +31,10 @@
       "myInfo eq ip then myInfo = ip\\.current",
       "roots\\.release"
      ]
-    }
+    },
+    "skip": [
+     "util\\.Chaos"
+    ]
    },
    {
     "file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
@@ -56,14 +59,17 @@
       "final class InProgress",
       "def ownedHere"
      ]
-    }
+    },
+    "skip": [
+     "util\\.Chaos"
+    ]
    }
   ],
   "publish": [
    {
     "file": "compiler/src/dotty/tools/dotc/core/Types.scala",
     "start": "private var lastDenotation: Payload",
-    "end": "private var checkedPeriod: Published\\[Period\\]",
+    "end": "var checkedPeriod: Published\\[Period\\]",
     "hl": {
      "1": [
       "lastDenotation",
@@ -212,7 +218,10 @@
      "4": [
       "lock\\.unlock\\(\\)"
      ]
-    }
+    },
+    "skip": [
+     "util\\.Chaos"
+    ]
    },
    {
     "file": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
@@ -227,7 +236,10 @@
       "while true do",
       "if reader\\.cancelledByChecker \\|\\| myCancelled then throw"
      ]
-    }
+    },
+    "skip": [
+     "util\\.Chaos"
+    ]
    }
   ],
   "unwound": [
@@ -264,12 +276,12 @@
   ],
   "cycles": [
    {
-    "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "start": "private val claims = new ConcurrentHashMap",
     "end": "private val claims = new ConcurrentHashMap"
    },
    {
-    "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "start": "final class Claim\\(",
     "end": "val done: CountDownLatch",
     "hl": {
@@ -279,9 +291,9 @@
     }
    },
    {
-    "file": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "start": "var waitingOn: core\\.CompletionRoots\\.Claim",
-    "end": "var waitingOn: core\\.CompletionRoots\\.Claim",
+    "file": "sharing/src/dotty/tools/sharing/Claimant.scala",
+    "start": "var waitingOn: PerKeyClaims\\.Claim",
+    "end": "var waitingOn: PerKeyClaims\\.Claim",
     "hl": {
      "3": [
       "waitingOn"
@@ -291,7 +303,7 @@
    {
     "file": "compiler/src/dotty/tools/dotc/Reader.scala",
     "start": "var namerCompletionDepth: Int",
-    "end": "var namerCompletionDepth: Int",
+    "end": "override def canAbort",
     "hl": {
      "4": [
       "namerCompletionDepth"
@@ -302,14 +314,13 @@
     }
    },
    {
-    "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "start": "def acquire\\(key",
     "end": "finally me\\.waitingOn = null",
     "skip": [
-     "util\\.Chaos",
      "if waitedSince != 0L then$",
      "val s = seen\\.nn",
-     "me\\.recordLockWait"
+     "me\\.recordWait"
     ],
     "hl": {
      "2": [
@@ -321,10 +332,9 @@
       "c\\.done\\.await\\(5"
      ],
      "4": [
-      "if me\\.namerCompletionDepth == 0 then",
-      "me\\.waitCyclesBackedOff \\+= 1",
+      "if me\\.canAbort then me\\.abort",
       "else if parties\\.exists",
-      "else if chain\\.exists"
+      "else if coarseCycleWaitNanos"
      ],
      "5": [
       "parties\\.forall",
@@ -333,7 +343,7 @@
     }
    },
    {
-    "file": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "start": "private def cycleChain",
     "end": "^    null$",
     "hl": {

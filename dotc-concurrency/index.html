@@ -509,7 +509,7 @@ body.focus .scn-cap { font-size: 18px; }
 
 Interactive mode serves several requests at once against one symbol table. Each request has its own `Reader`; edits run alone, as write actions. Symbols still complete lazily, so one reader may need a completion that another is running.
 
-The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*.
+The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*. The concurrency primitives are [scala-sharing](https://github.com/retronym/scala-sharing), vendored into the compiler. This page's source: [retronym/talks](https://github.com/retronym/talks/tree/main/dotc-concurrency).
 
 Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each cog lights up when it acts; its card shows what breaks without it.
 
@@ -533,7 +533,7 @@ Each card removes one cog: the problem, the mechanism, then the same moment with
 
 ### Claim on a completion root
 
-<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
+<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. A key computed per call, such as the TASTy file a completer reads, is claimed with <code>claimAt[K]</code> for a phantom family <code>K</code>: the state it guards is in <code>Claimed[K, T]</code> fields, which read and write only with a <code>Holds[K]</code>. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
 
 <div class="scenario" data-card="claim"></div>
 
@@ -3083,13 +3083,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
  }
 }</script>
 <script type="application/json" id="excerpts-src">{
- "sha": "e790554431",
+ "sha": "70b068d698",
  "cards": {
   "claim": [
    {
     "file": "Denotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Denotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Denotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Denotations.scala",
     "lines": [
      {
       "n": 208,
@@ -3105,7 +3105,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 233,
@@ -3136,128 +3136,136 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "text": "  roots.acquire(key, CompletionLock.What(CompletionLock.completionKind(completer), symbol), () => cyclicWait())"
      },
      {
-      "n": 243,
-      "text": "  val namer = CompletionLock.completionKind(completer) == CompletionLock.namerKind"
+      "n": null,
+      "text": "⋯"
      },
      {
       "n": 244,
-      "text": "  val reader = ctx.reader"
+      "text": "  val namer = CompletionLock.completionKind(completer) == CompletionLock.namerKind"
      },
      {
       "n": 245,
-      "text": "  if namer then reader.namerCompletionDepth += 1"
+      "text": "  val reader = ctx.reader"
      },
      {
       "n": 246,
+      "text": "  if namer then reader.namerCompletionDepth += 1"
+     },
+     {
+      "n": 247,
       "text": "  try"
      },
      {
-      "n": 248,
+      "n": 249,
       "text": "    ownView match"
      },
      {
-      "n": 249,
+      "n": 250,
       "text": "      case current: LazyType if current.needsCompletion(this) =>"
      },
      {
-      "n": 250,
+      "n": 251,
       "text": "        myInfo match"
      },
      {
-      "n": 251,
+      "n": 252,
       "text": "          case _: InProgress =>"
      },
      {
-      "n": 253,
+      "n": 254,
       "text": "            lockAndComplete0(current, interactive = true)"
      },
      {
-      "n": 254,
+      "n": 255,
       "text": "          case _ =>"
      },
      {
-      "n": 255,
+      "n": 256,
       "text": "            val ip = InProgress(current, Thread.currentThread.nn, key)"
      },
      {
-      "n": 256,
+      "n": 257,
       "text": "            myInfo = ip"
      },
      {
-      "n": 257,
+      "n": 258,
       "text": "            try lockAndComplete0(current, interactive = true)"
      },
      {
-      "n": 258,
+      "n": 259,
       "text": "            finally if myInfo eq ip then myInfo = ip.current"
      },
      {
-      "n": 259,
+      "n": 260,
       "text": "      case _ =>"
      },
      {
-      "n": 260,
+      "n": 261,
       "text": "  finally"
      },
      {
-      "n": 261,
+      "n": 262,
       "text": "    if namer then reader.namerCompletionDepth -= 1"
      },
      {
-      "n": 262,
+      "n": null,
+      "text": "⋯"
+     },
+     {
+      "n": 264,
       "text": "    roots.release(key)"
      }
     ],
     "hl": {
      "3": [
       6,
-      17,
-      18
+      18,
+      19
      ],
      "4": [
       1
      ],
      "5": [
-      20,
-      24
+      21,
+      26
      ]
     }
    },
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
-      "n": 303,
+      "n": 305,
       "text": "private def ownView: Type = myInfo match"
      },
      {
-      "n": 304,
+      "n": 306,
       "text": "  case ip: InProgress if ip.ownedHere => ip.current"
      },
      {
-      "n": 305,
+      "n": 307,
       "text": "  case i => i"
      },
      {
-      "n": 311,
+      "n": 313,
       "text": "private def awaitOthers()(using Context): Type = myInfo match"
      },
      {
-      "n": 312,
+      "n": 314,
       "text": "  case ip: InProgress if !ip.ownedHere =>"
      },
      {
-      "n": 313,
+      "n": 315,
       "text": "    ctx.base.completionRoots.locked(ip.rootKey, CompletionLock.peek, () => cyclicWait())(())"
      },
      {
-      "n": 314,
+      "n": 316,
       "text": "    awaitOthers()"
      },
      {
-      "n": 315,
+      "n": 317,
       "text": "  case _ => ownView"
      }
     ],
@@ -3274,26 +3282,58 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
-      "n": 3430,
+      "n": 3433,
       "text": "final class InProgress(@volatile var current: Type, val owner: Thread, val rootKey: AnyRef) extends LazyType:"
      },
      {
-      "n": 3431,
+      "n": 3434,
       "text": "  def ownedHere: Boolean = owner eq Thread.currentThread"
      },
      {
-      "n": 3432,
+      "n": 3435,
       "text": "  def complete(denot: SymDenotation)(using Context, Sharing.Holds[denot.type]): Unit ="
      },
      {
-      "n": 3433,
-      "text": "    throw AssertionError(s\"$denot: an InProgress is completed through its root, not run\")"
+      "n": 3436,
+      "text": "    throw AssertionError(s\"$denot: an InProgress is completed through its root, not run; ${diagnose()}\")"
      },
      {
-      "n": 3434,
+      "n": 3439,
+      "text": "  def diagnose()(using Context): String ="
+     },
+     {
+      "n": 3440,
+      "text": "    val ownerStack = owner.getStackTrace.iterator.filter(_.getClassName.startsWith(\"dotty.tools\")).take(25).mkString(\"\\n    \")"
+     },
+     {
+      "n": 3441,
+      "text": "    s\"\"\"met by ${Thread.currentThread.getName}, owned by ${owner.getName} (${owner.getState}${if ownedHere then \", this thread\" else \"\"}), root $rootKey, current info ${current.getClass.getSimpleName}"
+     },
+     {
+      "n": 3442,
+      "text": "       |claims held: ${ctx.base.completionRoots.holdersNow}"
+     },
+     {
+      "n": 3443,
+      "text": "       |the owner's stack now:"
+     },
+     {
+      "n": 3444,
+      "text": "       |    $ownerStack"
+     },
+     {
+      "n": 3445,
+      "text": "       |the readers' last events:"
+     },
+     {
+      "n": null,
+      "text": "⋯"
+     },
+     {
+      "n": 3447,
       "text": "  override def completionRoot(symd: SymDenotation)(using Context): AnyRef = rootKey"
      }
     ],
@@ -3309,19 +3349,19 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2366,
+      "n": 2365,
       "text": "private var lastDenotation: Payload[NamedType, \"checkedPeriod\", Denotation | Null] = Payload(null)"
      },
      {
-      "n": 2367,
+      "n": 2366,
       "text": "private var lastSymbol: Payload[NamedType, \"checkedPeriod\", Symbol | Null] = Payload(null)"
      },
      {
-      "n": 2368,
-      "text": "private var checkedPeriod: Published[Period] = Published(Nowhere)"
+      "n": 2367,
+      "text": "private[core] var checkedPeriod: Published[Period] = Published(Nowhere)"
      }
     ],
     "hl": {
@@ -3340,34 +3380,34 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2646,
+      "n": 2645,
       "text": "private def setDenot(denot: Denotation)(using Context): Unit = {"
      },
      {
-      "n": 2647,
+      "n": 2646,
       "text": "  if ctx.base.checkNoDoubleBindings then"
      },
      {
-      "n": 2648,
+      "n": 2647,
       "text": "    checkSymAssign(denot.symbol)"
      },
      {
-      "n": 2651,
+      "n": 2650,
       "text": "  val sym = denot.symbol"
      },
      {
-      "n": 2652,
+      "n": 2651,
       "text": "  checkedPeriod.publishing(if prefix.isProvisional then Nowhere else ctx.period):"
      },
      {
-      "n": 2653,
+      "n": 2652,
       "text": "    lastDenotation := denot"
      },
      {
-      "n": 2654,
+      "n": 2653,
       "text": "    lastSymbol := sym"
      }
     ],
@@ -3382,22 +3422,22 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 2431,
+      "n": 2430,
       "text": "final def symbol(using Context): Symbol ="
      },
      {
-      "n": 2435,
+      "n": 2434,
       "text": "  val checked = checkedPeriod.acquired"
      },
      {
-      "n": 2436,
+      "n": 2435,
       "text": "  if checked.value == ctx.period then lastSymbol.after(checked).asInstanceOf[Symbol]"
      },
      {
-      "n": 2437,
+      "n": 2436,
       "text": "  else computeSymbol"
      }
     ],
@@ -3413,22 +3453,22 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
-      "n": 81,
+      "n": 123,
       "text": "extension [O, F <: String, T](inline field: Payload[O, F, T])"
      },
      {
-      "n": 85,
+      "n": 128,
       "text": "  inline def after[S, V](snap: Acquired[S, F, V]): T = ${ PublishedMacros.afterImpl[S, F, T]('field, 'snap) }"
      },
      {
-      "n": 88,
-      "text": "  inline def peek: T = ${ PublishedMacros.payloadPeekImpl[T]('field) }"
+      "n": 133,
+      "text": "  inline def plain: T = ${ PublishedMacros.payloadPlainImpl[T]('field) }"
      },
      {
-      "n": 91,
+      "n": 137,
       "text": "  inline def :=(inline v: T)(using Publishing): Unit = ${ PublishedMacros.payloadStoreImpl[O, F, T]('field, 'v) }"
      }
     ],
@@ -3444,18 +3484,18 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
-      "n": 117,
+      "n": 165,
       "text": "transparent inline def acquired: Any = ${ PublishedMacros.acquiredImpl[T]('field) }"
      },
      {
-      "n": 121,
+      "n": 169,
       "text": "inline def publishing(inline v: T)(inline body: Published.Publishing ?=> Unit): Unit ="
      },
      {
-      "n": 122,
+      "n": 170,
       "text": "  ${ PublishedMacros.publishingImpl[T]('field, 'v, 'body) }"
      }
     ],
@@ -3471,10 +3511,10 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
-      "n": 18,
+      "n": 39,
       "text": "final class Stamped[+K, +T](val stamp: Int, val value: T):"
      }
     ],
@@ -3487,62 +3527,62 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
-      "n": 3567,
+      "n": 3565,
       "text": "private var myBaseClasses: Stamped[PerPeriod, List[ClassSymbol]] = Stamped.Empty"
      },
      {
-      "n": 3569,
+      "n": 3567,
       "text": "override final def baseClasses(using Context): List[ClassSymbol] ="
      },
      {
-      "n": 3570,
+      "n": 3568,
       "text": "  myBaseClasses.cached:"
      },
      {
-      "n": 3571,
+      "n": 3569,
       "text": "    val bcs1 = tp1.baseClasses"
      },
      {
-      "n": 3572,
+      "n": 3570,
       "text": "    val bcs1set = BaseClassSet(bcs1)"
      },
      {
-      "n": 3573,
+      "n": 3571,
       "text": "    def recur(bcs2: List[ClassSymbol]): List[ClassSymbol] = bcs2 match {"
      },
      {
-      "n": 3574,
+      "n": 3572,
       "text": "      case bc2 :: bcs2rest =>"
      },
      {
-      "n": 3575,
+      "n": 3573,
       "text": "        if bcs1set.contains(bc2) then"
      },
      {
-      "n": 3576,
+      "n": 3574,
       "text": "          if bc2.is(Trait) then recur(bcs2rest)"
      },
      {
-      "n": 3577,
+      "n": 3575,
       "text": "          else bcs1"
      },
      {
-      "n": 3578,
+      "n": 3576,
       "text": "        else bc2 :: recur(bcs2rest)"
      },
      {
-      "n": 3579,
+      "n": 3577,
       "text": "      case nil => bcs1"
      },
      {
-      "n": 3580,
+      "n": 3578,
       "text": "    }"
      },
      {
-      "n": 3581,
+      "n": 3579,
       "text": "    recur(tp2.baseClasses)"
      }
     ],
@@ -3558,38 +3598,38 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
-      "n": 108,
+      "n": 153,
       "text": "'{"
      },
      {
-      "n": 109,
+      "n": 154,
       "text": "  val c = $field"
      },
      {
-      "n": 110,
+      "n": 155,
       "text": "  if ${ Expr.betaReduce('{ $isCurrent(c.stamp, c.value) }) } then c.value"
      },
      {
-      "n": 111,
+      "n": 156,
       "text": "  else"
      },
      {
-      "n": 112,
+      "n": 157,
       "text": "    val v = $compute"
      },
      {
-      "n": 113,
+      "n": 158,
       "text": "    if ${ Expr.betaReduce('{ $keep(v) }) } then ${ store(n, 'v) }"
      },
      {
-      "n": 114,
+      "n": 159,
       "text": "    v"
      },
      {
-      "n": 115,
+      "n": 160,
       "text": "}"
      }
     ],
@@ -3608,7 +3648,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 90,
@@ -3620,7 +3660,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 116,
@@ -3641,7 +3681,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 95,
@@ -3657,95 +3697,107 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
-      "n": 152,
+      "n": 153,
       "text": "private def writing[T](body: => T): T ="
      },
      {
-      "n": 153,
+      "n": 154,
       "text": "  val lock = regime.writeLock"
      },
      {
-      "n": 154,
+      "n": 155,
       "text": "  if lock.isHeldByCurrentThread then body"
      },
      {
-      "n": 155,
+      "n": 156,
       "text": "  else"
      },
      {
-      "n": 156,
+      "n": 157,
       "text": "    writerPending = true"
      },
      {
-      "n": 157,
-      "text": "    lock.lock()"
-     },
-     {
-      "n": 158,
-      "text": "    try"
+      "n": null,
+      "text": "⋯"
      },
      {
       "n": 159,
-      "text": "      writerPending = false"
+      "text": "    lock.lock()"
      },
      {
       "n": 160,
-      "text": "      base.writeActionThread = Thread.currentThread"
+      "text": "    try"
      },
      {
       "n": 161,
-      "text": "      myWrites += 1"
+      "text": "      writerPending = false"
      },
      {
-      "n": 162,
-      "text": "      val result = body"
+      "n": null,
+      "text": "⋯"
      },
      {
       "n": 163,
-      "text": "      base.reader.resultStamp = myWrites"
+      "text": "      base.writeActionThread = Thread.currentThread"
      },
      {
       "n": 164,
-      "text": "      result"
+      "text": "      myWrites += 1"
      },
      {
       "n": 165,
-      "text": "    finally"
+      "text": "      val result = body"
      },
      {
       "n": 166,
-      "text": "      base.writeActionThread = null"
+      "text": "      base.reader.resultStamp = myWrites"
      },
      {
       "n": 167,
+      "text": "      result"
+     },
+     {
+      "n": 168,
+      "text": "    finally"
+     },
+     {
+      "n": 169,
+      "text": "      base.writeActionThread = null"
+     },
+     {
+      "n": null,
+      "text": "⋯"
+     },
+     {
+      "n": 171,
       "text": "      lock.unlock()"
      }
     ],
     "hl": {
      "1": [
-      5
+      6
      ],
      "2": [
       4,
-      5
+      6
      ],
      "3": [
-      7,
-      9,
-      10
+      8,
+      11,
+      12
      ],
      "4": [
-      15
+      18
      ]
     }
    },
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 123,
@@ -3804,11 +3856,15 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "text": "      finally lock.unlock()"
      },
      {
-      "n": 143,
+      "n": null,
+      "text": "⋯"
+     },
+     {
+      "n": 144,
       "text": "    afterCancel()"
      },
      {
-      "n": 148,
+      "n": 149,
       "text": "    if reader.cancelledByChecker || myCancelled then throw cancelled"
      }
     ],
@@ -3819,7 +3875,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      ],
      "4": [
       2,
-      15
+      16
      ]
     }
    }
@@ -3828,38 +3884,38 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
-      "n": 384,
+      "n": 386,
       "text": "private def onUnwind(ex: Throwable, interactive: Boolean, reader: Reader | Null, completer: LazyType)(using Context): Unit ="
      },
      {
-      "n": 385,
+      "n": 387,
       "text": "  ex match"
      },
      {
-      "n": 386,
+      "n": 388,
       "text": "    case _: CompilationUnit.CancelledCompilation =>"
      },
      {
-      "n": 387,
+      "n": 389,
       "text": "      untouchIfIncomplete()"
      },
      {
-      "n": 391,
+      "n": 393,
       "text": "      ctx.reader.cancelledCompletions += symbol"
      },
      {
-      "n": 405,
+      "n": 407,
       "text": "      if interactive"
      },
      {
-      "n": 406,
+      "n": 408,
       "text": "         && completer.isInstanceOf[SymbolLoaders.SecondCompleter] && !completer.isInstanceOf[UnwoundCompletion]"
      },
      {
-      "n": 407,
+      "n": 409,
       "text": "      then"
      },
      {
@@ -3867,11 +3923,11 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "text": "⋯"
      },
      {
-      "n": 409,
+      "n": 412,
       "text": "        info_=(UnwoundCompletion(completer, ctx.runId, UnwoundCompletion.originHere()))"
      },
      {
-      "n": 410,
+      "n": 413,
       "text": "        myFlags &~= Touched"
      }
     ],
@@ -3886,38 +3942,38 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
-      "n": 3403,
+      "n": 3406,
       "text": "final class UnwoundCompletion(original: LazyType, runId: Int, val origin: String) extends LazyType with SymbolLoaders.SecondCompleter:"
      },
      {
-      "n": 3404,
+      "n": 3407,
       "text": "  def complete(denot: SymDenotation)(using Context, Sharing.Holds[denot.type]): Unit ="
      },
      {
-      "n": 3405,
+      "n": 3408,
       "text": "    if ctx.runId != runId then"
      },
      {
-      "n": 3409,
+      "n": 3412,
       "text": "      original.complete(denot)"
      },
      {
-      "n": 3410,
+      "n": 3413,
       "text": "    else"
      },
      {
-      "n": 3411,
+      "n": 3414,
       "text": "      val run = ctx.run"
      },
      {
-      "n": 3412,
+      "n": 3415,
       "text": "      if run != null then run.markTainted()"
      },
      {
-      "n": 3413,
+      "n": 3416,
       "text": "      throw CompilationUnit.CancelledCompilation(s\"the completion of $denot was unwound by a cancellation on $origin; met again in run $runId by ${Thread.currentThread.getName}\")"
      }
     ],
@@ -3935,32 +3991,32 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
   ],
   "cycles": [
    {
-    "file": "CompletionRoots.scala",
-    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "PerKeyClaims.scala",
+    "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
-      "n": 44,
+      "n": 31,
       "text": "private val claims = new ConcurrentHashMap[AnyRef, Claim]()"
      }
     ],
     "hl": {}
    },
    {
-    "file": "CompletionRoots.scala",
-    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "PerKeyClaims.scala",
+    "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
-      "n": 170,
-      "text": "final class Claim(val owner: Reader, val what: CompletionLock.What, val ownerName: String):"
+      "n": 128,
+      "text": "final class Claim(val owner: Claimant, val what: What, val ownerName: String):"
      },
      {
-      "n": 173,
+      "n": 130,
       "text": "  @volatile var holds: Int = 1"
      },
      {
-      "n": 175,
+      "n": 131,
       "text": "  val done: CountDownLatch = new CountDownLatch(1)"
      }
     ],
@@ -3971,13 +4027,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     }
    },
    {
-    "file": "Reader.scala",
-    "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/Reader.scala",
+    "file": "Claimant.scala",
+    "path": "sharing/src/dotty/tools/sharing/Claimant.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Claimant.scala",
     "lines": [
      {
-      "n": 281,
-      "text": "@volatile var waitingOn: core.CompletionRoots.Claim | Null = null"
+      "n": 28,
+      "text": "@volatile var waitingOn: PerKeyClaims.Claim | Null = null"
      }
     ],
     "hl": {
@@ -3989,273 +4045,265 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Reader.scala",
     "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/Reader.scala",
     "lines": [
      {
-      "n": 292,
+      "n": 287,
       "text": "@volatile var namerCompletionDepth: Int = 0"
+     },
+     {
+      "n": 290,
+      "text": "override def canAbort: Boolean = namerCompletionDepth == 0"
      }
     ],
     "hl": {
      "4": [
-      0
+      0,
+      1
      ],
      "5": [
-      0
+      0,
+      1
      ]
     }
    },
    {
-    "file": "CompletionRoots.scala",
-    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "PerKeyClaims.scala",
+    "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
-      "n": 49,
-      "text": "def acquire(key: AnyRef, what: CompletionLock.What, cycle: () => Nothing): Unit ="
+      "n": 36,
+      "text": "def acquire(key: AnyRef, what: What, cycle: () => Nothing): Unit ="
      },
      {
-      "n": 50,
-      "text": "  val me = currentReader()"
+      "n": 37,
+      "text": "  val me = currentClaimant()"
      },
      {
-      "n": 51,
+      "n": 38,
       "text": "  var waitedSince = 0L"
      },
      {
-      "n": 52,
-      "text": "  var cycleSince = 0L"
-     },
-     {
-      "n": 53,
+      "n": 39,
       "text": "  var seen: Claim | Null = null"
      },
      {
-      "n": 54,
+      "n": 40,
+      "text": "  var cycleSince = 0L"
+     },
+     {
+      "n": 41,
       "text": "  var lastChain: List[Claim] | Null = null"
      },
      {
-      "n": 55,
+      "n": 42,
       "text": "  while true do"
      },
      {
-      "n": 56,
+      "n": 43,
       "text": "    val c = claims.get(key)"
      },
      {
-      "n": 57,
+      "n": 44,
       "text": "    if c == null then"
      },
      {
-      "n": 58,
+      "n": 45,
       "text": "      val mine = Claim(me, what, Thread.currentThread.nn.getName.nn)"
      },
      {
-      "n": 59,
+      "n": 46,
       "text": "      if claims.putIfAbsent(key, mine) == null then"
+     },
+     {
+      "n": 47,
+      "text": "        me.acquired()"
      },
      {
       "n": null,
       "text": "⋯"
      },
      {
-      "n": 64,
+      "n": 51,
       "text": "        return"
      },
      {
-      "n": 65,
+      "n": 52,
       "text": "    else if c.owner eq me then"
      },
      {
-      "n": 66,
+      "n": 53,
       "text": "      c.holds += 1"
      },
      {
-      "n": 67,
+      "n": 54,
       "text": "      return"
      },
      {
-      "n": 68,
+      "n": 55,
       "text": "    else"
      },
      {
-      "n": 69,
+      "n": 56,
       "text": "      if waitedSince == 0L then"
      },
      {
-      "n": 70,
+      "n": 57,
       "text": "        waitedSince = System.nanoTime()"
      },
      {
-      "n": 71,
+      "n": 58,
       "text": "        seen = c"
      },
      {
-      "n": 72,
+      "n": 59,
       "text": "      cycleChain(me, c) match"
      },
      {
-      "n": 73,
+      "n": 60,
       "text": "        case null =>"
      },
      {
-      "n": 74,
+      "n": 61,
       "text": "          cycleSince = 0L"
      },
      {
-      "n": 75,
+      "n": 62,
       "text": "          lastChain = null"
      },
      {
-      "n": 76,
+      "n": 63,
       "text": "        case chain =>"
      },
      {
-      "n": 77,
+      "n": 64,
       "text": "          val parties = chain.map(_.owner)"
      },
      {
-      "n": 78,
-      "text": "          if me.namerCompletionDepth == 0 then"
+      "n": 65,
+      "text": "          if me.canAbort then me.abort()"
      },
      {
-      "n": 80,
-      "text": "            me.waitCyclesBackedOff += 1"
+      "n": 66,
+      "text": "          else if parties.exists(_.canAbort) then"
      },
      {
-      "n": 81,
-      "text": "            throw CompilationUnit.CancelledCompilation()"
-     },
-     {
-      "n": 82,
-      "text": "          else if parties.exists(_.namerCompletionDepth == 0) then"
-     },
-     {
-      "n": 83,
+      "n": 67,
       "text": "            ()"
      },
      {
-      "n": 84,
-      "text": "          else if chain.exists(_.what.kind != CompletionLock.namerKind) then"
+      "n": 68,
+      "text": "          else if coarseCycleWaitNanos > 0L && chain.exists(_.what.coarse) then"
      },
      {
-      "n": 87,
+      "n": 70,
       "text": "            if cycleSince == 0L then cycleSince = System.nanoTime()"
      },
      {
-      "n": 88,
-      "text": "            else if System.nanoTime() - cycleSince > CompletionRoots.coarseCycleWaitNanos then"
+      "n": 71,
+      "text": "            else if System.nanoTime() - cycleSince > coarseCycleWaitNanos then me.abort()"
      },
      {
-      "n": 89,
-      "text": "              me.waitCyclesBackedOff += 1"
-     },
-     {
-      "n": 90,
-      "text": "              throw CompilationUnit.CancelledCompilation()"
-     },
-     {
-      "n": 91,
+      "n": 72,
       "text": "          else if parties.forall(p => System.identityHashCode(p.thread) <= System.identityHashCode(me.thread)) then"
      },
      {
-      "n": 99,
+      "n": 76,
       "text": "            val last = lastChain"
      },
      {
-      "n": 100,
+      "n": 77,
       "text": "            if last != null && last.corresponds(chain)(_ eq _) then cycle()"
      },
      {
-      "n": 101,
+      "n": 78,
       "text": "            else lastChain = chain"
      },
      {
-      "n": 102,
+      "n": 79,
       "text": "      me.waitingOn = c"
      },
      {
-      "n": 103,
+      "n": 80,
       "text": "      try c.done.await(5, TimeUnit.MILLISECONDS)"
      },
      {
-      "n": 104,
+      "n": 81,
       "text": "      finally me.waitingOn = null"
      }
     ],
     "hl": {
      "2": [
-      41
+      38
      ],
      "3": [
-      20,
-      40,
-      41
+      21,
+      37,
+      38
      ],
      "4": [
-      26,
       27,
-      29,
-      31,
-      34
+      28,
+      30
      ],
      "5": [
-      36,
-      38
+      33,
+      35
      ]
     }
    },
    {
-    "file": "CompletionRoots.scala",
-    "path": "compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/CompletionRoots.scala",
+    "file": "PerKeyClaims.scala",
+    "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
-      "n": 129,
-      "text": "private def cycleChain(me: Reader, c: Claim): List[Claim] | Null ="
+      "n": 105,
+      "text": "private def cycleChain(me: Claimant, c: Claim): List[Claim] | Null ="
      },
      {
-      "n": 130,
+      "n": 106,
       "text": "  var claim: Claim | Null = c"
      },
      {
-      "n": 131,
+      "n": 107,
       "text": "  var chain: List[Claim] = Nil"
      },
      {
-      "n": 132,
+      "n": 108,
       "text": "  var steps = 0"
      },
      {
-      "n": 133,
+      "n": 109,
       "text": "  while claim != null && steps < 1000 do"
      },
      {
-      "n": 136,
+      "n": 111,
       "text": "    if claim.done.getCount == 0 then return null"
      },
      {
-      "n": 137,
+      "n": 112,
       "text": "    chain = claim :: chain"
      },
      {
-      "n": 138,
+      "n": 113,
       "text": "    if claim.owner eq me then"
      },
      {
-      "n": 142,
+      "n": 117,
       "text": "      return if chain.forall(_.done.getCount != 0) then chain else null"
      },
      {
-      "n": 143,
+      "n": 118,
       "text": "    claim = claim.owner.waitingOn"
      },
      {
-      "n": 144,
+      "n": 119,
       "text": "    steps += 1"
      },
      {
-      "n": 145,
+      "n": 120,
       "text": "  null"
      }
     ],
@@ -4271,7 +4319,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Contexts.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Contexts.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Contexts.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Contexts.scala",
     "lines": [
      {
       "n": 1159,
@@ -4299,74 +4347,74 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
-      "n": 3548,
+      "n": 3561,
       "text": "protected final val concurrent: Boolean = base.concurrent"
      },
      {
-      "n": 3549,
+      "n": 3562,
       "text": "private val epoch: Int = if concurrent then base.structureEpoch else 0"
      },
      {
-      "n": 3550,
+      "n": 3563,
       "text": "protected final def epochCurrent: Boolean = !concurrent || epoch == base.structureEpoch"
      },
      {
-      "n": 3552,
+      "n": 3565,
       "text": "private var dependent: WeakHashMap[InheritedCache, Unit] | Null = null"
      },
      {
-      "n": 3556,
+      "n": 3569,
       "text": "private var checkedPeriod: Period = Nowhere"
      },
      {
-      "n": 3559,
+      "n": 3572,
       "text": "protected def invalidateDependents(): Unit ="
      },
      {
-      "n": 3560,
+      "n": 3573,
       "text": "  if concurrent then base.bumpStructureEpoch()"
      },
      {
-      "n": 3561,
+      "n": 3574,
       "text": "  else"
      },
      {
-      "n": 3562,
+      "n": 3575,
       "text": "    if (dependent != null) {"
      },
      {
-      "n": 3563,
+      "n": 3576,
       "text": "      val it = dependent.nn.keySet.iterator()"
      },
      {
-      "n": 3564,
+      "n": 3577,
       "text": "      while (it.hasNext()) it.next().invalidate()"
      },
      {
-      "n": 3565,
+      "n": 3578,
       "text": "    }"
      },
      {
-      "n": 3566,
+      "n": 3579,
       "text": "    dependent = null"
      },
      {
-      "n": 3568,
+      "n": 3581,
       "text": "protected def addDependent(dep: InheritedCache): Unit ="
      },
      {
-      "n": 3569,
+      "n": 3582,
       "text": "  if !concurrent then"
      },
      {
-      "n": 3570,
+      "n": 3583,
       "text": "    if (dependent == null) dependent = new WeakHashMap"
      },
      {
-      "n": 3571,
+      "n": 3584,
       "text": "    dependent.nn.put(dep, ())"
      }
     ],
@@ -4391,7 +4439,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 313,
@@ -4407,7 +4455,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 336,
@@ -4436,7 +4484,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymbolLoaders.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
     "lines": [
      {
       "n": 346,
@@ -4484,22 +4532,22 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
-      "n": 3588,
+      "n": 3601,
       "text": "def isValidAt(phase: Phase)(using Context) ="
      },
      {
-      "n": 3589,
+      "n": 3602,
       "text": "  epochCurrent && checkedPeriod == ctx.period ||"
      },
      {
-      "n": 3590,
+      "n": 3603,
       "text": "    epochCurrent &&"
      },
      {
-      "n": 3591,
+      "n": 3604,
       "text": "    createdAt.runId == ctx.runId &&"
      }
     ],
@@ -4515,10 +4563,10 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
-      "n": 367,
+      "n": 371,
       "text": "@volatile private var myWrites: Int = 0"
      }
     ],
@@ -4534,10 +4582,10 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Reader.scala",
     "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/Reader.scala",
     "lines": [
      {
-      "n": 73,
+      "n": 71,
       "text": "private[dotc] var resultStamp: Long = -1"
      }
     ],
@@ -4553,7 +4601,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 139,
@@ -4569,10 +4617,10 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
-      "n": 161,
+      "n": 164,
       "text": "myWrites += 1"
      }
     ],
@@ -4585,54 +4633,54 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
-      "n": 381,
+      "n": 385,
       "text": "private def servedCurrent[T](check: () => Boolean)(body: => T): T ="
      },
      {
-      "n": 382,
+      "n": 386,
       "text": "  var tries = 0"
      },
      {
-      "n": 383,
+      "n": 387,
       "text": "  while true do"
      },
      {
-      "n": 384,
+      "n": 388,
       "text": "    val result = body"
      },
      {
-      "n": 385,
+      "n": 389,
       "text": "    val stamp = base.reader.resultStamp"
      },
      {
-      "n": 386,
+      "n": 390,
       "text": "    if stamp < 0 || stamp == myWrites then return result"
      },
      {
-      "n": 387,
+      "n": 391,
       "text": "    if tries == MaxStaleRetries then"
      },
      {
-      "n": 388,
+      "n": 392,
       "text": "      staleServed.incrementAndGet()"
      },
      {
-      "n": 389,
+      "n": 393,
       "text": "      return result"
      },
      {
-      "n": 390,
+      "n": 394,
       "text": "    tries += 1"
      },
      {
-      "n": 391,
+      "n": 395,
       "text": "    staleRetries.incrementAndGet()"
      },
      {
-      "n": 392,
+      "n": 396,
       "text": "    bindReader(check)"
      }
     ],
@@ -4652,7 +4700,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 92,
@@ -4677,7 +4725,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 100,
@@ -4785,7 +4833,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 259,
@@ -4801,7 +4849,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/e7905544317da7f3412daf163c0bab80494e0723/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 559,
