@@ -1019,7 +1019,8 @@ body.focus .scn-cap { font-size: 18px; }
     }
     // The code under a card: the lines that do this step's work are lit, the rest dimmed; an excerpt with nothing to
     // say about the step stays as it is.
-    function showCode(beat) {
+    // `follow`: a step moved, so the view follows execution; a tab the viewer picked stays picked
+    function showCode(beat, follow = true) {
       if (!implEl) return;
       const litFiles = new Map();
       implEl.querySelectorAll('.xc').forEach(panel => {
@@ -1042,7 +1043,7 @@ body.focus .scn-cap { font-size: 18px; }
       });
       host.querySelectorAll('.ed-ctab').forEach(t => t.classList.toggle('here', litFiles.has(t.dataset.tab)));
       // stepping follows execution into the file this step runs, as a debugger does
-      if (tab !== 'src' && litFiles.size && !litFiles.has(tab)) selectTab(busiest(litFiles));
+      if (follow && tab !== 'src' && litFiles.size && !litFiles.has(tab)) selectTab(busiest(litFiles));
       const file = tab === 'src' ? null : implEl.querySelector('.ed-file[data-tab="' + tab + '"]');
       if (!file) return;
       const pc = file.querySelector('.xl.hl');
@@ -1061,7 +1062,7 @@ body.focus .scn-cap { font-size: 18px; }
       linesEl.hidden = t !== 'src';
       if (implEl) { implEl.hidden = t === 'src'; implEl.querySelectorAll('.ed-file').forEach(f => { f.hidden = f.dataset.tab !== t; }); }
       $('.ed').classList.toggle('debugging', t !== 'src');
-      if (t !== 'src') { pop.hidden = true; showCode(sc.frames[pos.i].beat); }
+      if (t !== 'src') { pop.hidden = true; showCode(sc.frames[pos.i].beat, false); }
       else painted.key = null, paint(pos.i, pos.t, false);
       runLabel();
     }
