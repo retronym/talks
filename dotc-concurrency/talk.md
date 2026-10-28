@@ -28,7 +28,7 @@ Each card shows one mechanism: first the Problem, the moment going wrong without
 
 ### Claim on a completion root
 
-<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. A key computed per call, such as the TASTy file a completer reads, is claimed with <code>claimAt[K]</code> for a phantom family <code>K</code>: the state it guards is in <code>Claimed[K, T]</code> fields, which read and write only with a <code>Holds[K]</code>. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
+<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. A key computed per call, such as the TASTy file a completer reads, is claimed with <code>claimAt(owner)</code>: the evidence names the owner, <code>Holds[owner.type]</code>, and the state the claim guards is in <code>Claimed[owner.type, T]</code> fields, so holding one file's claim does not reach another's state. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
 
 <div class="scenario" data-card="claim"></div>
 

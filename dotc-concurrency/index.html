@@ -559,7 +559,7 @@ Each card shows one mechanism: first the Problem, the moment going wrong without
 
 ### Claim on a completion root
 
-<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. A key computed per call, such as the TASTy file a completer reads, is claimed with <code>claimAt[K]</code> for a phantom family <code>K</code>: the state it guards is in <code>Claimed[K, T]</code> fields, which read and write only with a <code>Holds[K]</code>. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
+<p class="lede">A claim is a capability: <code>Sharing.claim(key)</code> gives its body a <code>Holds[key.type]</code>, and <code>complete</code> requires one, so completing without the claim does not compile. A key computed per call, such as the TASTy file a completer reads, is claimed with <code>claimAt(owner)</code>: the evidence names the owner, <code>Holds[owner.type]</code>, and the state the claim guards is in <code>Claimed[owner.type, T]</code> fields, so holding one file's claim does not reach another's state. The operations are inline methods, which keep a fast path for single-threaded compilation.</p>
 
 <div class="scenario" data-card="claim"></div>
 
@@ -3110,13 +3110,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
 }
 </script>
 <script type="application/json" id="excerpts-src">{
- "sha": "70b068d698",
+ "sha": "899c4ae61b",
  "cards": {
   "claim": [
    {
     "file": "Denotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Denotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Denotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Denotations.scala",
     "lines": [
      {
       "n": 208,
@@ -3132,7 +3132,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 233,
@@ -3261,7 +3261,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 305,
@@ -3309,7 +3309,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3433,
@@ -3376,7 +3376,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2365,
@@ -3407,7 +3407,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2645,
@@ -3449,7 +3449,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2430,
@@ -3480,7 +3480,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
       "n": 123,
@@ -3511,7 +3511,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
       "n": 165,
@@ -3538,7 +3538,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
       "n": 39,
@@ -3554,7 +3554,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 3565,
@@ -3625,7 +3625,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
       "n": 153,
@@ -3675,7 +3675,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 90,
@@ -3687,7 +3687,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 116,
@@ -3708,7 +3708,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 95,
@@ -3724,7 +3724,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 153,
@@ -3824,7 +3824,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 123,
@@ -3911,7 +3911,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 386,
@@ -3969,7 +3969,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3406,
@@ -4020,7 +4020,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 31,
@@ -4032,7 +4032,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 128,
@@ -4056,7 +4056,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Claimant.scala",
     "path": "sharing/src/dotty/tools/sharing/Claimant.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Claimant.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Claimant.scala",
     "lines": [
      {
       "n": 28,
@@ -4072,7 +4072,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Reader.scala",
     "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/Reader.scala",
     "lines": [
      {
       "n": 287,
@@ -4097,7 +4097,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 36,
@@ -4283,7 +4283,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 105,
@@ -4346,7 +4346,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Contexts.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Contexts.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Contexts.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Contexts.scala",
     "lines": [
      {
       "n": 1159,
@@ -4374,7 +4374,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3561,
@@ -4466,7 +4466,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 313,
@@ -4482,7 +4482,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 336,
@@ -4511,7 +4511,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymbolLoaders.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
     "lines": [
      {
       "n": 346,
@@ -4559,7 +4559,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3601,
@@ -4590,7 +4590,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 371,
@@ -4609,7 +4609,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Reader.scala",
     "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/Reader.scala",
     "lines": [
      {
       "n": 71,
@@ -4628,7 +4628,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 139,
@@ -4644,7 +4644,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 164,
@@ -4660,7 +4660,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 385,
@@ -4727,7 +4727,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 92,
@@ -4752,7 +4752,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 100,
@@ -4860,7 +4860,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 259,
@@ -4876,7 +4876,7 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 559,

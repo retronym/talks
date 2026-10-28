@@ -1,11 +1,11 @@
 {
- "sha": "70b068d698",
+ "sha": "899c4ae61b",
  "cards": {
   "claim": [
    {
     "file": "Denotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Denotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Denotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Denotations.scala",
     "lines": [
      {
       "n": 208,
@@ -21,7 +21,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 233,
@@ -150,7 +150,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 305,
@@ -198,7 +198,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3433,
@@ -265,7 +265,7 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2365,
@@ -296,7 +296,7 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2645,
@@ -338,7 +338,7 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 2430,
@@ -369,7 +369,7 @@
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
       "n": 123,
@@ -400,7 +400,7 @@
    {
     "file": "Published.scala",
     "path": "sharing/src/dotty/tools/sharing/Published.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Published.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Published.scala",
     "lines": [
      {
       "n": 165,
@@ -427,7 +427,7 @@
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
       "n": 39,
@@ -443,7 +443,7 @@
    {
     "file": "Types.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Types.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Types.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Types.scala",
     "lines": [
      {
       "n": 3565,
@@ -514,7 +514,7 @@
    {
     "file": "Stamped.scala",
     "path": "sharing/src/dotty/tools/sharing/Stamped.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Stamped.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Stamped.scala",
     "lines": [
      {
       "n": 153,
@@ -564,7 +564,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 90,
@@ -576,7 +576,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 116,
@@ -597,7 +597,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 95,
@@ -613,7 +613,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 153,
@@ -713,7 +713,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 123,
@@ -800,7 +800,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 386,
@@ -858,7 +858,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3406,
@@ -909,7 +909,7 @@
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 31,
@@ -921,7 +921,7 @@
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 128,
@@ -945,7 +945,7 @@
    {
     "file": "Claimant.scala",
     "path": "sharing/src/dotty/tools/sharing/Claimant.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/Claimant.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/Claimant.scala",
     "lines": [
      {
       "n": 28,
@@ -961,7 +961,7 @@
    {
     "file": "Reader.scala",
     "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/Reader.scala",
     "lines": [
      {
       "n": 287,
@@ -986,7 +986,7 @@
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 36,
@@ -1172,7 +1172,7 @@
    {
     "file": "PerKeyClaims.scala",
     "path": "sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/sharing/src/dotty/tools/sharing/PerKeyClaims.scala",
     "lines": [
      {
       "n": 105,
@@ -1235,7 +1235,7 @@
    {
     "file": "Contexts.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Contexts.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Contexts.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Contexts.scala",
     "lines": [
      {
       "n": 1159,
@@ -1263,7 +1263,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3561,
@@ -1355,7 +1355,7 @@
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 313,
@@ -1371,7 +1371,7 @@
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 336,
@@ -1400,7 +1400,7 @@
    {
     "file": "SymbolLoaders.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymbolLoaders.scala",
     "lines": [
      {
       "n": 346,
@@ -1448,7 +1448,7 @@
    {
     "file": "SymDenotations.scala",
     "path": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
     "lines": [
      {
       "n": 3601,
@@ -1479,7 +1479,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 371,
@@ -1498,7 +1498,7 @@
    {
     "file": "Reader.scala",
     "path": "compiler/src/dotty/tools/dotc/Reader.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/Reader.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/Reader.scala",
     "lines": [
      {
       "n": 71,
@@ -1517,7 +1517,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 139,
@@ -1533,7 +1533,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 164,
@@ -1549,7 +1549,7 @@
    {
     "file": "InteractiveDriver.scala",
     "path": "compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/interactive/InteractiveDriver.scala",
     "lines": [
      {
       "n": 385,
@@ -1616,7 +1616,7 @@
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 92,
@@ -1641,7 +1641,7 @@
    {
     "file": "ImportInfo.scala",
     "path": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",
     "lines": [
      {
       "n": 100,
@@ -1749,7 +1749,7 @@
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 259,
@@ -1765,7 +1765,7 @@
    {
     "file": "Scopes.scala",
     "path": "compiler/src/dotty/tools/dotc/core/Scopes.scala",
-    "url": "https://github.com/retronym/scala3/blob/70b068d698d4b78302068f39317a0484705b21b0/compiler/src/dotty/tools/dotc/core/Scopes.scala",
+    "url": "https://github.com/retronym/scala3/blob/899c4ae61bfd34d8c6246c33313ee59c7f0503c7/compiler/src/dotty/tools/dotc/core/Scopes.scala",
     "lines": [
      {
       "n": 559,
