@@ -298,6 +298,13 @@ main { max-width: 1260px; }
 .sym.s-prog.o-T1 { background: var(--t1-bg); box-shadow: inset 0 0 0 1.5px var(--t1); }
 .sym.s-prog.o-T2 { background: var(--t2-bg); box-shadow: inset 0 0 0 1.5px var(--t2); }
 .sym.s-prog.o-T3 { background: var(--t3-bg); box-shadow: inset 0 0 0 1.5px var(--t3); }
+/* Parked: its thread waits on another's claim. The owner's colour, faded, in the bars of a pause sign. */
+.sym.s-parked { --pk: var(--muted); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pk) 55%, transparent); background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--pk) 16%, transparent) 0 3px, transparent 3px 6px); }
+.sym.s-parked.o-T1 { --pk: var(--t1); } .sym.s-parked.o-T2 { --pk: var(--t2); } .sym.s-parked.o-T3 { --pk: var(--t3); }
+.badge.b-parked { border-style: dashed; background: transparent; }
+.badge.b-parked.o-T1 { color: var(--t1); border-color: var(--t1); } .badge.b-parked.o-T2 { color: var(--t2); border-color: var(--t2); } .badge.b-parked.o-T3 { color: var(--t3); border-color: var(--t3); }
+.lane.parked { background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--wait) 7%, transparent) 0 4px, transparent 4px 9px); }
+.lane.parked .act { color: var(--muted); }
 .sym.s-unwound { background: var(--bad-bg); box-shadow: inset 0 0 0 1.5px var(--bad); }
 .sym.tick { outline: 2px solid var(--tk); outline-offset: 2px; }
 .sym.tk-T1 { --tk: var(--t1); } .sym.tk-T2 { --tk: var(--t2); } .sym.tk-T3 { --tk: var(--t3); }
@@ -731,10 +738,11 @@ body.focus .scn-cap { font-size: 18px; }
     Object.assign(s.lanes, f.lanes || {});
     return s;
   }
-  const STATUS = { typing: 'typing', waiting: 'waiting', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled', stuck: 'waits forever', failed: 'failed' };
+  const STATUS = { typing: 'typing', waiting: '⏸ parked', writer: 'writer', done: 'done', idle: 'idle', unwound: 'unwound', cancelled: 'cancelled', stuck: 'waits forever', failed: 'failed' };
   function threadChip(t) { return '<span class="th th-' + t + '">' + t + '</span>'; }
   function badgeText(p) {
     if (p.st === 'prog') return 'InProgress · ' + p.owner;
+    if (p.st === 'parked') return '⏸ parked · ' + p.owner;
     if (p.st === 'busy') return 'completing · ' + p.owner;
     if (p.st === 'unwound') return 'unwound' + (p.owner ? ' · ' + p.owner : '');
     return p.st;
@@ -921,6 +929,8 @@ body.focus .scn-cap { font-size: 18px; }
       const m = at(i, t);
       if (tab === 'src') $('.ed-run').textContent = m.run + (m.edited ? ' · edited' : ''); else $('.ed-run').textContent = '⏸ suspended at step ' + label(i);
       const ticks = {}; m.ticks.forEach(x => { ticks[x.sym] = x; });
+      // a thread waiting on another's claim is parked: what it was completing shows as parked, not in progress
+      const parked = new Set(sc.threads.filter(th => (m.lanes[th.id] || [])[0] === 'waiting').map(th => th.id));
       lines.forEach(ln => {
         let text = sc.code[ln.n - 1];
         if (m.edited && ln.n === sc.edit.line) text = text.replace(sc.edit.from, sc.edit.to);
@@ -934,7 +944,9 @@ body.focus .scn-cap { font-size: 18px; }
         if (ln.u !== u) { ln.gb.className = 'gb' + (u ? ' u-' + u : ''); ln.gb.title = u; ln.u = u; }
         ln.l.classList.toggle('held', !!(ln.sy && ln.sy.id === 'hold' && /^prog/.test(m.syms.hold || '')));
         if (!ln.sy) return;
-        const id = ln.sy.id, v = m.syms[id] || 'lazy', p = parseSym(v), t2 = ticks[id];
+        const id = ln.sy.id, p = parseSym(m.syms[id] || 'lazy'), t2 = ticks[id];
+        if (p.st === 'prog' && parked.has(p.owner)) p.st = 'parked';
+        const v = (m.syms[id] || 'lazy') + (p.st === 'parked' ? '~parked' : '');
         const tk = t2 ? t2.t + (t2.pulse ? '~' : '') : '', squig = !!(f.squiggle && f.squiggle.sym === id && t >= tl.end);
         const look = v + '|' + tk + '|' + squig;
         if (ln.v === look) return;
@@ -949,7 +961,7 @@ body.focus .scn-cap { font-size: 18px; }
         if (!r) return;
         r.tr.classList.toggle('hot', !!t2);
         r.badge.className = 'badge b-' + p.st + (p.owner ? ' o-' + p.owner : '');
-        r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st === 'busy' ? 'completing' : p.st;
+        r.badge.textContent = p.st === 'prog' ? 'InProgress' : p.st === 'busy' ? 'completing' : p.st === 'parked' ? '⏸ parked' : p.st;
         r.own.innerHTML = p.owner ? threadChip(p.owner) : '';
         r.wt.innerHTML = p.waiters.map(threadChip).join(' ');
         if (animate && changed) kick(r.tr, 'flash');
@@ -959,7 +971,7 @@ body.focus .scn-cap { font-size: 18px; }
         if (el.v === v) return;
         if (animate && el.v !== null) kick(el.el, 'flash');
         el.v = v;
-        el.el.classList.toggle('idle', l[0] === 'idle'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1];
+        el.el.classList.toggle('idle', l[0] === 'idle'); el.el.classList.toggle('parked', l[0] === 'waiting'); el.st.className = 'st st-' + l[0]; el.st.textContent = STATUS[l[0]]; el.act.textContent = l[1];
       });
       const hw = $('.heap-wrap'), hp = m.heap;
       hw.hidden = !hp;

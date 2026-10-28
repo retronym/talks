@@ -1451,8 +1451,8 @@
        "reset subtotal, released the claim"
       ],
       "T1": [
-       "waiting",
-       "wakes"
+       "typing",
+       "wakes and looks at subtotal again"
       ]
      },
      "heap": {
