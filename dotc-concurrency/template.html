@@ -1507,7 +1507,8 @@ body.focus .scn-cap { font-size: 18px; }
     const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
   });
   main.addEventListener('click', e => {
-    const a = e.target.closest('a.sref'); if (!a) return;
+    // a § reference, or any link to a card by its id
+    const a = e.target.closest('a.sref, a[href^="#"]'); if (!a || a.getAttribute('href') === '#') return;
     const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
   });
   const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;

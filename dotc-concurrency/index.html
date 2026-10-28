@@ -548,6 +548,13 @@ body.focus .scn-cap { font-size: 18px; }
 
 <p class="sub">Concurrent requests in dotc's presentation compiler, and how they share one symbol table safely.</p>
 
+Everyone wants a concurrent typechecker, but there is a mountain to climb to get there.
+
+- **Don't make the batch compiler slower!** The batch compiler chooses the single-reader mode once per `ContextBase`. Every operation on shared state is inline, and its batch branch is the original code: a cache hit is a field read and a null test. Under 2% overhead. ([Stamped cells](#stamped-cells))
+- **Don't add cognitive burden to the core of the implementation!** The protection lives in the field's type (`Stamped`, `Published`, `Once`, `Claimed`) and in the evidence a claim hands out (`Holds`), from the scala-sharing library: a site that skips it does not compile. ([Claim on a completion root](#claim-on-a-completion-root), [Publish, then release](#publish-then-release))
+- **Don't make concurrent typechecking too much slower than today!** A completion claims only its own root, so a reader waits only for the symbol it needs. On every file of dotc, typing scales to four threads and more, and waits on other readers' claims total a few milliseconds. ([Every file of dotc, N readers](#every-file-of-dotc-n-readers))
+- **Don't miss any mutable state! Even that random `var` or mutable `Map` used for `-Yexperimental-magic`!** A [state map](https://github.com/retronym/scala3/tree/claude/mr-code-813f14/tools/state-map), extracted from the compiler's TASTy, lists every mutable field with its kind and what protects it.
+
 Interactive mode serves several requests at once against one symbol table. Each request has its own `Reader`; edits run alone, as write actions. Symbols still complete lazily, so one reader may need a completion that another is running.
 
 The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*. The concurrency primitives are [scala-sharing](https://github.com/retronym/scala-sharing), vendored into the compiler. This page's source: [retronym/talks](https://github.com/retronym/talks/tree/main/dotc-concurrency).
@@ -6229,7 +6236,8 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     const i = cards.findIndex(c => c.id === a.dataset.target); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
   });
   main.addEventListener('click', e => {
-    const a = e.target.closest('a.sref'); if (!a) return;
+    // a § reference, or any link to a card by its id
+    const a = e.target.closest('a.sref, a[href^="#"]'); if (!a || a.getAttribute('href') === '#') return;
     const i = cards.findIndex(c => '#' + c.id === a.getAttribute('href')); if (i >= 0) { e.preventDefault(); setCurrent(i, true); }
   });
   const start = location.hash ? cards.findIndex(c => '#' + c.id === location.hash) : 0;
