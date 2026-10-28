@@ -6,7 +6,7 @@ Interactive mode serves several requests at once against one symbol table. Each 
 
 The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*. The concurrency primitives are [scala-sharing](https://github.com/retronym/scala-sharing), vendored into the compiler. This page's source: [retronym/talks](https://github.com/retronym/talks/tree/main/dotc-concurrency).
 
-Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each cog lights up when it acts; its card shows what breaks without it.
+Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each step names the mechanisms at work; each has a card below that shows what goes wrong without it.
 
 ## The scenario
 
@@ -14,17 +14,17 @@ Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each
 
 <div class="scenario"></div>
 
-### The cogs
+### The mechanisms
 
-What each cog does, where it fires in the scenario, and its card.
+What each one does, the steps of the scenario where it acts, and its card.
 
-<div class="gears"></div>
+<div class="mechanisms"></div>
 
 Batch compilation chooses the single-reader mode once per `ContextBase` and runs the original code: under 2% overhead. Interactive overhead is minor, and typing scales to four threads and more.
 
-## The cogs, one at a time
+## The mechanisms, one at a time
 
-Each card removes one cog: the problem, the mechanism, then the same moment with the cog in place.
+Each card shows one mechanism: first the Problem, the moment going wrong without it, then the Solution, the same moment with it in place.
 
 ### Claim on a completion root
 

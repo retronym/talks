@@ -271,8 +271,8 @@ main { max-width: 1260px; }
 .scn-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
 .scn-beat { font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
 .scn-beat .bn { color: var(--accent); margin-right: .5em; font-variant-numeric: tabular-nums; }
-.scn-cogs { display: flex; flex-wrap: wrap; gap: 6px; }
-.cog { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
+.scn-mechs { display: flex; flex-wrap: wrap; gap: 6px; }
+.mech { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: var(--chip-pat); background: var(--chip-pat-bg); border: 1px solid color-mix(in srgb, var(--chip-pat) 40%, transparent); white-space: nowrap; }
 .scn-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; align-content: start; }
 @media (max-width: 1100px) { .scn-body { grid-template-columns: minmax(0, 1fr); } }
 .ed { position: relative; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px; }
@@ -312,7 +312,7 @@ main { max-width: 1260px; }
 .st-stuck, .st-failed { color: var(--bad); }
 table.heap td { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; }
 table.heap td.c-bad { color: var(--bad); font-weight: 600; } table.heap td.c-good { color: var(--typed); } table.heap td.c-mut { color: var(--muted); }
-a.cog { text-decoration: none; cursor: pointer; } a.cog:hover { border-color: var(--chip-pat); }
+a.mech { text-decoration: none; cursor: pointer; } a.mech:hover { border-color: var(--chip-pat); }
 .dgroup.g-problem .dot.on { background: var(--bad); border-color: var(--bad); }
 .dgroup.g-fixed .dot.on { background: var(--typed); border-color: var(--typed); }
 .card .scenario + blockquote { margin-top: 14px; }
@@ -359,12 +359,15 @@ button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset
 .vt-p.on { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
 .vt-s.on { color: var(--typed); border-color: var(--typed); background: color-mix(in srgb, var(--typed) 12%, transparent); }
 .vt-arrow { color: var(--muted); font-size: 13px; }
-.ver-stage { position: relative; }
-.ver { transition: opacity .55s ease, filter .55s ease; }
-.ver.out { opacity: 0; filter: blur(2px) brightness(.9); }
-.ver-say { position: absolute; left: 0; right: 0; top: 38%; text-align: center; font-size: 22px; font-weight: 650; letter-spacing: -.01em; color: var(--typed); opacity: 0; pointer-events: none; }
-.motion .versions.swapping .ver-say { animation: k-say 1.25s ease both; }
-@keyframes k-say { 0% { opacity: 0; transform: translateY(6px); } 35%, 60% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ver-stage { display: grid; }
+.ver-stage > .ver { grid-area: 1 / 1; min-width: 0; }
+.ver.inactive { visibility: hidden; pointer-events: none; }
+/* Between the versions only what differs fades; the timeline keeps its axis. */
+.scrub::before { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px; border-radius: 1px; background: var(--rule); }
+.ver :is(.scn-beat, .scn-mechs, .dots, .scrub-track, .scrub-thumb, .scn-cap, .ed-lines, .ed-impl, .ed-tablist, .ed-run, .side > *) { transition: opacity .42s ease; }
+.ver:is(.leaving, .arriving) :is(.scn-beat, .scn-mechs, .dots, .scrub-track, .scrub-thumb, .scn-cap, .ed-lines, .ed-impl, .ed-tablist, .ed-run, .side > *) { opacity: 0; }
+.versions .ver.leaving .scn-body::before, .versions .ver.leaving .scn-body::after { opacity: 0; }
+.versions .ver.leaving .scn-body > * { filter: none; }
 .l3-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .l3-body .ed { min-width: 0; }
 .xc-lines { padding: 6px 0 8px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; overflow: auto; max-height: 420px; display: grid; grid-template-columns: 50px max-content; }
@@ -374,7 +377,7 @@ button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset
 .xl.gap .code { color: var(--muted); }
 .xc.lit .xl:not(.hl) { opacity: .45; }
 .xc .xl.hl { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
-/* A Problem step is shown on an old CRT: the world without the cog, dated and not to be trusted. */
+/* A Problem step is shown on an old CRT: the world without the mechanism, dated and not to be trusted. */
 :root { --crt-line: rgba(0, 0, 0, .04); --crt-edge: rgba(0, 0, 0, .14); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --crt-line: rgba(0, 0, 0, .22); --crt-edge: rgba(0, 0, 0, .55); } }
 :root[data-theme="dark"] { --crt-line: rgba(0, 0, 0, .22); --crt-edge: rgba(0, 0, 0, .55); }
@@ -389,7 +392,7 @@ button.ed-tab.on { color: var(--ink); background: var(--card); box-shadow: inset
 .scenario.problem .scn-body::after { opacity: 1; }
 /* the label: what the screen shows */
 .scn-body::before {
-  content: "without the cog"; position: absolute; z-index: 4; right: 12px; top: -12px; pointer-events: none; opacity: 0;
+  content: "before"; position: absolute; z-index: 4; right: 12px; top: -12px; pointer-events: none; opacity: 0;
   font: 600 10.5px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
   color: var(--bad); background: var(--bad-bg); border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); border-radius: 4px; padding: 4px 7px;
   transition: opacity calc(.5s / var(--spd, 1));
@@ -453,7 +456,7 @@ a.ed-tab { color: var(--ink); text-decoration: none; } a.ed-tab:hover { color: v
 @keyframes k-pop2 { from { transform: scale(.55); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes k-flash { from { background-color: var(--accent-soft); } }
 @keyframes k-blink2 { from { opacity: .25; } }
-.badge, .cog { display: inline-block; }
+.badge, .mech { display: inline-block; }
 .scn-nav > button.play { margin-left: 4px; min-width: 64px; }
 .badge { display: inline-block; font: 600 10.5px/1.6 Inter, system-ui, sans-serif; padding: 0 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
 .badge.b-lazy { color: var(--muted); border-color: var(--rule); border-style: dashed; }
@@ -493,13 +496,12 @@ table.symtab tr.hot td { background: var(--accent-soft); }
 .drow { display: flex; gap: 4px; }
 .dot { font: 600 11.5px Inter, system-ui, sans-serif; min-width: 30px; padding: 3px 6px; border-radius: 6px; cursor: pointer; background: var(--card); color: var(--muted); border: 1px solid var(--rule); }
 .dot.on { background: var(--accent); border-color: var(--accent); color: var(--card); }
-.gears { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 12px 0; }
-.gear { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; line-height: 1.45; }
-.gear .gn { font-weight: 650; color: var(--chip-pat); margin-bottom: 3px; }
-.gear .ga { color: var(--muted); font-size: 12px; margin-top: 6px; }
-.gear .ga a { display: inline-block; padding: 0 5px; border: 1px solid var(--rule); border-radius: 5px; margin-left: 2px; }
-.gear.off { opacity: .55; }
-.gear.off .gn { color: var(--muted); }
+.mechanisms { margin: 12px 0; border-top: 1px solid var(--rule); }
+.mrow { display: grid; grid-template-columns: minmax(150px, 15em) minmax(0, 1fr) auto; gap: 4px 18px; align-items: baseline; padding: 8px 2px; border-bottom: 1px solid var(--rule); font-size: 13.5px; line-height: 1.45; }
+.mrow .mn { font-weight: 650; }
+.mrow .ma { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mrow .ma a { display: inline-block; padding: 0 5px; border: 1px solid var(--rule); border-radius: 5px; margin-left: 2px; }
+@media (max-width: 640px) { .mrow { grid-template-columns: minmax(0, 1fr); } .mrow .ma { white-space: normal; } }
 body.focus main { max-width: 1400px; }
 body.shot .focus-counter { display: none; } body.shot main { padding-top: 16px; } body.shot .card.current { min-height: 0; }
 body.focus .scn-cap { font-size: 18px; }
@@ -535,7 +537,7 @@ Interactive mode serves several requests at once against one symbol table. Each 
 
 The code: [retronym/scala3#84](https://github.com/retronym/scala3/pull/84), *Interactive: concurrent typechecking over one symbol table, K2-style (experiment)*. The concurrency primitives are [scala-sharing](https://github.com/retronym/scala-sharing), vendored into the compiler. This page's source: [retronym/talks](https://github.com/retronym/talks/tree/main/dotc-concurrency).
 
-Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each cog lights up when it acts; its card shows what breaks without it.
+Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each step names the mechanisms at work; each has a card below that shows what goes wrong without it.
 
 ## The scenario
 
@@ -543,17 +545,17 @@ Below is one IDE scenario, run on the real compiler. Step with `,` and `.`. Each
 
 <div class="scenario"></div>
 
-### The cogs
+### The mechanisms
 
-What each cog does, where it fires in the scenario, and its card.
+What each one does, the steps of the scenario where it acts, and its card.
 
-<div class="gears"></div>
+<div class="mechanisms"></div>
 
 Batch compilation chooses the single-reader mode once per `ContextBase` and runs the original code: under 2% overhead. Interactive overhead is minor, and typing scales to four threads and more.
 
-## The cogs, one at a time
+## The mechanisms, one at a time
 
-Each card removes one cog: the problem, the mechanism, then the same moment with the cog in place.
+Each card shows one mechanism: first the Problem, the moment going wrong without it, then the Solution, the same moment with it in place.
 
 ### Claim on a completion root
 
@@ -778,30 +780,11 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     "role": "editor"
    }
   ],
-  "cogs": {
-   "write": "Write action",
-   "reader": "A Reader per request",
-   "claim": "Claim on a completion root",
-   "wait": "Wait, don't peek",
-   "publish": "Publish, then release",
-   "target": "Targeting",
-   "bodyedit": "Body edit keeps the run",
-   "cancel": "Sticky cancel",
-   "unwound": "Owner cancelled mid-completion",
-   "stamped": "Stamped cells",
-   "cycles": "Wait-for cycles",
-   "epoch": "Epoch invalidation",
-   "resultstamp": "Result stamps",
-   "once": "Publish once"
-  },
   "frames": [
    {
     "beat": "1",
     "title": "Open the file",
     "caption": "Opening the file is a write action: a new run, statements entered but not typed. Every symbol is lazy.",
-    "cogs": [
-     "write"
-    ],
     "run": "run 1 · write 2",
     "units": {
      "s3": "skip",
@@ -817,16 +800,15 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "write action: enter the new text, skip every statement"
      ]
     },
-    "ticks": []
+    "ticks": [],
+    "mechanisms": [
+     "write"
+    ]
    },
    {
     "beat": "2",
     "title": "The background pass starts",
     "caption": "T2, with its own Reader, types from the top. It claims each completion root; while it completes, the symbol's info is an InProgress that only T2 sees through. Line 9 holds T2 in subtotal, so every run interleaves the same way.",
-    "cogs": [
-     "reader",
-     "claim"
-    ],
     "units": {
      "s3": "typed",
      "s5": "T2"
@@ -857,17 +839,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     "note": {
      "line": 9,
      "text": "holds the typer here, so every run interleaves the same way"
-    }
+    },
+    "mechanisms": [
+     "reader",
+     "claim"
+    ]
    },
    {
     "beat": "3",
     "title": "Hover on total",
     "caption": "T1 types only the path to total, which needs subtotal's type. It takes the usual slow path for a LazyType, finds T2's claim, and waits. It neither sees T2's half-built state nor mistakes it for a cycle.",
-    "cogs": [
-     "reader",
-     "claim",
-     "wait"
-    ],
     "units": {
      "s14": "T1",
      "total": "T1"
@@ -893,16 +874,17 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "t": "T1",
       "pulse": true
      }
+    ],
+    "mechanisms": [
+     "reader",
+     "claim",
+     "wait"
     ]
    },
    {
     "beat": "4",
     "title": "T2 publishes subtotal",
     "caption": "Released, T2 finishes subtotal and publishes it before releasing the claim, so T1 wakes to a complete denotation. T1 then waits briefly on tax, which T2 has just claimed.",
-    "cogs": [
-     "publish",
-     "wait"
-    ],
     "syms": {
      "subtotal": "done",
      "hold": "done",
@@ -929,16 +911,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "pulse": true
      }
     ],
-    "note": null
+    "note": null,
+    "mechanisms": [
+     "publish",
+     "wait"
+    ]
    },
    {
     "beat": "5",
     "title": "The hover answers",
     "caption": "T1 completes total and answers BigDecimal, as one reader would. receipt stays skipped.",
-    "cogs": [
-     "publish",
-     "target"
-    ],
     "units": {
      "total": "typed",
      "receipt": "skip",
@@ -967,15 +949,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     "popup": {
      "sym": "total",
      "text": "def total: BigDecimal"
-    }
+    },
+    "mechanisms": [
+     "publish",
+     "target"
+    ]
    },
    {
     "beat": "6",
     "title": "The background pass finishes",
     "caption": "T2 reaches Checkout, finds total already published, and types receipt. Everything is typed; no diagnostics.",
-    "cogs": [
-     "target"
-    ],
     "units": {
      "s14": "typed",
      "receipt": "typed",
@@ -1005,16 +988,15 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "t": "T2"
      }
     ],
-    "popup": null
+    "popup": null,
+    "mechanisms": [
+     "target"
+    ]
    },
    {
     "beat": "7a",
     "title": "A keystroke in receipt, nothing in flight",
     "caption": "The edit is inside receipt's body. The write action re-indexes receipt and keeps the run; everything else stays published.",
-    "cogs": [
-     "write",
-     "bodyedit"
-    ],
     "edited": true,
     "run": "run 1 · write 3",
     "units": {
@@ -1035,16 +1017,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "write action: re-index receipt"
      ]
     },
-    "ticks": []
+    "ticks": [],
+    "mechanisms": [
+     "write",
+     "bodyedit"
+    ]
    },
    {
     "beat": "7b",
     "title": "The hover after the edit",
     "caption": "T3 types line 19 only, reading subtotal, tax and total as published.",
-    "cogs": [
-     "reader",
-     "target"
-    ],
     "units": {
      "receipt": "T3"
     },
@@ -1072,17 +1054,17 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "sym": "lines",
      "text": "(\" x \" : String)",
      "at": "x ${i.qty}"
-    }
+    },
+    "mechanisms": [
+     "reader",
+     "target"
+    ]
    },
    {
     "reset": 2,
     "beat": "8",
     "title": "The same keystroke, while T2 is held",
     "caption": "Back to T1 waiting on T2. Now the user types in receipt: the editor cancels the stale requests, and the new text arrives as a writer. It raises a sticky cancel and waits for readers to leave.",
-    "cogs": [
-     "write",
-     "cancel"
-    ],
     "edited": true,
     "lanes": {
      "T3": [
@@ -1104,16 +1086,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "t": "T1",
       "pulse": true
      }
+    ],
+    "mechanisms": [
+     "write",
+     "cancel"
     ]
    },
    {
     "beat": "9",
     "title": "T2 unwinds",
     "caption": "T2 unwinds at its next checkpoint, resets the roots it was completing, and releases the claim. A Namer completion cannot run twice, so subtotal is marked unwound, not lazy.",
-    "cogs": [
-     "cancel",
-     "unwound"
-    ],
     "syms": {
      "subtotal": "unwound:T1",
      "hold": "lazy"
@@ -1128,16 +1110,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "takes over subtotal's claim"
      ]
     },
-    "ticks": []
+    "ticks": [],
+    "mechanisms": [
+     "cancel",
+     "unwound"
+    ]
    },
    {
     "beat": "10",
     "title": "The waiter takes over, and is pre-empted",
     "caption": "T1 takes over subtotal's root, meets the unwound completion, and is pre-empted: it resets total, unwinds, and the run is tainted. Nothing hangs or tears; the work is discarded.",
-    "cogs": [
-     "claim",
-     "unwound"
-    ],
     "run": "run 1 · tainted",
     "units": {
      "s14": "skip",
@@ -1159,17 +1141,16 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       "sym": "subtotal",
       "t": "T1"
      }
+    ],
+    "mechanisms": [
+     "claim",
+     "unwound"
     ]
    },
    {
     "beat": "11",
     "title": "A fresh run for the new text",
     "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax on the way, and answers. The background pass follows in the same run.",
-    "cogs": [
-     "write",
-     "reader",
-     "claim"
-    ],
     "run": "run 2 · write 6",
     "units": {
      "s3": "skip",
@@ -1219,9 +1200,30 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
      "sym": "lines",
      "text": "(\" x \" : String)",
      "at": "x ${i.qty}"
-    }
+    },
+    "mechanisms": [
+     "write",
+     "reader",
+     "claim"
+    ]
    }
-  ]
+  ],
+  "mechanisms": {
+   "write": "Write action",
+   "reader": "A Reader per request",
+   "claim": "Claim on a completion root",
+   "wait": "Wait, don't peek",
+   "publish": "Publish, then release",
+   "target": "Targeting",
+   "bodyedit": "Body edit keeps the run",
+   "cancel": "Sticky cancel",
+   "unwound": "Owner cancelled mid-completion",
+   "stamped": "Stamped cells",
+   "cycles": "Wait-for cycles",
+   "epoch": "Epoch invalidation",
+   "resultstamp": "Result stamps",
+   "once": "Publish once"
+  }
  },
  "cards": {
   "claim": {
@@ -3105,7 +3107,8 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
    ]
   }
  }
-}</script>
+}
+</script>
 <script type="application/json" id="excerpts-src">{
  "sha": "70b068d698",
  "cards": {
@@ -5343,14 +5346,14 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
   });
 
   // 5b. The scenario player: the editor in the middle, symbol states on the code, threads and symbols beside it.
-  // frames.json holds the scenario and the cogs' cards, each a list of frames. A frame is a delta; its state is the
+  // frames.json holds the scenario and the mechanisms' cards, each a list of frames. A frame is a delta; its state is the
   // fold of the frames before it (or from frame `reset`). A card takes the scenario's file, symbols and threads, and
   // may show only some lines (`lines`), some threads and some symbols.
   const data = JSON.parse(document.getElementById('frames-src').textContent);
   const scenario = data.scenario;
   const cardScenarios = {};
   Object.entries(data.cards).forEach(([id, c]) => {
-    cardScenarios[id] = Object.assign({ file: scenario.file, code: scenario.code, edit: scenario.edit, units: scenario.units, cogs: scenario.cogs }, c, {
+    cardScenarios[id] = Object.assign({ file: scenario.file, code: scenario.code, edit: scenario.edit, units: scenario.units, mechanisms: scenario.mechanisms }, c, {
       id,
       // a card on a file of its own brings its own symbols, units and threads
       symbols: (c.symbolDefs || scenario.symbols).filter(x => !c.symbols || c.symbols.includes(x.id)),
@@ -5423,10 +5426,10 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     const c = { '!': 'c-bad', '+': 'c-good', '~': 'c-mut' }[v[0]];
     return c ? '<td class="' + c + '">' + esc(v.slice(1)) + '</td>' : '<td>' + esc(v) + '</td>';
   }
-  // The card a cog of the scenario opens: its own, or the card that explains it alongside another.
+  // The card a mechanism of the scenario opens: its own, or the card that explains it alongside another.
   const CARD_OF = { wait: 'claim', cancel: 'write', bodyedit: 'write' };
-  function cardLink(cog) {
-    const host = main.querySelector('.scenario[data-card="' + (CARD_OF[cog] || cog) + '"]');
+  function cardLink(id) {
+    const host = main.querySelector('.scenario[data-card="' + (CARD_OF[id] || id) + '"]');
     return host ? host.closest('.card') : null;
   }
   // The player builds the editor, panel and lanes once, and paints the state at a time: frame i, t ms into it.
@@ -5459,17 +5462,17 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     const [from, to] = sc.lines || [1, sc.code.length];
     const N = sc.frames.length;
     host.innerHTML =
-      '<div class="scn-head"><div class="scn-beat"></div><div class="scn-cogs"></div></div>' +
+      '<div class="scn-head"><div class="scn-beat"></div><div class="scn-mechs"></div></div>' +
       '<div class="transport">' +
       '<div class="scrub" title="drag to scrub"><div class="scrub-track"></div><div class="scrub-thumb"></div></div>' +
       '<div class="scn-nav"><button type="button" class="prev" title="step back (,)">◀</button><div class="dots"></div><button type="button" class="next" title="step forward (.)">▶</button><button type="button" class="play" title="play / pause (p)">Play</button>' + '</div>' +
       '</div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><div class="ed-tablist" role="tablist"><button type="button" class="ed-tab on" data-tab="src" role="tab" title="the code being edited">' + esc(sc.file) + '</button>' +
-          implFiles.map((f, k) => '<button type="button" class="ed-tab ed-ctab" data-tab="f' + k + '" role="tab" title="' + (opt.impl ? 'the compiler without the cog: a sketch' : esc(f.path) + ', the compiler') + ' (c)">' + esc(f.file) + '</button>').join('') +
+          implFiles.map((f, k) => '<button type="button" class="ed-tab ed-ctab" data-tab="f' + k + '" role="tab" title="' + (opt.impl ? 'a sketch of the compiler before this mechanism' : esc(f.path) + ', the compiler') + ' (c)">' + esc(f.file) + '</button>').join('') +
           '</div><span class="ed-run"></span></div><div class="ed-lines"></div>' +
           (implFiles.length ? '<div class="ed-impl" hidden>' + implFiles.map((f, k) => '<div class="ed-file" data-tab="f' + k + '" hidden>' +
-            (opt.impl ? '<div class="ed-sketch">a sketch: the compiler without the cog</div>' : '') +
+            (opt.impl ? '<div class="ed-sketch">a sketch: the compiler before this mechanism</div>' : '') +
             f.js.map(j => { const ex = impl[j]; return '<div class="xc" data-j="' + j + '"><div class="xc-lines">' +
               ex.lines.map(x => '<div class="xl' + (x.n ? '' : ' gap') + '">' + (x.n && ex.url ? '<a class="no" href="' + ex.url + '#L' + x.n + '" target="_blank" rel="noopener" title="line ' + x.n + ' on GitHub">' + x.n + '</a>' : '<span class="no">' + (x.n || '') + '</span>') + '<span class="code">' + (x.n ? highlight(x.text, null) || ' ' : '⋯') + '</span></div>').join('') +
               '</div></div>'; }).join('<div class="xc-sep"></div>') + '</div>').join('') + '</div>' : '') +
@@ -5556,11 +5559,11 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     // Restart a keyframe animation on `el`.
     function kick(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
     let painted = { i: -1, key: null, heapTitle: null };
-    // The controls stay put while a sequence plays: the regions above them (the cogs, the editor and side panel,
+    // The controls stay put while a sequence plays: the regions above them (the mechanisms, the editor and side panel,
     // the caption) keep the height of their tallest step, measured once per width.
     let measuring = false;
     const STABLE = ['.scn-head', '.scn-body', '.scn-cap'];
-    function reserveHeights() {
+    function measureHeights() {
       measuring = true;
       const keep = { i: pos.i, t: pos.t };
       STABLE.forEach(q => { $(q).style.minHeight = ''; });
@@ -5570,11 +5573,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
         paint(j, timeline(j).end, false);
         STABLE.forEach((q, n) => { most[n] = Math.max(most[n], $(q).offsetHeight); });
       }
-      STABLE.forEach((q, n) => { $(q).style.minHeight = most[n] + 'px'; });
       painted.key = null; painted.i = -1;
       paint(keep.i, keep.t, false);
       measuring = false;
+      return most;
     }
+    function applyHeights(most) { STABLE.forEach((q, n) => { $(q).style.minHeight = most[n] + 'px'; }); }
+    function reserveHeights() { applyHeights(measureHeights()); }
     function paint(i, t, animate) {
       const tl = timeline(i), f = tl.f;
       const key = i + ':' + tl.marks.filter(x => x <= t).length;
@@ -5585,13 +5590,13 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
         host.querySelectorAll('.pop, .flash, .ring, .fade').forEach(e => e.classList.remove('pop', 'flash', 'ring', 'fade'));
         if (!animate && painted.i >= 0 && motionOn() && !measuring) kick($('.ed'), 'blink');
         $('.scn-beat').innerHTML = '<span class="bn">' + label(i) + '</span>' + esc(f.title);
-        $('.scn-cogs').innerHTML = (f.cogs || []).map(c => {
+        $('.scn-mechs').innerHTML = (f.mechanisms || []).map(c => {
           const linked = !sc.id && cardLink(c);
-          return linked ? '<a class="cog" href="#" data-cog="' + c + '" title="open this cog\'s card">⚙ ' + esc(sc.cogs[c]) + ' →</a>' : '<span class="cog">⚙ ' + esc(sc.cogs[c]) + '</span>';
+          return linked ? '<a class="mech" href="#" data-mech="' + c + '" title="open its card">' + esc(sc.mechanisms[c]) + ' →</a>' : '<span class="mech">' + esc(sc.mechanisms[c]) + '</span>';
         }).join('');
         $('.scn-cap').textContent = f.caption;
         host.classList.toggle('problem', f.group === 'Problem');
-        if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.cog').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
+        if (animate) { kick($('.scn-cap'), 'fade'); host.querySelectorAll('.mech').forEach((c, j) => { c.style.animationDelay = (80 * j) + 'ms'; kick(c, 'pop'); }); }
         dots.querySelectorAll('.dot').forEach((d, j) => d.classList.toggle('on', j === i));
         showCode(f.beat);
       }
@@ -5814,11 +5819,11 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     $('.prev').onclick = prev;
     $('.next').onclick = () => { stop(); next(); };
     host.addEventListener('click', e => {
-      const a = e.target.closest('a.cog[data-cog]'); if (!a) return;
-      e.preventDefault(); const c = cardLink(a.dataset.cog); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
+      const a = e.target.closest('a.mech[data-mech]'); if (!a) return;
+      e.preventDefault(); const c = cardLink(a.dataset.mech); const i = cards.indexOf(c); if (i >= 0) setCurrent(i, true, true);
     });
     const p = { host, show: i => { stop(); go(i, Infinity, false); }, next: () => { stop(); next(); }, prev, sub, toggle,
-      relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; }, stop,
+      relayout: () => { reserveHeights(); placeThumb(); }, get k() { return pos.i; }, stop, measureHeights, applyHeights, placeThumb,
       begin: () => { stop(); go(0, 0, false); if (motionOn()) start('step'); else go(0, Infinity, false); },
       playFromStart: () => { go(0, 0, false); start('play'); }, end: () => { stop(); go(N - 1, Infinity, false); } };
     // `c`: from the scenario's file to the compiler's file this step runs (or the first), and back.
@@ -5840,22 +5845,29 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
   }
   function motionOn() { return document.documentElement.classList.contains('motion'); }
   // A card in two versions, each with its own steps and timeline: the Problem (on the CRT: the world without the
-  // cog) and the Solution. Stepping or playing past the Problem's last step fades it out and the Solution in.
+  // mechanism) and the Solution. They share one place on the page, with the same heights, so that going from one to
+  // the other reads as one slide changing state: the frame, the title's place and the timeline's axis stay; the
+  // step's title, the timeline's steps, the code and the text fade out and in again.
   function buildVersions(host, sc) {
     const nP = sc.frames.findIndex(f => f.group !== 'Problem');
     const P = Object.assign({}, sc, { frames: sc.frames.slice(0, nP) });
     // the Solution starts where the scenario stands, without the Problem's fields table: its own timeline
     const S = Object.assign({}, sc, { frames: sc.frames.slice(nP), base: Object.assign(stateAt(sc, nP - 1), { heap: null }) });
-    const cog = sc.cogs[sc.id] || 'the cog';
     host.classList.add('versions');
     host.innerHTML = '<div class="ver-tabs" role="tablist"><button type="button" class="vt vt-p on" role="tab">Problem</button><span class="vt-arrow">→</span><button type="button" class="vt vt-s" role="tab">Solution</button></div>' +
-      '<div class="ver-stage"><div class="scenario ver ver-p"></div><div class="scenario ver ver-s" hidden></div><div class="ver-say" aria-hidden="true"></div></div>';
-    const vp = host.querySelector('.ver-p'), vs = host.querySelector('.ver-s'), say = host.querySelector('.ver-say');
+      '<div class="ver-stage"><div class="scenario ver ver-p"></div><div class="scenario ver ver-s inactive"></div></div>';
+    const vp = host.querySelector('.ver-p'), vs = host.querySelector('.ver-s');
     let cur = 'P', busy = false;
     const pp = buildPlayer(vp, P, { impl: befores[sc.id] || null, renumber: true, noRegister: true,
       onEnd: () => swap('S', 'play'), onPastEnd: () => swap('S', 'begin') });
     const sp = buildPlayer(vs, S, { renumber: true, noRegister: true, onPastStart: () => swap('P', 'end') });
     const pl = () => cur === 'P' ? pp : sp;
+    function relayout() {
+      const a = pp.measureHeights(), b = sp.measureHeights(), most = a.map((x, n) => Math.max(x, b[n]));
+      pp.applyHeights(most); sp.applyHeights(most); pp.placeThumb(); sp.placeThumb();
+    }
+    relayout();
+    if (document.fonts) document.fonts.ready.then(relayout);
     function swap(to, then) {
       if (to === cur || busy) return;
       const from = cur === 'P' ? vp : vs, into = to === 'P' ? vp : vs, was = pl(), next = to === 'P' ? pp : sp;
@@ -5865,28 +5877,25 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
       host.querySelector('.vt-p').classList.toggle('on', to === 'P');
       host.querySelector('.vt-s').classList.toggle('on', to === 'S');
       const land = () => {
-        from.hidden = true; from.classList.remove('out');
-        into.hidden = false; next.relayout();
-        if (implOpen) next.code(true);
+        from.classList.add('inactive'); from.classList.remove('leaving');
+        into.classList.remove('inactive');
+        if (implOpen) next.code(true); else next.code(false);
         if (then === 'end') next.end(); else if (then === 'play') next.playFromStart(); else next.begin();
       };
       if (!motionOn()) { land(); return; }
       busy = true;
-      say.textContent = to === 'S' ? 'With ⚙ ' + cog : 'Without ⚙ ' + cog;
-      host.classList.add('swapping');
-      from.classList.add('out');
+      from.classList.add('leaving');
       setTimeout(() => {
-        into.classList.add('out');
+        into.classList.add('arriving');
         land();
-        void into.offsetWidth;
-        into.classList.remove('out');
-        setTimeout(() => { host.classList.remove('swapping'); busy = false; }, 500);
-      }, 700);
+        // after the first paint, which turns transitions off for a moment
+        setTimeout(() => { into.classList.remove('arriving'); setTimeout(() => { busy = false; }, 450); }, 70);
+      }, 450);
     }
     host.querySelector('.vt-p').onclick = () => swap('P', 'begin');
     host.querySelector('.vt-s').onclick = () => swap('S', 'begin');
     players.push({ host, next: () => pl().next(), prev: () => pl().prev(), sub: d => pl().sub(d), toggle: () => pl().toggle(),
-      relayout: () => pl().relayout(), code: o => pl().code(o), codeOpen: () => pl().codeOpen(),
+      relayout, code: o => pl().code(o), codeOpen: () => pl().codeOpen(),
       show: i => { const to = i < nP ? 'P' : 'S'; if (to !== cur) { const m = motionOn(); document.documentElement.classList.remove('motion'); swap(to, 'end'); if (m) document.documentElement.classList.add('motion'); } (to === 'P' ? pp : sp).show(to === 'P' ? i : i - nP); },
       get k() { return cur === 'P' ? pp.k : nP + sp.k; } });
   }
@@ -5986,8 +5995,8 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
   });
   setSpeed(speed);
   document.querySelectorAll('.speed button').forEach(b => { b.onclick = () => setSpeed(+b.dataset.s); });
-  // The cogs: what each one is for, and the steps of the scenario where it fires.
-  const GEARS = [
+  // The mechanisms: what each one is for, and the steps of the scenario where it acts.
+  const MECHANISMS = [
     ['write', 'Edits run alone: the writer raises a sticky cancel and waits for readers to leave. A body edit re-indexes one member.'],
     ['reader', 'Each request has its own Reader: its own typer scratch and its own completions in progress.'],
     ['claim', 'A reader claims a root before completing it; meanwhile the info is an InProgress that only the owner sees through.'],
@@ -6003,16 +6012,15 @@ Every N reports the same diagnostics as one reader, with no back-offs and no cyc
     ['resultstamp', 'A result carries the write count of its request\'s last lock, and is served again if a write ran since.'],
     ['cycles', 'A wait that would close a cycle: a reader that can give way does; a real cycle between signatures is reported as one reader would.']
   ];
-  main.querySelectorAll('.gears').forEach(host => {
-    host.innerHTML = GEARS.map(([id, text]) => {
-      if (!id) { const [name, rest] = text.split(': '); return '<div class="gear off"><div class="gn">⚙ ' + esc(name) + '</div><div class="gd">' + esc(rest) + '</div></div>'; }
-      const at = scenario.frames.map((f, i) => (f.cogs || []).includes(id) ? '<a href="#" data-frame="' + i + '">' + f.beat + '</a>' : null).filter(Boolean).join(' ');
-      const card = cardLink(id) ? ' <a href="#" class="to-card" data-cog="' + id + '">card →</a>' : '';
-      return '<div class="gear"><div class="gn">⚙ ' + esc(scenario.cogs[id]) + '</div><div class="gd">' + esc(text) + '</div><div class="ga">' + (at ? 'fires at ' + at : 'no moment of its own in the scenario') + card + '</div></div>';
+  main.querySelectorAll('.mechanisms').forEach(host => {
+    host.innerHTML = MECHANISMS.map(([id, text]) => {
+      const at = scenario.frames.map((f, i) => (f.mechanisms || []).includes(id) ? '<a href="#" data-frame="' + i + '">' + f.beat + '</a>' : null).filter(Boolean).join(' ');
+      const card = cardLink(id) ? ' · <a href="#" class="to-card" data-mech="' + id + '">card →</a>' : '';
+      return '<div class="mrow"><div class="mn">' + esc(scenario.mechanisms[id]) + '</div><div class="md">' + esc(text) + '</div><div class="ma">' + (at ? 'steps ' + at : 'no step of its own') + card + '</div></div>';
     }).join('');
     host.addEventListener('click', e => {
       const c = e.target.closest('a.to-card');
-      if (c) { e.preventDefault(); const i = cards.indexOf(cardLink(c.dataset.cog)); if (i >= 0) setCurrent(i, true, true); return; }
+      if (c) { e.preventDefault(); const i = cards.indexOf(cardLink(c.dataset.mech)); if (i >= 0) setCurrent(i, true, true); return; }
       const a = e.target.closest('a[data-frame]'); if (!a || !players.length) return;
       e.preventDefault(); const p = players[0]; p.show(+a.dataset.frame);
       const i = cards.indexOf(p.host.closest('.card')); if (i >= 0) setCurrent(i, true, true);

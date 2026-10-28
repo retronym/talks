@@ -139,30 +139,11 @@
     "role": "editor"
    }
   ],
-  "cogs": {
-   "write": "Write action",
-   "reader": "A Reader per request",
-   "claim": "Claim on a completion root",
-   "wait": "Wait, don't peek",
-   "publish": "Publish, then release",
-   "target": "Targeting",
-   "bodyedit": "Body edit keeps the run",
-   "cancel": "Sticky cancel",
-   "unwound": "Owner cancelled mid-completion",
-   "stamped": "Stamped cells",
-   "cycles": "Wait-for cycles",
-   "epoch": "Epoch invalidation",
-   "resultstamp": "Result stamps",
-   "once": "Publish once"
-  },
   "frames": [
    {
     "beat": "1",
     "title": "Open the file",
     "caption": "Opening the file is a write action: a new run, statements entered but not typed. Every symbol is lazy.",
-    "cogs": [
-     "write"
-    ],
     "run": "run 1 · write 2",
     "units": {
      "s3": "skip",
@@ -178,16 +159,15 @@
       "write action: enter the new text, skip every statement"
      ]
     },
-    "ticks": []
+    "ticks": [],
+    "mechanisms": [
+     "write"
+    ]
    },
    {
     "beat": "2",
     "title": "The background pass starts",
     "caption": "T2, with its own Reader, types from the top. It claims each completion root; while it completes, the symbol's info is an InProgress that only T2 sees through. Line 9 holds T2 in subtotal, so every run interleaves the same way.",
-    "cogs": [
-     "reader",
-     "claim"
-    ],
     "units": {
      "s3": "typed",
      "s5": "T2"
@@ -218,17 +198,16 @@
     "note": {
      "line": 9,
      "text": "holds the typer here, so every run interleaves the same way"
-    }
+    },
+    "mechanisms": [
+     "reader",
+     "claim"
+    ]
    },
    {
     "beat": "3",
     "title": "Hover on total",
     "caption": "T1 types only the path to total, which needs subtotal's type. It takes the usual slow path for a LazyType, finds T2's claim, and waits. It neither sees T2's half-built state nor mistakes it for a cycle.",
-    "cogs": [
-     "reader",
-     "claim",
-     "wait"
-    ],
     "units": {
      "s14": "T1",
      "total": "T1"
@@ -254,16 +233,17 @@
       "t": "T1",
       "pulse": true
      }
+    ],
+    "mechanisms": [
+     "reader",
+     "claim",
+     "wait"
     ]
    },
    {
     "beat": "4",
     "title": "T2 publishes subtotal",
     "caption": "Released, T2 finishes subtotal and publishes it before releasing the claim, so T1 wakes to a complete denotation. T1 then waits briefly on tax, which T2 has just claimed.",
-    "cogs": [
-     "publish",
-     "wait"
-    ],
     "syms": {
      "subtotal": "done",
      "hold": "done",
@@ -290,16 +270,16 @@
       "pulse": true
      }
     ],
-    "note": null
+    "note": null,
+    "mechanisms": [
+     "publish",
+     "wait"
+    ]
    },
    {
     "beat": "5",
     "title": "The hover answers",
     "caption": "T1 completes total and answers BigDecimal, as one reader would. receipt stays skipped.",
-    "cogs": [
-     "publish",
-     "target"
-    ],
     "units": {
      "total": "typed",
      "receipt": "skip",
@@ -328,15 +308,16 @@
     "popup": {
      "sym": "total",
      "text": "def total: BigDecimal"
-    }
+    },
+    "mechanisms": [
+     "publish",
+     "target"
+    ]
    },
    {
     "beat": "6",
     "title": "The background pass finishes",
     "caption": "T2 reaches Checkout, finds total already published, and types receipt. Everything is typed; no diagnostics.",
-    "cogs": [
-     "target"
-    ],
     "units": {
      "s14": "typed",
      "receipt": "typed",
@@ -366,16 +347,15 @@
       "t": "T2"
      }
     ],
-    "popup": null
+    "popup": null,
+    "mechanisms": [
+     "target"
+    ]
    },
    {
     "beat": "7a",
     "title": "A keystroke in receipt, nothing in flight",
     "caption": "The edit is inside receipt's body. The write action re-indexes receipt and keeps the run; everything else stays published.",
-    "cogs": [
-     "write",
-     "bodyedit"
-    ],
     "edited": true,
     "run": "run 1 · write 3",
     "units": {
@@ -396,16 +376,16 @@
       "write action: re-index receipt"
      ]
     },
-    "ticks": []
+    "ticks": [],
+    "mechanisms": [
+     "write",
+     "bodyedit"
+    ]
    },
    {
     "beat": "7b",
     "title": "The hover after the edit",
     "caption": "T3 types line 19 only, reading subtotal, tax and total as published.",
-    "cogs": [
-     "reader",
-     "target"
-    ],
     "units": {
      "receipt": "T3"
     },
@@ -433,17 +413,17 @@
      "sym": "lines",
      "text": "(\" x \" : String)",
      "at": "x ${i.qty}"
-    }
+    },
+    "mechanisms": [
+     "reader",
+     "target"
+    ]
    },
    {
     "reset": 2,
     "beat": "8",
     "title": "The same keystroke, while T2 is held",
     "caption": "Back to T1 waiting on T2. Now the user types in receipt: the editor cancels the stale requests, and the new text arrives as a writer. It raises a sticky cancel and waits for readers to leave.",
-    "cogs": [
-     "write",
-     "cancel"
-    ],
     "edited": true,
     "lanes": {
      "T3": [
@@ -465,16 +445,16 @@
       "t": "T1",
       "pulse": true
      }
+    ],
+    "mechanisms": [
+     "write",
+     "cancel"
     ]
    },
    {
     "beat": "9",
     "title": "T2 unwinds",
     "caption": "T2 unwinds at its next checkpoint, resets the roots it was completing, and releases the claim. A Namer completion cannot run twice, so subtotal is marked unwound, not lazy.",
-    "cogs": [
-     "cancel",
-     "unwound"
-    ],
     "syms": {
      "subtotal": "unwound:T1",
      "hold": "lazy"
@@ -489,16 +469,16 @@
       "takes over subtotal's claim"
      ]
     },
-    "ticks": []
+    "ticks": [],
+    "mechanisms": [
+     "cancel",
+     "unwound"
+    ]
    },
    {
     "beat": "10",
     "title": "The waiter takes over, and is pre-empted",
     "caption": "T1 takes over subtotal's root, meets the unwound completion, and is pre-empted: it resets total, unwinds, and the run is tainted. Nothing hangs or tears; the work is discarded.",
-    "cogs": [
-     "claim",
-     "unwound"
-    ],
     "run": "run 1 · tainted",
     "units": {
      "s14": "skip",
@@ -520,17 +500,16 @@
       "sym": "subtotal",
       "t": "T1"
      }
+    ],
+    "mechanisms": [
+     "claim",
+     "unwound"
     ]
    },
    {
     "beat": "11",
     "title": "A fresh run for the new text",
     "caption": "The writer installs the new text in a fresh run. T3 types receipt, completing total, subtotal and tax on the way, and answers. The background pass follows in the same run.",
-    "cogs": [
-     "write",
-     "reader",
-     "claim"
-    ],
     "run": "run 2 · write 6",
     "units": {
      "s3": "skip",
@@ -580,9 +559,30 @@
      "sym": "lines",
      "text": "(\" x \" : String)",
      "at": "x ${i.qty}"
-    }
+    },
+    "mechanisms": [
+     "write",
+     "reader",
+     "claim"
+    ]
    }
-  ]
+  ],
+  "mechanisms": {
+   "write": "Write action",
+   "reader": "A Reader per request",
+   "claim": "Claim on a completion root",
+   "wait": "Wait, don't peek",
+   "publish": "Publish, then release",
+   "target": "Targeting",
+   "bodyedit": "Body edit keeps the run",
+   "cancel": "Sticky cancel",
+   "unwound": "Owner cancelled mid-completion",
+   "stamped": "Stamped cells",
+   "cycles": "Wait-for cycles",
+   "epoch": "Epoch invalidation",
+   "resultstamp": "Result stamps",
+   "once": "Publish once"
+  }
  },
  "cards": {
   "claim": {
