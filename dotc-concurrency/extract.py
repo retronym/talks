@@ -55,6 +55,22 @@ def strip_comment(line):
     return line
 
 
+DECL = re.compile(r'^(\s*)(?:(?:private(?:\[\w+\])?|protected(?:\[\w+\])?|final|abstract|sealed|case|implicit|open|transparent)\s+)*(?:class|trait|object|enum)\s+(\w+)')
+
+
+def owner_of(lines, s):
+    """The innermost class, trait or object that encloses line `s` (or that line itself declares)."""
+    m = DECL.match(lines[s])
+    if m:
+        return m.group(2)
+    ind = len(lines[s]) - len(lines[s].lstrip())
+    for i in range(s - 1, -1, -1):
+        m = DECL.match(lines[i])
+        if m and len(m.group(1)) < ind:
+            return m.group(2)
+    return None
+
+
 def excerpt(card, ex, cache):
     lines = cache.setdefault(ex["file"], show(ex["file"]))
     s = next((i for i, l in enumerate(lines) if re.search(ex["start"], l)), None)
@@ -113,7 +129,7 @@ def excerpt(card, ex, cache):
                 sys.exit(f"{card}: signal {p!r} (step {beat}) matches no line of the excerpt from {ex['file']}")
             marks.append([hits[0], label])
         sig[beat] = marks
-    r = {"file": ex["file"].split("/")[-1], "path": ex["file"], "url": f"{spec['github']}/blob/{full_sha}/{ex['file']}",
+    r = {"file": ex["file"].split("/")[-1], "path": ex["file"], "owner": ex.get("owner") or owner_of(lines, s), "url": f"{spec['github']}/blob/{full_sha}/{ex['file']}",
          "lines": out, "hl": hl}
     if sig:
         r["sig"] = sig

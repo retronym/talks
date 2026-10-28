@@ -1,7 +1,7 @@
 {
  "repo": "scala3",
  "sha": "899c4ae61b",
- "note": "Excerpts of the code each card explains. extract.py reads them at `sha`, drops comments, and writes excerpts.gen.json; `extract.py --check` fails if the code at `sha` no longer matches what was generated. `hl` maps a card step (its beat) to patterns of the lines that do that step's work.",
+ "note": "Excerpts of the code each card explains. extract.py reads them at `sha`, drops comments, and writes excerpts.gen.json; `extract.py --check` fails if the code at `sha` no longer matches what was generated. `hl` maps a card step (its beat) to patterns of the lines that do that step's work. `owner`, when given, names the class an excerpt's tab shows; else extract.py finds the enclosing class, trait or object.",
  "cards": {
   "claim": [
    {
@@ -424,7 +424,8 @@
      "4": [
       "currentDecls\\.extendAside"
      ]
-    }
+    },
+    "owner": "PackageLoader"
    },
    {
     "file": "compiler/src/dotty/tools/dotc/core/SymDenotations.scala",
@@ -510,7 +511,8 @@
       "private final class SelectorInfo",
       "val reverseMapping"
      ]
-    }
+    },
+    "owner": "ImportInfo"
    },
    {
     "file": "compiler/src/dotty/tools/dotc/typer/ImportInfo.scala",

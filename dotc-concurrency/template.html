@@ -718,7 +718,7 @@ body.focus .scn-cap { font-size: 18px; }
       Object.entries(ex.sig || {}).forEach(([b, es]) => {
         sig[b] = es.map(e => { const [q, label] = typeof e === 'string' ? [e, 'cancel'] : e; const k = ex.code.findIndex(t => new RegExp(q).test(t)); if (k < 0) console.warn('before.json: no line of', id, ex.file, 'matches signal', q); return [k, label]; }).filter(x => x[0] >= 0);
       });
-      return { file: ex.file, lines: ex.code.map((t, k) => ({ n: k + 1, text: t })), hl, sig };
+      return { file: ex.file, owner: ex.owner, lines: ex.code.map((t, k) => ({ n: k + 1, text: t })), hl, sig };
     });
   });
   function highlight(line, symTok) {
@@ -796,9 +796,14 @@ body.focus .scn-cap { font-size: 18px; }
   function buildPlayer(host, sc, opt = {}) {
     const impl = opt.impl !== undefined ? opt.impl : (sc.id && excerpts[sc.id]) || null;
     const label = i => opt.renumber ? String(i + 1) : sc.frames[i].beat;
-    // the compiler's files, each a tab of the editor holding its excerpts in order
+    // the compiler's classes, each a tab of the editor holding its excerpts in order
     const implFiles = [];
-    (impl || []).forEach((ex, j) => { let f = implFiles.find(x => x.file === ex.file && x.path === ex.path); if (!f) implFiles.push(f = { file: ex.file, path: ex.path, js: [] }); f.js.push(j); });
+    (impl || []).forEach((ex, j) => {
+      const name = ex.owner || ex.file;
+      let f = implFiles.find(x => x.file === name && x.path === ex.path);
+      if (!f) implFiles.push(f = { file: name, path: ex.path || ex.file, js: [] });
+      f.js.push(j);
+    });
     const symByLine = {}; sc.symbols.forEach(x => { symByLine[x.line] = x; });
     const [from, to] = sc.lines || [1, sc.code.length];
     const N = sc.frames.length;
@@ -810,7 +815,7 @@ body.focus .scn-cap { font-size: 18px; }
       '</div>' +
       '<div class="scn-body">' +
         '<div class="ed"><div class="ed-tabs"><div class="ed-tablist" role="tablist"><button type="button" class="ed-tab on" data-tab="src" role="tab" title="the code being edited">' + esc(sc.file) + '</button>' +
-          implFiles.map((f, k) => '<button type="button" class="ed-tab ed-ctab" data-tab="f' + k + '" role="tab" title="' + (opt.impl ? 'a sketch of the compiler before this mechanism' : esc(f.path) + ', the compiler') + ' (c)">' + esc(f.file) + '</button>').join('') +
+          implFiles.map((f, k) => '<button type="button" class="ed-tab ed-ctab" data-tab="f' + k + '" role="tab" title="' + (opt.impl ? 'a sketch of ' + esc(f.file) + ' before this mechanism' : esc(f.file) + ' in ' + esc(f.path)) + ' (c)">' + esc(f.file) + '</button>').join('') +
           '</div><span class="ed-run"></span></div><div class="ed-lines"></div>' +
           (implFiles.length ? '<div class="ed-impl" hidden>' + implFiles.map((f, k) => '<div class="ed-file" data-tab="f' + k + '" hidden>' +
             (opt.impl ? '<div class="ed-sketch">a sketch: the compiler before this mechanism</div>' : '') +

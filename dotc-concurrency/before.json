@@ -1,5 +1,5 @@
 {
- "note": "The code each card's Problem steps run: the after shots (excerpts.json) with the protections taken out, written by hand, not extracted. `hl` maps a Problem step (its beat) to patterns of the lines that do that step's work; `sig`, to where a cancellation arrives ([pattern, label]).",
+ "note": "The code each card's Problem steps run: the after shots (excerpts.json) with the protections taken out, written by hand, not extracted; `owner` is the class each sketch is of, which names its tab. `hl` maps a Problem step (its beat) to patterns of the lines that do that step's work; `sig`, to where a cancellation arrives ([pattern, label]).",
  "cards": {
   "claim": [
    {
@@ -28,7 +28,8 @@
       "if myFlags\\.is\\(Touched\\)",
       "throw CyclicReference"
      ]
-    }
+    },
+    "owner": "SymDenotation"
    }
   ],
   "publish": [
@@ -58,7 +59,8 @@
      "2": [
       "if checkedPeriod == ctx\\.period"
      ]
-    }
+    },
+    "owner": "NamedType"
    }
   ],
   "stamped": [
@@ -83,7 +85,8 @@
       "if myBaseClassesPeriod != ctx\\.period",
       "^  myBaseClasses$"
      ]
-    }
+    },
+    "owner": "AndType"
    }
   ],
   "write": [
@@ -109,7 +112,8 @@
       "^  lock\\.lock\\(\\)",
       "try body"
      ]
-    }
+    },
+    "owner": "InteractiveDriver"
    }
   ],
   "unwound": [
@@ -134,7 +138,8 @@
       "myInfo = ip\\.current",
       "roots\\.release"
      ]
-    }
+    },
+    "owner": "SymDenotation"
    }
   ],
   "cycles": [
@@ -162,7 +167,8 @@
      "2": [
       "c\\.done\\.await\\(\\)"
      ]
-    }
+    },
+    "owner": "PerKeyClaims"
    }
   ],
   "epoch": [
@@ -192,7 +198,8 @@
       "it\\.next\\(\\)\\.invalidate",
       "dependent = null"
      ]
-    }
+    },
+    "owner": "InheritedCacheImpl"
    },
    {
     "file": "SymbolLoaders.scala",
@@ -206,7 +213,8 @@
      "2": [
       "asOneChange"
      ]
-    }
+    },
+    "owner": "PackageLoader"
    }
   ],
   "resultstamp": [
@@ -231,7 +239,8 @@
      "2": [
       "hoverAt\\(tree"
      ]
-    }
+    },
+    "owner": "InteractiveDriver"
    }
   ],
   "once": [
@@ -265,7 +274,8 @@
       "if myExcluded == null",
       "myForwardMapping\\.nn$"
      ]
-    }
+    },
+    "owner": "ImportInfo"
    }
   ]
  }
